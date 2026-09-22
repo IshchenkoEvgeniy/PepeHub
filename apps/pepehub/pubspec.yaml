@@ -1,0 +1,47 @@
+name: pepehub
+description: "Offline library and activity journal with Obsidian integration."
+publish_to: 'none'
+version: 0.13.0+28
+
+environment:
+  sdk: ^3.13.3
+
+dependencies:
+  archive: ^4.2.0
+  xml: ^6.6.1
+  html: ^0.15.6
+  audio_service: ^0.18.19
+  audio_session: ^0.2.4
+  crypto: ^3.0.7
+  drift: ^2.35.0
+  file_selector: ^1.1.0
+  flutter:
+    sdk: flutter
+  flutter_secure_storage: ^11.1.0
+  http: ^1.6.0
+  just_audio: ^0.10.6
+  just_audio_media_kit: ^2.1.0
+  media_kit_libs_windows_audio: ^1.0.9
+  path: ^1.9.1
+  path_provider: ^2.1.6
+  sqlite3: ^3.5.2
+  uuid: ^4.6.0
+  pdfrx: ^2.6.1
+  markdown: ^7.3.1
+  enough_convert: ^1.6.0
+
+dev_dependencies:
+  integration_test:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/fonts/Lora-OFL.txt
+  fonts:
+    - family: ReaderLora
+      fonts:
+        - asset: assets/fonts/Lora.ttf

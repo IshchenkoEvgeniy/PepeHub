@@ -1,0 +1,291 @@
+import 'dart:io';
+
+import 'package:crypto/crypto.dart';
+import 'package:drift/drift.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+import '../data/repository.dart';
+import '../audio/audio_library_repository.dart';
+import '../audio/audio_import.dart';
+import '../audio/audio_link.dart';
+import '../reader/epub.dart';
+import '../reader/book_formats.dart';
+import '../reader/text_book.dart';
+import '../reader/pdf_support.dart';
+
+class LocalAsset {
+  final String id, bookId, filename, path, hash;
+  final int bytes;
+  const LocalAsset({
+    required this.id,
+    required this.bookId,
+    required this.filename,
+    required this.path,
+    required this.hash,
+    required this.bytes,
+  });
+  factory LocalAsset.fromRow(QueryRow row) => LocalAsset(
+    id: row.read<String>('id'),
+    bookId: row.read<String>('book_id'),
+    filename: row.read<String>('filename'),
+    path: row.read<String>('path'),
+    hash: row.read<String>('sha256'),
+    bytes: row.read<int>('bytes'),
+  );
+}
+
+class _DigestSink implements Sink<Digest> {
+  Digest? digest;
+  @override
+  void add(Digest value) {
+    digest = value;
+  }
+
+  @override
+  void close() {}
+}
+
+class AssetStore {
+  final Repository repository;
+  final Directory directory;
+  AssetStore(this.repository, this.directory);
+  late final audioImporter = AudioImportService(repository, directory);
+  Future<LocalAsset> connectAudioFolder(
+    List<XFile> files, {
+    required String root,
+    required String title,
+    String? replaceBookId,
+  }) async {
+    final id = await AudioLinkService(repository)
+        .connect(files, root: root, title: title, replaceBookId: replaceBookId);
+    return (await audioTracks(id)).first;
+  }
+
+  static Future<AssetStore> open(Repository repository) async => AssetStore(
+    repository,
+    Directory(p.join((await getApplicationSupportDirectory()).path, 'audio')),
+  );
+  Future<List<LocalAsset>> list() async =>
+      (await repository.db
+              .customSelect(
+                'SELECT * FROM local_assets WHERE id NOT IN (SELECT id FROM audio_tracks) UNION ALL SELECT t.id,e.book_id,t.title AS filename,r.path,r.sha256,r.bytes FROM audio_tracks t JOIN audio_editions e ON e.id=t.edition_id JOIN audio_resources r ON r.sha256=t.asset_hash ORDER BY filename',
+              )
+              .get())
+          .map(LocalAsset.fromRow)
+          .toList();
+  Future<LocalAsset?> byHash(String hash) async {
+    final row = await repository.db
+        .customSelect(
+          'SELECT * FROM local_assets WHERE sha256=?',
+          variables: [Variable(hash)],
+        )
+        .getSingleOrNull();
+    return row == null ? null : LocalAsset.fromRow(row);
+  }
+
+  /// Copies only a user-selected file. Original paths never enter the sync payload.
+  Future<LocalAsset> importAudio(
+    XFile selected, {
+    int maxBytes = 8 * 1024 * 1024 * 1024,
+  }) => importAudioBook(
+    [selected],
+    title: p.basenameWithoutExtension(selected.name),
+    maxFileBytes: maxBytes,
+  );
+
+  Future<LocalAsset> importAudioBook(
+    List<XFile> files, {
+    required String title,
+    AudioImportControl? control,
+    void Function(int, int)? onProgress,
+    int maxFileBytes = 8 * 1024 * 1024 * 1024,
+  }) async {
+    final bookId = await audioImporter.importBook(
+      files,
+      title: title,
+      control: control,
+      onProgress: onProgress,
+      maxFileBytes: maxFileBytes,
+    );
+    return (await audioTracks(bookId)).first;
+  }
+
+  Future<List<LocalAsset>> audioTracks(
+    String bookId, {
+    String? editionId,
+  }) async =>
+      (await repository.db
+              .customSelect(
+                'SELECT t.id,e.book_id,t.title AS filename,r.path,r.sha256,r.bytes FROM audio_tracks t JOIN audio_editions e ON e.id=t.edition_id JOIN audio_resources r ON r.sha256=t.asset_hash WHERE e.book_id=? ${editionId == null ? '' : 'AND e.id=?'} ORDER BY e.id,t.ordinal',
+                variables: [
+                  Variable(bookId),
+                  if (editionId != null) Variable(editionId),
+                ],
+              )
+              .get())
+          .map(LocalAsset.fromRow)
+          .toList();
+
+  Future<LocalAsset> importEpub(XFile selected) => importBook(selected);
+
+  Future<LocalAsset> importBook(XFile selected) {
+    final format = bookFormat(selected.name);
+    return _importFile(
+      selected,
+      maxBytes: (format == 'pdf' ? 256 : 64) * 1024 * 1024,
+      format: format,
+    );
+  }
+
+  Future<LocalAsset> _importFile(
+    XFile selected, {
+    required int maxBytes,
+    required String format,
+  }) async {
+    final audio = format == 'audio';
+    final extension = selected.name.toLowerCase().endsWith('.fb2.zip')
+        ? '.fb2.zip'
+        : p.extension(selected.name).toLowerCase();
+    if (audio && !audioExtensions.contains(extension.substring(1))) {
+      throw ArgumentError('Неподдерживаемый аудиоформат');
+    }
+    final expected = await selected.length();
+    if (expected < (audio ? 12 : 1) || expected > maxBytes) {
+      throw ArgumentError('Недопустимый размер файла');
+    }
+    await directory.create(recursive: true);
+    final temporary = File(p.join(directory.path, '${uuid.v4()}.part'));
+    final digestSink = _DigestSink(), header = <int>[];
+    final hasher = sha256.startChunkedConversion(digestSink);
+    final sink = temporary.openWrite();
+    var size = 0;
+    try {
+      await for (final chunk in selected.openRead()) {
+        size += chunk.length;
+        if (size > maxBytes) {
+          throw ArgumentError('Файл превышает лимит размера');
+        }
+        if (header.length < 12) header.addAll(chunk.take(12 - header.length));
+        hasher.add(chunk);
+        sink.add(chunk);
+        // Backpressure: keep memory bounded while copying multi-gigabyte audio.
+        await sink.flush();
+      }
+      await sink.close();
+      hasher.close();
+      if (size != expected) throw StateError('Файл изменился во время импорта');
+      final mp3 =
+          header.length >= 3 &&
+          ((header[0] == 73 && header[1] == 68 && header[2] == 51) ||
+              (header[0] == 255 && (header[1] & 224) == 224));
+      final mp4 =
+          header.length >= 8 &&
+          String.fromCharCodes(header.sublist(4, 8)) == 'ftyp';
+      final signature = String.fromCharCodes(header);
+      final validAudio = switch (extension) {
+        '.mp3' => mp3,
+        '.m4a' || '.m4b' => mp4,
+        '.aac' =>
+          header.length >= 2 && header[0] == 255 && (header[1] & 246) == 240,
+        '.ogg' || '.opus' => signature.startsWith('OggS'),
+        '.flac' => signature.startsWith('fLaC'),
+        '.wav' =>
+          signature.startsWith('RIFF') && signature.substring(8, 12) == 'WAVE',
+        _ => false,
+      };
+      if (audio && !validAudio) {
+        throw ArgumentError('Содержимое файла не соответствует аудиоформату');
+      }
+      final temporaryPath = temporary.path;
+      EpubBook? parsed;
+      if (format == 'pdf') {
+        if (!signature.startsWith('%PDF-')) {
+          throw const FormatException('Это не PDF');
+        }
+        await validatePdf(temporaryPath);
+      } else if (!audio) {
+        parsed = await loadTextBook(temporaryPath, selected.name);
+      }
+      final hash = digestSink.digest!.toString();
+      final existing = await byHash(hash);
+      if (existing != null) {
+        if ((await repository.record(existing.bookId))?.deleted != false) {
+          throw StateError(
+            'Эта книга удалена из библиотеки. Автоматическое восстановление отключено.',
+          );
+        }
+        // Re-import can repair a removed local file, but never overwrites an existing one.
+        if (!existing.path.startsWith('content:') &&
+            !await File(existing.path).exists()) {
+          await temporary.rename(existing.path);
+        }
+        return existing;
+      }
+      final target = File(p.join(directory.path, '$hash$extension'));
+      if (await target.exists()) {
+        final targetHash = await sha256.bind(target.openRead()).first;
+        if (targetHash.toString() != hash) {
+          throw StateError('Повреждена локальная копия. Исходник сохранён.');
+        }
+      } else {
+        await temporary.rename(target.path);
+      }
+      final asset = LocalAsset(
+        id: uuid.v4(),
+        bookId: uuid.v4(),
+        filename: p.basename(selected.name),
+        path: target.path,
+        hash: hash,
+        bytes: size,
+      );
+      final title = (parsed?.title ?? p.basenameWithoutExtension(selected.name))
+          .replaceAll(RegExp(r'[\x00-\x1f\x7f]'), ' ')
+          .trim();
+      await repository.db.transaction(() async {
+        await repository.put('book', asset.bookId, {
+          'title': title.isEmpty
+              ? 'Книга'
+              : title.substring(0, title.length.clamp(0, 500)),
+          'authors':
+              parsed?.authors
+                  .map(
+                    (a) => a.replaceAll(RegExp(r'[\x00-\x1f\x7f]'), ' ').trim(),
+                  )
+                  .where((a) => a.isNotEmpty)
+                  .map((a) => a.substring(0, a.length.clamp(0, 200)))
+                  .toList() ??
+              <String>[],
+          'format': format,
+          'status': 'planned',
+        });
+        await repository.db.customStatement(
+          'INSERT INTO local_assets(id,book_id,filename,path,sha256,bytes) VALUES(?,?,?,?,?,?)',
+          [
+            asset.id,
+            asset.bookId,
+            asset.filename,
+            asset.path,
+            asset.hash,
+            asset.bytes,
+          ],
+        );
+        if (audio) {
+          await AudioLibraryRepository(repository.db).registerSingleTrack(
+            bookId: asset.bookId,
+            assetId: asset.id,
+            hash: asset.hash,
+            path: asset.path,
+            filename: asset.filename,
+            bytes: asset.bytes,
+          );
+        }
+      });
+      return asset;
+    } finally {
+      await sink.close();
+      if (await temporary.exists()) await temporary.delete();
+    }
+  }
+}

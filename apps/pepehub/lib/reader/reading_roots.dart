@@ -1,0 +1,171 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as p;
+
+import '../audio/audio_folder.dart';
+import '../media/asset_store.dart';
+import '../media/library_recovery.dart';
+import '../data/repository.dart';
+import 'book_formats.dart';
+
+class ReadingRoot {
+  final String key, path, title;
+  final List<String> bookIds;
+  ReadingRoot(this.key, this.path, this.title, this.bookIds);
+}
+
+class ReadingRoots {
+  final AssetStore assets;
+  ReadingRoots(this.assets);
+  Future<List<ReadingRoot>> list() async {
+    final rows = await assets.repository.db
+        .customSelect(
+          "SELECT key,value FROM metadata WHERE key LIKE 'reading-library-root:%'",
+        )
+        .get();
+    return [
+      for (final row in rows)
+        _root(
+          row.read<String>('key'),
+          jsonDecode(row.read<String>('value')) as Map<String, dynamic>,
+        ),
+    ];
+  }
+
+  ReadingRoot _root(String key, Map<String, dynamic> value) => ReadingRoot(
+    key,
+    value['path'] as String,
+    value['title'] as String,
+    (value['bookIds'] as List).cast<String>(),
+  );
+  Future<void> disconnect(ReadingRoot root) async {
+    await assets.repository.db.transaction(() async {
+      await assets.repository.db.customStatement(
+        'DELETE FROM metadata WHERE key=?',
+        [root.key],
+      );
+      final remaining = (await list()).expand((r) => r.bookIds).toSet();
+      for (final id in root.bookIds) {
+        if (!remaining.contains(id)) {
+          await assets.repository.setMeta('reading-library-hidden:$id', '1');
+        }
+      }
+    });
+  }
+
+  Future<ReadingRoot> connect(AudioFolder folder) async {
+    final path = folder.root!;
+    final key = 'reading-library-root:${sha256.convert(utf8.encode(path))}';
+    final ids = <String>[];
+    final candidates =
+        <({String name, String path, String format, String hash, int size})>[];
+    for (final file in folder.files) {
+      final format = bookFormat(file.name);
+      final size = await file.length();
+      if (size <= 0 || size > (format == 'pdf' ? 256 : 64) * 1024 * 1024) {
+        throw StateError('Недопустимый размер: ${file.name}');
+      }
+      var actualBytes = 0;
+      final hash =
+          (await sha256
+                  .bind(
+                    file.openRead().map((chunk) {
+                      actualBytes += chunk.length;
+                      if (actualBytes > size) {
+                        throw StateError('Файл изменился: ${file.name}');
+                      }
+                      return chunk;
+                    }),
+                  )
+                  .first)
+              .toString();
+      if (actualBytes != size) throw StateError('Файл изменился: ${file.name}');
+      candidates.add((
+        name: file.name,
+        path: file.path,
+        format: format,
+        hash: hash,
+        size: size,
+      ));
+    }
+    await assets.repository.db.transaction(() async {
+      for (final file in candidates) {
+        final hash = file.hash, format = file.format, size = file.size;
+        final existing = await assets.byHash(hash);
+        if (existing != null &&
+            (await assets.repository.record(existing.bookId))
+                    ?.payload?['format'] ==
+                'audio') {
+          continue;
+        }
+        final id = existing?.bookId ?? uuid.v4();
+        if (existing == null) {
+          await assets.repository.put('book', id, {
+            'title': p.basenameWithoutExtension(file.name),
+            'authors': <String>[],
+            'format': format,
+            'status': 'planned',
+          });
+          await assets.repository.db.customStatement(
+            'INSERT INTO local_assets(id,book_id,filename,path,sha256,bytes) VALUES(?,?,?,?,?,?)',
+            [uuid.v4(), id, p.basename(file.name), file.path, hash, size],
+          );
+        } else {
+          await assets.repository.db.customStatement(
+            'UPDATE local_assets SET path=?,filename=? WHERE id=?',
+            [file.path, p.basename(file.name), existing.id],
+          );
+        }
+        await assets.repository.setMeta('reading-library-hidden:$id', '0');
+        if (!ids.contains(id)) ids.add(id);
+      }
+      await assets.repository.setMeta(
+        key,
+        jsonEncode({'path': path, 'title': folder.title, 'bookIds': ids}),
+      );
+    });
+    await recoverReadingRoot(assets, path, ids);
+    return ReadingRoot(key, path, folder.title, ids);
+  }
+
+  Future<LocalAsset> forReading(LocalAsset asset) async {
+    if (!asset.path.startsWith('content:')) return asset;
+    // Text/PDF engines need a seekable local file. Cache only the opened book.
+    final cache = Directory(p.join(assets.directory.path, 'reading-cache'));
+    await cache.create(recursive: true);
+    final file = File(
+      p.join(cache.path, '${asset.hash}${p.extension(asset.filename)}'),
+    );
+    if (!await file.exists()) {
+      final temporary = File('${file.path}.partial');
+      try {
+        final sink = temporary.openWrite();
+        try {
+          await sink.addStream(
+            SafAudioFile(asset.path, asset.filename, asset.bytes).openRead(),
+          );
+        } finally {
+          await sink.close();
+        }
+        if (await temporary.length() != asset.bytes ||
+            (await sha256.bind(temporary.openRead()).first).toString() !=
+                asset.hash) {
+          throw StateError('Файл изменился. Обновите папку книг.');
+        }
+        await temporary.rename(file.path);
+      } finally {
+        if (await temporary.exists()) await temporary.delete();
+      }
+    }
+    return LocalAsset(
+      id: asset.id,
+      bookId: asset.bookId,
+      filename: asset.filename,
+      path: file.path,
+      hash: asset.hash,
+      bytes: asset.bytes,
+    );
+  }
+}
