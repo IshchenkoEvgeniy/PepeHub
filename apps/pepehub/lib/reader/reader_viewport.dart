@@ -408,7 +408,6 @@ class _ReaderViewportState extends State<ReaderViewport> {
       parent: ClampingScrollPhysics(),
     ),
     controller: scroll,
-    itemExtentBuilder: (i, _) => heights[i],
     padding: EdgeInsets.zero,
     itemCount: list.length,
     itemBuilder: (_, i) => item(i),
