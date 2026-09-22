@@ -266,11 +266,16 @@ class _ReaderViewportState extends State<ReaderViewport> {
         starts.add(contentHeight);
         if (widget.scrolling) {
           final painter = _painter(_text(page), start: page.start);
-          final height = images.containsKey(page)
-              ? extent * .85
-              : painter.height + 10;
+          final hasImage = images.containsKey(page);
+          final topPadding = hasImage
+              ? widget.margin +
+                    (widget.chapterBreaks.contains(page.start) ? 32 : 0)
+              : (widget.chapterBreaks.contains(page.start) ? 37 : 5);
+          final bottomPadding = hasImage ? widget.margin : 5.0;
           final measured =
-              height + (widget.chapterBreaks.contains(page.start) ? 32 : 0);
+              (hasImage ? extent * .85 : painter.height) +
+              topPadding +
+              bottomPadding;
           heights.add(measured);
           contentHeight += measured;
           painter.dispose();
@@ -517,19 +522,20 @@ class _ReaderViewportState extends State<ReaderViewport> {
         ? Padding(
             padding: EdgeInsets.fromLTRB(
               widget.margin,
-              widget.chapterBreaks.contains(list[i].start)
-                  ? widget.margin + 32
-                  : widget.margin,
+              widget.margin,
               widget.margin,
               widget.margin,
             ),
-            child: Image.memory(
-              images[list[i]]!.bytes,
-              fit: BoxFit.contain,
-              cacheWidth: 1024,
-              semanticLabel: images[list[i]]!.label,
-              errorBuilder: (_, _, _) =>
-                  Center(child: Text(images[list[i]]!.label)),
+            child: SizedBox(
+              height: extent * .85,
+              child: Image.memory(
+                images[list[i]]!.bytes,
+                fit: BoxFit.contain,
+                cacheWidth: 1024,
+                semanticLabel: images[list[i]]!.label,
+                errorBuilder: (_, _, _) =>
+                    Center(child: Text(images[list[i]]!.label)),
+              ),
             ),
           )
         : GestureDetector(
@@ -538,9 +544,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
             child: Padding(
               padding: EdgeInsets.fromLTRB(
                 widget.margin + _indent(list[i].start),
-                widget.scrolling
-                    ? (widget.chapterBreaks.contains(list[i].start) ? 37 : 5)
-                    : 12,
+                widget.scrolling ? 5 : 12,
                 widget.margin,
                 widget.scrolling ? 5 : 12,
               ),
@@ -623,35 +627,49 @@ class _ReaderViewportState extends State<ReaderViewport> {
           );
     Widget decoratedPage(int i) {
       final block = _blockAt(list[i].start);
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          page(i),
-          if (widget.scrolling && widget.chapterBreaks.contains(list[i].start))
-            Positioned(
-              left: widget.margin,
-              right: widget.margin,
-              top: 14,
-              child: Divider(
-                height: 1,
-                thickness: 1,
-                color: widget.style.color?.withValues(alpha: .55),
+      if (widget.scrolling) {
+        final marker = block?.marker;
+        final hasMarker = marker != null && block?.start == list[i].start;
+        final content = hasMarker
+            ? Stack(
+                children: [
+                  page(i),
+                  Positioned(
+                    left: widget.margin + _indent(list[i].start) - 28,
+                    top: 5,
+                    child: Text(
+                      marker,
+                      style: widget.style,
+                      textScaler: widget.scaler,
+                    ),
+                  ),
+                ],
+              )
+            : page(i);
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.chapterBreaks.contains(list[i].start))
+              SizedBox(
+                height: 32,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: widget.margin,
+                    right: widget.margin,
+                    top: 14,
+                  ),
+                  child: Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: widget.style.color?.withValues(alpha: .55),
+                  ),
+                ),
               ),
-            ),
-          if (widget.scrolling &&
-              block?.marker != null &&
-              block!.start == list[i].start)
-            Positioned(
-              left: widget.margin + _indent(list[i].start) - 28,
-              top: 5,
-              child: Text(
-                block.marker!,
-                style: widget.style,
-                textScaler: widget.scaler,
-              ),
-            ),
-        ],
-      );
+            content,
+          ],
+        );
+      }
+      return Stack(fit: StackFit.expand, children: [page(i)]);
     }
 
     return CallbackShortcuts(
