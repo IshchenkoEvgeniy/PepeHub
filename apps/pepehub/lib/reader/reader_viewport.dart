@@ -84,6 +84,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
   final linkRecognizers = <String, TapGestureRecognizer>{};
   final images = <ReaderSlice, BookIllustration>{};
   bool crossingChapter = false;
+  double? draggingPage;
   DateTime lastPositionUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? positionUpdateTimer;
   final starts = <double>[], heights = <double>[];
@@ -98,7 +99,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
 
   // Reserve navigation controls separately from the measured text area.
   double get extent =>
-      widget.height - (widget.hideControls || widget.scrolling ? 0 : 48);
+      widget.height - (widget.scrolling || !widget.hideControls ? 48 : 0);
   double get textHeight => extent - 24;
   double get textWidth => widget.width - widget.margin * 2;
   double get illustrationHeight => (extent * .85).clamp(
@@ -251,7 +252,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
         for (var i = 0; i < points.length - 1; i++)
           TextSpan(
             text: widget.text.substring(points[i], points[i + 1]),
-          style: _styleAt(points[i], matching),
+            style: _styleAt(points[i], matching),
           ),
       ],
     );
@@ -263,123 +264,193 @@ class _ReaderViewportState extends State<ReaderViewport> {
     textScaler: widget.scaler,
     textAlign: _alignment(start),
   )..layout(maxWidth: textWidth - _indent(start));
+
+  double _segmentExtent(ReaderSlice segment) => images.containsKey(segment)
+      ? illustrationHeight + widget.margin * 2
+      : (segment.height ?? 0) + (widget.scrolling ? 10 : 24);
+
   Future<void> _layout() async {
     try {
       final result = <ReaderSlice>[];
       final orderedImages = [...widget.illustrations]
         ..sort((a, b) => a.offset.compareTo(b.offset));
+      final currentPage = <ReaderSlice>[];
+      var usedPageHeight = 0.0;
+      void finishPage() {
+        if (currentPage.isEmpty) return;
+        result.add(
+          ReaderSlice(
+            currentPage.first.start,
+            currentPage.last.end,
+            height: extent,
+            segments: List.unmodifiable(currentPage),
+          ),
+        );
+        currentPage.clear();
+        usedPageHeight = 0;
+      }
+
+      void addSegment(ReaderSlice segment) {
+        if (!widget.scrolling) {
+          result.add(segment);
+          return;
+        }
+        const verticalPadding = 10.0;
+        final segmentHeight = (segment.height ?? 0) + verticalPadding;
+        final pageCapacity = extent - 1;
+        if (currentPage.isNotEmpty &&
+            usedPageHeight + segmentHeight > pageCapacity) {
+          finishPage();
+        }
+        currentPage.add(segment);
+        usedPageHeight += segmentHeight;
+        if (usedPageHeight >= pageCapacity) finishPage();
+      }
+
       var from = 0;
       Future<void> appendText(int end) async {
         if (end <= from) return;
-        final boundaries = <int>{
-          from,
-          if (widget.scrolling)
-            ...RegExp(r'\n\n')
-                .allMatches(widget.text.substring(from, end))
-                .map((m) => from + m.end),
-          if (!widget.scrolling)
-            ...widget.chapterBreaks.where((at) => at > from && at < end),
-          end,
-        }.toList()..sort();
-        for (var part = 0; part < boundaries.length - 1; part++) {
-          final base = boundaries[part], limit = boundaries[part + 1];
-          if (base == limit) continue;
-          final slices = await paginateReader(
-            widget.text.substring(base, limit),
-            widget.style,
-            textWidth - _indent(base),
-            textHeight,
-            widget.scaler,
-            cancelled: () => !mounted,
-            styledText: (a, b) => _richText(base + a, base + b),
-          );
-          result.addAll(
-            slices.map(
-              (s) =>
-                  ReaderSlice(base + s.start, base + s.end, height: s.height),
-            ),
-          );
+        Future<void> paginateRange(int base, int limit) async {
+          if (limit <= base) return;
+          final paragraphBoundaries = <int>{
+            base,
+            if (widget.scrolling)
+              ...RegExp(r'\n\n')
+                  .allMatches(widget.text.substring(base, limit))
+                  .map((match) => base + match.end),
+            limit,
+          }.toList()..sort();
+          for (
+            var paragraph = 0;
+            paragraph < paragraphBoundaries.length - 1;
+            paragraph++
+          ) {
+            final paragraphStart = paragraphBoundaries[paragraph];
+            final paragraphEnd = paragraphBoundaries[paragraph + 1];
+            if (paragraphStart == paragraphEnd) continue;
+            final slices = await paginateReader(
+              widget.text.substring(paragraphStart, paragraphEnd),
+              widget.style,
+              textWidth - _indent(paragraphStart),
+              textHeight,
+              widget.scaler,
+              cancelled: () => !mounted,
+              styledText: (a, b) =>
+                  _richText(paragraphStart + a, paragraphStart + b),
+            );
+            for (final slice in slices) {
+              addSegment(
+                ReaderSlice(
+                  paragraphStart + slice.start,
+                  paragraphStart + slice.end,
+                  height: slice.height,
+                ),
+              );
+            }
+          }
+        }
+
+        var cursor = from;
+        final chapterStarts =
+            widget.chapterBreaks.where((at) => at > from && at <= end).toList()
+              ..sort();
+        for (var part = 0; part < chapterStarts.length; part++) {
+          final chapterStart = chapterStarts[part];
+          // Whole-book flow inserts exactly two separator newlines before a
+          // chapter. Keep them out of pagination so they cannot create a
+          // spurious blank page; the chapter still starts on a fresh page.
+          final chapterEnd = (chapterStart - 2).clamp(cursor, end);
+          await paginateRange(cursor, chapterEnd);
+          if (widget.scrolling) finishPage();
+          cursor = chapterStart;
           if (part % 32 == 31) {
             await Future<void>.delayed(Duration.zero);
             if (!mounted) return;
           }
         }
+        await paginateRange(cursor, end);
         from = end;
       }
 
       for (final image in orderedImages) {
         final at = image.offset.clamp(from, widget.text.length);
         await appendText(at);
-        final slice = ReaderSlice(at, at);
+        if (widget.scrolling) finishPage();
+        final slice = ReaderSlice(at, at, height: extent);
         images[slice] = image;
         result.add(slice);
       }
       await appendText(widget.text.length);
-      if (result.isEmpty) result.add(const ReaderSlice(0, 0));
+      if (widget.scrolling) finishPage();
+      if (result.isEmpty) {
+        result.add(
+          widget.scrolling
+              ? ReaderSlice(
+                  0,
+                  0,
+                  height: extent,
+                  segments: const [ReaderSlice(0, 0, height: 0)],
+                )
+              : const ReaderSlice(0, 0),
+        );
+      }
       if (!mounted) return;
-      index = result
-          .lastIndexWhere((p) => p.start <= widget.anchor)
-          .clamp(0, result.length - 1);
+      final imageAtAnchor = result.indexWhere(
+        (page) => images.containsKey(page) && page.start == widget.anchor,
+      );
+      index =
+          (imageAtAnchor >= 0
+                  ? imageAtAnchor
+                  : result.lastIndexWhere((p) => p.start <= widget.anchor))
+              .clamp(0, result.length - 1);
       if (widget.anchor == 0) index = 0;
       pager = PageController(initialPage: index);
-      final itemHeights = <double>[];
-      for (final page in result) {
-        if (widget.scrolling) {
-          final hasImage = images.containsKey(page);
-          final pageTextHeight = page.height ?? 0;
-          final verticalPadding = hasImage ? widget.margin * 2 : 10.0;
-          itemHeights.add(
-            (hasImage ? illustrationHeight : pageTextHeight) + verticalPadding,
-          );
-          if (itemHeights.length % 8 == 0) {
-            await Future<void>.delayed(Duration.zero);
-            if (!mounted) return;
-          }
-        } else {
-          itemHeights.add(extent);
-        }
-      }
       if (widget.scrolling) {
-        final pageBodyHeight = (extent - 14).clamp(1, double.infinity);
-        var used = 0.0;
         for (var i = 0; i < result.length; i++) {
           starts.add(contentHeight);
-          used += itemHeights[i];
-          final breakAfter =
-              i < result.length - 1 &&
-              (used >= pageBodyHeight * .82 ||
-                  used + itemHeights[i + 1] > pageBodyHeight);
-          pageSeparators.add(breakAfter);
-          heights.add(itemHeights[i] + (breakAfter ? 14 : 0));
+          pageSeparators.add(i < result.length - 1);
+          heights.add(extent);
           contentHeight += heights.last;
-          if (breakAfter) used = 0;
         }
       } else {
-        for (final height in itemHeights) {
+        for (var i = 0; i < result.length; i++) {
           starts.add(contentHeight);
-          heights.add(height);
-          contentHeight += height;
+          heights.add(extent);
+          contentHeight += extent;
         }
       }
       var pixels = starts[index];
       if (widget.scrolling) {
         final page = result[index];
-        final painter = _painter(
-          widget.text.substring(page.start, page.end),
-          start: page.start,
-        );
-        pixels += painter
-            .getOffsetForCaret(
-              TextPosition(
-                offset: (widget.anchor - page.start).clamp(
-                  0,
-                  page.end - page.start,
-                ),
-              ),
-              Rect.zero,
-            )
-            .dy;
-        painter.dispose();
+        var withinPage = 0.0;
+        for (final segment in page.segments ?? [page]) {
+          if (images.containsKey(segment)) {
+            if (widget.anchor <= segment.start) break;
+            withinPage += _segmentExtent(segment);
+            continue;
+          }
+          final text = _text(segment);
+          if (widget.anchor <= segment.end) {
+            final painter = _painter(text, start: segment.start);
+            withinPage +=
+                5 +
+                painter
+                    .getOffsetForCaret(
+                      TextPosition(
+                        offset: (widget.anchor - segment.start).clamp(
+                          0,
+                          text.length,
+                        ),
+                      ),
+                      Rect.zero,
+                    )
+                    .dy;
+            painter.dispose();
+            break;
+          }
+          withinPage += _segmentExtent(segment);
+        }
+        pixels += withinPage;
       }
       scroll = ScrollController(
         initialScrollOffset: pixels.clamp(
@@ -418,18 +489,38 @@ class _ReaderViewportState extends State<ReaderViewport> {
         .lastIndexWhere((s) => s <= pixels)
         .clamp(0, pages!.length - 1);
     final page = pages![next];
-    final painter = _painter(
-      widget.text.substring(page.start, page.end),
-      start: page.start,
-    );
-    final within = painter
-        .getPositionForOffset(
-          Offset(0, (pixels - starts[next] - 5).clamp(0, heights[next])),
-        )
-        .offset;
-    painter.dispose();
+    var withinPage = (pixels - starts[next]).clamp(0, heights[next]).toDouble();
+    var position = page.start;
+    for (final segment in page.segments ?? [page]) {
+      if (images.containsKey(segment)) {
+        position = segment.start;
+        final itemExtent = _segmentExtent(segment);
+        if (withinPage <= itemExtent) break;
+        withinPage -= itemExtent;
+        position = segment.end;
+        continue;
+      }
+      final text = _text(segment);
+      final painter = _painter(text, start: segment.start);
+      final itemExtent = text.isEmpty
+          ? 10.0
+          : (segment.height ?? painter.height) + 10;
+      if (withinPage <= itemExtent) {
+        final within = painter
+            .getPositionForOffset(
+              Offset(0, (withinPage - 5).clamp(0, segment.height ?? 0)),
+            )
+            .offset;
+        position = (segment.start + within).clamp(segment.start, segment.end);
+        painter.dispose();
+        break;
+      }
+      painter.dispose();
+      withinPage -= itemExtent;
+      position = segment.end;
+    }
     if (index != next) setState(() => index = next);
-    widget.onPosition((page.start + within).clamp(page.start, page.end));
+    widget.onPosition(position.clamp(page.start, page.end));
   }
 
   void _step(int delta) {
@@ -508,6 +599,73 @@ class _ReaderViewportState extends State<ReaderViewport> {
     itemBuilder: (_, i) => item(i),
   );
 
+  Widget _pageSlider(int pageCount) {
+    final lastPage = pageCount - 1;
+    final value = (draggingPage ?? index.toDouble())
+        .clamp(0, lastPage)
+        .toDouble();
+    final shownPage = value.round() + 1;
+    return SizedBox(
+      height: 48,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            const Icon(Icons.menu_book_outlined, size: 18),
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  IgnorePointer(
+                    child: CustomPaint(
+                      painter: _PageTicksPainter(
+                        pageCount,
+                        Theme.of(context).colorScheme.onSurface
+                            .withValues(alpha: .3),
+                      ),
+                    ),
+                  ),
+                  Slider(
+                    value: value,
+                    min: 0,
+                    max: lastPage > 0 ? lastPage.toDouble() : 1,
+                    label: '$shownPage из $pageCount',
+                    semanticFormatterCallback: (v) =>
+                        'Страница ${v.round() + 1} из $pageCount',
+                    onChanged: pageCount > 1
+                        ? (v) => setState(() => draggingPage = v)
+                        : null,
+                    onChangeEnd: pageCount > 1
+                        ? (v) {
+                            final target = v.round().clamp(0, lastPage);
+                            setState(() => draggingPage = null);
+                            interacted = true;
+                            scroll?.animateTo(
+                              starts[target],
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOut,
+                            );
+                          }
+                        : null,
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: 72,
+              child: Text(
+                '$shownPage из $pageCount',
+                textAlign: TextAlign.end,
+                maxLines: 1,
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final list = pages;
@@ -518,9 +676,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
             : Padding(padding: const EdgeInsets.all(24), child: Text(error!)),
       );
     }
-    InlineSpan span(int i) {
-      final raw = _text(list[i]);
-      final base = list[i].start;
+    InlineSpan span(ReaderSlice segment) {
+      final raw = _text(segment);
+      final base = segment.start;
       final markupRanges = _markupOverlapping(base, base + raw.length).toList();
       final ranges = <({int start, int end, Color color})>[
         for (final note in widget.notes)
@@ -607,8 +765,12 @@ class _ReaderViewportState extends State<ReaderViewport> {
       return TextSpan(children: spans);
     }
 
-    Widget page(int i) => images.containsKey(list[i])
-        ? Padding(
+    Widget pageContent(ReaderSlice segment) {
+      if (images.containsKey(segment)) {
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (e) => _tapAt(e.localPosition.dx / widget.width),
+          child: Padding(
             padding: EdgeInsets.fromLTRB(
               widget.margin,
               widget.margin,
@@ -618,140 +780,161 @@ class _ReaderViewportState extends State<ReaderViewport> {
             child: SizedBox(
               height: illustrationHeight,
               child: Image.memory(
-                images[list[i]]!.bytes,
+                images[segment]!.bytes,
                 fit: BoxFit.contain,
                 cacheWidth: 1024,
-                semanticLabel: images[list[i]]!.label,
+                semanticLabel: images[segment]!.label,
                 errorBuilder: (_, _, _) =>
-                    Center(child: Text(images[list[i]]!.label)),
+                    Center(child: Text(images[segment]!.label)),
               ),
             ),
-          )
-        : GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapUp: (e) => _tapAt(e.localPosition.dx / widget.width),
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                widget.margin + _indent(list[i].start),
-                widget.scrolling ? 5 : 12,
-                widget.margin,
-                widget.scrolling ? 5 : 12,
+          ),
+        );
+      }
+      final text = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: (e) => _tapAt(e.localPosition.dx / widget.width),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            widget.margin + _indent(segment.start),
+            widget.scrolling ? 5 : 12,
+            widget.margin,
+            widget.scrolling ? 5 : 12,
+          ),
+          child: SizedBox(
+            width: textWidth - _indent(segment.start),
+            child: Listener(
+              onPointerDown: (e) {
+                down = e.localPosition;
+                downAt = DateTime.now();
+              },
+              child: SelectableText.rich(
+                span(segment) as TextSpan,
+                style: widget.style,
+                textScaler: widget.scaler,
+                // The chapter flow owns scrolling. SelectableText must
+                // never create a nested scrollable viewport of its own.
+                scrollPhysics: const NeverScrollableScrollPhysics(),
+                textAlign: _alignment(segment.start),
+                onSelectionChanged: (s, cause) => hasSelection = !s.isCollapsed,
+                onTap: () {
+                  if (hasSelection ||
+                      down == null ||
+                      downAt == null ||
+                      DateTime.now().difference(downAt!).inMilliseconds > 350) {
+                    return;
+                  }
+                  _tapAt((down!.dx + widget.margin) / widget.width);
+                },
+                contextMenuBuilder: (context, state) {
+                  final savedSelection = state.textEditingValue.selection;
+                  return readerSelectionToolbar(
+                    onMore: state.hideToolbar,
+                    context: context,
+                    width: widget.width,
+                    anchors: state.contextMenuAnchors,
+                    buttonItems: [
+                      if (widget.onBoundary != null &&
+                          !state.textEditingValue.selection.isCollapsed)
+                        ContextMenuButtonItem(
+                          label: widget.selectingRange
+                              ? 'Закончить здесь'
+                              : 'Начать длинную цитату',
+                          onPressed: () {
+                            final selection = savedSelection;
+                            state.hideToolbar();
+                            widget.onBoundary!(
+                              segment.start +
+                                  (widget.selectingRange
+                                      ? selection.end
+                                      : selection.start),
+                              widget.selectingRange,
+                            );
+                          },
+                        ),
+                      if (widget.onAnnotate != null &&
+                          !state.textEditingValue.selection.isCollapsed)
+                        for (final comment in [false, true])
+                          ContextMenuButtonItem(
+                            label: comment ? 'Заметка' : 'Выделить',
+                            onPressed: () {
+                              final selection = savedSelection;
+                              state.hideToolbar();
+                              widget.onAnnotate!(
+                                segment.start + selection.start,
+                                segment.start + selection.end,
+                                comment,
+                              );
+                            },
+                          ),
+                      ...state.contextMenuButtonItems,
+                    ],
+                  );
+                },
               ),
-              child: SizedBox(
-                width: textWidth - _indent(list[i].start),
-                child: Listener(
-                  onPointerDown: (e) {
-                    down = e.localPosition;
-                    downAt = DateTime.now();
-                  },
-                  child: SelectableText.rich(
-                    span(i) as TextSpan,
-                    style: widget.style,
-                    textScaler: widget.scaler,
-                    // The chapter flow owns scrolling. SelectableText must
-                    // never create a nested scrollable viewport of its own.
-                    scrollPhysics: const NeverScrollableScrollPhysics(),
-                    textAlign: _alignment(list[i].start),
-                    onSelectionChanged: (s, cause) =>
-                        hasSelection = !s.isCollapsed,
-                    onTap: () {
-                      if (hasSelection ||
-                          down == null ||
-                          downAt == null ||
-                          DateTime.now().difference(downAt!).inMilliseconds >
-                              350) {
-                        return;
-                      }
-                      _tapAt((down!.dx + widget.margin) / widget.width);
-                    },
-                    contextMenuBuilder: (context, state) {
-                      final savedSelection = state.textEditingValue.selection;
-                      return readerSelectionToolbar(
-                        onMore: state.hideToolbar,
-                        context: context,
-                        width: widget.width,
-                        anchors: state.contextMenuAnchors,
-                        buttonItems: [
-                          if (widget.onBoundary != null &&
-                              !state.textEditingValue.selection.isCollapsed)
-                            ContextMenuButtonItem(
-                              label: widget.selectingRange
-                                  ? 'Закончить здесь'
-                                  : 'Начать длинную цитату',
-                              onPressed: () {
-                                final selection = savedSelection;
-                                state.hideToolbar();
-                                widget.onBoundary!(
-                                  list[i].start +
-                                      (widget.selectingRange
-                                          ? selection.end
-                                          : selection.start),
-                                  widget.selectingRange,
-                                );
-                              },
-                            ),
-                          if (widget.onAnnotate != null &&
-                              !state.textEditingValue.selection.isCollapsed)
-                            for (final comment in [false, true])
-                              ContextMenuButtonItem(
-                                label: comment ? 'Заметка' : 'Выделить',
-                                onPressed: () {
-                                  final selection = savedSelection;
-                                  state.hideToolbar();
-                                  widget.onAnnotate!(
-                                    list[i].start + selection.start,
-                                    list[i].start + selection.end,
-                                    comment,
-                                  );
-                                },
-                              ),
-                          ...state.contextMenuButtonItems,
-                        ],
-                      );
-                    },
-                  ),
+            ),
+          ),
+        ),
+      );
+      final block = _blockAt(segment.start);
+      final marker = block?.marker;
+      if (marker == null || block?.start != segment.start) return text;
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          text,
+          Positioned(
+            left: widget.margin + _indent(segment.start) - 28,
+            top: 5,
+            child: Text(marker, style: widget.style, textScaler: widget.scaler),
+          ),
+        ],
+      );
+    }
+
+    Widget page(int i) {
+      final current = list[i];
+      final segments = current.segments;
+      if (segments == null) return pageContent(current);
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [for (final segment in segments) pageContent(segment)],
+      );
+    }
+
+    Widget decoratedPage(int i) {
+      if (widget.scrolling) {
+        return SizedBox(
+          height: extent,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: (event) =>
+                      _tapAt(event.localPosition.dx / widget.width),
                 ),
               ),
-            ),
-          );
-    Widget decoratedPage(int i) {
-      final block = _blockAt(list[i].start);
-      if (widget.scrolling) {
-        final marker = block?.marker;
-        final hasMarker = marker != null && block?.start == list[i].start;
-        final content = hasMarker
-            ? Stack(
-                children: [
-                  page(i),
-                  Positioned(
-                    left: widget.margin + _indent(list[i].start) - 28,
-                    top: 5,
-                    child: Text(
-                      marker,
-                      style: widget.style,
-                      textScaler: widget.scaler,
-                    ),
-                  ),
-                ],
-              )
-            : page(i);
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            content,
-            if (i < pageSeparators.length && pageSeparators[i])
-              SizedBox(
-                height: 14,
-                child: Align(
-                  alignment: Alignment.bottomCenter,
+              Align(
+                alignment: images.containsKey(list[i])
+                    ? Alignment.center
+                    : Alignment.topCenter,
+                child: page(i),
+              ),
+              if (i < pageSeparators.length && pageSeparators[i])
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
                   child: Divider(
                     height: 1,
                     thickness: 1,
                     color: widget.style.color?.withValues(alpha: .36),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         );
       }
       return Stack(fit: StackFit.expand, children: [page(i)]);
@@ -835,7 +1018,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
                         ),
                       ),
               ),
-              if (!widget.hideControls && !widget.scrolling)
+              if (widget.scrolling)
+                _pageSlider(list.length)
+              else if (!widget.hideControls)
                 SizedBox(
                   height: 48,
                   child: Row(
@@ -882,6 +1067,34 @@ class _ReaderViewportState extends State<ReaderViewport> {
       if (mounted) widget.onChapter(delta);
     });
   }
+}
+
+class _PageTicksPainter extends CustomPainter {
+  final int pageCount;
+  final Color color;
+  const _PageTicksPainter(this.pageCount, this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final count = pageCount.clamp(1, 120).toInt();
+    final start = 12.0;
+    final end = (size.width - 12).clamp(start, size.width).toDouble();
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    for (var i = 0; i < count; i++) {
+      final x = count == 1 ? start : start + (end - start) * i / (count - 1);
+      canvas.drawLine(
+        Offset(x, size.height / 2 - 4),
+        Offset(x, size.height / 2 + 4),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PageTicksPainter oldDelegate) =>
+      pageCount != oldDelegate.pageCount || color != oldDelegate.color;
 }
 
 Widget readerSelectionToolbar({

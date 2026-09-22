@@ -157,7 +157,8 @@ class ReaderDocument {
 class ReaderSlice {
   final int start, end;
   final double? height;
-  const ReaderSlice(this.start, this.end, {this.height});
+  final List<ReaderSlice>? segments;
+  const ReaderSlice(this.start, this.end, {this.height, this.segments});
 }
 
 /// Page boundaries use original UTF-16 offsets, never page numbers as identity.

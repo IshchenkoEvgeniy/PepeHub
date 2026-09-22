@@ -1055,7 +1055,7 @@ class _ReaderPageState extends State<ReaderPage>
                             },
                           ),
                         ),
-                        if (!fullscreen)
+                        if (!fullscreen && preferences.mode == 'pages')
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             child: Row(
