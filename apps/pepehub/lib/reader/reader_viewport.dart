@@ -556,6 +556,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
                     span(i) as TextSpan,
                     style: widget.style,
                     textScaler: widget.scaler,
+                    // The chapter flow owns scrolling. SelectableText must
+                    // never create a nested scrollable viewport of its own.
+                    scrollPhysics: const NeverScrollableScrollPhysics(),
                     textAlign: _alignment(list[i].start),
                     onSelectionChanged: (s, cause) =>
                         hasSelection = !s.isCollapsed,
