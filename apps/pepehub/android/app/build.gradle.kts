@@ -31,9 +31,14 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Keep the project-local signing key so updates from the distributed
+            // Android builds remain installable on top of the previous release.
+            signingConfig = signingConfigs.create("pepehubRelease") {
+                storeFile = rootProject.file("../../../.tools/android-user/debug.keystore")
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
         }
     }
 }
