@@ -91,8 +91,9 @@ Future<ReaderPreferences?> showReaderSettings(
                 spacing: 8,
                 children: [
                   for (final entry in {
+                    'seamless': 'Непрерывно',
                     'pages': 'Перелистывание',
-                    'scroll': 'Прокрутка',
+                    'scroll': 'По главам',
                   }.entries)
                     ChoiceChip(
                       label: Text(entry.value),
@@ -101,6 +102,14 @@ Future<ReaderPreferences?> showReaderSettings(
                           setState(() => value = value.copy(mode: entry.key)),
                     ),
                 ],
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Показывать полосу прокрутки'),
+                subtitle: const Text('По умолчанию полоса скрыта'),
+                value: value.showScrollbar,
+                onChanged: (v) =>
+                    setState(() => value = value.copy(showScrollbar: v)),
               ),
               const SizedBox(height: 16),
               const Text('Зоны нажатия: слева · центр · справа'),

@@ -28,6 +28,8 @@ class ReaderViewport extends StatefulWidget {
   final ValueChanged<BookFootnote>? onFootnote;
   final List<BookMarkup> markup;
   final List<BookIllustration> illustrations;
+  final List<int> chapterBreaks;
+  final bool showScrollbar;
   final ValueChanged<String>? onLink;
   const ReaderViewport({
     super.key,
@@ -58,6 +60,8 @@ class ReaderViewport extends StatefulWidget {
     this.onFootnote,
     this.markup = const [],
     this.illustrations = const [],
+    this.chapterBreaks = const [],
+    this.showScrollbar = false,
     this.onLink,
   });
   @override
@@ -265,8 +269,10 @@ class _ReaderViewportState extends State<ReaderViewport> {
           final height = images.containsKey(page)
               ? extent * .85
               : painter.height + 10;
-          heights.add(height);
-          contentHeight += height;
+          final measured =
+              height + (widget.chapterBreaks.contains(page.start) ? 32 : 0);
+          heights.add(measured);
+          contentHeight += measured;
           painter.dispose();
           if (heights.length % 8 == 0) {
             await Future<void>.delayed(Duration.zero);
@@ -394,6 +400,20 @@ class _ReaderViewportState extends State<ReaderViewport> {
     if (action == 'controls') widget.onToggleControls?.call();
   }
 
+  Widget _scrollingList(
+    List<ReaderSlice> list,
+    Widget Function(int index) item,
+  ) => ListView.builder(
+    physics: const AlwaysScrollableScrollPhysics(
+      parent: ClampingScrollPhysics(),
+    ),
+    controller: scroll,
+    itemExtentBuilder: (i, _) => heights[i],
+    padding: EdgeInsets.zero,
+    itemCount: list.length,
+    itemBuilder: (_, i) => item(i),
+  );
+
   @override
   Widget build(BuildContext context) {
     final list = pages;
@@ -496,7 +516,14 @@ class _ReaderViewportState extends State<ReaderViewport> {
 
     Widget page(int i) => images.containsKey(list[i])
         ? Padding(
-            padding: EdgeInsets.all(widget.margin),
+            padding: EdgeInsets.fromLTRB(
+              widget.margin,
+              widget.chapterBreaks.contains(list[i].start)
+                  ? widget.margin + 32
+                  : widget.margin,
+              widget.margin,
+              widget.margin,
+            ),
             child: Image.memory(
               images[list[i]]!.bytes,
               fit: BoxFit.contain,
@@ -512,7 +539,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
             child: Padding(
               padding: EdgeInsets.fromLTRB(
                 widget.margin + _indent(list[i].start),
-                widget.scrolling ? 5 : 12,
+                widget.scrolling
+                    ? (widget.chapterBreaks.contains(list[i].start) ? 37 : 5)
+                    : 12,
                 widget.margin,
                 widget.scrolling ? 5 : 12,
               ),
@@ -596,6 +625,17 @@ class _ReaderViewportState extends State<ReaderViewport> {
         fit: StackFit.expand,
         children: [
           page(i),
+          if (widget.scrolling && widget.chapterBreaks.contains(list[i].start))
+            Positioned(
+              left: widget.margin,
+              right: widget.margin,
+              top: 14,
+              child: Divider(
+                height: 1,
+                thickness: 1,
+                color: widget.style.color?.withValues(alpha: .55),
+              ),
+            ),
           if (widget.scrolling &&
               block?.marker != null &&
               block!.start == list[i].start)
@@ -651,15 +691,16 @@ class _ReaderViewportState extends State<ReaderViewport> {
                           if (n is OverscrollNotification) _cross(n.overscroll);
                           return false;
                         },
-                        child: ListView.builder(
-                          physics: const AlwaysScrollableScrollPhysics(
-                            parent: ClampingScrollPhysics(),
-                          ),
-                          controller: scroll,
-                          itemExtentBuilder: (i, _) => heights[i],
-                          padding: EdgeInsets.zero,
-                          itemCount: list.length,
-                          itemBuilder: (_, i) => decoratedPage(i),
+                        child: ScrollConfiguration(
+                          behavior: ScrollConfiguration.of(context)
+                              .copyWith(scrollbars: false),
+                          child: widget.showScrollbar
+                              ? Scrollbar(
+                                  controller: scroll,
+                                  thumbVisibility: true,
+                                  child: _scrollingList(list, decoratedPage),
+                                )
+                              : _scrollingList(list, decoratedPage),
                         ),
                       )
                     : NotificationListener<ScrollNotification>(

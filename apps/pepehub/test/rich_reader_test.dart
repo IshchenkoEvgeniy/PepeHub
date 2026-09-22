@@ -17,6 +17,51 @@ import 'epub_test.dart' show fixture;
 import 'package:pepehub/reader/epub.dart';
 
 void main() {
+  test('reader defaults to seamless flow without a scrollbar', () {
+    const preferences = ReaderPreferences();
+    expect(preferences.mode, 'seamless');
+    expect(preferences.showScrollbar, isFalse);
+    expect(ReaderPreferences.fromJson(const {}).mode, 'seamless');
+  });
+
+  testWidgets('chapter divider is inline and scrollbar is optional', (
+    tester,
+  ) async {
+    Future<void> render({required bool scrollbar}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SizedBox(
+            width: 360,
+            height: 640,
+            child: ReaderViewport(
+              text: 'Первая глава\n\nВторая глава',
+              style: const TextStyle(fontSize: 20),
+              scaler: TextScaler.noScaling,
+              width: 360,
+              height: 640,
+              margin: 20,
+              anchor: 0,
+              scrolling: true,
+              firstChapter: true,
+              lastChapter: true,
+              chapterBreaks: const [14],
+              showScrollbar: scrollbar,
+              onPosition: (_) {},
+              onChapter: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await render(scrollbar: false);
+    expect(find.byType(Divider), findsOneWidget);
+    expect(find.byType(Scrollbar), findsNothing);
+    await render(scrollbar: true);
+    expect(find.byType(Scrollbar), findsOneWidget);
+  });
+
   testWidgets('rich page keeps typography and produces a visual preview', (
     tester,
   ) async {
@@ -185,7 +230,7 @@ void main() {
       }
       expect(chapterChanges, 1);
       expect(tester.takeException(), isNull);
-      expect(const ReaderPreferences().mode, 'scroll');
+      expect(const ReaderPreferences().mode, 'seamless');
     },
   );
 }

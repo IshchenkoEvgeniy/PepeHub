@@ -50,7 +50,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   Future<void> indexWork = Future.value();
   bool indexing = false, preparingText = false;
   ReadingActivity? activity;
-  ReaderPreferences preferences = const ReaderPreferences();
+  ReaderPreferences preferences = const ReaderPreferences(mode: 'scroll');
   List<ReadingNote> notes = [];
   List<PdfOutlineNode> outline = [];
   final history = <int>[];
@@ -96,7 +96,12 @@ class _PdfReaderPageState extends State<PdfReaderPage>
       history.add(p.clamp(1, count));
     }
     final raw = await widget.repository.meta('reader:appearance');
-    if (raw != null) preferences = ReaderPreferences.fromJson(jsonDecode(raw));
+    if (raw != null) {
+      final restored = ReaderPreferences.fromJson(jsonDecode(raw));
+      preferences = restored.mode == 'seamless'
+          ? restored.copy(mode: 'scroll')
+          : restored;
+    }
     notes = await library.notes(hash: widget.asset.hash);
     final card = await widget.repository.record(widget.asset.bookId);
     displayTitle = card == null
@@ -825,7 +830,10 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     setState(() {
       notes = fresh;
       if (appearance != null) {
-        preferences = ReaderPreferences.fromJson(jsonDecode(appearance));
+        final restored = ReaderPreferences.fromJson(jsonDecode(appearance));
+        preferences = restored.mode == 'seamless'
+            ? restored.copy(mode: 'scroll')
+            : restored;
       }
     });
     final nextActivity = _tracker();

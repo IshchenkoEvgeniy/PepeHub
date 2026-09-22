@@ -112,7 +112,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('Тёмная'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Прокрутка'));
+        await tester.tap(find.text('По главам'));
         await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('Применить'));
         await tester.tap(find.text('Применить'));

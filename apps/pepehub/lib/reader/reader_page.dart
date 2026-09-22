@@ -21,6 +21,89 @@ import 'epub.dart';
 import 'reader_resources.dart';
 import 'reader_rebase.dart';
 
+class _SeamlessBook {
+  final String text;
+  final List<int> starts;
+  final List<BookMarkup> markup;
+  final List<BookIllustration> illustrations;
+  final List<BookFootnote> footnotes;
+
+  _SeamlessBook(ReaderDocument document)
+    : starts = _starts(document.texts),
+      text = document.texts.join('\n\n'),
+      markup = _markup(document),
+      illustrations = _illustrations(document),
+      footnotes = _footnotes(document);
+
+  static List<int> _starts(List<String> texts) {
+    var offset = 0;
+    return [
+      for (var i = 0; i < texts.length; i++)
+        (() {
+          final start = offset;
+          offset += texts[i].length + (i + 1 < texts.length ? 2 : 0);
+          return start;
+        })(),
+    ];
+  }
+
+  static List<BookMarkup> _markup(ReaderDocument document) {
+    final starts = _starts(document.texts);
+    return [
+      for (var chapter = 0; chapter < document.book.chapters.length; chapter++)
+        for (final value in document.book.chapters[chapter].markup)
+          BookMarkup(
+            starts[chapter] + value.start,
+            starts[chapter] + value.end,
+            heading: value.heading,
+            depth: value.depth,
+            bold: value.bold,
+            italic: value.italic,
+            code: value.code,
+            href: value.href,
+            anchor: value.anchor,
+            block: value.block,
+            marker: value.marker,
+            align: value.align,
+          ),
+    ];
+  }
+
+  static List<BookIllustration> _illustrations(ReaderDocument document) {
+    final starts = _starts(document.texts);
+    return [
+      for (var chapter = 0; chapter < document.book.chapters.length; chapter++)
+        for (final value in document.book.chapters[chapter].illustrations)
+          BookIllustration(
+            value.label,
+            value.bytes,
+            offset: starts[chapter] + value.offset,
+          ),
+    ];
+  }
+
+  static List<BookFootnote> _footnotes(ReaderDocument document) {
+    final starts = _starts(document.texts);
+    return [
+      for (var chapter = 0; chapter < document.book.chapters.length; chapter++)
+        for (final value in document.book.chapters[chapter].footnotes)
+          BookFootnote(
+            value.label,
+            value.text,
+            starts[chapter] + value.start,
+            starts[chapter] + value.end,
+          ),
+    ];
+  }
+
+  ({int chapter, int offset}) locate(int absolute) {
+    final chapter = starts
+        .lastIndexWhere((value) => value <= absolute)
+        .clamp(0, starts.length - 1);
+    return (chapter: chapter, offset: absolute - starts[chapter]);
+  }
+}
+
 class ReaderPage extends StatefulWidget {
   final Repository repository;
   final LocalAsset asset;
@@ -269,6 +352,45 @@ class _ReaderPageState extends State<ReaderPage>
     debounce = Timer(const Duration(milliseconds: 300), _save);
   }
 
+  void _seamlessPosition(_SeamlessBook flow, int absolute) {
+    final place = flow.locate(absolute);
+    final local = place.offset.clamp(0, document!.texts[place.chapter].length);
+    if (place.chapter == chapter && local == offset) return;
+    activity?.move(document!.starts[place.chapter] + local);
+    setState(() {
+      chapter = place.chapter;
+      offset = local;
+    });
+    debounce?.cancel();
+    debounce = Timer(const Duration(milliseconds: 300), _save);
+  }
+
+  Future<void> _seamlessAnnotate(
+    BuildContext context,
+    _SeamlessBook flow,
+    int start,
+    int end,
+    bool comment,
+  ) async {
+    final first = flow.locate(start);
+    final last = flow.locate((end - 1).clamp(start, flow.text.length));
+    if (first.chapter != last.chapter) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Выделение через границу глав пока не поддерживается.'),
+        ),
+      );
+      return;
+    }
+    await _annotate(
+      context,
+      first.offset,
+      last.offset + 1,
+      comment,
+      chapterIndex: first.chapter,
+    );
+  }
+
   void _openNote(ReadingNote note) {
     final d = document!;
     if (widget.suppliedDocument != null &&
@@ -327,10 +449,12 @@ class _ReaderPageState extends State<ReaderPage>
     BuildContext context,
     int start,
     int end,
-    bool comment,
-  ) async {
+    bool comment, {
+    int? chapterIndex,
+  }) async {
     final d = document!;
-    if (start < 0 || end <= start || end > d.texts[chapter].length) return;
+    final noteChapter = chapterIndex ?? chapter;
+    if (start < 0 || end <= start || end > d.texts[noteChapter].length) return;
     if (end - start > 100000) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Выберите фрагмент до 100 000 знаков.')),
@@ -342,12 +466,12 @@ class _ReaderPageState extends State<ReaderPage>
       bookId: widget.asset.bookId,
       hash: widget.asset.hash,
       bookTitle: displayTitle ?? d.book.title,
-      chapterTitle: d.book.chapters[chapter].title,
-      quote: d.texts[chapter].substring(start, end),
+      chapterTitle: d.book.chapters[noteChapter].title,
+      quote: d.texts[noteChapter].substring(start, end),
       comment: '',
       color: 'yellow',
       updated: DateTime.now().toUtc().toIso8601String(),
-      chapter: chapter,
+      chapter: noteChapter,
       start: start,
       end: end,
     );
@@ -438,6 +562,58 @@ class _ReaderPageState extends State<ReaderPage>
     setState(() => rangeStart = null);
     _annotate(context, start, at, true);
   }
+
+  void _seamlessBoundary(
+    BuildContext context,
+    _SeamlessBook flow,
+    int at,
+    bool end,
+  ) {
+    if (!end || rangeStart == null) {
+      setState(() => rangeStart = at);
+      return;
+    }
+    final start = rangeStart!;
+    final first = flow.locate(start);
+    final last = flow.locate((at - 1).clamp(start, flow.text.length));
+    if (at <= start || first.chapter != last.chapter) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Начало и конец цитаты должны быть в одной главе.'),
+        ),
+      );
+      return;
+    }
+    setState(() => rangeStart = null);
+    _annotate(
+      context,
+      first.offset,
+      last.offset + 1,
+      true,
+      chapterIndex: first.chapter,
+    );
+  }
+
+  List<ReadingNote> _seamlessNotes(_SeamlessBook flow) => [
+    for (final note in notes)
+      if (note.chapter >= 0 && note.chapter < flow.starts.length)
+        ReadingNote(
+          id: note.id,
+          bookId: note.bookId,
+          hash: note.hash,
+          bookTitle: note.bookTitle,
+          chapterTitle: note.chapterTitle,
+          quote: note.quote,
+          comment: note.comment,
+          color: note.color,
+          updated: note.updated,
+          chapter: note.chapter,
+          start: flow.starts[note.chapter] + note.start,
+          end: flow.starts[note.chapter] + note.end,
+          tags: note.tags,
+          characters: note.characters,
+        ),
+  ];
 
   Future<void> _resources(BuildContext context) async {
     await _pausePanel();
@@ -614,6 +790,8 @@ class _ReaderPageState extends State<ReaderPage>
     final progress = d.length == 0
         ? 0.0
         : (d.starts[chapter] + offset) / d.length;
+    final seamless = preferences.mode == 'seamless';
+    final flow = seamless ? _SeamlessBook(d) : null;
     return Theme(
       data: theme,
       child: Builder(
@@ -769,12 +947,18 @@ class _ReaderPageState extends State<ReaderPage>
                               final bold = MediaQuery.boldTextOf(context);
                               return ReaderViewport(
                                 key: ValueKey(
-                                  '$chapter:$navigation:${box.maxWidth}:${box.maxHeight}:${scaler.scale(preferences.size)}:$bold',
+                                  '${seamless ? 'all' : chapter}:$navigation:${preferences.mode}:${box.maxWidth}:${box.maxHeight}:${scaler.scale(preferences.size)}:$bold',
                                 ),
-                                text: d.texts[chapter],
-                                markup: d.book.chapters[chapter].markup,
+                                text: flow?.text ?? d.texts[chapter],
+                                markup:
+                                    flow?.markup ??
+                                    d.book.chapters[chapter].markup,
                                 illustrations:
+                                    flow?.illustrations ??
                                     d.book.chapters[chapter].illustrations,
+                                chapterBreaks:
+                                    flow?.starts.skip(1).toList() ?? const [],
+                                showScrollbar: preferences.showScrollbar,
                                 onLink: _openBookLink,
                                 style: preferences
                                     .style(foreground)
@@ -787,22 +971,43 @@ class _ReaderPageState extends State<ReaderPage>
                                 width: box.maxWidth,
                                 height: box.maxHeight,
                                 margin: preferences.margin,
-                                anchor: offset,
+                                anchor: flow == null
+                                    ? offset
+                                    : flow.starts[chapter] + offset,
                                 preferences: preferences,
                                 hideControls: fullscreen,
                                 onToggleControls: _toggleFullscreen,
                                 selectingRange: rangeStart != null,
-                                onBoundary: (at, end) =>
-                                    _boundary(context, at, end),
-                                footnotes: d.book.chapters[chapter].footnotes,
+                                onBoundary: (at, end) => flow == null
+                                    ? _boundary(context, at, end)
+                                    : _seamlessBoundary(context, flow, at, end),
+                                footnotes:
+                                    flow?.footnotes ??
+                                    d.book.chapters[chapter].footnotes,
                                 onFootnote: (note) => _footnote(context, note),
-                                highlightStart: highlightStart,
-                                highlightEnd: highlightEnd,
-                                notes: notes
-                                    .where((n) => n.chapter == chapter)
-                                    .toList(),
+                                highlightStart: highlightStart == null
+                                    ? null
+                                    : (flow?.starts[chapter] ?? 0) +
+                                          highlightStart!,
+                                highlightEnd: highlightEnd == null
+                                    ? null
+                                    : (flow?.starts[chapter] ?? 0) +
+                                          highlightEnd!,
+                                notes: flow == null
+                                    ? notes
+                                          .where((n) => n.chapter == chapter)
+                                          .toList()
+                                    : _seamlessNotes(flow),
                                 onAnnotate: (start, end, comment) =>
-                                    _annotate(context, start, end, comment),
+                                    flow == null
+                                    ? _annotate(context, start, end, comment)
+                                    : _seamlessAnnotate(
+                                        context,
+                                        flow,
+                                        start,
+                                        end,
+                                        comment,
+                                      ),
                                 onLoading: () {
                                   viewportReady = false;
                                   activity?.pause('layout');
@@ -815,10 +1020,13 @@ class _ReaderPageState extends State<ReaderPage>
                                     activity?.resume();
                                   }
                                 },
-                                scrolling: preferences.mode == 'scroll',
-                                firstChapter: chapter == 0,
-                                lastChapter: chapter == d.texts.length - 1,
-                                onPosition: _position,
+                                scrolling: preferences.mode != 'pages',
+                                firstChapter: seamless || chapter == 0,
+                                lastChapter:
+                                    seamless || chapter == d.texts.length - 1,
+                                onPosition: flow == null
+                                    ? _position
+                                    : (value) => _seamlessPosition(flow, value),
                                 onChapter: (delta) {
                                   final c = chapter + delta;
                                   _go(

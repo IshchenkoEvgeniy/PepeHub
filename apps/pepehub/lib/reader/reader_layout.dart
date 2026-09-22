@@ -5,6 +5,7 @@ import 'epub.dart';
 class ReaderPreferences {
   final double size, spacing, margin;
   final String font, palette, mode;
+  final bool showScrollbar;
   final String leftTap, centerTap, rightTap;
   final double zoneWidth;
   const ReaderPreferences({
@@ -13,7 +14,8 @@ class ReaderPreferences {
     this.margin = 24,
     this.font = 'serif',
     this.palette = 'sepia',
-    this.mode = 'scroll',
+    this.mode = 'seamless',
+    this.showScrollbar = false,
     this.leftTap = 'previous',
     this.centerTap = 'controls',
     this.rightTap = 'next',
@@ -30,7 +32,10 @@ class ReaderPreferences {
         const ['light', 'dark', 'sepia', 'system'].contains(data['palette'])
         ? data['palette'] as String
         : 'sepia',
-    mode: data['mode'] == 'pages' ? 'pages' : 'scroll',
+    mode: const ['pages', 'scroll', 'seamless'].contains(data['mode'])
+        ? data['mode'] as String
+        : 'seamless',
+    showScrollbar: data['showScrollbar'] == true,
     leftTap: _tap(data['leftTap'], 'previous'),
     centerTap: _tap(data['centerTap'], 'controls'),
     rightTap: _tap(data['rightTap'], 'next'),
@@ -43,6 +48,7 @@ class ReaderPreferences {
     String? font,
     String? palette,
     String? mode,
+    bool? showScrollbar,
     String? leftTap,
     String? centerTap,
     String? rightTap,
@@ -54,6 +60,7 @@ class ReaderPreferences {
     font: font ?? this.font,
     palette: palette ?? this.palette,
     mode: mode ?? this.mode,
+    showScrollbar: showScrollbar ?? this.showScrollbar,
     leftTap: leftTap ?? this.leftTap,
     centerTap: centerTap ?? this.centerTap,
     rightTap: rightTap ?? this.rightTap,
@@ -66,6 +73,7 @@ class ReaderPreferences {
     'font': font,
     'palette': palette,
     'mode': mode,
+    'showScrollbar': showScrollbar,
     'leftTap': leftTap,
     'centerTap': centerTap,
     'rightTap': rightTap,
