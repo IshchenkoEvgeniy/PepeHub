@@ -156,7 +156,8 @@ class ReaderDocument {
 
 class ReaderSlice {
   final int start, end;
-  const ReaderSlice(this.start, this.end);
+  final double? height;
+  const ReaderSlice(this.start, this.end, {this.height});
 }
 
 /// Page boundaries use original UTF-16 offsets, never page numbers as identity.
@@ -236,7 +237,7 @@ Future<List<ReaderSlice>> paginateReader(
         }
         end = shorter;
       }
-      pages.add(ReaderSlice(start, end));
+      pages.add(ReaderSlice(start, end, height: painter.height));
       start = end;
       if (pages.length % 8 == 0) await Future<void>.delayed(Duration.zero);
     }

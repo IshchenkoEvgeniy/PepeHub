@@ -123,6 +123,8 @@ class ReaderPage extends StatefulWidget {
 class _ReaderPageState extends State<ReaderPage>
     with WidgetsBindingObserver, RouteAware {
   ReaderDocument? document;
+  ReaderDocument? bookFlowDocument;
+  _SeamlessBook? bookFlow;
   ReaderPreferences preferences = const ReaderPreferences();
   String? error, saveError;
   int chapter = 0, offset = 0, navigation = 0;
@@ -141,6 +143,15 @@ class _ReaderPageState extends State<ReaderPage>
   int? rangeStart;
   late final library = ReadingLibrary(widget.repository);
   String get positionKey => 'reader:${widget.asset.hash}';
+
+  _SeamlessBook _flowFor(ReaderDocument source) {
+    if (!identical(bookFlowDocument, source)) {
+      bookFlowDocument = source;
+      bookFlow = _SeamlessBook(source);
+    }
+    return bookFlow!;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -794,7 +805,7 @@ class _ReaderPageState extends State<ReaderPage>
       'seamless',
       'pages',
     ].contains(preferences.mode);
-    final flow = wholeBookFlow ? _SeamlessBook(d) : null;
+    final flow = wholeBookFlow ? _flowFor(d) : null;
     return Theme(
       data: theme,
       child: Builder(

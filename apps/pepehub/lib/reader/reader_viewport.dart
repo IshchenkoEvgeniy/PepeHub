@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -82,7 +84,12 @@ class _ReaderViewportState extends State<ReaderViewport> {
   final linkRecognizers = <String, TapGestureRecognizer>{};
   final images = <ReaderSlice, BookIllustration>{};
   bool crossingChapter = false;
+  DateTime lastPositionUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? positionUpdateTimer;
   final starts = <double>[], heights = <double>[];
+  final pageSeparators = <bool>[];
+  late List<BookMarkup> markupByStart;
+  late List<int> markupPrefixMaxEnd;
   double contentHeight = 0;
   String _text(ReaderSlice page) {
     final text = widget.text.substring(page.start, page.end);
@@ -94,8 +101,15 @@ class _ReaderViewportState extends State<ReaderViewport> {
       widget.height - (widget.hideControls || widget.scrolling ? 0 : 48);
   double get textHeight => extent - 24;
   double get textWidth => widget.width - widget.margin * 2;
+  double get illustrationHeight => (extent * .85).clamp(
+    0,
+    (extent - widget.margin * 2 - (widget.scrolling ? 14 : 24)).clamp(
+      0,
+      double.infinity,
+    ),
+  );
   BookMarkup? _blockAt(int at) {
-    final ranges = widget.markup.where((r) => r.start <= at && r.end > at);
+    final ranges = _markupOverlapping(at, at + 1);
     return ranges.where((r) => r.heading > 0).firstOrNull ??
         ranges.where((r) => r.block != null).firstOrNull;
   }
@@ -110,7 +124,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
 
   TextAlign _alignment(int at) {
     if (!widget.scrolling) return TextAlign.left;
-    final align = widget.markup
+    final align = _markupOverlapping(at, at + 1)
         .where((r) => r.start <= at && r.end > at && r.align != null)
         .firstOrNull
         ?.align;
@@ -132,8 +146,48 @@ class _ReaderViewportState extends State<ReaderViewport> {
   @override
   void initState() {
     super.initState();
+    _indexMarkup();
     widget.onLoading?.call();
     _layout();
+  }
+
+  @override
+  void didUpdateWidget(covariant ReaderViewport oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.markup, widget.markup)) _indexMarkup();
+  }
+
+  void _indexMarkup() {
+    final ordered = widget.markup.asMap().entries.toList()
+      ..sort((a, b) {
+        final byStart = a.value.start.compareTo(b.value.start);
+        return byStart != 0 ? byStart : a.key.compareTo(b.key);
+      });
+    markupByStart = [for (final entry in ordered) entry.value];
+    var maxEnd = -1;
+    final prefixMaxEnd = <int>[];
+    for (final item in markupByStart) {
+      if (item.end > maxEnd) maxEnd = item.end;
+      prefixMaxEnd.add(maxEnd);
+    }
+    markupPrefixMaxEnd = prefixMaxEnd;
+  }
+
+  Iterable<BookMarkup> _markupOverlapping(int start, int end) sync* {
+    var low = 0, high = markupPrefixMaxEnd.length;
+    while (low < high) {
+      final middle = (low + high) >> 1;
+      if (markupPrefixMaxEnd[middle] > start) {
+        high = middle;
+      } else {
+        low = middle + 1;
+      }
+    }
+    for (var i = low; i < markupByStart.length; i++) {
+      final range = markupByStart[i];
+      if (range.start >= end) break;
+      if (range.end > start) yield range;
+    }
   }
 
   @override
@@ -146,14 +200,13 @@ class _ReaderViewportState extends State<ReaderViewport> {
     }
     pager?.dispose();
     scroll?.dispose();
+    positionUpdateTimer?.cancel();
     super.dispose();
   }
 
-  TextStyle _styleAt(int offset) {
+  TextStyle _styleAt(int offset, [Iterable<BookMarkup>? matching]) {
     var style = widget.style;
-    for (final range in widget.markup.where(
-      (r) => r.start <= offset && r.end > offset,
-    )) {
+    for (final range in matching ?? _markupOverlapping(offset, offset + 1)) {
       if (range.heading > 0) {
         style = style.copyWith(
           fontSize:
@@ -183,12 +236,14 @@ class _ReaderViewportState extends State<ReaderViewport> {
   }
 
   TextSpan _richText(int start, int end) {
+    final matching = _markupOverlapping(start, end).toList();
     final points = <int>{
       start,
       end,
-      for (final r in widget.markup.where(
-        (r) => r.start < end && r.end > start,
-      )) ...[r.start.clamp(start, end), r.end.clamp(start, end)],
+      for (final r in matching) ...[
+        r.start.clamp(start, end),
+        r.end.clamp(start, end),
+      ],
     }.toList()..sort();
     return TextSpan(
       style: widget.style,
@@ -196,7 +251,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
         for (var i = 0; i < points.length - 1; i++)
           TextSpan(
             text: widget.text.substring(points[i], points[i + 1]),
-            style: _styleAt(points[i]),
+          style: _styleAt(points[i], matching),
           ),
       ],
     );
@@ -239,7 +294,10 @@ class _ReaderViewportState extends State<ReaderViewport> {
             styledText: (a, b) => _richText(base + a, base + b),
           );
           result.addAll(
-            slices.map((s) => ReaderSlice(base + s.start, base + s.end)),
+            slices.map(
+              (s) =>
+                  ReaderSlice(base + s.start, base + s.end, height: s.height),
+            ),
           );
           if (part % 32 == 31) {
             await Future<void>.delayed(Duration.zero);
@@ -264,30 +322,43 @@ class _ReaderViewportState extends State<ReaderViewport> {
           .clamp(0, result.length - 1);
       if (widget.anchor == 0) index = 0;
       pager = PageController(initialPage: index);
+      final itemHeights = <double>[];
       for (final page in result) {
-        starts.add(contentHeight);
         if (widget.scrolling) {
-          final painter = _painter(_text(page), start: page.start);
           final hasImage = images.containsKey(page);
-          final topPadding = hasImage
-              ? widget.margin +
-                    (widget.chapterBreaks.contains(page.start) ? 32 : 0)
-              : (widget.chapterBreaks.contains(page.start) ? 37 : 5);
-          final bottomPadding = hasImage ? widget.margin : 5.0;
-          final measured =
-              (hasImage ? extent * .85 : painter.height) +
-              topPadding +
-              bottomPadding;
-          heights.add(measured);
-          contentHeight += measured;
-          painter.dispose();
-          if (heights.length % 8 == 0) {
+          final pageTextHeight = page.height ?? 0;
+          final verticalPadding = hasImage ? widget.margin * 2 : 10.0;
+          itemHeights.add(
+            (hasImage ? illustrationHeight : pageTextHeight) + verticalPadding,
+          );
+          if (itemHeights.length % 8 == 0) {
             await Future<void>.delayed(Duration.zero);
             if (!mounted) return;
           }
         } else {
-          heights.add(extent);
-          contentHeight += extent;
+          itemHeights.add(extent);
+        }
+      }
+      if (widget.scrolling) {
+        final pageBodyHeight = (extent - 14).clamp(1, double.infinity);
+        var used = 0.0;
+        for (var i = 0; i < result.length; i++) {
+          starts.add(contentHeight);
+          used += itemHeights[i];
+          final breakAfter =
+              i < result.length - 1 &&
+              (used >= pageBodyHeight * .82 ||
+                  used + itemHeights[i + 1] > pageBodyHeight);
+          pageSeparators.add(breakAfter);
+          heights.add(itemHeights[i] + (breakAfter ? 14 : 0));
+          contentHeight += heights.last;
+          if (breakAfter) used = 0;
+        }
+      } else {
+        for (final height in itemHeights) {
+          starts.add(contentHeight);
+          heights.add(height);
+          contentHeight += height;
         }
       }
       var pixels = starts[index];
@@ -325,6 +396,23 @@ class _ReaderViewportState extends State<ReaderViewport> {
 
   void _scrolled() {
     if (!interacted || pages == null || !scroll!.hasClients) return;
+    final elapsed = DateTime.now().difference(lastPositionUpdate);
+    const interval = Duration(milliseconds: 250);
+    if (elapsed < interval) {
+      positionUpdateTimer ??= Timer(interval - elapsed, () {
+        positionUpdateTimer = null;
+        _updateScrolledPosition();
+      });
+      return;
+    }
+    _updateScrolledPosition();
+  }
+
+  void _updateScrolledPosition() {
+    if (!interacted || pages == null || !scroll!.hasClients) return;
+    positionUpdateTimer?.cancel();
+    positionUpdateTimer = null;
+    lastPositionUpdate = DateTime.now();
     final pixels = scroll!.offset.clamp(0, scroll!.position.maxScrollExtent);
     final next = starts
         .lastIndexWhere((s) => s <= pixels)
@@ -433,6 +521,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
     InlineSpan span(int i) {
       final raw = _text(list[i]);
       final base = list[i].start;
+      final markupRanges = _markupOverlapping(base, base + raw.length).toList();
       final ranges = <({int start, int end, Color color})>[
         for (final note in widget.notes)
           (
@@ -458,16 +547,14 @@ class _ReaderViewportState extends State<ReaderViewport> {
           (note.start - base).clamp(0, raw.length),
           (note.end - base).clamp(0, raw.length),
         ],
-        for (final r in widget.markup.where(
-          (r) => r.start < base + raw.length && r.end > base,
-        )) ...[
+        for (final r in markupRanges) ...[
           (r.start - base).clamp(0, raw.length),
           (r.end - base).clamp(0, raw.length),
         ],
       }.toList()..sort();
       final spans = <InlineSpan>[];
       for (var j = 0; j < points.length - 1; j++) {
-        final link = widget.markup
+        final link = markupRanges
             .where(
               (r) =>
                   r.href != null &&
@@ -504,7 +591,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
                         TapGestureRecognizer()
                           ..onTap = () => widget.onFootnote?.call(footnote),
                   ),
-            style: _styleAt(base + points[j]).merge(
+            style: _styleAt(base + points[j], markupRanges).merge(
               range == null
                   ? (footnote == null
                         ? null
@@ -529,7 +616,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
               widget.margin,
             ),
             child: SizedBox(
-              height: extent * .85,
+              height: illustrationHeight,
               child: Image.memory(
                 images[list[i]]!.bytes,
                 fit: BoxFit.contain,
@@ -651,23 +738,19 @@ class _ReaderViewportState extends State<ReaderViewport> {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (widget.chapterBreaks.contains(list[i].start))
+            content,
+            if (i < pageSeparators.length && pageSeparators[i])
               SizedBox(
-                height: 32,
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    left: widget.margin,
-                    right: widget.margin,
-                    top: 14,
-                  ),
+                height: 14,
+                child: Align(
+                  alignment: Alignment.bottomCenter,
                   child: Divider(
                     height: 1,
                     thickness: 1,
-                    color: widget.style.color?.withValues(alpha: .55),
+                    color: widget.style.color?.withValues(alpha: .36),
                   ),
                 ),
               ),
-            content,
           ],
         );
       }
@@ -710,6 +793,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
                             interacted = true;
                           }
                           if (n is ScrollUpdateNotification) _scrolled();
+                          if (n is ScrollEndNotification) {
+                            _updateScrolledPosition();
+                          }
                           if (n is OverscrollNotification) _cross(n.overscroll);
                           return false;
                         },
