@@ -790,8 +790,11 @@ class _ReaderPageState extends State<ReaderPage>
     final progress = d.length == 0
         ? 0.0
         : (d.starts[chapter] + offset) / d.length;
-    final seamless = preferences.mode == 'seamless';
-    final flow = seamless ? _SeamlessBook(d) : null;
+    final wholeBookFlow = const [
+      'seamless',
+      'pages',
+    ].contains(preferences.mode);
+    final flow = wholeBookFlow ? _SeamlessBook(d) : null;
     return Theme(
       data: theme,
       child: Builder(
@@ -947,7 +950,7 @@ class _ReaderPageState extends State<ReaderPage>
                               final bold = MediaQuery.boldTextOf(context);
                               return ReaderViewport(
                                 key: ValueKey(
-                                  '${seamless ? 'all' : chapter}:$navigation:${preferences.mode}:${box.maxWidth}:${box.maxHeight}:${scaler.scale(preferences.size)}:$bold',
+                                  '${wholeBookFlow ? 'all' : chapter}:$navigation:${preferences.mode}:${box.maxWidth}:${box.maxHeight}:${scaler.scale(preferences.size)}:$bold',
                                 ),
                                 text: flow?.text ?? d.texts[chapter],
                                 markup:
@@ -1021,9 +1024,10 @@ class _ReaderPageState extends State<ReaderPage>
                                   }
                                 },
                                 scrolling: preferences.mode != 'pages',
-                                firstChapter: seamless || chapter == 0,
+                                firstChapter: wholeBookFlow || chapter == 0,
                                 lastChapter:
-                                    seamless || chapter == d.texts.length - 1,
+                                    wholeBookFlow ||
+                                    chapter == d.texts.length - 1,
                                 onPosition: flow == null
                                     ? _position
                                     : (value) => _seamlessPosition(flow, value),

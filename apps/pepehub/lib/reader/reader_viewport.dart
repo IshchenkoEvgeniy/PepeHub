@@ -216,14 +216,16 @@ class _ReaderViewportState extends State<ReaderViewport> {
       var from = 0;
       Future<void> appendText(int end) async {
         if (end <= from) return;
-        final boundaries = [
+        final boundaries = <int>{
           from,
           if (widget.scrolling)
             ...RegExp(r'\n\n')
                 .allMatches(widget.text.substring(from, end))
                 .map((m) => from + m.end),
+          if (!widget.scrolling)
+            ...widget.chapterBreaks.where((at) => at > from && at < end),
           end,
-        ];
+        }.toList()..sort();
         for (var part = 0; part < boundaries.length - 1; part++) {
           final base = boundaries[part], limit = boundaries[part + 1];
           if (base == limit) continue;
