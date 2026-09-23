@@ -962,7 +962,7 @@ class _ReaderPageState extends State<ReaderPage>
                               final bold = MediaQuery.boldTextOf(context);
                               return ReaderViewport(
                                 key: ValueKey(
-                                  '${wholeBookFlow ? 'all' : chapter}:$navigation:${preferences.mode}:${box.maxWidth}:${box.maxHeight}:${scaler.scale(preferences.size)}:$bold',
+                                  '${wholeBookFlow ? 'all' : chapter}:$navigation:${preferences.mode}:${preferences.pageHeightFactor}:${box.maxWidth}:${box.maxHeight}:${scaler.scale(preferences.size)}:$bold',
                                 ),
                                 text: flow?.text ?? d.texts[chapter],
                                 markup:
@@ -986,6 +986,7 @@ class _ReaderPageState extends State<ReaderPage>
                                 width: box.maxWidth,
                                 height: box.maxHeight,
                                 margin: preferences.margin,
+                                pageHeightFactor: preferences.pageHeightFactor,
                                 anchor: flow == null
                                     ? offset
                                     : flow.starts[chapter] + offset,

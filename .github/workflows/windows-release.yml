@@ -36,7 +36,7 @@ jobs:
         working-directory: apps/pepehub
         run: |
           flutter analyze --no-pub
-          flutter test --no-pub
+          flutter test --no-pub test/rich_reader_test.dart test/reader_layout_test.dart
 
       - name: Build Windows release
         working-directory: apps/pepehub

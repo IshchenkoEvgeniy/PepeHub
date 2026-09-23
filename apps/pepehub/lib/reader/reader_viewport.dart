@@ -14,7 +14,7 @@ class ReaderViewport extends StatefulWidget {
   final String text;
   final TextStyle style;
   final TextScaler scaler;
-  final double width, height, margin;
+  final double width, height, margin, pageHeightFactor;
   final int anchor;
   final int? highlightStart, highlightEnd;
   final bool scrolling, compactFlow, firstChapter, lastChapter;
@@ -41,6 +41,7 @@ class ReaderViewport extends StatefulWidget {
     required this.width,
     required this.height,
     required this.margin,
+    this.pageHeightFactor = 1,
     required this.anchor,
     this.highlightStart,
     this.highlightEnd,
@@ -98,14 +99,18 @@ class _ReaderViewportState extends State<ReaderViewport> {
     return text.trimRight();
   }
 
-  // Reserve the in-viewport page bar only where that bar is actually shown.
-  double get extent =>
+  // The scroll viewport and a reading page can have different heights.
+  double get viewportExtent =>
       widget.height -
       (widget.scrolling && !widget.compactFlow ||
               !widget.scrolling && !widget.hideControls
           ? 48
           : 0);
-  double get textHeight => extent - 32;
+  double get extent => widget.scrolling && !widget.compactFlow
+      ? viewportExtent * widget.pageHeightFactor
+      : viewportExtent;
+  double get textHeight =>
+      viewportExtent * (widget.scrolling ? widget.pageHeightFactor : 1) - 32;
   double get textWidth => widget.width - widget.margin * 2;
   double get illustrationHeight => (extent * .85).clamp(
     0,
@@ -345,7 +350,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
               widget.text.substring(paragraphStart, paragraphEnd),
               widget.style,
               textWidth - _indent(paragraphStart),
-              widget.compactFlow ? double.infinity : textHeight,
+              textHeight,
               widget.scaler,
               cancelled: () => !mounted,
               styledText: (a, b) =>
@@ -432,7 +437,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
           final hasChapterDivider = chapterEnds.contains(result[i].end);
           chapterSeparators.add(hasChapterDivider);
           final itemHeight = widget.compactFlow
-              ? _segmentExtent(result[i]) + (hasChapterDivider ? 1 : 0)
+              ? _segmentExtent(result[i]) + 16 + (hasChapterDivider ? 1 : 0)
               : extent;
           heights.add(itemHeight);
           contentHeight += heights.last;
@@ -480,7 +485,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
       scroll = ScrollController(
         initialScrollOffset: pixels.clamp(
           0,
-          (contentHeight - extent).clamp(0, double.infinity),
+          (contentHeight - viewportExtent).clamp(0, double.infinity),
         ),
       );
       setState(() => pages = result);
@@ -617,6 +622,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
       parent: ClampingScrollPhysics(),
     ),
     controller: scroll,
+    itemExtentBuilder: (i, _) => heights[i],
     padding: EdgeInsets.zero,
     itemCount: list.length,
     itemBuilder: (_, i) => item(i),
@@ -999,7 +1005,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
                   ),
                 ),
               ),
-              if (i < chapterSeparators.length && chapterSeparators[i])
+              if (i < list.length - 1)
                 Positioned(
                   left: 0,
                   right: 0,

@@ -45,11 +45,26 @@ Future<ReaderPreferences?> showReaderSettings(
               Text('Размер шрифта: ${value.size.round()}'),
               Slider(
                 value: value.size,
-                min: 14,
-                max: 36,
-                divisions: 22,
+                min: 12,
+                max: 56,
+                divisions: 44,
                 label: '${value.size.round()}',
                 onChanged: (v) => setState(() => value = value.copy(size: v)),
+              ),
+              Text(
+                'Высота страницы: ${(value.pageHeightFactor * 100).round()}% экрана',
+              ),
+              Slider(
+                value: value.pageHeightFactor,
+                min: .65,
+                max: 1.5,
+                divisions: 17,
+                label: '${(value.pageHeightFactor * 100).round()}%',
+                onChanged: (v) =>
+                    setState(() => value = value.copy(pageHeightFactor: v)),
+              ),
+              const Text(
+                'Для непрерывного чтения. В режиме без пустых мест меняет длину фрагментов.',
               ),
               Text('Межстрочный интервал: ${value.spacing.toStringAsFixed(1)}'),
               Slider(

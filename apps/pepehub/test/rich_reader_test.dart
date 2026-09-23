@@ -22,6 +22,90 @@ void main() {
     expect(preferences.showScrollbar, isFalse);
     expect(ReaderPreferences.fromJson(const {}).mode, 'seamless');
     expect(ReaderPreferences.fromJson({'mode': 'compact'}).mode, 'compact');
+    final adjusted = ReaderPreferences.fromJson({
+      'size': 48,
+      'pageHeightFactor': 1.3,
+    });
+    expect(adjusted.size, 48);
+    expect(adjusted.pageHeightFactor, 1.3);
+    expect(ReaderPreferences.fromJson(adjusted.toJson()).pageHeightFactor, 1.3);
+    expect(ReaderPreferences.fromJson({'size': 100}).size, 56);
+  });
+
+  testWidgets('continuous flow separates screen pages within one chapter', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 360,
+          height: 520,
+          child: ReaderViewport(
+            text: List.filled(
+              30,
+              'A long paragraph fills the screen. ' * 10,
+            ).join('\n\n'),
+            style: const TextStyle(fontSize: 18, height: 1.4),
+            scaler: TextScaler.noScaling,
+            width: 360,
+            height: 520,
+            margin: 20,
+            anchor: 0,
+            scrolling: true,
+            firstChapter: true,
+            lastChapter: true,
+            onPosition: (_) {},
+            onChapter: (_) {},
+          ),
+        ),
+      ),
+    );
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    expect(find.byType(Divider), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('compact flow opens deep in a book with visible text', (
+    tester,
+  ) async {
+    final text = List.generate(
+      240,
+      (i) => 'Paragraph $i. ${'Readable text fills this paragraph. ' * 5}',
+    ).join('\n\n');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 360,
+          height: 520,
+          child: ReaderViewport(
+            text: text,
+            style: const TextStyle(fontSize: 18, height: 1.4),
+            scaler: TextScaler.noScaling,
+            width: 360,
+            height: 520,
+            margin: 20,
+            anchor: text.indexOf('Paragraph 170.'),
+            scrolling: true,
+            compactFlow: true,
+            firstChapter: true,
+            lastChapter: true,
+            onPosition: (_) {},
+            onChapter: (_) {},
+          ),
+        ),
+      ),
+    );
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    final visibleText = tester
+        .widgetList<SelectableText>(find.byType(SelectableText))
+        .map((widget) => widget.textSpan?.toPlainText() ?? widget.data ?? '')
+        .join();
+    expect(visibleText, contains('Paragraph 170.'));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('chapter divider is inline and scrollbar is optional', (
@@ -100,68 +184,70 @@ void main() {
     expect(regular.style?.decoration, isNull);
   });
 
-  testWidgets('screen dividers mark chapter ends and compact flow adds none', (
-    tester,
-  ) async {
-    final firstChapter = List.filled(
-      18,
-      'The first chapter has enough words to span several screen pages. ' * 5,
-    ).join('\n\n');
-    final secondChapter = 'The next chapter starts here.';
-    final text = '$firstChapter\n\n$secondChapter';
-    Future<void> render({required bool compact}) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: SizedBox(
-            width: 360,
-            height: 520,
-            child: ReaderViewport(
-              text: text,
-              style: const TextStyle(fontSize: 18, height: 1.4),
-              scaler: TextScaler.noScaling,
+  testWidgets(
+    'continuous pages have dividers and compact flow keeps chapter boundary',
+    (tester) async {
+      final firstChapter = List.filled(
+        18,
+        'The first chapter has enough words to span several screen pages. ' * 5,
+      ).join('\n\n');
+      final secondChapter = 'The next chapter starts here.';
+      final text = '$firstChapter\n\n$secondChapter';
+      Future<void> render({required bool compact}) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: SizedBox(
               width: 360,
               height: 520,
-              margin: 20,
-              anchor: 0,
-              scrolling: true,
-              compactFlow: compact,
-              chapterBreaks: [firstChapter.length + 2],
-              firstChapter: true,
-              lastChapter: true,
-              onPosition: (_) {},
-              onChapter: (_) {},
+              child: ReaderViewport(
+                key: ValueKey(compact),
+                text: text,
+                style: const TextStyle(fontSize: 18, height: 1.4),
+                scaler: TextScaler.noScaling,
+                width: 360,
+                height: 520,
+                margin: 20,
+                anchor: compact ? firstChapter.length - 40 : 0,
+                scrolling: true,
+                compactFlow: compact,
+                chapterBreaks: [firstChapter.length + 2],
+                firstChapter: true,
+                lastChapter: true,
+                onPosition: (_) {},
+                onChapter: (_) {},
+              ),
             ),
           ),
-        ),
-      );
-      for (var i = 0; i < 30; i++) {
-        await tester.pump(const Duration(milliseconds: 20));
+        );
+        for (var i = 0; i < 30; i++) {
+          await tester.pump(const Duration(milliseconds: 20));
+        }
       }
-    }
 
-    await render(compact: false);
-    expect(find.byType(Divider), findsOneWidget);
-    final ticks = tester
-        .widgetList<CustomPaint>(find.byType(CustomPaint))
-        .map((paint) => paint.painter)
-        .whereType<ReaderChapterTicksPainter>()
-        .single;
-    expect(ticks.positions.length, 2);
-    expect(tester.takeException(), isNull);
+      await render(compact: false);
+      expect(find.byType(Divider), findsWidgets);
+      final ticks = tester
+          .widgetList<CustomPaint>(find.byType(CustomPaint))
+          .map((paint) => paint.painter)
+          .whereType<ReaderChapterTicksPainter>()
+          .single;
+      expect(ticks.positions.length, 2);
+      expect(tester.takeException(), isNull);
 
-    await render(compact: true);
-    expect(find.byType(Divider), findsOneWidget);
-    expect(find.byType(Slider), findsNothing);
-    final list = find.byType(ListView);
-    final fixedScreenRows = tester
-        .widgetList<SizedBox>(
-          find.descendant(of: list, matching: find.byType(SizedBox)),
-        )
-        .where((box) => box.height == 472)
-        .length;
-    expect(fixedScreenRows, 0);
-    expect(tester.takeException(), isNull);
-  });
+      await render(compact: true);
+      expect(find.byType(Divider), findsOneWidget);
+      expect(find.byType(Slider), findsNothing);
+      final list = find.byType(ListView);
+      final fixedScreenRows = tester
+          .widgetList<SizedBox>(
+            find.descendant(of: list, matching: find.byType(SizedBox)),
+          )
+          .where((box) => box.height == 472)
+          .length;
+      expect(fixedScreenRows, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('rich page keeps typography and produces a visual preview', (
     tester,

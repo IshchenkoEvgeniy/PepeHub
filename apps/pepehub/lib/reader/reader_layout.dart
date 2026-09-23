@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'epub.dart';
 
 class ReaderPreferences {
-  final double size, spacing, margin;
+  final double size, spacing, margin, pageHeightFactor;
   final String font, palette, mode;
   final bool showScrollbar;
   final String leftTap, centerTap, rightTap;
@@ -12,6 +12,7 @@ class ReaderPreferences {
     this.size = 22,
     this.spacing = 1.35,
     this.margin = 24,
+    this.pageHeightFactor = 1,
     this.font = 'serif',
     this.palette = 'sepia',
     this.mode = 'seamless',
@@ -24,9 +25,11 @@ class ReaderPreferences {
   factory ReaderPreferences.fromJson(
     Map<String, dynamic> data,
   ) => ReaderPreferences(
-    size: ((data['size'] as num?)?.toDouble() ?? 22).clamp(14, 36),
+    size: ((data['size'] as num?)?.toDouble() ?? 22).clamp(12, 56),
     spacing: ((data['spacing'] as num?)?.toDouble() ?? 1.35).clamp(1.2, 2.2),
     margin: ((data['margin'] as num?)?.toDouble() ?? 24).clamp(12, 48),
+    pageHeightFactor: ((data['pageHeightFactor'] as num?)?.toDouble() ?? 1)
+        .clamp(.65, 1.5),
     font: data['font'] == 'sans' ? 'sans' : 'serif',
     palette:
         const ['light', 'dark', 'sepia', 'system'].contains(data['palette'])
@@ -46,6 +49,7 @@ class ReaderPreferences {
     double? size,
     double? spacing,
     double? margin,
+    double? pageHeightFactor,
     String? font,
     String? palette,
     String? mode,
@@ -58,6 +62,7 @@ class ReaderPreferences {
     size: size ?? this.size,
     spacing: spacing ?? this.spacing,
     margin: margin ?? this.margin,
+    pageHeightFactor: pageHeightFactor ?? this.pageHeightFactor,
     font: font ?? this.font,
     palette: palette ?? this.palette,
     mode: mode ?? this.mode,
@@ -71,6 +76,7 @@ class ReaderPreferences {
     'size': size,
     'spacing': spacing,
     'margin': margin,
+    'pageHeightFactor': pageHeightFactor,
     'font': font,
     'palette': palette,
     'mode': mode,
