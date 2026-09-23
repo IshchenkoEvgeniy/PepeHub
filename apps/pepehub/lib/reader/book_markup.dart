@@ -83,8 +83,9 @@ List<BookMarkup> htmlMarkup(dom.Node root, String text) {
             'th',
           }.contains(tag)
           ? tag
-          : RegExp(r'\b(note|tip|warning|caution|admonition)\b')
-                .hasMatch(node.className)
+          : RegExp(r'\b(note|tip|warning|caution|admonition)\b').hasMatch(
+              '${node.className} ${node.attributes['epub:type'] ?? ''} ${node.attributes['role'] ?? ''}',
+            )
           ? 'aside'
           : null;
       var nesting = 0;

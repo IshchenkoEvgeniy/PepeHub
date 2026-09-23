@@ -17,7 +17,7 @@ class ReaderViewport extends StatefulWidget {
   final double width, height, margin;
   final int anchor;
   final int? highlightStart, highlightEnd;
-  final bool scrolling, firstChapter, lastChapter;
+  final bool scrolling, compactFlow, firstChapter, lastChapter;
   final ValueChanged<int> onPosition, onChapter;
   final List<ReadingNote> notes;
   final void Function(int start, int end, bool comment)? onAnnotate;
@@ -45,6 +45,7 @@ class ReaderViewport extends StatefulWidget {
     this.highlightStart,
     this.highlightEnd,
     required this.scrolling,
+    this.compactFlow = false,
     required this.firstChapter,
     required this.lastChapter,
     required this.onPosition,
@@ -88,7 +89,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
   DateTime lastPositionUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? positionUpdateTimer;
   final starts = <double>[], heights = <double>[];
-  final pageSeparators = <bool>[];
+  final chapterSeparators = <bool>[];
   late List<BookMarkup> markupByStart;
   late List<int> markupPrefixMaxEnd;
   double contentHeight = 0;
@@ -97,10 +98,14 @@ class _ReaderViewportState extends State<ReaderViewport> {
     return text.trimRight();
   }
 
-  // Reserve navigation controls separately from the measured text area.
+  // Reserve the in-viewport page bar only where that bar is actually shown.
   double get extent =>
-      widget.height - (widget.scrolling || !widget.hideControls ? 48 : 0);
-  double get textHeight => extent - 24;
+      widget.height -
+      (widget.scrolling && !widget.compactFlow ||
+              !widget.scrolling && !widget.hideControls
+          ? 48
+          : 0);
+  double get textHeight => extent - 32;
   double get textWidth => widget.width - widget.margin * 2;
   double get illustrationHeight => (extent * .85).clamp(
     0,
@@ -208,6 +213,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
   TextStyle _styleAt(int offset, [Iterable<BookMarkup>? matching]) {
     var style = widget.style;
     for (final range in matching ?? _markupOverlapping(offset, offset + 1)) {
+      if (range.start > offset || range.end <= offset) continue;
       if (range.heading > 0) {
         style = style.copyWith(
           fontSize:
@@ -265,9 +271,16 @@ class _ReaderViewportState extends State<ReaderViewport> {
     textAlign: _alignment(start),
   )..layout(maxWidth: textWidth - _indent(start));
 
-  double _segmentExtent(ReaderSlice segment) => images.containsKey(segment)
-      ? illustrationHeight + widget.margin * 2
-      : (segment.height ?? 0) + (widget.scrolling ? 10 : 24);
+  double _segmentExtent(ReaderSlice segment) {
+    if (images.containsKey(segment)) {
+      return illustrationHeight + widget.margin * 2;
+    }
+    final block = _blockAt(segment.start)?.block;
+    final blockMargin = const {'aside', 'blockquote', 'pre'}.contains(block)
+        ? 8.0
+        : 0.0;
+    return (segment.height ?? 0) + (widget.scrolling ? 10 : 24) + blockMargin;
+  }
 
   Future<void> _layout() async {
     try {
@@ -291,13 +304,12 @@ class _ReaderViewportState extends State<ReaderViewport> {
       }
 
       void addSegment(ReaderSlice segment) {
-        if (!widget.scrolling) {
+        if (!widget.scrolling || widget.compactFlow) {
           result.add(segment);
           return;
         }
-        const verticalPadding = 10.0;
-        final segmentHeight = (segment.height ?? 0) + verticalPadding;
-        final pageCapacity = extent - 1;
+        final segmentHeight = _segmentExtent(segment);
+        final pageCapacity = extent - 16;
         if (currentPage.isNotEmpty &&
             usedPageHeight + segmentHeight > pageCapacity) {
           finishPage();
@@ -308,6 +320,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
       }
 
       var from = 0;
+      var laidOutSlices = 0;
       Future<void> appendText(int end) async {
         if (end <= from) return;
         Future<void> paginateRange(int base, int limit) async {
@@ -332,7 +345,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
               widget.text.substring(paragraphStart, paragraphEnd),
               widget.style,
               textWidth - _indent(paragraphStart),
-              textHeight,
+              widget.compactFlow ? double.infinity : textHeight,
               widget.scaler,
               cancelled: () => !mounted,
               styledText: (a, b) =>
@@ -346,6 +359,10 @@ class _ReaderViewportState extends State<ReaderViewport> {
                   height: slice.height,
                 ),
               );
+              if (++laidOutSlices % 24 == 0) {
+                await Future<void>.delayed(Duration.zero);
+                if (!mounted) return;
+              }
             }
           }
         }
@@ -356,12 +373,12 @@ class _ReaderViewportState extends State<ReaderViewport> {
               ..sort();
         for (var part = 0; part < chapterStarts.length; part++) {
           final chapterStart = chapterStarts[part];
-          // Whole-book flow inserts exactly two separator newlines before a
-          // chapter. Keep them out of pagination so they cannot create a
-          // spurious blank page; the chapter still starts on a fresh page.
+          // Whole-book flow inserts two newlines before a chapter. Keep them
+          // out of text layout; fixed-page mode still starts that chapter on
+          // a fresh screen, while compact mode keeps the flow tight.
           final chapterEnd = (chapterStart - 2).clamp(cursor, end);
           await paginateRange(cursor, chapterEnd);
-          if (widget.scrolling) finishPage();
+          if (widget.scrolling && !widget.compactFlow) finishPage();
           cursor = chapterStart;
           if (part % 32 == 31) {
             await Future<void>.delayed(Duration.zero);
@@ -375,13 +392,13 @@ class _ReaderViewportState extends State<ReaderViewport> {
       for (final image in orderedImages) {
         final at = image.offset.clamp(from, widget.text.length);
         await appendText(at);
-        if (widget.scrolling) finishPage();
+        if (widget.scrolling && !widget.compactFlow) finishPage();
         final slice = ReaderSlice(at, at, height: extent);
         images[slice] = image;
         result.add(slice);
       }
       await appendText(widget.text.length);
-      if (widget.scrolling) finishPage();
+      if (widget.scrolling && !widget.compactFlow) finishPage();
       if (result.isEmpty) {
         result.add(
           widget.scrolling
@@ -406,10 +423,18 @@ class _ReaderViewportState extends State<ReaderViewport> {
       if (widget.anchor == 0) index = 0;
       pager = PageController(initialPage: index);
       if (widget.scrolling) {
+        final chapterEnds = widget.chapterBreaks
+            .where((at) => at >= 2)
+            .map((at) => at - 2)
+            .toSet();
         for (var i = 0; i < result.length; i++) {
           starts.add(contentHeight);
-          pageSeparators.add(i < result.length - 1);
-          heights.add(extent);
+          final hasChapterDivider = chapterEnds.contains(result[i].end);
+          chapterSeparators.add(hasChapterDivider);
+          final itemHeight = widget.compactFlow
+              ? _segmentExtent(result[i]) + (hasChapterDivider ? 1 : 0)
+              : extent;
+          heights.add(itemHeight);
           contentHeight += heights.last;
         }
       } else {
@@ -502,9 +527,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
       }
       final text = _text(segment);
       final painter = _painter(text, start: segment.start);
-      final itemExtent = text.isEmpty
-          ? 10.0
-          : (segment.height ?? painter.height) + 10;
+      final itemExtent = _segmentExtent(segment);
       if (withinPage <= itemExtent) {
         final within = painter
             .getPositionForOffset(
@@ -618,8 +641,8 @@ class _ReaderViewportState extends State<ReaderViewport> {
                 children: [
                   IgnorePointer(
                     child: CustomPaint(
-                      painter: _PageTicksPainter(
-                        pageCount,
+                      painter: ReaderChapterTicksPainter(
+                        _chapterPositions(pageCount),
                         Theme.of(context).colorScheme.onSurface
                             .withValues(alpha: .3),
                       ),
@@ -664,6 +687,20 @@ class _ReaderViewportState extends State<ReaderViewport> {
         ),
       ),
     );
+  }
+
+  List<double> _chapterPositions(int itemCount) {
+    if (itemCount <= 1) return const [0];
+    final lastItem = itemCount - 1;
+    return {
+      0.0,
+      for (final start in widget.chapterBreaks)
+        (() {
+          final page = pages!.indexWhere((item) => item.start >= start);
+          if (page < 0) return 1.0;
+          return page / lastItem;
+        })(),
+    }.toList()..sort();
   }
 
   @override
@@ -877,12 +914,34 @@ class _ReaderViewportState extends State<ReaderViewport> {
         ),
       );
       final block = _blockAt(segment.start);
+      Widget styledText = text;
+      if (const {'aside', 'blockquote', 'pre'}.contains(block?.block)) {
+        final foreground =
+            widget.style.color ?? Theme.of(context).colorScheme.onSurface;
+        final isCode = block?.block == 'pre';
+        styledText = Container(
+          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 3),
+          decoration: BoxDecoration(
+            color: foreground.withValues(alpha: isCode ? .08 : .045),
+            border: isCode
+                ? Border.all(color: foreground.withValues(alpha: .22))
+                : Border(
+                    left: BorderSide(
+                      color: foreground.withValues(alpha: .55),
+                      width: 3,
+                    ),
+                  ),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: text,
+        );
+      }
       final marker = block?.marker;
-      if (marker == null || block?.start != segment.start) return text;
+      if (marker == null || block?.start != segment.start) return styledText;
       return Stack(
         clipBehavior: Clip.none,
         children: [
-          text,
+          styledText,
           Positioned(
             left: widget.margin + _indent(segment.start) - 28,
             top: 5,
@@ -904,6 +963,20 @@ class _ReaderViewportState extends State<ReaderViewport> {
 
     Widget decoratedPage(int i) {
       if (widget.scrolling) {
+        if (widget.compactFlow) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              page(i),
+              if (i < chapterSeparators.length && chapterSeparators[i])
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: widget.style.color?.withValues(alpha: .36),
+                ),
+            ],
+          );
+        }
         return SizedBox(
           height: extent,
           child: Stack(
@@ -916,13 +989,17 @@ class _ReaderViewportState extends State<ReaderViewport> {
                       _tapAt(event.localPosition.dx / widget.width),
                 ),
               ),
-              Align(
-                alignment: images.containsKey(list[i])
-                    ? Alignment.center
-                    : Alignment.topCenter,
-                child: page(i),
+              Positioned.fill(
+                child: ClipRect(
+                  child: Align(
+                    alignment: images.containsKey(list[i])
+                        ? Alignment.center
+                        : Alignment.topCenter,
+                    child: page(i),
+                  ),
+                ),
               ),
-              if (i < pageSeparators.length && pageSeparators[i])
+              if (i < chapterSeparators.length && chapterSeparators[i])
                 Positioned(
                   left: 0,
                   right: 0,
@@ -1018,9 +1095,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
                         ),
                       ),
               ),
-              if (widget.scrolling)
+              if (widget.scrolling && !widget.compactFlow)
                 _pageSlider(list.length)
-              else if (!widget.hideControls)
+              else if (!widget.scrolling && !widget.hideControls)
                 SizedBox(
                   height: 48,
                   child: Row(
@@ -1069,21 +1146,20 @@ class _ReaderViewportState extends State<ReaderViewport> {
   }
 }
 
-class _PageTicksPainter extends CustomPainter {
-  final int pageCount;
+class ReaderChapterTicksPainter extends CustomPainter {
+  final List<double> positions;
   final Color color;
-  const _PageTicksPainter(this.pageCount, this.color);
+  const ReaderChapterTicksPainter(this.positions, this.color);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final count = pageCount.clamp(1, 120).toInt();
     final start = 12.0;
     final end = (size.width - 12).clamp(start, size.width).toDouble();
     final paint = Paint()
       ..color = color
       ..strokeWidth = 1;
-    for (var i = 0; i < count; i++) {
-      final x = count == 1 ? start : start + (end - start) * i / (count - 1);
+    for (final position in positions) {
+      final x = start + (end - start) * position.clamp(0, 1);
       canvas.drawLine(
         Offset(x, size.height / 2 - 4),
         Offset(x, size.height / 2 + 4),
@@ -1093,8 +1169,8 @@ class _PageTicksPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _PageTicksPainter oldDelegate) =>
-      pageCount != oldDelegate.pageCount || color != oldDelegate.color;
+  bool shouldRepaint(covariant ReaderChapterTicksPainter oldDelegate) =>
+      positions != oldDelegate.positions || color != oldDelegate.color;
 }
 
 Widget readerSelectionToolbar({

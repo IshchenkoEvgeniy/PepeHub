@@ -1,4 +1,4 @@
-param([ValidateSet('arm64','universal')][string]$Architecture = 'arm64')
+param([ValidateSet('arm64','universal')][string]$Architecture = 'arm64', [switch]$NoPub)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'android-env.ps1')
 $pepeFlutter = Join-Path $pepeRoot '.tools\flutter\bin\flutter.bat'
@@ -7,6 +7,7 @@ try {
     # Flutter must refresh generated plugin registration after integration-test runs.
     $pepeArguments = @('build','apk','--release')
     if ($Architecture -eq 'arm64') { $pepeArguments += @('--target-platform=android-arm64','--split-per-abi') }
+    if ($NoPub) { $pepeArguments += '--no-pub' }
     & $pepeFlutter @pepeArguments
     if ($LASTEXITCODE -ne 0) { throw "Android build failed: $LASTEXITCODE" }
     $pepeVersionLine = Get-Content -LiteralPath 'pubspec.yaml' | Where-Object { $_ -match '^version:' } | Select-Object -First 1

@@ -160,11 +160,18 @@ List<String> htmlParagraphs(String source, {bool legacyProjection = false}) {
       'h6',
       'p',
       'li',
+      'dt',
+      'dd',
       'blockquote',
+      'aside',
       'pre',
       'div',
       'section',
       'article',
+      'figure',
+      'figcaption',
+      'table',
+      'caption',
       'tr',
       'br',
     }.contains(tag);
@@ -172,7 +179,17 @@ List<String> htmlParagraphs(String source, {bool legacyProjection = false}) {
     for (final child in node.nodes) {
       visit(child, depth + 1);
     }
-    if (tag == 'td' || tag == 'th') buffer.write(' ');
+    if (node is dom.Element && (tag == 'td' || tag == 'th')) {
+      final parent = node.parent;
+      final siblings = parent is dom.Element
+          ? parent.children
+          : const <dom.Element>[];
+      final position = siblings.indexOf(node);
+      if (position > 0 &&
+          const {'td', 'th'}.contains(siblings[position - 1].localName)) {
+        buffer.write('  │  ');
+      }
+    }
     if (block) flush();
   }
 

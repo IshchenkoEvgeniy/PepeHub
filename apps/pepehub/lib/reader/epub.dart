@@ -326,11 +326,18 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
         'h6',
         'p',
         'li',
+        'dt',
+        'dd',
         'blockquote',
+        'aside',
         'pre',
         'div',
         'section',
         'article',
+        'figure',
+        'figcaption',
+        'table',
+        'caption',
         'tr',
         'br',
       }.contains(tag);
@@ -351,7 +358,14 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
           ));
         }
       }
-      if (tag == 'td' || tag == 'th') buffer.write(' ');
+      if (tag == 'td' || tag == 'th') {
+        final siblings = node.parent?.children ?? const <dom.Element>[];
+        final position = siblings.indexOf(node as dom.Element);
+        if (position > 0 &&
+            const {'td', 'th'}.contains(siblings[position - 1].localName)) {
+          buffer.write('  │  ');
+        }
+      }
       if (block) flush();
     }
 

@@ -32,7 +32,8 @@ class ReaderPreferences {
         const ['light', 'dark', 'sepia', 'system'].contains(data['palette'])
         ? data['palette'] as String
         : 'sepia',
-    mode: const ['pages', 'scroll', 'seamless'].contains(data['mode'])
+    mode:
+        const ['pages', 'scroll', 'seamless', 'compact'].contains(data['mode'])
         ? data['mode'] as String
         : 'seamless',
     showScrollbar: data['showScrollbar'] == true,

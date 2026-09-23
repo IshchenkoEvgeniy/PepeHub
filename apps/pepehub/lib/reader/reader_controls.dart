@@ -92,6 +92,7 @@ Future<ReaderPreferences?> showReaderSettings(
                 children: [
                   for (final entry in {
                     'seamless': 'Непрерывно',
+                    'compact': 'Без пустых мест',
                     'pages': 'Перелистывание',
                     'scroll': 'По главам',
                   }.entries)

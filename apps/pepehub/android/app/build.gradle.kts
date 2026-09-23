@@ -52,3 +52,21 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+// Flutter 3.47 registers dev-only plugins in the Android host registrant even
+// for release builds, while its Gradle plugin correctly omits them from the
+// release classpath. Remove the integration-test registration before javac.
+tasks.withType<JavaCompile>().configureEach {
+    if (name.contains("Release")) {
+        doFirst {
+            val registrant = file("src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java")
+            if (registrant.exists()) {
+                val source = registrant.readText()
+                val integrationTestRegistration = Regex(
+                    """    try \{\r?\n      flutterEngine\.getPlugins\(\)\.add\(new dev\.flutter\.plugins\.integration_test\.IntegrationTestPlugin\(\)\);\r?\n    \} catch \(Exception e\) \{\r?\n      Log\.e\(TAG, "Error registering plugin integration_test, dev\.flutter\.plugins\.integration_test\.IntegrationTestPlugin", e\);\r?\n    \}\r?\n""",
+                )
+                registrant.writeText(integrationTestRegistration.replace(source, ""))
+            }
+        }
+    }
+}

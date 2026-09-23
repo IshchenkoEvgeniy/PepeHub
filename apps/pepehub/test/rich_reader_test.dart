@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -22,6 +21,7 @@ void main() {
     expect(preferences.mode, 'seamless');
     expect(preferences.showScrollbar, isFalse);
     expect(ReaderPreferences.fromJson(const {}).mode, 'seamless');
+    expect(ReaderPreferences.fromJson({'mode': 'compact'}).mode, 'compact');
   });
 
   testWidgets('chapter divider is inline and scrollbar is optional', (
@@ -62,6 +62,107 @@ void main() {
     expect(find.byType(Scrollbar), findsOneWidget);
   });
 
+  testWidgets('only linked words receive link color and underline', (
+    tester,
+  ) async {
+    const text = 'Ссылка и обычный текст без выделения.';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 360,
+          height: 640,
+          child: ReaderViewport(
+            text: text,
+            markup: const [BookMarkup(0, 6, href: '#target')],
+            style: const TextStyle(fontSize: 20, color: Color(0xff333333)),
+            scaler: TextScaler.noScaling,
+            width: 360,
+            height: 640,
+            margin: 20,
+            anchor: 0,
+            scrolling: true,
+            firstChapter: true,
+            lastChapter: true,
+            onPosition: (_) {},
+            onChapter: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final selectable = tester.widget<SelectableText>(
+      find.byType(SelectableText).first,
+    );
+    final runs = selectable.textSpan!.children!.cast<TextSpan>();
+    final linked = runs.firstWhere((run) => run.text == 'Ссылка');
+    final regular = runs.firstWhere((run) => run.text!.contains('обычный'));
+    expect(linked.style?.decoration, TextDecoration.underline);
+    expect(regular.style?.decoration, isNull);
+  });
+
+  testWidgets('screen dividers mark chapter ends and compact flow adds none', (
+    tester,
+  ) async {
+    final firstChapter = List.filled(
+      18,
+      'The first chapter has enough words to span several screen pages. ' * 5,
+    ).join('\n\n');
+    final secondChapter = 'The next chapter starts here.';
+    final text = '$firstChapter\n\n$secondChapter';
+    Future<void> render({required bool compact}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SizedBox(
+            width: 360,
+            height: 520,
+            child: ReaderViewport(
+              text: text,
+              style: const TextStyle(fontSize: 18, height: 1.4),
+              scaler: TextScaler.noScaling,
+              width: 360,
+              height: 520,
+              margin: 20,
+              anchor: 0,
+              scrolling: true,
+              compactFlow: compact,
+              chapterBreaks: [firstChapter.length + 2],
+              firstChapter: true,
+              lastChapter: true,
+              onPosition: (_) {},
+              onChapter: (_) {},
+            ),
+          ),
+        ),
+      );
+      for (var i = 0; i < 30; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+    }
+
+    await render(compact: false);
+    expect(find.byType(Divider), findsOneWidget);
+    final ticks = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((paint) => paint.painter)
+        .whereType<ReaderChapterTicksPainter>()
+        .single;
+    expect(ticks.positions.length, 2);
+    expect(tester.takeException(), isNull);
+
+    await render(compact: true);
+    expect(find.byType(Divider), findsOneWidget);
+    expect(find.byType(Slider), findsNothing);
+    final list = find.byType(ListView);
+    final fixedScreenRows = tester
+        .widgetList<SizedBox>(
+          find.descendant(of: list, matching: find.byType(SizedBox)),
+        )
+        .where((box) => box.height == 472)
+        .length;
+    expect(fixedScreenRows, 0);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('rich page keeps typography and produces a visual preview', (
     tester,
   ) async {
@@ -78,10 +179,11 @@ void main() {
         'monospace': 'C:/Windows/Fonts/consola.ttf',
       }.entries) {
         final file = File(font.value);
-        if (await file.exists())
+        if (await file.exists()) {
           await (FontLoader(
             font.key,
           )..addFont(file.readAsBytes().then(ByteData.sublistView))).load();
+        }
       }
     });
     tester.view.physicalSize = const Size(430, 880);
@@ -186,6 +288,31 @@ void main() {
         reason: source.key,
       );
     }
+  });
+
+  test('HTML reader separates table cells and definition-list blocks', () {
+    const source =
+        '<table><tr><th>Column A</th><th>Column B</th></tr><tr><td>First</td><td>Second</td></tr></table><dl><dt>Term</dt><dd>Definition</dd></dl><aside class="note"><p>Callout text.</p></aside>';
+    final chapter = parseTextBook(
+      Uint8List.fromList(utf8.encode(source)),
+      'blocks.html',
+    ).chapters.single;
+    expect(chapter.paragraphs, [
+      'Column A │ Column B',
+      'First │ Second',
+      'Term',
+      'Definition',
+      'Callout text.',
+    ]);
+    expect(
+      chapter.markup.any(
+        (range) =>
+            range.block == 'aside' &&
+            chapter.paragraphs.join('\n\n').substring(range.start, range.end) ==
+                'Callout text.',
+      ),
+      isTrue,
+    );
   });
   testWidgets(
     'scrolling has no next-page row and crosses chapters by gesture',
