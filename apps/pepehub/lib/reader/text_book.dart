@@ -176,9 +176,6 @@ List<String> htmlParagraphs(String source, {bool legacyProjection = false}) {
       'br',
     }.contains(tag);
     if (block) flush();
-    for (final child in node.nodes) {
-      visit(child, depth + 1);
-    }
     if (node is dom.Element && (tag == 'td' || tag == 'th')) {
       final parent = node.parent;
       final siblings = parent is dom.Element
@@ -189,6 +186,9 @@ List<String> htmlParagraphs(String source, {bool legacyProjection = false}) {
           const {'td', 'th'}.contains(siblings[position - 1].localName)) {
         buffer.write('  │  ');
       }
+    }
+    for (final child in node.nodes) {
+      visit(child, depth + 1);
     }
     if (block) flush();
   }

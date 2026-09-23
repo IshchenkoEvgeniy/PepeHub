@@ -112,6 +112,18 @@ class _ReaderViewportState extends State<ReaderViewport> {
   double get textHeight =>
       viewportExtent * (widget.scrolling ? widget.pageHeightFactor : 1) - 32;
   double get textWidth => widget.width - widget.margin * 2;
+  double _measuredTextWidth(int at) {
+    final block = _blockAt(at)?.block;
+    final borderAndMargin = block == 'pre'
+        ? 8.0
+        : const {'aside', 'blockquote'}.contains(block)
+        ? 9.0
+        : 0.0;
+    return (textWidth - _indent(at) - borderAndMargin)
+        .clamp(1.0, double.infinity)
+        .toDouble();
+  }
+
   double get illustrationHeight => (extent * .85).clamp(
     0,
     (extent - widget.margin * 2 - (widget.scrolling ? 14 : 24)).clamp(
@@ -274,7 +286,8 @@ class _ReaderViewportState extends State<ReaderViewport> {
     textDirection: TextDirection.ltr,
     textScaler: widget.scaler,
     textAlign: _alignment(start),
-  )..layout(maxWidth: textWidth - _indent(start));
+    strutStyle: StrutStyle.fromTextStyle(widget.style),
+  )..layout(maxWidth: _measuredTextWidth(start));
 
   double _segmentExtent(ReaderSlice segment) {
     if (images.containsKey(segment)) {
@@ -346,13 +359,34 @@ class _ReaderViewportState extends State<ReaderViewport> {
             final paragraphStart = paragraphBoundaries[paragraph];
             final paragraphEnd = paragraphBoundaries[paragraph + 1];
             if (paragraphStart == paragraphEnd) continue;
+            if (widget.text
+                .substring(paragraphStart, paragraphEnd)
+                .trim()
+                .isEmpty) {
+              continue;
+            }
+            final block = _blockAt(paragraphStart)?.block;
+            final blockMargin =
+                const {'aside', 'blockquote', 'pre'}.contains(block)
+                ? 8.0
+                : 0.0;
+            final firstHeight =
+                widget.scrolling &&
+                    !widget.compactFlow &&
+                    currentPage.isNotEmpty
+                ? (extent - 16 - usedPageHeight - 10 - blockMargin)
+                      .clamp(0.0, textHeight)
+                      .toDouble()
+                : null;
             final slices = await paginateReader(
               widget.text.substring(paragraphStart, paragraphEnd),
               widget.style,
-              textWidth - _indent(paragraphStart),
+              _measuredTextWidth(paragraphStart),
               textHeight,
               widget.scaler,
               cancelled: () => !mounted,
+              firstPageHeight: firstHeight,
+              widthAt: (start) => _measuredTextWidth(paragraphStart + start),
               styledText: (a, b) =>
                   _richText(paragraphStart + a, paragraphStart + b),
             );
@@ -437,7 +471,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
           final hasChapterDivider = chapterEnds.contains(result[i].end);
           chapterSeparators.add(hasChapterDivider);
           final itemHeight = widget.compactFlow
-              ? _segmentExtent(result[i]) + 16 + (hasChapterDivider ? 1 : 0)
+              ? _segmentExtent(result[i]) + 4 + (hasChapterDivider ? 1 : 0)
               : extent;
           heights.add(itemHeight);
           contentHeight += heights.last;
@@ -853,6 +887,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
               },
               child: SelectableText.rich(
                 span(segment) as TextSpan,
+                key: ValueKey((segment.start, segment.end)),
                 style: widget.style,
                 textScaler: widget.scaler,
                 // The chapter flow owns scrolling. SelectableText must

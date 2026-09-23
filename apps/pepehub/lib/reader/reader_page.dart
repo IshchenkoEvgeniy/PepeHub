@@ -1063,57 +1063,66 @@ class _ReaderPageState extends State<ReaderPage>
                               'pages',
                               'compact',
                             ].contains(preferences.mode))
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.menu_book_outlined, size: 18),
-                                Expanded(
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      IgnorePointer(
-                                        child: CustomPaint(
-                                          painter: ReaderChapterTicksPainter(
-                                            [
-                                              0,
-                                              for (final start
-                                                  in flow!.starts.skip(1))
-                                                flow.text.isEmpty
-                                                    ? 0.0
-                                                    : start / flow.text.length,
-                                            ],
-                                            theme.colorScheme.onSurface
-                                                .withValues(alpha: .3),
+                          SizedBox(
+                            height: 48,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.menu_book_outlined,
+                                    size: 18,
+                                  ),
+                                  Expanded(
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        IgnorePointer(
+                                          child: CustomPaint(
+                                            painter: ReaderChapterTicksPainter(
+                                              [
+                                                0,
+                                                for (final start
+                                                    in flow!.starts.skip(1))
+                                                  flow.text.isEmpty
+                                                      ? 0.0
+                                                      : start /
+                                                            flow.text.length,
+                                              ],
+                                              theme.colorScheme.onSurface
+                                                  .withValues(alpha: .3),
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      Slider(
-                                        value: (dragging ?? progress).clamp(
-                                          0,
-                                          1,
+                                        Slider(
+                                          value: (dragging ?? progress).clamp(
+                                            0,
+                                            1,
+                                          ),
+                                          semanticFormatterCallback: (v) =>
+                                              '${(v * 100).round()} процентов книги',
+                                          onChanged: (v) =>
+                                              setState(() => dragging = v),
+                                          onChangeEnd: (v) {
+                                            setState(() => dragging = null);
+                                            final target = d.locate(v);
+                                            _go(target.chapter, target.offset);
+                                          },
                                         ),
-                                        semanticFormatterCallback: (v) =>
-                                            '${(v * 100).round()} процентов книги',
-                                        onChanged: (v) =>
-                                            setState(() => dragging = v),
-                                        onChangeEnd: (v) {
-                                          setState(() => dragging = null);
-                                          final target = d.locate(v);
-                                          _go(target.chapter, target.offset);
-                                        },
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                SizedBox(
-                                  width: 48,
-                                  child: Text(
-                                    '${((dragging ?? progress) * 100).toStringAsFixed(1)}%',
-                                    style: theme.textTheme.labelSmall,
+                                  SizedBox(
+                                    width: 48,
+                                    child: Text(
+                                      '${((dragging ?? progress) * 100).toStringAsFixed(1)}%',
+                                      style: theme.textTheme.labelSmall,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                       ],

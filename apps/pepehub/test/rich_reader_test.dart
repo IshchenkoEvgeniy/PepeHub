@@ -37,6 +37,7 @@ void main() {
   ) async {
     await tester.pumpWidget(
       MaterialApp(
+        builder: (context, child) => Material(child: child!),
         home: SizedBox(
           width: 360,
           height: 520,
@@ -76,6 +77,7 @@ void main() {
     ).join('\n\n');
     await tester.pumpWidget(
       MaterialApp(
+        builder: (context, child) => Material(child: child!),
         home: SizedBox(
           width: 360,
           height: 520,
@@ -108,12 +110,111 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('page turns open deep in a book with visible text', (
+    tester,
+  ) async {
+    final text = List.generate(
+      240,
+      (i) => 'Paragraph $i. ${'Readable text fills this paragraph. ' * 5}',
+    ).join('\n\n');
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => Material(child: child!),
+        home: SizedBox(
+          width: 360,
+          height: 520,
+          child: ReaderViewport(
+            text: text,
+            style: const TextStyle(fontSize: 18, height: 1.4),
+            scaler: TextScaler.noScaling,
+            width: 360,
+            height: 520,
+            margin: 20,
+            anchor: text.indexOf('Paragraph 170.'),
+            scrolling: false,
+            firstChapter: true,
+            lastChapter: true,
+            onPosition: (_) {},
+            onChapter: (_) {},
+          ),
+        ),
+      ),
+    );
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    final visibleText = tester
+        .widgetList<SelectableText>(find.byType(SelectableText))
+        .map((widget) => widget.textSpan?.toPlainText() ?? widget.data ?? '')
+        .join();
+    expect(visibleText, contains('Paragraph 170.'));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('code blocks fit in continuous, compact and paged layouts', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final introduction = 'An introduction to the example. ' * 12;
+    final code = List.filled(
+      12,
+      '    <section epub:type="chapter">',
+    ).join('\n');
+    final text = '$introduction\n\n$code\n\nThe explanation continues.';
+    final codeStart = introduction.length + 2;
+    for (final mode in ['seamless', 'compact', 'pages']) {
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => Material(child: child!),
+          home: ReaderViewport(
+            key: ValueKey(mode),
+            text: text,
+            markup: [
+              BookMarkup(
+                codeStart,
+                codeStart + code.length,
+                block: 'pre',
+                code: true,
+              ),
+            ],
+            style: const TextStyle(
+              inherit: false,
+              fontSize: 22,
+              height: 1.35,
+              textBaseline: TextBaseline.alphabetic,
+            ),
+            scaler: TextScaler.noScaling,
+            width: 390,
+            height: 740,
+            margin: 24,
+            anchor: codeStart + code.length ~/ 2,
+            scrolling: mode != 'pages',
+            compactFlow: mode == 'compact',
+            firstChapter: true,
+            lastChapter: true,
+            onPosition: (_) {},
+            onChapter: (_) {},
+          ),
+        ),
+      );
+      for (var i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(find.byType(SelectableText), findsWidgets, reason: mode);
+      expect(tester.takeException(), isNull, reason: mode);
+    }
+  });
+
   testWidgets('chapter divider is inline and scrollbar is optional', (
     tester,
   ) async {
     Future<void> render({required bool scrollbar}) async {
       await tester.pumpWidget(
         MaterialApp(
+          builder: (context, child) => Material(child: child!),
           home: SizedBox(
             width: 360,
             height: 640,
@@ -152,6 +253,7 @@ void main() {
     const text = 'Ссылка и обычный текст без выделения.';
     await tester.pumpWidget(
       MaterialApp(
+        builder: (context, child) => Material(child: child!),
         home: SizedBox(
           width: 360,
           height: 640,
@@ -196,6 +298,7 @@ void main() {
       Future<void> render({required bool compact}) async {
         await tester.pumpWidget(
           MaterialApp(
+            builder: (context, child) => Material(child: child!),
             home: SizedBox(
               width: 360,
               height: 520,
@@ -279,6 +382,7 @@ void main() {
     final key = GlobalKey();
     await tester.pumpWidget(
       MaterialApp(
+        builder: (context, child) => Material(child: child!),
         home: RepaintBoundary(
           key: key,
           child: Scaffold(
@@ -410,6 +514,7 @@ void main() {
       ).join('\n\n');
       await tester.pumpWidget(
         MaterialApp(
+          builder: (context, child) => Material(child: child!),
           home: Scaffold(
             body: SizedBox(
               width: 390,

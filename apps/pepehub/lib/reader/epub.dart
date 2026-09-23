@@ -342,6 +342,14 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
         'br',
       }.contains(tag);
       if (block) flush();
+      if (tag == 'td' || tag == 'th') {
+        final siblings = node.parent?.children ?? const <dom.Element>[];
+        final position = siblings.indexOf(node as dom.Element);
+        if (position > 0 &&
+            const {'td', 'th'}.contains(siblings[position - 1].localName)) {
+          buffer.write('  │  ');
+        }
+      }
       final linkStart = position();
       for (final child in node.nodes) {
         visit(child, depth + 1);
@@ -356,14 +364,6 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
             start: linkStart,
             end: position(),
           ));
-        }
-      }
-      if (tag == 'td' || tag == 'th') {
-        final siblings = node.parent?.children ?? const <dom.Element>[];
-        final position = siblings.indexOf(node as dom.Element);
-        if (position > 0 &&
-            const {'td', 'th'}.contains(siblings[position - 1].localName)) {
-          buffer.write('  │  ');
         }
       }
       if (block) flush();

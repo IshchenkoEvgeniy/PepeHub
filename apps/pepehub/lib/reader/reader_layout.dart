@@ -177,16 +177,23 @@ Future<List<ReaderSlice>> paginateReader(
   TextScaler scaler, {
   bool Function()? cancelled,
   TextSpan Function(int start, int end)? styledText,
+  double? firstPageHeight,
+  double Function(int start)? widthAt,
 }) async {
   final pages = <ReaderSlice>[];
   var start = 0;
   final painter = TextPainter(
     textDirection: TextDirection.ltr,
     textScaler: scaler,
+    strutStyle: StrutStyle.fromTextStyle(style),
   );
   try {
     while (start < text.length) {
       if (cancelled?.call() == true) return [];
+      var availableHeight = pages.isEmpty
+          ? (firstPageHeight ?? height)
+          : height;
+      final availableWidth = widthAt?.call(start) ?? width;
       var end = (start + 6000).clamp(0, text.length);
       // Avoid splitting a surrogate pair at the measurement window boundary.
       if (end < text.length &&
@@ -197,12 +204,23 @@ Future<List<ReaderSlice>> paginateReader(
       final chunk = text.substring(start, end);
       painter.text =
           styledText?.call(start, end) ?? TextSpan(text: chunk, style: style);
-      painter.layout(maxWidth: width);
-      if (painter.height > height) {
-        final lines = painter
+      painter.layout(maxWidth: availableWidth);
+      if (painter.height > availableHeight) {
+        var lines = painter
             .computeLineMetrics()
-            .where((line) => line.baseline + line.descent <= height - 1)
+            .where(
+              (line) => line.baseline + line.descent <= availableHeight - 1,
+            )
             .toList();
+        if (lines.isEmpty && availableHeight < height) {
+          // A heading or a tall glyph cannot fit in the remaining space.
+          // Move it intact to the next screen.
+          availableHeight = height;
+          lines = painter
+              .computeLineMetrics()
+              .where((line) => line.baseline + line.descent <= height - 1)
+              .toList();
+        }
         if (lines.isEmpty) {
           throw StateError('Увеличьте высоту окна или уменьшите шрифт.');
         }
@@ -233,8 +251,8 @@ Future<List<ReaderSlice>> paginateReader(
               text: text.substring(start, end).trimRight(),
               style: style,
             );
-        painter.layout(maxWidth: width);
-        if (painter.height <= height) break;
+        painter.layout(maxWidth: availableWidth);
+        if (painter.height <= availableHeight) break;
         final last = painter.computeLineMetrics().last;
         final position = painter.getPositionForOffset(
           Offset(last.left + last.width / 2, last.baseline - last.ascent / 2),
