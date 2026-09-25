@@ -849,14 +849,11 @@ class _ReaderPageState extends State<ReaderPage>
     final progress = d.length == 0
         ? 0.0
         : (d.starts[chapter] + offset) / d.length;
-    final requestedWholeBookFlow = const [
+    final wholeBookFlow = const [
       'seamless',
       'pages',
       'compact',
     ].contains(preferences.mode);
-    // Laying out every page of a large book before showing the first one is
-    // prohibitively slow. Keep its chapters independent and paginate on demand.
-    final wholeBookFlow = requestedWholeBookFlow && d.length <= 160000;
     final flow = wholeBookFlow ? _flowFor(d) : null;
     final pinnedAway =
         pinnedChapter != null &&

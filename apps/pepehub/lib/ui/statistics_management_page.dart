@@ -1,10 +1,9 @@
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show Variable;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../audio/audio_journal.dart';
-import '../audio/audio_sidecar.dart';
 import '../data/repository.dart';
 import '../media/audio_controller.dart';
 import '../reader/reading_library.dart';
@@ -38,6 +37,11 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
   Map<String, String> titles = {};
   Map<String, List<MapEntry<String, String>>> tracks = {};
   String? loadError;
+  final search = TextEditingController();
+  String? selectedBookId;
+  String typeFilter = 'all';
+  int periodDays = 0;
+  bool newestFirst = true;
 
   @override
   void initState() {
@@ -52,11 +56,17 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
   }
 
   void _tabChanged() {
-    if (mounted) setState(() {});
+    if (mounted && !tabs.indexIsChanging) {
+      setState(() {
+        selectedBookId = null;
+        typeFilter = 'all';
+      });
+    }
   }
 
   @override
   void dispose() {
+    search.dispose();
     tabs.dispose();
     super.dispose();
   }
@@ -237,6 +247,46 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
       await _report('Сессия чтения сохранена.');
     } catch (e) {
       await _report('Сессия сохранена в базе, но журнал не обновлён: $e');
+    }
+  }
+
+  Future<void> _editManualReading(_ReadingEntry entry) async {
+    final before = entry.payload;
+    if (readingBooks.every((book) => book.id != before['bookId'])) {
+      await _editReading(entry);
+      return;
+    }
+    final start =
+        DateTime.tryParse(before['startedAt'] as String? ?? '')?.toLocal() ??
+        DateTime.now();
+    final minutes = (((before['activeSeconds'] as num?)?.toInt() ?? 1800) / 60)
+        .round()
+        .clamp(1, 1440);
+    final value = await _manualSessionDialog(
+      context,
+      title: 'Изменить сессию чтения',
+      books: readingBooks,
+      initialBookId: before['bookId'] as String,
+      initialMinutes: minutes,
+      initialStart: start,
+      submitLabel: 'Сохранить',
+    );
+    if (value == null) return;
+    final utcStart = value.start.toUtc();
+    final updated = {
+      ...before,
+      'bookId': value.bookId,
+      'startedAt': utcStart.toIso8601String(),
+      'endedAt': utcStart
+          .add(Duration(minutes: value.minutes))
+          .toIso8601String(),
+      'activeSeconds': value.minutes * 60,
+    };
+    try {
+      await widget.repository.put('session', entry.id, updated);
+      await _report('Сессия чтения сохранена.');
+    } catch (e) {
+      await _report('Не удалось сохранить сессию: $e');
     }
   }
 
@@ -504,18 +554,34 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
         trailing: PopupMenuButton<String>(
           tooltip: 'Действия',
           onSelected: (action) {
-            if (action == 'edit') _editReading(entry);
+            if (action == 'edit') {
+              entry.automatic ? _editReading(entry) : _editManualReading(entry);
+            }
+            if (action == 'json') _editReading(entry);
             if (action == 'delete') _deleteReading(entry);
           },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'edit', child: Text('Редактировать все поля')),
+          itemBuilder: (_) => [
             PopupMenuItem(
+              value: 'edit',
+              child: Text(
+                entry.automatic
+                    ? 'Редактировать все поля'
+                    : 'Изменить дату и время',
+              ),
+            ),
+            if (!entry.automatic)
+              const PopupMenuItem(
+                value: 'json',
+                child: Text('Все поля · JSON'),
+              ),
+            const PopupMenuItem(
               value: 'delete',
               child: Text('Удалить из статистики'),
             ),
           ],
         ),
-        onTap: () => _editReading(entry),
+        onTap: () =>
+            entry.automatic ? _editReading(entry) : _editManualReading(entry),
       ),
     );
   }
@@ -581,6 +647,276 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     ),
   );
 
+  bool _matchesEntry(Map<String, dynamic> data, String label) {
+    if (selectedBookId != null && data['bookId'] != selectedBookId) {
+      return false;
+    }
+    if (periodDays > 0 &&
+        _dateOf(data)
+            .isBefore(DateTime.now().subtract(Duration(days: periodDays)))) {
+      return false;
+    }
+    final query = search.text.trim().toLowerCase();
+    if (query.isEmpty) return true;
+    return '${titles[data['bookId']] ?? ''} $label ${_dateLabel(data['startedAt'] ?? data['at'])} ${data['bookId'] ?? ''}'
+        .toLowerCase()
+        .contains(query);
+  }
+
+  List<_ReadingEntry> _visibleReading() {
+    final result = reading.where((entry) {
+      if (typeFilter == 'automatic' && !entry.automatic ||
+          typeFilter == 'manual' && entry.automatic) {
+        return false;
+      }
+      return _matchesEntry(
+        entry.payload,
+        entry.automatic ? 'автоматическая сессия' : 'ручная сессия',
+      );
+    }).toList();
+    if (!newestFirst) return result.reversed.toList();
+    return result;
+  }
+
+  List<LibraryRecord> _visibleAudioEvents() {
+    if (typeFilter == 'legacy') return [];
+    final result = audioEvents.where((entry) {
+      final data = entry.payload ?? {};
+      final kind = data['kind'] as String? ?? '';
+      if (typeFilter == 'listen' && kind != 'listen' ||
+          typeFilter == 'events' && kind == 'listen') {
+        return false;
+      }
+      return _matchesEntry(data, _eventName(kind));
+    }).toList();
+    if (!newestFirst) return result.reversed.toList();
+    return result;
+  }
+
+  List<LibraryRecord> _visibleLegacy() {
+    if (typeFilter != 'all' && typeFilter != 'legacy') return [];
+    final result = legacyListening
+        .where((entry) => _matchesEntry(entry.payload ?? {}, 'старая сессия'))
+        .toList();
+    if (!newestFirst) return result.reversed.toList();
+    return result;
+  }
+
+  List<({LibraryRecord record, bool legacy})> _visibleAudioRows() {
+    final rows = <({LibraryRecord record, bool legacy})>[
+      for (final record in _visibleAudioEvents())
+        (record: record, legacy: false),
+      for (final record in _visibleLegacy()) (record: record, legacy: true),
+    ];
+    rows.sort((a, b) {
+      final order = _dateOf(a.record.payload ?? {})
+          .compareTo(_dateOf(b.record.payload ?? {}));
+      return newestFirst ? -order : order;
+    });
+    return rows;
+  }
+
+  int _readingMilliseconds(_ReadingEntry entry) => entry.automatic
+      ? (entry.payload['spans'] as List? ?? const []).fold<int>(
+          0,
+          (sum, raw) =>
+              sum + (((raw as Map)['activeMs'] as num?)?.toInt() ?? 0),
+        )
+      : ((entry.payload['activeSeconds'] as num?)?.toInt() ?? 0) * 1000;
+
+  int _readingCharacters(_ReadingEntry entry) => entry.automatic
+      ? (entry.payload['spans'] as List? ?? const []).fold<int>(
+          0,
+          (sum, raw) =>
+              sum +
+              (((raw as Map)['newChars'] as num?)?.toInt() ?? 0) +
+              ((raw['repeatChars'] as num?)?.toInt() ?? 0),
+        )
+      : ((entry.payload['newChars'] as num?)?.toInt() ?? 0) +
+            ((entry.payload['repeatChars'] as num?)?.toInt() ?? 0);
+
+  Widget _filters() {
+    final isReading = tabs.index == 0;
+    final books = isReading ? readingBooks : audioBooks;
+    final count = isReading
+        ? _visibleReading().length
+        : _visibleAudioRows().length;
+    final time = isReading
+        ? _visibleReading().fold<int>(
+            0,
+            (sum, entry) => sum + _readingMilliseconds(entry),
+          )
+        : _visibleAudioEvents().fold<int>(
+                0,
+                (sum, entry) =>
+                    sum +
+                    (entry.payload?['kind'] == 'listen'
+                        ? ((entry.payload?['wallMs'] as num?)?.toInt() ?? 0)
+                        : 0),
+              ) +
+              _visibleLegacy().fold<int>(
+                0,
+                (sum, entry) =>
+                    sum +
+                    ((entry.payload?['activeSeconds'] as num?)?.toInt() ?? 0) *
+                        1000,
+              );
+    final kinds = isReading
+        ? const {'all': 'Все записи', 'automatic': 'Авто', 'manual': 'Ручные'}
+        : const {
+            'all': 'Все записи',
+            'listen': 'Прослушивание',
+            'events': 'События',
+            'legacy': 'Старые сессии',
+          };
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: search,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              isDense: true,
+              prefixIcon: const Icon(Icons.search),
+              hintText: 'Поиск по книге, дате или типу записи',
+              suffixIcon: search.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Очистить поиск',
+                      onPressed: () => setState(search.clear),
+                      icon: const Icon(Icons.close),
+                    ),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 6),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                DropdownButton<String?>(
+                  value: selectedBookId,
+                  hint: const Text('Все книги'),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Все книги'),
+                    ),
+                    for (final book in books)
+                      DropdownMenuItem<String?>(
+                        value: book.id,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 180),
+                          child: Text(
+                            book.title,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                  ],
+                  onChanged: (value) => setState(() => selectedBookId = value),
+                ),
+                const SizedBox(width: 10),
+                DropdownButton<String>(
+                  value: typeFilter,
+                  items: [
+                    for (final entry in kinds.entries)
+                      DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => typeFilter = value ?? 'all'),
+                ),
+                const SizedBox(width: 10),
+                DropdownButton<int>(
+                  value: periodDays,
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('Всё время')),
+                    DropdownMenuItem(value: 7, child: Text('7 дней')),
+                    DropdownMenuItem(value: 30, child: Text('30 дней')),
+                    DropdownMenuItem(value: 365, child: Text('Год')),
+                  ],
+                  onChanged: (value) => setState(() => periodDays = value ?? 0),
+                ),
+                IconButton(
+                  tooltip: newestFirst ? 'Сначала старые' : 'Сначала новые',
+                  onPressed: () => setState(() => newestFirst = !newestFirst),
+                  icon: Icon(
+                    newestFirst ? Icons.arrow_downward : Icons.arrow_upward,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            isReading
+                ? 'Показано: $count · ${_durationLabel(time)} · ${_visibleReading().fold<int>(0, (sum, entry) => sum + _readingCharacters(entry))} знаков'
+                : 'Показано: $count · ${_durationLabel(time)}',
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _copyVisibleCsv() async {
+    String cell(Object? value) => '"${'$value'.replaceAll('"', '""')}"';
+    final lines = <String>['тип,книга,дата,секунды,знаки,id'];
+    if (tabs.index == 0) {
+      for (final entry in _visibleReading()) {
+        lines.add(
+          [
+            entry.automatic ? 'Авто' : 'Ручная',
+            titles[entry.payload['bookId']] ?? '',
+            _dateLabel(entry.payload['startedAt']),
+            _readingMilliseconds(entry) ~/ 1000,
+            _readingCharacters(entry),
+            entry.id,
+          ].map(cell).join(','),
+        );
+      }
+    } else {
+      for (final row in _visibleAudioRows()) {
+        final entry = row.record;
+        final data = entry.payload ?? {};
+        lines.add(
+          [
+            row.legacy
+                ? 'Старая сессия'
+                : _eventName(data['kind'] as String? ?? ''),
+            titles[data['bookId']] ?? '',
+            _dateLabel(data['startedAt'] ?? data['at']),
+            row.legacy
+                ? (data['activeSeconds'] as num?)?.toInt() ?? 0
+                : data['kind'] == 'listen'
+                ? ((data['wallMs'] as num?)?.toInt() ?? 0) ~/ 1000
+                : 0,
+            0,
+            entry.id,
+          ].map(cell).join(','),
+        );
+      }
+    }
+    final csv = '\uFEFF${lines.join('\r\n')}';
+    if (csv.length > 4 * 1024 * 1024) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Выберите меньший период для копирования.'),
+        ),
+      );
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: csv));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Скопировано записей: ${lines.length - 1}')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -593,6 +929,11 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
         ],
       ),
       actions: [
+        IconButton(
+          tooltip: 'Скопировать видимые записи в CSV',
+          onPressed: loading ? null : _copyVisibleCsv,
+          icon: const Icon(Icons.table_view_outlined),
+        ),
         IconButton(
           tooltip: 'Обновить записи',
           onPressed: _load,
@@ -620,6 +961,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
                   ],
                 ),
               if (loading) const LinearProgressIndicator(),
+              _filters(),
               Expanded(
                 child: TabBarView(
                   controller: tabs,
@@ -634,17 +976,19 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
       ? const Center(
           child: Text('Записей чтения пока нет. Добавьте сессию вручную.'),
         )
-      : ListView(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(8),
-              child: Text(
-                'Автоматические интервалы и ручные сессии. Изменения пересчитывают время, продвижение и календарь.',
-              ),
-            ),
-            for (final entry in reading) _readingItem(entry),
-          ],
+      : Builder(
+          builder: (context) {
+            final visible = _visibleReading();
+            return visible.isEmpty
+                ? const Center(
+                    child: Text('По выбранным фильтрам записей нет.'),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+                    itemCount: visible.length,
+                    itemBuilder: (_, index) => _readingItem(visible[index]),
+                  );
+          },
         );
 
   Widget _audioList() => audioEvents.isEmpty && legacyListening.isEmpty
@@ -653,27 +997,22 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
             'Событий прослушивания пока нет. Добавьте запись вручную.',
           ),
         )
-      : ListView(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(8),
-              child: Text(
-                'Каждый интервал и событие влияет на свою часть статистики: время, материал, уникальные отрезки, серии, паузы, перемотки, закладки и таймеры. Нажмите запись, чтобы изменить поля; меню даёт полный JSON.',
-              ),
-            ),
-            for (final entry in audioEvents) _audioItem(entry),
-            if (legacyListening.isNotEmpty) ...[
-              const Padding(
-                padding: EdgeInsets.fromLTRB(8, 20, 8, 8),
-                child: Text(
-                  'Старые ручные сессии · отдельно от новой статистики',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-              ),
-              for (final entry in legacyListening) _legacyItem(entry),
-            ],
-          ],
+      : Builder(
+          builder: (context) {
+            final rows = _visibleAudioRows();
+            if (rows.isEmpty) {
+              return const Center(
+                child: Text('По выбранным фильтрам записей нет.'),
+              );
+            }
+            return ListView.builder(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+              itemCount: rows.length,
+              itemBuilder: (_, index) => rows[index].legacy
+                  ? _legacyItem(rows[index].record)
+                  : _audioItem(rows[index].record),
+            );
+          },
         );
 }
 
@@ -905,10 +1244,15 @@ Future<_ManualSessionValue?> _manualSessionDialog(
   required List<LibraryRecord> books,
   required String initialBookId,
   required int initialMinutes,
+  DateTime? initialStart,
+  String submitLabel = 'Добавить',
 }) async {
   String bookId = initialBookId;
-  DateTime start = DateTime.now().subtract(Duration(minutes: initialMinutes));
+  DateTime start =
+      initialStart ??
+      DateTime.now().subtract(Duration(minutes: initialMinutes));
   var minutes = '$initialMinutes';
+  String? error;
   return showDialog<_ManualSessionValue>(
     context: context,
     builder: (context) => StatefulBuilder(
@@ -945,8 +1289,18 @@ Future<_ManualSessionValue?> _manualSessionDialog(
                   decoration: const InputDecoration(
                     labelText: 'Активное время, минут',
                   ),
-                  onChanged: (value) => minutes = value,
+                  onChanged: (value) => setState(() {
+                    minutes = value;
+                    error = null;
+                  }),
                 ),
+                if (error != null)
+                  Text(
+                    error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -959,13 +1313,16 @@ Future<_ManualSessionValue?> _manualSessionDialog(
           FilledButton(
             onPressed: () {
               final duration = int.tryParse(minutes);
-              if (duration == null || duration < 1 || duration > 1440) return;
+              if (duration == null || duration < 1 || duration > 1440) {
+                setState(() => error = 'Укажите от 1 до 1440 минут.');
+                return;
+              }
               Navigator.pop(
                 context,
                 _ManualSessionValue(bookId, start, duration),
               );
             },
-            child: const Text('Добавить'),
+            child: Text(submitLabel),
           ),
         ],
       ),
@@ -1084,8 +1441,9 @@ Future<Map<String, dynamic>?> _audioEventDialog(
                               tracks[bookId] ??
                               const <MapEntry<String, String>>[];
                           if (next.isNotEmpty &&
-                              !next.any((e) => e.key == trackId))
+                              !next.any((e) => e.key == trackId)) {
                             trackId = next.first.key;
+                          }
                         });
                       },
                     ),

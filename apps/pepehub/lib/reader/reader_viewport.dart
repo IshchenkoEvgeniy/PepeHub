@@ -94,6 +94,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
   late List<BookMarkup> markupByStart;
   late List<int> markupPrefixMaxEnd;
   double contentHeight = 0;
+  bool layoutComplete = false;
+  Completer<void>? morePagesRequested;
+  bool get progressiveLayout => widget.text.length > 40000;
   String _text(ReaderSlice page) {
     final text = widget.text.substring(page.start, page.end);
     return text.trimRight();
@@ -225,6 +228,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
     pager?.dispose();
     scroll?.dispose();
     positionUpdateTimer?.cancel();
+    final pending = morePagesRequested;
+    morePagesRequested = null;
+    if (pending != null && !pending.isCompleted) pending.complete();
     super.dispose();
   }
 
@@ -321,6 +327,87 @@ class _ReaderViewportState extends State<ReaderViewport> {
         ? 8.0
         : 0.0;
     return (segment.height ?? 0) + (widget.scrolling ? 10 : 24) + blockMargin;
+  }
+
+  void _requestMorePages() {
+    final pending = morePagesRequested;
+    morePagesRequested = null;
+    if (pending != null && !pending.isCompleted) pending.complete();
+  }
+
+  void _publishLayout(List<ReaderSlice> result) {
+    if (!mounted || result.isEmpty) return;
+    final chapterEnds = widget.chapterBreaks
+        .where((at) => at >= 2)
+        .map((at) => at - 2)
+        .toSet();
+    for (var i = starts.length; i < result.length; i++) {
+      starts.add(contentHeight);
+      final divider = chapterEnds.contains(result[i].end);
+      chapterSeparators.add(divider);
+      final height = widget.scrolling
+          ? widget.compactFlow
+                ? _segmentExtent(result[i]) + 4 + (divider ? 1 : 0)
+                : extent
+          : extent;
+      heights.add(height);
+      contentHeight += height;
+    }
+    if (pages != null) {
+      setState(() => pages = List.unmodifiable(result));
+      return;
+    }
+    final imageAtAnchor = result.indexWhere(
+      (page) => images.containsKey(page) && page.start == widget.anchor,
+    );
+    index =
+        (imageAtAnchor >= 0
+                ? imageAtAnchor
+                : result.lastIndexWhere((p) => p.start <= widget.anchor))
+            .clamp(0, result.length - 1);
+    if (widget.anchor == 0) index = 0;
+    pager = PageController(initialPage: index);
+    var pixels = starts[index];
+    if (widget.scrolling) {
+      final page = result[index];
+      var withinPage = 0.0;
+      for (final segment in page.segments ?? [page]) {
+        if (images.containsKey(segment)) {
+          if (widget.anchor <= segment.start) break;
+          withinPage += _segmentExtent(segment);
+          continue;
+        }
+        final text = _text(segment);
+        if (widget.anchor <= segment.end) {
+          final painter = _painter(text, start: segment.start);
+          withinPage +=
+              5 +
+              painter
+                  .getOffsetForCaret(
+                    TextPosition(
+                      offset: (widget.anchor - segment.start).clamp(
+                        0,
+                        text.length,
+                      ),
+                    ),
+                    Rect.zero,
+                  )
+                  .dy;
+          painter.dispose();
+          break;
+        }
+        withinPage += _segmentExtent(segment);
+      }
+      pixels += withinPage;
+    }
+    scroll = ScrollController(
+      initialScrollOffset: pixels.clamp(
+        0,
+        (contentHeight - viewportExtent).clamp(0, double.infinity),
+      ),
+    );
+    setState(() => pages = List.unmodifiable(result));
+    widget.onReady?.call();
   }
 
   Future<void> _layout() async {
@@ -421,6 +508,25 @@ class _ReaderViewportState extends State<ReaderViewport> {
                   height: slice.height,
                 ),
               );
+              if (progressiveLayout && result.isNotEmpty) {
+                if (pages == null && result.last.end >= widget.anchor) {
+                  final anchorPage = result.lastIndexWhere(
+                    (page) => page.start <= widget.anchor,
+                  );
+                  if (result.length - anchorPage >= 4) {
+                    _publishLayout(result);
+                  }
+                } else if (pages != null &&
+                    result.length - starts.length >= 4) {
+                  _publishLayout(result);
+                }
+                if (pages != null && result.length - index >= 16) {
+                  _publishLayout(result);
+                  morePagesRequested ??= Completer<void>();
+                  await morePagesRequested!.future;
+                  if (!mounted) return;
+                }
+              }
               if (++laidOutSlices % 24 == 0) {
                 await Future<void>.delayed(Duration.zero);
                 if (!mounted) return;
@@ -474,79 +580,8 @@ class _ReaderViewportState extends State<ReaderViewport> {
         );
       }
       if (!mounted) return;
-      final imageAtAnchor = result.indexWhere(
-        (page) => images.containsKey(page) && page.start == widget.anchor,
-      );
-      index =
-          (imageAtAnchor >= 0
-                  ? imageAtAnchor
-                  : result.lastIndexWhere((p) => p.start <= widget.anchor))
-              .clamp(0, result.length - 1);
-      if (widget.anchor == 0) index = 0;
-      pager = PageController(initialPage: index);
-      if (widget.scrolling) {
-        final chapterEnds = widget.chapterBreaks
-            .where((at) => at >= 2)
-            .map((at) => at - 2)
-            .toSet();
-        for (var i = 0; i < result.length; i++) {
-          starts.add(contentHeight);
-          final hasChapterDivider = chapterEnds.contains(result[i].end);
-          chapterSeparators.add(hasChapterDivider);
-          final itemHeight = widget.compactFlow
-              ? _segmentExtent(result[i]) + 4 + (hasChapterDivider ? 1 : 0)
-              : extent;
-          heights.add(itemHeight);
-          contentHeight += heights.last;
-        }
-      } else {
-        for (var i = 0; i < result.length; i++) {
-          starts.add(contentHeight);
-          heights.add(extent);
-          contentHeight += extent;
-        }
-      }
-      var pixels = starts[index];
-      if (widget.scrolling) {
-        final page = result[index];
-        var withinPage = 0.0;
-        for (final segment in page.segments ?? [page]) {
-          if (images.containsKey(segment)) {
-            if (widget.anchor <= segment.start) break;
-            withinPage += _segmentExtent(segment);
-            continue;
-          }
-          final text = _text(segment);
-          if (widget.anchor <= segment.end) {
-            final painter = _painter(text, start: segment.start);
-            withinPage +=
-                5 +
-                painter
-                    .getOffsetForCaret(
-                      TextPosition(
-                        offset: (widget.anchor - segment.start).clamp(
-                          0,
-                          text.length,
-                        ),
-                      ),
-                      Rect.zero,
-                    )
-                    .dy;
-            painter.dispose();
-            break;
-          }
-          withinPage += _segmentExtent(segment);
-        }
-        pixels += withinPage;
-      }
-      scroll = ScrollController(
-        initialScrollOffset: pixels.clamp(
-          0,
-          (contentHeight - viewportExtent).clamp(0, double.infinity),
-        ),
-      );
-      setState(() => pages = result);
-      widget.onReady?.call();
+      layoutComplete = true;
+      _publishLayout(result);
     } catch (e) {
       if (mounted) setState(() => error = '$e');
     }
@@ -575,6 +610,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
     final next = starts
         .lastIndexWhere((s) => s <= pixels)
         .clamp(0, pages!.length - 1);
+    if (!layoutComplete && pages!.length - next <= 8) _requestMorePages();
     final page = pages![next];
     var withinPage = (pixels - starts[next]).clamp(0, heights[next]).toDouble();
     var position = page.start;
@@ -615,6 +651,10 @@ class _ReaderViewportState extends State<ReaderViewport> {
     if (widget.scrolling && scroll!.hasClients) {
       final at = scroll!.offset, max = scroll!.position.maxScrollExtent;
       if (delta > 0 && at >= max - 1) {
+        if (!layoutComplete) {
+          _requestMorePages();
+          return;
+        }
         if (!widget.lastChapter) {
           widget.onChapter(1);
         } else {
@@ -640,6 +680,10 @@ class _ReaderViewportState extends State<ReaderViewport> {
       return;
     }
     if (next >= list.length) {
+      if (!layoutComplete) {
+        _requestMorePages();
+        return;
+      }
       if (!widget.lastChapter) {
         widget.onChapter(1);
       } else {
@@ -648,6 +692,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
       return;
     }
     interacted = true;
+    if (!layoutComplete && list.length - next <= 8) _requestMorePages();
     if (widget.scrolling) {
       scroll!.animateTo(
         next * extent,
@@ -691,6 +736,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
         .clamp(0, lastPage)
         .toDouble();
     final shownPage = value.round() + 1;
+    final countLabel = layoutComplete ? '$pageCount' : '$pageCount+';
     return SizedBox(
       height: 48,
       child: Padding(
@@ -715,9 +761,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
                     value: value,
                     min: 0,
                     max: lastPage > 0 ? lastPage.toDouble() : 1,
-                    label: '$shownPage из $pageCount',
+                    label: '$shownPage из $countLabel',
                     semanticFormatterCallback: (v) =>
-                        'Страница ${v.round() + 1} из $pageCount',
+                        'Страница ${v.round() + 1} из $countLabel',
                     onChanged: pageCount > 1
                         ? (v) => setState(() => draggingPage = v)
                         : null,
@@ -740,7 +786,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
             SizedBox(
               width: 72,
               child: Text(
-                '$shownPage из $pageCount',
+                '$shownPage из $countLabel',
                 textAlign: TextAlign.end,
                 maxLines: 1,
                 style: Theme.of(context).textTheme.labelSmall,
@@ -1163,6 +1209,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
                           itemCount: list.length,
                           onPageChanged: (i) {
                             setState(() => index = i);
+                            if (!layoutComplete && list.length - i <= 8) {
+                              _requestMorePages();
+                            }
                             if (interacted) widget.onPosition(list[i].start);
                           },
                           itemBuilder: (_, i) => decoratedPage(i),
@@ -1185,7 +1234,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
                       ),
                       Expanded(
                         child: Text(
-                          '${widget.scrolling ? 'Прокрутка' : 'Страница'} · ${index + 1}/${list.length}',
+                          '${widget.scrolling ? 'Прокрутка' : 'Страница'} · ${index + 1}/${list.length}${layoutComplete ? '' : '+'}',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.labelSmall,
                         ),
@@ -1210,6 +1259,10 @@ class _ReaderViewportState extends State<ReaderViewport> {
   void _cross(double overscroll) {
     if (crossingChapter || hasSelection || overscroll.abs() < 2) return;
     final delta = overscroll > 0 ? 1 : -1;
+    if (delta > 0 && !layoutComplete) {
+      _requestMorePages();
+      return;
+    }
     if (delta > 0 && widget.lastChapter || delta < 0 && widget.firstChapter) {
       return;
     }

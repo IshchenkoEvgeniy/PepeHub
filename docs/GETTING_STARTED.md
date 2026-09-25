@@ -1,6 +1,6 @@
 # Как проверить PepeHub
 
-Текущий выпуск — **0.14.0, сборка 40**. [Изменения и пакеты](RELEASE_0140.md) · [Android ARM64](../dist/PepeHub-0.14.0-android-arm64-test.apk) · [Windows x64](../dist/PepeHub-1.14.0-windows-x64.zip). В статистике чтения и аудио теперь можно управлять исходными сессиями и событиями; сводки пересчитываются по журналу.
+Текущий выпуск для Android — **0.14.1, сборка 41**. [Изменения](RELEASE_0141.md) · [Android ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.14.1/PepeHub-0.14.1-android-arm64-test.apk). Последний пакет для Windows — [0.14.0](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v1.14.0/PepeHub-1.14.0-windows-x64.zip). В статистике чтения и аудио можно управлять исходными сессиями и событиями; сводки пересчитываются по журналу.
 
 Ниже сохранено историческое руководство прототипа 0.4; его названия кнопок и порядок синхронизации не описывают текущий интерфейс.
 
