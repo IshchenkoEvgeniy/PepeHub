@@ -410,14 +410,24 @@ class AudioFolderChannel(activity: Activity, messenger: BinaryMessenger) {
             val files = mutableListOf<Map<String, Any>>()
             val visited = mutableSetOf<String>()
             var count = 0
-            fun visit(id: String, prefix: String, depth: Int) {
+            val rootId = Docs.getTreeDocumentId(tree)
+            val root = Docs.buildDocumentUriUsingTree(tree, rootId)
+            val title = context.contentResolver.query(root, arrayOf(Docs.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use {
+                if (it.moveToFirst()) it.getString(0) else "Аудиокнига"
+            } ?: "Аудиокнига"
+            // Query one directory at a time. Some document providers cannot
+            // serve a child query while the parent cursor is still open.
+            val folders = java.util.ArrayDeque<Triple<String, String, Int>>()
+            folders.add(Triple(rootId, "", 0))
+            while (folders.isNotEmpty()) {
                 check(!disposed) { "Импорт закрыт" }
+                val (id, prefix, depth) = folders.removeFirst()
                 check(depth <= 32) { "Слишком много вложенных папок (максимум 32)" }
-                if (!visited.add(id)) return
+                if (!visited.add(id)) continue
                 val children = Docs.buildChildDocumentsUriUsingTree(tree, id)
                 val columns = arrayOf(Docs.Document.COLUMN_DOCUMENT_ID, Docs.Document.COLUMN_DISPLAY_NAME,
                     Docs.Document.COLUMN_MIME_TYPE, Docs.Document.COLUMN_SIZE)
-                val cursor = context.contentResolver.query(children, columns, null, null, null) ?: error("Папка недоступна")
+                val cursor = context.contentResolver.query(children, columns, null, null, null) ?: error("Папка недоступна: $prefix")
                 cursor.use {
                     while (it.moveToNext()) {
                         check(!disposed) { "Импорт закрыт" }
@@ -426,21 +436,17 @@ class AudioFolderChannel(activity: Activity, messenger: BinaryMessenger) {
                         val name = it.getString(1).replace('/', '_').replace('\\', '_')
                         val relative = if (prefix.isEmpty()) name else "$prefix/$name"
                         if (it.getString(2) == Docs.Document.MIME_TYPE_DIR) {
-                            if (name.lowercase() != ".pepehub" && !name.lowercase().startsWith("!smart audiobook player")) visit(childId, relative, depth + 1)
+                            if (name.lowercase() != ".pepehub" && !name.lowercase().startsWith("!smart audiobook player")) {
+                                folders.add(Triple(childId, relative, depth + 1))
+                            }
                         } else if (name.substringAfterLast('.', "").lowercase() in (if (books) setOf("epub", "fb2", "zip", "txt", "md", "markdown", "html", "htm", "xhtml", "docx", "pdf", "rtf") else extensions)) {
                             val uri = Docs.buildDocumentUriUsingTree(tree, childId).toString()
                             files.add(mapOf("uri" to uri, "name" to relative, "size" to if (it.isNull(3)) -1L else it.getLong(3)))
-                            check(files.size <= 10000) { "В корневой папке допускается не более 10000 аудиофайлов" }
+                            check(files.size <= 10000) { "В выбранной папке допускается не более 10000 файлов" }
                         }
                     }
                 }
             }
-            val rootId = Docs.getTreeDocumentId(tree)
-            val root = Docs.buildDocumentUriUsingTree(tree, rootId)
-            val title = context.contentResolver.query(root, arrayOf(Docs.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use {
-                if (it.moveToFirst()) it.getString(0) else "Аудиокнига"
-            } ?: "Аудиокнига"
-            visit(rootId, "", 0)
             // Fail visibly when the provider cannot retain read access.
             val granted = (data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             context.contentResolver.takePersistableUriPermission(tree, granted)

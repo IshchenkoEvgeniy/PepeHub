@@ -18,9 +18,11 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
 
 import '../data/repository.dart';
 import '../audio/audio_folder.dart';
+import '../audio/audio_import.dart' show naturalAudioOrder;
 import '../export/markdown.dart';
 import '../media/asset_store.dart';
 import '../media/audio_controller.dart';
@@ -79,7 +81,9 @@ class _LibraryPageState extends State<LibraryPage> {
   String readingSort = 'title';
   String audioSort = 'title';
   Map<String, DateTime> audioRecent = {};
-  Map<String, Map<String, dynamic>> audioPrefs = {}, audioCollections = {};
+  Map<String, Map<String, dynamic>> audioPrefs = {},
+      audioCollections = {},
+      audioSourcePaths = {};
   Map<String, Map<String, dynamic>> get bookPrefs =>
       reading ? readingPrefs : audioPrefs;
   Map<String, Map<String, dynamic>> get collections =>
@@ -88,7 +92,8 @@ class _LibraryPageState extends State<LibraryPage> {
   Map<String, Map<String, dynamic>> readingIndex = {},
       readingPositions = {},
       readingPrefs = {},
-      readingCollections = {};
+      readingCollections = {},
+      readingSourcePaths = {};
   late final readingLibrary = ReadingLibrary(widget.repository);
   bool get showSync => false; // Final project stage; local features come first.
   late final syncClient = SyncClient(widget.repository, httpClient);
@@ -235,12 +240,16 @@ class _LibraryPageState extends State<LibraryPage> {
         final index = await readingLibrary.entries('reading-index:');
         final positions = await readingLibrary.entries('reader:');
         final prefs = await readingLibrary.entries('reading-book:');
+        final sourcePaths = await readingLibrary.entries(
+          'reading-source-path:',
+        );
         final groups = await readingLibrary.entries('reading-collection:');
         final order = await widget.repository.meta('reading-sort') ?? 'title';
         if (mounted && reading == readingSection) {
           readingIndex = index;
           readingPositions = positions;
           readingPrefs = prefs;
+          readingSourcePaths = sourcePaths;
           readingCollections = groups;
           readingSort = order;
           if (!groups.containsKey(collectionFilter)) collectionFilter = null;
@@ -248,12 +257,14 @@ class _LibraryPageState extends State<LibraryPage> {
       } else {
         final prefs = await readingLibrary.entries('audio-book:');
         final groups = await readingLibrary.entries('audio-collection:');
+        final sourcePaths = await readingLibrary.entries('audio-source-path:');
         final order = await widget.repository.meta('audio-sort') ?? 'title';
         final recent = await AudioLibraryRepository(widget.repository.db)
             .lastPlayed();
         if (mounted && reading == readingSection) {
           audioPrefs = prefs;
           audioCollections = groups;
+          audioSourcePaths = sourcePaths;
           audioSort = order;
           audioRecent = recent;
           if (!groups.containsKey(collectionFilter)) collectionFilter = null;
@@ -335,8 +346,33 @@ class _LibraryPageState extends State<LibraryPage> {
     return readingPositions[asset?.hash] ?? {};
   }
 
-  String _title(LibraryRecord b) =>
-      reading ? (_textInfo(b)['title'] as String? ?? b.title) : b.title;
+  String _sourcePath(LibraryRecord book) =>
+      readingSourcePaths[book.id]?['relativePath'] as String? ??
+      localAssets
+          .where((asset) => asset.bookId == book.id)
+          .firstOrNull
+          ?.filename ??
+      '';
+
+  String _title(LibraryRecord b) {
+    if (!reading) return b.title;
+    final title = _textInfo(b)['title'] as String? ?? b.title;
+    if (readingPrefs[b.id]?['title'] != null) return title;
+    final filename = p.posix.basename(_sourcePath(b));
+    final prefix = RegExp(r'^\s*(\d+(?:[._-]\d+)*[.)]?)\s+')
+        .firstMatch(filename)
+        ?.group(1);
+    if (prefix == null || RegExp(r'^\s*\d+[.)\s]').hasMatch(title)) {
+      return title;
+    }
+    return '$prefix $title';
+  }
+
+  String _readingOrderKey(LibraryRecord b) {
+    final path = _sourcePath(b);
+    return path.isEmpty ? _title(b) : path;
+  }
+
   String _authors(LibraryRecord b) =>
       ((reading ? _textInfo(b)['authors'] : null) as List? ??
               b.payload!['authors'] as List)
@@ -742,17 +778,16 @@ class _LibraryPageState extends State<LibraryPage> {
     if (reading) {
       visible.sort((a, b) {
         final result = switch (readingSort) {
-          'author' => _authors(
-            a,
-          ).toLowerCase().compareTo(_authors(b).toLowerCase()),
-          'series' => '${_textInfo(a)['series'] ?? ''}'.compareTo(
+          'author' => naturalAudioOrder(_authors(a), _authors(b)),
+          'series' => naturalAudioOrder(
+            '${_textInfo(a)['series'] ?? ''}',
             '${_textInfo(b)['series'] ?? ''}',
           ),
           'progress' => _fraction(b).compareTo(_fraction(a)),
           'recent' => '${_textPosition(b)['updatedAt'] ?? ''}'.compareTo(
             '${_textPosition(a)['updatedAt'] ?? ''}',
           ),
-          _ => _title(a).toLowerCase().compareTo(_title(b).toLowerCase()),
+          _ => naturalAudioOrder(_readingOrderKey(a), _readingOrderKey(b)),
         };
         if (result == 0 && readingSort == 'series') {
           final number =
@@ -762,21 +797,27 @@ class _LibraryPageState extends State<LibraryPage> {
                   );
           if (number != 0) return number;
         }
-        return result != 0
-            ? result
-            : _title(a).toLowerCase().compareTo(_title(b).toLowerCase());
+        return result != 0 ? result : naturalAudioOrder(_title(a), _title(b));
       });
     }
     if (!reading) {
-      visible.sort(
-        (a, b) => compareAudioBooks(
+      visible.sort((a, b) {
+        if (audioSort == 'title') {
+          final pathA = audioSourcePaths[a.id]?['relativePath'] as String?;
+          final pathB = audioSourcePaths[b.id]?['relativePath'] as String?;
+          if (pathA != null && pathB != null) {
+            final byPath = naturalAudioOrder(pathA, pathB);
+            if (byPath != 0) return byPath;
+          }
+        }
+        return compareAudioBooks(
           a,
           b,
           order: audioSort,
           summaries: audioSummaries,
           recent: audioRecent,
-        ),
-      );
+        );
+      });
     }
     return Scaffold(
       drawer: Drawer(

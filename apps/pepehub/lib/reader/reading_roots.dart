@@ -63,8 +63,9 @@ class ReadingRoots {
         <({String name, String path, String format, String hash, int size})>[];
     for (final file in folder.files) {
       final format = bookFormat(file.name);
-      final size = await file.length();
-      if (size <= 0 || size > (format == 'pdf' ? 256 : 64) * 1024 * 1024) {
+      final declaredSize = await file.length();
+      final maxSize = (format == 'pdf' ? 256 : 64) * 1024 * 1024;
+      if (declaredSize > maxSize) {
         throw StateError('Недопустимый размер: ${file.name}');
       }
       var actualBytes = 0;
@@ -73,7 +74,8 @@ class ReadingRoots {
                   .bind(
                     file.openRead().map((chunk) {
                       actualBytes += chunk.length;
-                      if (actualBytes > size) {
+                      if (actualBytes > maxSize ||
+                          declaredSize > 0 && actualBytes > declaredSize) {
                         throw StateError('Файл изменился: ${file.name}');
                       }
                       return chunk;
@@ -81,13 +83,15 @@ class ReadingRoots {
                   )
                   .first)
               .toString();
-      if (actualBytes != size) throw StateError('Файл изменился: ${file.name}');
+      if (actualBytes == 0 || declaredSize > 0 && actualBytes != declaredSize) {
+        throw StateError('Файл изменился: ${file.name}');
+      }
       candidates.add((
         name: file.name,
         path: file.path,
         format: format,
         hash: hash,
-        size: size,
+        size: actualBytes,
       ));
     }
     await assets.repository.db.transaction(() async {
@@ -119,6 +123,13 @@ class ReadingRoots {
           );
         }
         await assets.repository.setMeta('reading-library-hidden:$id', '0');
+        await assets.repository.setMeta(
+          'reading-source-path:$id',
+          jsonEncode({
+            'root': path,
+            'relativePath': file.name.replaceAll('\\', '/'),
+          }),
+        );
         if (!ids.contains(id)) ids.add(id);
       }
       await assets.repository.setMeta(

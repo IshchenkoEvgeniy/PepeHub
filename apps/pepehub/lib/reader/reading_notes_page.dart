@@ -389,6 +389,8 @@ class _ReadingNotesPageState extends State<ReadingNotesPage> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: const Text('Заметка удалена'),
+                                duration: const Duration(seconds: 4),
+                                persist: false,
                                 action: SnackBarAction(
                                   label: 'Отменить',
                                   onPressed: () =>

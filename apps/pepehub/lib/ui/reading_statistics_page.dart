@@ -6,6 +6,7 @@ import '../reader/reading_library.dart';
 import 'statistics_range.dart';
 import 'audio_statistics_page.dart' show statTime;
 import 'reading_plan_page.dart';
+import 'statistics_management_page.dart';
 
 class ReadingStatisticsPage extends StatefulWidget {
   final Repository repository;
@@ -245,6 +246,22 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
               : titles[widget.bookId] ?? 'Статистика книги',
         ),
         actions: [
+          IconButton(
+            tooltip: 'Управление статистикой',
+            onPressed: () async {
+              await Navigator.push<void>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StatisticsManagementPage(
+                    repository: widget.repository,
+                    initialTab: 0,
+                  ),
+                ),
+              );
+              if (mounted) _load();
+            },
+            icon: const Icon(Icons.edit_note),
+          ),
           IconButton(
             tooltip: 'Обновить статистику',
             onPressed: _load,

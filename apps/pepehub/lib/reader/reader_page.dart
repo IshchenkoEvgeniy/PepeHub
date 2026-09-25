@@ -130,6 +130,8 @@ class _ReaderPageState extends State<ReaderPage>
   int chapter = 0, offset = 0, navigation = 0;
   int? highlightStart, highlightEnd;
   final history = <({int chapter, int offset})>[];
+  ({int chapter, int offset})? linkReturn;
+  ({int chapter, int offset})? pinnedChapter;
   Future<void> writes = Future.value();
   Timer? debounce;
   bool allowPop = false, closing = false;
@@ -284,6 +286,22 @@ class _ReaderPageState extends State<ReaderPage>
             ),
           ));
         }
+        final pinned = saved['pinnedChapter'];
+        if (pinned is Map &&
+            pinned['chapter'] is num &&
+            pinned['offset'] is num) {
+          final c = (pinned['chapter'] as num).toInt().clamp(
+            0,
+            parsed.texts.length - 1,
+          );
+          pinnedChapter = (
+            chapter: c,
+            offset: (pinned['offset'] as num).toInt().clamp(
+              0,
+              parsed.texts[c].length,
+            ),
+          );
+        }
       });
       if (widget.initialNote != null) {
         final refreshed = savedNotes.where(
@@ -335,6 +353,11 @@ class _ReaderPageState extends State<ReaderPage>
         for (final place in history)
           {'chapter': place.chapter, 'offset': place.offset},
       ],
+      if (pinnedChapter != null)
+        'pinnedChapter': {
+          'chapter': pinnedChapter!.chapter,
+          'offset': pinnedChapter!.offset,
+        },
     });
     final settings = jsonEncode(preferences.toJson());
     writes = writes
@@ -648,7 +671,11 @@ class _ReaderPageState extends State<ReaderPage>
         final anchor = book.chapters[c].markup
             .where((r) => r.anchor == id)
             .firstOrNull;
-        _go(c, anchor?.start ?? 0);
+        final destination = anchor?.start ?? 0;
+        if (c != chapter || destination != offset) {
+          linkReturn = (chapter: chapter, offset: offset);
+          _go(c, destination);
+        }
         return;
       }
     }
@@ -678,6 +705,27 @@ class _ReaderPageState extends State<ReaderPage>
     } finally {
       _resumePanel();
     }
+  }
+
+  void _returnFromLink() {
+    final target = linkReturn;
+    if (target == null) return;
+    linkReturn = null;
+    _go(target.chapter, target.offset, remember: false);
+  }
+
+  void _toggleChapterPin() {
+    setState(() {
+      pinnedChapter = pinnedChapter == null
+          ? (chapter: chapter, offset: offset)
+          : null;
+    });
+    _save();
+  }
+
+  void _returnToPinnedChapter() {
+    final target = pinnedChapter;
+    if (target != null) _go(target.chapter, target.offset);
   }
 
   Future<void> _footnote(BuildContext context, BookFootnote note) async {
@@ -801,12 +849,18 @@ class _ReaderPageState extends State<ReaderPage>
     final progress = d.length == 0
         ? 0.0
         : (d.starts[chapter] + offset) / d.length;
-    final wholeBookFlow = const [
+    final requestedWholeBookFlow = const [
       'seamless',
       'pages',
       'compact',
     ].contains(preferences.mode);
+    // Laying out every page of a large book before showing the first one is
+    // prohibitively slow. Keep its chapters independent and paginate on demand.
+    final wholeBookFlow = requestedWholeBookFlow && d.length <= 160000;
     final flow = wholeBookFlow ? _flowFor(d) : null;
+    final pinnedAway =
+        pinnedChapter != null &&
+        (pinnedChapter!.chapter != chapter || pinnedChapter!.offset != offset);
     return Theme(
       data: theme,
       child: Builder(
@@ -835,6 +889,17 @@ class _ReaderPageState extends State<ReaderPage>
                         tooltip: 'Заметки книги',
                         icon: const Icon(Icons.edit_note),
                         onPressed: () => _notes(context),
+                      ),
+                      IconButton(
+                        tooltip: pinnedChapter == null
+                            ? 'Закрепить эту главу'
+                            : 'Открепить главу',
+                        icon: Icon(
+                          pinnedChapter == null
+                              ? Icons.push_pin_outlined
+                              : Icons.push_pin,
+                        ),
+                        onPressed: _toggleChapterPin,
                       ),
                       if (history.isNotEmpty)
                         IconButton(
@@ -873,10 +938,30 @@ class _ReaderPageState extends State<ReaderPage>
                     ],
                   ),
             floatingActionButton: fullscreen
-                ? FloatingActionButton.small(
-                    tooltip: 'Выйти из полного экрана',
-                    onPressed: _toggleFullscreen,
-                    child: const Icon(Icons.fullscreen_exit),
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (linkReturn != null)
+                        FloatingActionButton.small(
+                          heroTag: 'return-from-link',
+                          tooltip: 'Вернуться после ссылки',
+                          onPressed: _returnFromLink,
+                          child: const Icon(Icons.undo),
+                        ),
+                      if (pinnedAway)
+                        FloatingActionButton.small(
+                          heroTag: 'return-to-chapter',
+                          tooltip: 'К закреплённой главе',
+                          onPressed: _returnToPinnedChapter,
+                          child: const Icon(Icons.push_pin),
+                        ),
+                      FloatingActionButton.small(
+                        heroTag: 'exit-reader-fullscreen',
+                        tooltip: 'Выйти из полного экрана',
+                        onPressed: _toggleFullscreen,
+                        child: const Icon(Icons.fullscreen_exit),
+                      ),
+                    ],
                   )
                 : null,
             body: Listener(
@@ -916,6 +1001,32 @@ class _ReaderPageState extends State<ReaderPage>
                                     Icons.photo_library_outlined,
                                   ),
                                 ),
+                              ],
+                            ),
+                          ),
+                        if (!fullscreen && (linkReturn != null || pinnedAway))
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Wrap(
+                              spacing: 8,
+                              children: [
+                                if (linkReturn != null)
+                                  ActionChip(
+                                    avatar: const Icon(Icons.undo, size: 18),
+                                    label: const Text('Вернуться после ссылки'),
+                                    onPressed: _returnFromLink,
+                                  ),
+                                if (pinnedAway)
+                                  ActionChip(
+                                    avatar: const Icon(
+                                      Icons.push_pin,
+                                      size: 18,
+                                    ),
+                                    label: Text(
+                                      'К главе ${pinnedChapter!.chapter + 1}',
+                                    ),
+                                    onPressed: _returnToPinnedChapter,
+                                  ),
                               ],
                             ),
                           ),
@@ -1082,15 +1193,21 @@ class _ReaderPageState extends State<ReaderPage>
                                         IgnorePointer(
                                           child: CustomPaint(
                                             painter: ReaderChapterTicksPainter(
-                                              [
-                                                0,
-                                                for (final start
-                                                    in flow!.starts.skip(1))
-                                                  flow.text.isEmpty
-                                                      ? 0.0
-                                                      : start /
-                                                            flow.text.length,
-                                              ],
+                                              flow == null
+                                                  ? const [0.0, 1.0]
+                                                  : [
+                                                      0,
+                                                      for (final start
+                                                          in flow.starts.skip(
+                                                            1,
+                                                          ))
+                                                        flow.text.isEmpty
+                                                            ? 0.0
+                                                            : start /
+                                                                  flow
+                                                                      .text
+                                                                      .length,
+                                                    ],
                                               theme.colorScheme.onSurface
                                                   .withValues(alpha: .3),
                                             ),

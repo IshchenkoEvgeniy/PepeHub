@@ -147,6 +147,10 @@ class AudioRoots {
           );
           ids.add(asset.bookId);
           seen.add(asset.bookId);
+          await repo.setMeta(
+            'audio-source-path:${asset.bookId}',
+            jsonEncode({'relativePath': draft.relativeFolder}),
+          );
           await repo.setMeta('audio-library-hidden:${asset.bookId}', '0');
           if (oldId == null) {
             added++;

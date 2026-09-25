@@ -205,6 +205,7 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
       if (e.getAttribute('id') != null) e.getAttribute('id')!: e,
   };
   final chapters = <EpubChapter>[];
+  final footnoteTargets = <String, dom.Document>{};
   final pendingImages = <BookIllustration>[];
   final resourceCache = <String, Uint8List>{};
   var resourceBytes = 0;
@@ -257,7 +258,10 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
     }
     final body = document.body;
     final paragraphs = <String>[];
-    final links = <({String href, String label, int start, int end})>[];
+    final links =
+        <
+          ({String href, String label, String sourceType, int start, int end})
+        >[];
     final illustrations = <BookIllustration>[];
     final imagePaths = <String>{};
     var buffer = StringBuffer();
@@ -354,13 +358,15 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
       for (final child in node.nodes) {
         visit(child, depth + 1);
       }
-      if (node is dom.Element && tag == 'a' && links.length < 256) {
+      if (node is dom.Element && tag == 'a' && links.length < 2048) {
         final href = node.attributes['href'] ?? '';
         final label = node.text.replaceAll(RegExp(r'\s+'), ' ').trim();
         if (href.contains('#') && label.isNotEmpty) {
           links.add((
             href: href,
             label: label,
+            sourceType:
+                '${node.attributes['epub:type'] ?? ''} ${node.attributes['role'] ?? ''} ${node.className} ${node.parent?.localName == 'sup' ? 'sup' : ''}',
             start: linkStart,
             end: position(),
           ));
@@ -373,36 +379,60 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
     flush();
     final text = paragraphs.join('\n\n');
     final footnotes = <BookFootnote>[];
-    final targets = <String, dom.Document>{path: document};
+    footnoteTargets[path] = document;
+    if (footnoteTargets.length > 8) {
+      footnoteTargets.remove(footnoteTargets.keys.first);
+    }
     for (final link in links) {
       final targetPath = bookResourcePath(path, link.href);
       if (targetPath == null) continue;
       try {
-        final target = targets.putIfAbsent(
+        final target = footnoteTargets.putIfAbsent(
           targetPath,
           () => html.parse(read(targetPath)),
         );
+        if (footnoteTargets.length > 8) {
+          footnoteTargets.remove(footnoteTargets.keys.first);
+        }
         final id = Uri.decodeComponent(Uri.parse(link.href).fragment);
-        final element = target.getElementById(id);
+        if (id.isEmpty) continue;
+        final element =
+            target.getElementById(id) ??
+            target
+                .querySelectorAll('[name]')
+                .where((e) => e.attributes['name'] == id)
+                .firstOrNull;
         if (element == null) continue;
-        final type =
-            element.attributes['epub:type'] ?? element.attributes['role'] ?? '';
-        // Generic intra-book navigation is not a footnote.
-        final source = document
-            .querySelectorAll('a')
-            .where((a) => a.attributes['href'] == link.href)
-            .firstOrNull;
-        final sourceType =
-            '${source?.attributes['epub:type']} ${source?.attributes['role']}';
-        if (!RegExp(r'footnote|endnote|noteref')
-                .hasMatch('$type $sourceType') &&
-            !RegExp(
-              r'note|foot',
-              caseSensitive: false,
-            ).hasMatch('$targetPath#$id')) {
+        final semantic = [
+          link.sourceType,
+          for (dom.Element? e = element; e != null; e = e.parent)
+            '${e.attributes['epub:type'] ?? ''} ${e.attributes['role'] ?? ''} ${e.className}',
+        ].join(' ');
+        final noteTarget = RegExp(
+          r'(^|[/#_.-])(fn|ftn|note|notes|footnote|endnote)s?[0-9_-]*([/#_.-]|$)',
+          caseSensitive: false,
+        ).hasMatch('$targetPath#$id');
+        final semanticNote = RegExp(
+          r'footnote|endnote|noteref|doc-noteref|\bnotes?\b',
+          caseSensitive: false,
+        ).hasMatch(semantic);
+        final numericMarker = RegExp(r'^\[?[0-9⁰¹²³⁴⁵⁶⁷⁸⁹]+\]?$')
+            .hasMatch(link.label);
+        if (!semanticNote && !(numericMarker && noteTarget)) {
           continue;
         }
-        final content = element.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+        final noteElement =
+            element.text.trim().length < 3 &&
+                const {
+                  'p',
+                  'li',
+                  'aside',
+                  'div',
+                  'section',
+                }.contains(element.parent?.localName)
+            ? element.parent!
+            : element;
+        final content = noteElement.text.replaceAll(RegExp(r'\s+'), ' ').trim();
         final end = link.end.clamp(0, text.length);
         var start = link.start.clamp(0, end);
         while (start < end && text[start].trim().isEmpty) {

@@ -3,7 +3,7 @@ name: Windows release
 on:
   push:
     tags:
-      - 'v1.13.*'
+      - 'v1.14.*'
   workflow_dispatch:
     inputs:
       release_tag:

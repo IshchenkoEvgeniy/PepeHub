@@ -123,6 +123,18 @@ class AudioJournal {
         'INSERT INTO records(id,type,revision,deleted,payload) VALUES(?,?,1,0,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,deleted=0,revision=records.revision+1',
         [id, type, jsonEncode(data)],
       );
+
+  Future<void> deleteEvent(String id) async {
+    final record = await repository.record(id);
+    if (record == null || record.type != 'audio_event' || record.deleted) {
+      throw StateError('Событие прослушивания не найдено');
+    }
+    await repository.db.customStatement(
+      "UPDATE records SET deleted=1,revision=revision+1 WHERE id=? AND type='audio_event' AND deleted=0",
+      [id],
+    );
+  }
+
   Future<void> event(
     String kind,
     String bookId,

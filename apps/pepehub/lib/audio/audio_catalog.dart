@@ -104,6 +104,10 @@ Future<int> connectAudioCatalog(
         root: source,
         title: draft.title,
       );
+      await repository.setMeta(
+        'audio-source-path:${asset.bookId}',
+        jsonEncode({'relativePath': draft.relativeFolder}),
+      );
       ids.add(asset.bookId);
       await repository.setMeta('audio-library-hidden:${asset.bookId}', '0');
       createdTracks.addAll(await assets.audioTracks(asset.bookId));

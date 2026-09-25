@@ -155,7 +155,8 @@ class _ReaderViewportState extends State<ReaderViewport> {
       return switch (align) {
         'center' => TextAlign.center,
         'right' => TextAlign.right,
-        'justify' => TextAlign.justify,
+        // Full justification creates distracting gaps on narrow phone screens.
+        'justify' => TextAlign.left,
         _ => TextAlign.left,
       };
     }
@@ -163,7 +164,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
         ? TextAlign.center
         : _blockAt(at)?.code == true
         ? TextAlign.left
-        : TextAlign.justify;
+        : TextAlign.left;
   }
 
   @override
@@ -259,6 +260,20 @@ class _ReaderViewportState extends State<ReaderViewport> {
     return style;
   }
 
+  BookFootnote? _footnoteAt(int offset) => widget.footnotes
+      .where((note) => note.start <= offset && note.end > offset)
+      .firstOrNull;
+
+  String _noteMarker(String text) => text.replaceAllMapped(
+    RegExp(r'[0-9]'),
+    (match) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[int.parse(match.group(0)!)],
+  );
+
+  TextStyle _noteMarkerStyle(TextStyle base) => base.copyWith(
+    fontSize: (base.fontSize ?? widget.style.fontSize ?? 22) * .68,
+    height: 1,
+  );
+
   TextSpan _richText(int start, int end) {
     final matching = _markupOverlapping(start, end).toList();
     final points = <int>{
@@ -268,14 +283,22 @@ class _ReaderViewportState extends State<ReaderViewport> {
         r.start.clamp(start, end),
         r.end.clamp(start, end),
       ],
+      for (final note in widget.footnotes) ...[
+        note.start.clamp(start, end),
+        note.end.clamp(start, end),
+      ],
     }.toList()..sort();
     return TextSpan(
       style: widget.style,
       children: [
         for (var i = 0; i < points.length - 1; i++)
           TextSpan(
-            text: widget.text.substring(points[i], points[i + 1]),
-            style: _styleAt(points[i], matching),
+            text: _footnoteAt(points[i]) == null
+                ? widget.text.substring(points[i], points[i + 1])
+                : _noteMarker(widget.text.substring(points[i], points[i + 1])),
+            style: _footnoteAt(points[i]) == null
+                ? _styleAt(points[i], matching)
+                : _noteMarkerStyle(_styleAt(points[i], matching)),
           ),
       ],
     );
@@ -810,7 +833,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
             .lastOrNull;
         spans.add(
           TextSpan(
-            text: raw.substring(points[j], points[j + 1]),
+            text: footnote == null
+                ? raw.substring(points[j], points[j + 1])
+                : _noteMarker(raw.substring(points[j], points[j + 1])),
             recognizer: footnote == null
                 ? (link == null
                       ? null
@@ -826,16 +851,24 @@ class _ReaderViewportState extends State<ReaderViewport> {
                         TapGestureRecognizer()
                           ..onTap = () => widget.onFootnote?.call(footnote),
                   ),
-            style: _styleAt(base + points[j], markupRanges).merge(
-              range == null
-                  ? (footnote == null
-                        ? null
-                        : const TextStyle(decoration: TextDecoration.underline))
-                  : TextStyle(
-                      backgroundColor: range.color,
-                      color: const Color(0xff262626),
+            style:
+                (footnote == null
+                        ? _styleAt(base + points[j], markupRanges)
+                        : _noteMarkerStyle(
+                            _styleAt(base + points[j], markupRanges),
+                          ))
+                    .merge(
+                      range == null
+                          ? (footnote == null
+                                ? null
+                                : const TextStyle(
+                                    decoration: TextDecoration.underline,
+                                  ))
+                          : TextStyle(
+                              backgroundColor: range.color,
+                              color: const Color(0xff262626),
+                            ),
                     ),
-            ),
           ),
         );
       }

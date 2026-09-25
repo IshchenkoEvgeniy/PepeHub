@@ -1,4 +1,5 @@
 import '../data/repository.dart';
+import 'audio_import.dart';
 
 typedef AudioBookSummary = ({int? total, int? position, double speed});
 
@@ -37,9 +38,9 @@ int compareAudioBooks(
       recent[b.id]?.millisecondsSinceEpoch,
       descending: true,
     ),
-    _ => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+    _ => naturalAudioOrder(a.title, b.title),
   };
   if (result != 0) return result;
-  final title = a.title.toLowerCase().compareTo(b.title.toLowerCase());
+  final title = naturalAudioOrder(a.title, b.title);
   return title != 0 ? title : a.id.compareTo(b.id);
 }

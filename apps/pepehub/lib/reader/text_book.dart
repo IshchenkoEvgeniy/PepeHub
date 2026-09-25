@@ -395,9 +395,22 @@ EpubBook parseTextBook(
         if (href == null || !href.startsWith('#')) continue;
         final id = href.substring(1), target = byId[href.substring(1)];
         if (target == null) continue;
+        final noteBody = target.ancestors
+            .whereType<XmlElement>()
+            .where((parent) => parent.name.local == 'body')
+            .any(
+              (parent) => RegExp(
+                r'notes?|footnotes?',
+                caseSensitive: false,
+              ).hasMatch(parent.getAttribute('name') ?? ''),
+            );
+        final noteId = RegExp(
+          r'^(fn|ftn|note)[-_]?[0-9]+$',
+          caseSensitive: false,
+        ).hasMatch(id);
         if (e.name.local == 'a' &&
-            e.getAttribute('type') == 'note' &&
-            footnotes.length < 256) {
+            (e.getAttribute('type') == 'note' || noteBody || noteId) &&
+            footnotes.length < 2048) {
           final label = e.innerText.replaceAll(RegExp(r'\s+'), ' ').trim();
           final content = _fbParagraphs(target).join('\n\n');
           final start = anchors[e] ?? -1;

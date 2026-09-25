@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import '../audio/audio_journal.dart';
 import '../media/audio_controller.dart';
 import '../data/repository.dart';
+import 'statistics_management_page.dart';
 
 String statTime(int ms) {
   final minutes = ms ~/ 60000;
@@ -533,6 +534,23 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
       appBar: AppBar(
         title: const Text('Моё прослушивание'),
         actions: [
+          IconButton(
+            tooltip: 'Управление статистикой',
+            onPressed: () async {
+              await Navigator.push<void>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StatisticsManagementPage(
+                    repository: widget.repository,
+                    controller: widget.controller,
+                    initialTab: 1,
+                  ),
+                ),
+              );
+              if (mounted) load();
+            },
+            icon: const Icon(Icons.edit_note),
+          ),
           PopupMenuButton<String>(
             tooltip: 'Экспорт статистики',
             icon: const Icon(Icons.file_download_outlined),

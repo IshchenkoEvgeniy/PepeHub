@@ -159,6 +159,45 @@ class Repository {
     });
   }
 
+  /// Queue a synced tombstone for a library card or a manual session.
+  Future<void> delete(String type, String id) async {
+    if (type != 'book' && type != 'session') {
+      throw ArgumentError('Удалять через синхронизацию можно книгу или сессию');
+    }
+    await db.transaction(() async {
+      final existing = await record(id);
+      if (existing == null || existing.deleted) return;
+      if (existing.type != type) throw StateError('Тип записи изменился');
+      final blocked = await db
+          .customSelect(
+            "SELECT 1 FROM outbox WHERE entity_id=? AND state='conflict'",
+            variables: [Variable(id)],
+          )
+          .getSingleOrNull();
+      if (blocked != null) {
+        throw StateError('Сначала разрешите конфликт этой записи');
+      }
+      final operation = {
+        'schemaVersion': 1,
+        'operationId': uuid.v4(),
+        'deviceId': await deviceId(),
+        'entityType': type,
+        'entityId': id,
+        'baseRevision': existing.revision,
+        'action': 'delete',
+        'payload': null,
+      };
+      await _write(
+        'records',
+        LibraryRecord(id, type, existing.revision + 1, true, null),
+      );
+      await db.customStatement(
+        'INSERT INTO outbox(operation_id,entity_id,operation) VALUES(?,?,?)',
+        [operation['operationId'], id, jsonEncode(operation)],
+      );
+    });
+  }
+
   Future<void> addBook(String title, String author, String format) =>
       put('book', uuid.v4(), {
         'title': title.trim(),

@@ -187,7 +187,8 @@ class _AudioNotesPageState extends State<AudioNotesPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Заметка удалена'),
-          duration: const Duration(seconds: 10),
+          duration: const Duration(seconds: 4),
+          persist: false,
           action: SnackBarAction(
             label: 'Отменить',
             onPressed: () async {
