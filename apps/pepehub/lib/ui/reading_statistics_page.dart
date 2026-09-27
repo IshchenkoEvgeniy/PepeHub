@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/repository.dart';
 import '../reader/reading_activity.dart';
 import '../reader/reading_library.dart';
+import '../reader/reading_log.dart';
 import 'statistics_range.dart';
 import 'audio_statistics_page.dart' show statTime;
 import 'reading_plan_page.dart';
@@ -29,6 +30,9 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
   late DateTime calendar = DateTime(DateTime.now().year, DateTime.now().month);
   String? error;
   bool loading = true;
+  bool savingJournal = false;
+  List<String> journalFolders = [];
+  String? lastJournalSave;
   @override
   void initState() {
     super.initState();
@@ -89,6 +93,18 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           ) ??
           30;
       final logWarnings = <String>[];
+      final configuredRoots = await library.entries('reading-library-root:');
+      final folders = configuredRoots.values
+          .where(
+            (root) =>
+                widget.bookId == null ||
+                (root['bookIds'] as List? ?? []).contains(widget.bookId),
+          )
+          .map((root) => '${root['path']}/.pepehub/reading/logs')
+          .toList();
+      final lastSave = widget.bookId == null
+          ? null
+          : await widget.repository.meta('reading-log-saved:${widget.bookId}');
       for (final book in b.where(
         (b) => widget.bookId == null || b.id == widget.bookId,
       )) {
@@ -107,6 +123,8 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
             ..clear()
             ..addAll(names);
           goal = g.clamp(1, 1440);
+          journalFolders = folders;
+          lastJournalSave = lastSave;
           error = logWarnings.isEmpty
               ? null
               : 'Данные в приложении сохранены, но журнал в папке не обновлён:\n${logWarnings.join('\n')}';
@@ -120,6 +138,25 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           loading = false;
         });
       }
+    }
+  }
+
+  Future<void> _saveJournal() async {
+    if (savingJournal) return;
+    setState(() => savingJournal = true);
+    try {
+      final count = await ReadingLog(widget.repository)
+          .exportAll(bookId: widget.bookId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Журнал обновлён: $count дней чтения.')),
+        );
+        await _load();
+      }
+    } catch (e) {
+      if (mounted) setState(() => error = 'Не удалось записать журнал: $e');
+    } finally {
+      if (mounted) setState(() => savingJournal = false);
     }
   }
 
@@ -286,6 +323,36 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           const Text(
             'Учёт приостанавливается в фоне, в поиске/настройках и после 2 минут без действий.',
             style: TextStyle(fontSize: 12),
+          ),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Журнал чтения',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    journalFolders.isEmpty
+                        ? 'Сессии хранятся в приложении. Подключите папку книг, чтобы рядом с книгами появился каталог .pepehub/reading/logs.'
+                        : 'При открытии книги и затем примерно каждые 30 секунд данные записываются в .pepehub/reading/logs. Также сохраняются при закрытии и переходах.',
+                  ),
+                  for (final folder in journalFolders) SelectableText(folder),
+                  if (lastJournalSave != null)
+                    Text(
+                      'Последнее сохранение: ${DateTime.tryParse(lastJournalSave!)?.toLocal() ?? lastJournalSave}',
+                    ),
+                  if (journalFolders.isNotEmpty)
+                    TextButton.icon(
+                      onPressed: savingJournal ? null : _saveJournal,
+                      icon: const Icon(Icons.save_outlined),
+                      label: const Text('Записать журнал сейчас'),
+                    ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           Wrap(

@@ -11,6 +11,7 @@ import 'audio_roots.dart';
 import 'audio_folder.dart';
 import 'audio_import.dart';
 import 'audio_library_repository.dart';
+import 'audio_merge.dart';
 import 'models.dart';
 
 class CatalogFile extends FolderAudioFile {
@@ -31,6 +32,20 @@ class AudioBookDraft {
   AudioBookDraft(this.relativeFolder, this.title, this.files);
 }
 
+/// Numbered top-level folders often represent volumes of one audiobook.
+List<String> numberedAudioParts(AudioFolder folder) {
+  final names = <String>{};
+  for (final file in folder.files) {
+    final segments = file.name.replaceAll('\\', '/').split('/');
+    if (segments.length > 1 && RegExp(r'^\d{1,3}$').hasMatch(segments.first)) {
+      names.add(segments.first);
+    }
+  }
+  return names.length < 2
+      ? const []
+      : (names.toList()..sort(naturalAudioOrder));
+}
+
 /// Heuristics are always shown before saving. Disc folders belong to their
 /// parent; unrelated book folders never collapse into a single root book.
 List<AudioBookDraft> groupAudioCatalog(
@@ -42,12 +57,15 @@ List<AudioBookDraft> groupAudioCatalog(
     r'^(?:(?:cd|disc|disk|диск|часть|part|том)\s*[-_. ]*\d+|audio|аудио|tracks|chapters)$',
     caseSensitive: false,
   );
+  final numbered = RegExp(r'^\d{1,3}$');
   for (final file in folder.files) {
     final relative = file.name.replaceAll('\\', '/');
     if (relative.split('/').any(isAudioSupportFolder)) continue;
     var parent = p.posix.dirname(relative);
     if (parent == '.') parent = '';
-    while (parent.isNotEmpty && disc.hasMatch(p.posix.basename(parent))) {
+    while (parent.isNotEmpty &&
+        (disc.hasMatch(p.posix.basename(parent)) ||
+            mode == 'parts' && numbered.hasMatch(p.posix.basename(parent)))) {
       parent = p.posix.dirname(parent);
       if (parent == '.') parent = '';
     }
@@ -56,7 +74,7 @@ List<AudioBookDraft> groupAudioCatalog(
         : mode == 'files'
         ? relative
         : parent;
-    final label = mode == 'folders' && key.isNotEmpty
+    final label = (mode == 'folders' || mode == 'parts') && key.isNotEmpty
         ? relative.substring(key.length + 1)
         : relative;
     groups.putIfAbsent(key, () => []).add(CatalogFile(file, label));
@@ -87,6 +105,13 @@ Future<int> connectAudioCatalog(
   if (selected.isEmpty) throw StateError('Выберите хотя бы одну книгу');
   final repository = assets.repository;
   final count = await repository.db.transaction(() async {
+    final rootKey = audioRootKey(root.root!);
+    final previousRoot = await repository.meta(rootKey);
+    final priorRoot = previousRoot == null
+        ? <String, dynamic>{}
+        : jsonDecode(previousRoot) as Map<String, dynamic>;
+    final priorIds = (priorRoot['bookIds'] as List? ?? []).cast<String>();
+    final absorbed = <String>{};
     final oldId = await repository.meta(
       'audio-folder:${sha256.convert(utf8.encode(root.root!))}',
     );
@@ -111,11 +136,28 @@ Future<int> connectAudioCatalog(
       ids.add(asset.bookId);
       await repository.setMeta('audio-library-hidden:${asset.bookId}', '0');
       createdTracks.addAll(await assets.audioTracks(asset.bookId));
+      if (mode == 'parts') {
+        final newPaths = (await assets.audioTracks(asset.bookId))
+            .map((track) => track.path)
+            .toSet();
+        final oldParts = <String>[];
+        for (final oldId in priorIds) {
+          if (oldId == asset.bookId || absorbed.contains(oldId)) continue;
+          final oldTracks = await assets.audioTracks(oldId);
+          if (oldTracks.isNotEmpty &&
+              oldTracks.every((track) => newPaths.contains(track.path))) {
+            oldParts.add(oldId);
+          }
+        }
+        await AudioMerge(assets).absorb(asset.bookId, oldParts);
+        absorbed.addAll(oldParts);
+      }
     }
     // Replace the old accidental aggregate only when every original source is
     // represented. Keep its sessions and records, and preserve its locator.
     final byPath = {for (final track in createdTracks) track.path: track};
     if (oldId != null &&
+        !absorbed.contains(oldId) &&
         !ids.contains(oldId) &&
         oldTracks.isNotEmpty &&
         oldTracks.every((t) => byPath.containsKey(t.path))) {
@@ -148,11 +190,8 @@ Future<int> connectAudioCatalog(
       }
       await repository.setMeta('audio-library-superseded:$oldId', '1');
     }
-    final key = 'audio-library-root:${sha256.convert(utf8.encode(root.root!))}';
-    final previous = await repository.meta(key);
-    final prior = previous == null
-        ? <String, dynamic>{}
-        : jsonDecode(previous) as Map<String, dynamic>;
+    final key = rootKey;
+    final prior = priorRoot;
     await repository.setMeta(
       key,
       jsonEncode({
@@ -160,7 +199,11 @@ Future<int> connectAudioCatalog(
         'root': root.root,
         'title': prior['displayTitle'] ?? root.title,
         'mode': mode,
-        'bookIds': {...(prior['bookIds'] as List? ?? []), ...ids}.toList(),
+        'bookIds': {
+          for (final id in priorIds)
+            if (!absorbed.contains(id)) id,
+          ...ids,
+        }.toList(),
       }),
     );
     return ids.length;

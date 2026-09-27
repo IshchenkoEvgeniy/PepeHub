@@ -42,6 +42,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
   String typeFilter = 'all';
   int periodDays = 0;
   bool newestFirst = true;
+  final Set<String> selectedEntries = {};
 
   @override
   void initState() {
@@ -60,6 +61,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
       setState(() {
         selectedBookId = null;
         typeFilter = 'all';
+        selectedEntries.clear();
       });
     }
   }
@@ -158,6 +160,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
         initialMinutes: 30,
       );
       if (value == null) return;
+      var saved = false;
       try {
         final id = uuid.v4();
         final start = value.start.toUtc();
@@ -171,9 +174,18 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
           'timezone': 'UTC',
           'source': 'manual',
         });
+        saved = true;
+        await _refreshReadingLog({
+          'bookId': value.bookId,
+          'startedAt': start.toIso8601String(),
+        });
         await _report('Сессия чтения добавлена.');
       } catch (e) {
-        await _report('Не удалось добавить сессию: $e');
+        await _report(
+          saved
+              ? 'Сессия добавлена, но журнал папки не обновлён: $e'
+              : 'Не удалось добавить сессию: $e',
+        );
       }
       return;
     }
@@ -243,6 +255,10 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
         }
       } else {
         await widget.repository.put('session', entry.id, edited);
+        await _refreshReadingLog(before);
+        if (_readingLogDayChanged(before, edited)) {
+          await _refreshReadingLog(edited);
+        }
       }
       await _report('Сессия чтения сохранена.');
     } catch (e) {
@@ -282,11 +298,21 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
           .toIso8601String(),
       'activeSeconds': value.minutes * 60,
     };
+    var saved = false;
     try {
       await widget.repository.put('session', entry.id, updated);
+      saved = true;
+      await _refreshReadingLog(before);
+      if (_readingLogDayChanged(before, updated)) {
+        await _refreshReadingLog(updated);
+      }
       await _report('Сессия чтения сохранена.');
     } catch (e) {
-      await _report('Не удалось сохранить сессию: $e');
+      await _report(
+        saved
+            ? 'Сессия сохранена, но журнал папки не обновлён: $e'
+            : 'Не удалось сохранить сессию: $e',
+      );
     }
   }
 
@@ -487,7 +513,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
         await widget.repository.delete('session', entry.id);
       }
     },
-    after: entry.automatic ? () => _refreshReadingLog(entry.payload) : null,
+    after: () => _refreshReadingLog(entry.payload),
   );
 
   Future<void> _deleteAudioEvent(LibraryRecord entry) => _deleteEntry(
@@ -506,6 +532,90 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     remove: () => widget.repository.delete('session', entry.id),
     after: () => _refreshAudioSidecar(entry.payload?['bookId'] as String?),
   );
+
+  void _toggleEntry(String key) => setState(() {
+    if (!selectedEntries.add(key)) selectedEntries.remove(key);
+  });
+
+  List<String> _visibleKeys() => tabs.index == 0
+      ? [for (final entry in _visibleReading()) 'reading:${entry.id}']
+      : [
+          for (final row in _visibleAudioRows())
+            '${row.legacy ? 'legacy' : 'audio'}:${row.record.id}',
+        ];
+
+  Future<void> _deleteSelected() async {
+    final keys = {...selectedEntries};
+    if (keys.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить ${keys.length} записей?'),
+        content: const Text(
+          'Выбранные записи перестанут учитываться в статистике. Журналы подключённых папок обновятся.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final readingDays = <Map<String, dynamic>>[];
+    final audioBooksChanged = <String>{};
+    var deleted = 0;
+    try {
+      if (tabs.index == 1) await _flushLiveAudio();
+      for (final entry in reading) {
+        if (!keys.contains('reading:${entry.id}')) continue;
+        if (entry.automatic) {
+          await widget.repository.db.customStatement(
+            'DELETE FROM metadata WHERE key=?',
+            ['reading-session:${entry.id}'],
+          );
+        } else {
+          await widget.repository.delete('session', entry.id);
+        }
+        readingDays.add(entry.payload);
+        deleted++;
+      }
+      for (final entry in audioEvents) {
+        if (!keys.contains('audio:${entry.id}')) continue;
+        await AudioJournal(widget.repository).deleteEvent(entry.id);
+        if (entry.payload?['bookId'] is String) {
+          audioBooksChanged.add(entry.payload!['bookId'] as String);
+        }
+        deleted++;
+      }
+      for (final entry in legacyListening) {
+        if (!keys.contains('legacy:${entry.id}')) continue;
+        await widget.repository.delete('session', entry.id);
+        if (entry.payload?['bookId'] is String) {
+          audioBooksChanged.add(entry.payload!['bookId'] as String);
+        }
+        deleted++;
+      }
+      for (final row in readingDays) {
+        await _refreshReadingLog(row);
+      }
+      for (final bookId in audioBooksChanged) {
+        await _refreshAudioSidecar(bookId);
+      }
+      if (mounted) setState(selectedEntries.clear);
+      await _report('Удалено записей: $deleted');
+    } catch (e) {
+      if (mounted) setState(selectedEntries.clear);
+      await _report(
+        'Удалено $deleted из ${keys.length}; проверьте оставшиеся записи: $e',
+      );
+    }
+  }
 
   Future<void> _flushLiveAudio() async {
     final controller = widget.controller;
@@ -545,43 +655,56 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     final name = titles[data['bookId']] ?? 'Книга';
     return Card(
       child: ListTile(
-        leading: const Icon(Icons.menu_book_outlined),
+        leading: selectedEntries.isEmpty
+            ? const Icon(Icons.menu_book_outlined)
+            : Checkbox(
+                value: selectedEntries.contains('reading:${entry.id}'),
+                onChanged: (_) => _toggleEntry('reading:${entry.id}'),
+              ),
         title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text(
           '${_dateLabel(data['startedAt'])} · ${_durationLabel(ms)} · $chars зн. · ${entry.automatic ? '${spans.length} интервалов' : 'ручная сессия'}',
         ),
         isThreeLine: false,
-        trailing: PopupMenuButton<String>(
-          tooltip: 'Действия',
-          onSelected: (action) {
-            if (action == 'edit') {
-              entry.automatic ? _editReading(entry) : _editManualReading(entry);
-            }
-            if (action == 'json') _editReading(entry);
-            if (action == 'delete') _deleteReading(entry);
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(
-              value: 'edit',
-              child: Text(
-                entry.automatic
-                    ? 'Редактировать все поля'
-                    : 'Изменить дату и время',
+        trailing: selectedEntries.isNotEmpty
+            ? null
+            : PopupMenuButton<String>(
+                tooltip: 'Действия',
+                onSelected: (action) {
+                  if (action == 'edit') {
+                    entry.automatic
+                        ? _editReading(entry)
+                        : _editManualReading(entry);
+                  }
+                  if (action == 'json') _editReading(entry);
+                  if (action == 'delete') _deleteReading(entry);
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'edit',
+                    child: Text(
+                      entry.automatic
+                          ? 'Редактировать все поля'
+                          : 'Изменить дату и время',
+                    ),
+                  ),
+                  if (!entry.automatic)
+                    const PopupMenuItem(
+                      value: 'json',
+                      child: Text('Все поля · JSON'),
+                    ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Удалить из статистики'),
+                  ),
+                ],
               ),
-            ),
-            if (!entry.automatic)
-              const PopupMenuItem(
-                value: 'json',
-                child: Text('Все поля · JSON'),
-              ),
-            const PopupMenuItem(
-              value: 'delete',
-              child: Text('Удалить из статистики'),
-            ),
-          ],
-        ),
-        onTap: () =>
-            entry.automatic ? _editReading(entry) : _editManualReading(entry),
+        onLongPress: () => _toggleEntry('reading:${entry.id}'),
+        onTap: selectedEntries.isNotEmpty
+            ? () => _toggleEntry('reading:${entry.id}')
+            : () => entry.automatic
+                  ? _editReading(entry)
+                  : _editManualReading(entry),
       ),
     );
   }
@@ -594,56 +717,82 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
         : 'Позиция ${_durationLabel((data['positionMs'] as num?)?.toInt() ?? 0)}';
     return Card(
       child: ListTile(
-        leading: Icon(_eventIcon(kind)),
+        leading: selectedEntries.isEmpty
+            ? Icon(_eventIcon(kind))
+            : Checkbox(
+                value: selectedEntries.contains('audio:${record.id}'),
+                onChanged: (_) => _toggleEntry('audio:${record.id}'),
+              ),
         title: Text(
           '${_eventName(kind)} · ${titles[data['bookId']] ?? 'Книга'}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text('${_dateLabel(data['at'])} · $detail'),
-        trailing: PopupMenuButton<String>(
-          tooltip: 'Действия',
-          onSelected: (action) {
-            if (action == 'edit') _editAudioEvent(record);
-            if (action == 'json') _editAudioJson(record);
-            if (action == 'delete') _deleteAudioEvent(record);
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'edit', child: Text('Изменить показатели')),
-            PopupMenuItem(value: 'json', child: Text('Все поля · JSON')),
-            PopupMenuItem(
-              value: 'delete',
-              child: Text('Удалить из статистики'),
-            ),
-          ],
-        ),
-        onTap: () => _editAudioEvent(record),
+        trailing: selectedEntries.isNotEmpty
+            ? null
+            : PopupMenuButton<String>(
+                tooltip: 'Действия',
+                onSelected: (action) {
+                  if (action == 'edit') _editAudioEvent(record);
+                  if (action == 'json') _editAudioJson(record);
+                  if (action == 'delete') _deleteAudioEvent(record);
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'edit',
+                    child: Text('Изменить показатели'),
+                  ),
+                  PopupMenuItem(value: 'json', child: Text('Все поля · JSON')),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Удалить из статистики'),
+                  ),
+                ],
+              ),
+        onLongPress: () => _toggleEntry('audio:${record.id}'),
+        onTap: selectedEntries.isNotEmpty
+            ? () => _toggleEntry('audio:${record.id}')
+            : () => _editAudioEvent(record),
       ),
     );
   }
 
   Widget _legacyItem(LibraryRecord record) => Card(
     child: ListTile(
-      leading: const Icon(Icons.history),
+      leading: selectedEntries.isEmpty
+          ? const Icon(Icons.history)
+          : Checkbox(
+              value: selectedEntries.contains('legacy:${record.id}'),
+              onChanged: (_) => _toggleEntry('legacy:${record.id}'),
+            ),
       title: Text(titles[record.payload?['bookId']] ?? 'Книга'),
       subtitle: Text(
         '${_dateLabel(record.payload?['startedAt'])} · ${_durationLabel(((record.payload?['activeSeconds'] as num?)?.toInt() ?? 0) * 1000)} · старый журнал',
       ),
-      trailing: PopupMenuButton<String>(
-        tooltip: 'Действия',
-        onSelected: (action) {
-          if (action == 'edit') _editLegacyListening(record);
-          if (action == 'delete') _deleteLegacy(record);
-        },
-        itemBuilder: (_) => const [
-          PopupMenuItem(value: 'edit', child: Text('Редактировать все поля')),
-          PopupMenuItem(
-            value: 'delete',
-            child: Text('Удалить из старого журнала'),
-          ),
-        ],
-      ),
-      onTap: () => _editLegacyListening(record),
+      trailing: selectedEntries.isNotEmpty
+          ? null
+          : PopupMenuButton<String>(
+              tooltip: 'Действия',
+              onSelected: (action) {
+                if (action == 'edit') _editLegacyListening(record);
+                if (action == 'delete') _deleteLegacy(record);
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'edit',
+                  child: Text('Редактировать все поля'),
+                ),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Text('Удалить из старого журнала'),
+                ),
+              ],
+            ),
+      onLongPress: () => _toggleEntry('legacy:${record.id}'),
+      onTap: selectedEntries.isNotEmpty
+          ? () => _toggleEntry('legacy:${record.id}')
+          : () => _editLegacyListening(record),
     ),
   );
 
@@ -863,11 +1012,16 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     );
   }
 
-  Future<void> _copyVisibleCsv() async {
+  Future<void> _copyVisibleCsv({bool selectedOnly = false}) async {
     String cell(Object? value) => '"${'$value'.replaceAll('"', '""')}"';
     final lines = <String>['тип,книга,дата,секунды,знаки,id'];
     if (tabs.index == 0) {
-      for (final entry in _visibleReading()) {
+      for (final entry
+          in selectedOnly
+              ? reading.where(
+                  (entry) => selectedEntries.contains('reading:${entry.id}'),
+                )
+              : _visibleReading()) {
         lines.add(
           [
             entry.automatic ? 'Авто' : 'Ручная',
@@ -880,7 +1034,17 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
         );
       }
     } else {
-      for (final row in _visibleAudioRows()) {
+      for (final row
+          in selectedOnly
+              ? [
+                  for (final record in audioEvents)
+                    if (selectedEntries.contains('audio:${record.id}'))
+                      (record: record, legacy: false),
+                  for (final record in legacyListening)
+                    if (selectedEntries.contains('legacy:${record.id}'))
+                      (record: record, legacy: true),
+                ]
+              : _visibleAudioRows()) {
         final entry = row.record;
         final data = entry.payload ?? {};
         lines.add(
@@ -920,7 +1084,11 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('Управление статистикой'),
+      title: Text(
+        selectedEntries.isEmpty
+            ? 'Управление статистикой'
+            : 'Выбрано: ${selectedEntries.length}',
+      ),
       bottom: TabBar(
         controller: tabs,
         tabs: const [
@@ -928,18 +1096,51 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
           Tab(icon: Icon(Icons.headphones_outlined), text: 'Прослушивание'),
         ],
       ),
-      actions: [
-        IconButton(
-          tooltip: 'Скопировать видимые записи в CSV',
-          onPressed: loading ? null : _copyVisibleCsv,
-          icon: const Icon(Icons.table_view_outlined),
-        ),
-        IconButton(
-          tooltip: 'Обновить записи',
-          onPressed: _load,
-          icon: const Icon(Icons.refresh),
-        ),
-      ],
+      actions: selectedEntries.isNotEmpty
+          ? [
+              IconButton(
+                tooltip: 'Выбрать все видимые',
+                onPressed: () =>
+                    setState(() => selectedEntries.addAll(_visibleKeys())),
+                icon: const Icon(Icons.select_all),
+              ),
+              IconButton(
+                tooltip: 'Удалить выбранные',
+                onPressed: _deleteSelected,
+                icon: const Icon(Icons.delete_outline),
+              ),
+              IconButton(
+                tooltip: 'Скопировать выбранные в CSV',
+                onPressed: () => _copyVisibleCsv(selectedOnly: true),
+                icon: const Icon(Icons.table_view_outlined),
+              ),
+              IconButton(
+                tooltip: 'Отменить выбор',
+                onPressed: () => setState(selectedEntries.clear),
+                icon: const Icon(Icons.close),
+              ),
+            ]
+          : [
+              IconButton(
+                tooltip: 'Выбрать видимые записи',
+                onPressed: loading
+                    ? null
+                    : () => setState(
+                        () => selectedEntries.addAll(_visibleKeys()),
+                      ),
+                icon: const Icon(Icons.select_all),
+              ),
+              IconButton(
+                tooltip: 'Скопировать видимые записи в CSV',
+                onPressed: loading ? null : _copyVisibleCsv,
+                icon: const Icon(Icons.table_view_outlined),
+              ),
+              IconButton(
+                tooltip: 'Обновить записи',
+                onPressed: _load,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
     ),
     floatingActionButton: FloatingActionButton.extended(
       onPressed: loading ? null : _addEntry,

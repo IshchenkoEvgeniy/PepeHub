@@ -125,6 +125,17 @@ Future<void> recoverReadingRoot(
             });
           }
         }
+        for (final raw in packet['manualSessions'] as List? ?? []) {
+          final saved = Map<String, dynamic>.from(raw as Map);
+          final hash = saved.remove('hash') as String?;
+          final id = saved.remove('id') as String?;
+          if (hash == null || id == null) continue;
+          final asset = await assets.byHash(hash);
+          if (asset == null || !ids.contains(asset.bookId)) continue;
+          if (await repo.record(id) != null) continue;
+          saved['bookId'] = asset.bookId;
+          await repo.put('session', id, saved);
+        }
         for (final raw in packet['books'] as List? ?? []) {
           final book = raw as Map;
           final hash = book['hash'] as String;

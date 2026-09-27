@@ -18,6 +18,7 @@ class ReadingActivity {
   Map<String, dynamic>? span;
   late DateTime started, lastTouch, accounted, positionAt;
   DateTime? lastCheckpoint;
+  DateTime? lastExport;
   int position = 0, fresh = 0, repeated = 0;
   int sampleActiveMs = 0, speedActiveMs = 0, speedChars = 0, speedMoves = 0;
   bool sampleEligible = true;
@@ -254,8 +255,12 @@ class ReadingActivity {
           if (finished && dates['finishedAt'] == null) 'finishedAt': finishedAt,
         });
       });
-      if (significant && export != null) {
+      if (export != null &&
+          (significant ||
+              lastExport == null ||
+              clock().difference(lastExport!) >= const Duration(seconds: 30))) {
         await export!(jsonDecode(json) as Map<String, dynamic>);
+        lastExport = clock();
       }
     });
     writes = next.catchError((Object e) {

@@ -23,6 +23,7 @@ import 'package:path/path.dart' as p;
 import '../data/repository.dart';
 import '../audio/audio_folder.dart';
 import '../audio/audio_import.dart' show naturalAudioOrder;
+import '../audio/audio_merge.dart';
 import '../export/markdown.dart';
 import '../media/asset_store.dart';
 import '../media/audio_controller.dart';
@@ -78,6 +79,7 @@ class _LibraryPageState extends State<LibraryPage> {
   int pending = 0;
   bool busy = false, loading = true;
   bool indexing = false, favoritesOnly = false;
+  final Set<String> selectedBooks = {};
   String readingSort = 'title';
   String audioSort = 'title';
   Map<String, DateTime> audioRecent = {};
@@ -129,6 +131,7 @@ class _LibraryPageState extends State<LibraryPage> {
     if (busy || loading || reading == next) return;
     setState(() {
       reading = next;
+      selectedBooks.clear();
       books = [];
       roots = [];
       selectedRoot = null;
@@ -418,6 +421,111 @@ class _LibraryPageState extends State<LibraryPage> {
       await _reload();
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  void _toggleBook(String id) => setState(() {
+    if (!selectedBooks.add(id)) selectedBooks.remove(id);
+  });
+
+  Future<void> _batchBooks(String action) async {
+    final chosen =
+        books.where((book) => selectedBooks.contains(book.id)).toList()..sort(
+          (a, b) => naturalAudioOrder(
+            '${audioSourcePaths[a.id]?['relativePath'] ?? _title(a)}',
+            '${audioSourcePaths[b.id]?['relativePath'] ?? _title(b)}',
+          ),
+        );
+    if (chosen.isEmpty) return;
+    if (action == 'merge') {
+      final matchingRoot = roots
+          .where(
+            (root) => chosen.every((book) => root.bookIds.contains(book.id)),
+          )
+          .firstOrNull;
+      final title = TextEditingController(
+        text: matchingRoot?.title ?? _title(chosen.first),
+      );
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Объединить аудиокниги'),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Треки будут идти в показанном порядке. Исходные карточки скроются; позиции, события и заметки перейдут в объединённую книгу.',
+                ),
+                const SizedBox(height: 12),
+                Text(chosen.map((book) => _title(book)).join(' → ')),
+                TextField(
+                  controller: title,
+                  decoration: const InputDecoration(
+                    labelText: 'Название книги',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Объединить'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) {
+        title.dispose();
+        return;
+      }
+      final name = title.text;
+      title.dispose();
+      await _action(() async {
+        await widget.audio?.stop();
+        final id = await AudioMerge(widget.assets!)
+            .merge(chosen.map((book) => book.id).toList(), name);
+        await widget.audio?.sidecar.update(id, force: true);
+        if (mounted) setState(selectedBooks.clear);
+      });
+      return;
+    }
+    await _action(() async {
+      for (final book in chosen) {
+        if (action == 'favorite') {
+          final prefix = reading ? 'reading' : 'audio';
+          await readingLibrary.update('$prefix-book:${book.id}', {
+            'favorite': true,
+          });
+        } else {
+          await widget.repository.put('book', book.id, {
+            ...book.payload!,
+            'status': action,
+          });
+          if (reading) {
+            final prefs = await readingLibrary.value('reading-book:${book.id}');
+            await readingLibrary.update('reading-book:${book.id}', {
+              'overrides': {
+                ...Map<String, dynamic>.from(prefs['overrides'] as Map? ?? {}),
+                'status': action,
+              },
+            });
+          } else {
+            await widget.repository.setMeta(
+              'audio-status-override:${book.id}',
+              action,
+            );
+          }
+        }
+      }
+      if (mounted) setState(selectedBooks.clear);
+    });
   }
 
   Future<void> _addBook() async {
@@ -863,70 +971,139 @@ class _LibraryPageState extends State<LibraryPage> {
           : AudioMiniPlayer(controller: widget.audio),
       appBar: AppBar(
         title: Text(
-          reading ? 'Книги' : 'Аудиокниги',
+          selectedBooks.isNotEmpty
+              ? 'Выбрано: ${selectedBooks.length}'
+              : reading
+              ? 'Книги'
+              : 'Аудиокниги',
           overflow: TextOverflow.ellipsis,
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Папки библиотеки',
-            onPressed: busy || widget.assets == null ? null : _manageRoots,
-            icon: const Icon(Icons.folder_open),
-          ),
-          IconButton(
-            tooltip: reading ? 'Статистика чтения' : 'Статистика прослушивания',
-            icon: const Icon(Icons.bar_chart),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => reading
-                    ? ReadingStatisticsPage(repository: widget.repository)
-                    : AudioStatisticsPage(
-                        repository: widget.repository,
-                        controller: widget.audio,
-                      ),
-              ),
-            ),
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Добавить',
-            icon: const Icon(Icons.add),
-            onSelected: (value) {
-              if (value == 'new') _addBook();
-              if (value == 'folder') {
-                if (reading) {
-                  _manageRoots();
-                } else {
-                  _importAudio(folder: true);
-                }
-              }
-              if (value == 'audio') _importAudio();
-              if (value == 'book') _importBook();
-              if (value == 'export') _export();
-            },
-            itemBuilder: (_) => [
-              PopupMenuItem(value: 'new', child: Text('Добавить книгу')),
-              PopupMenuItem(
-                value: 'folder',
-                child: Text('Добавить папку библиотеки'),
-              ),
-              if (reading)
-                const PopupMenuItem(value: 'book', child: Text('Импорт книги')),
-              if (!reading)
-                const PopupMenuItem(
-                  value: 'audio',
-                  child: Text('Копировать аудиофайлы'),
+        actions: selectedBooks.isNotEmpty
+            ? [
+                IconButton(
+                  tooltip: 'Выбрать все видимые',
+                  onPressed: () => setState(
+                    () => selectedBooks.addAll(visible.map((book) => book.id)),
+                  ),
+                  icon: const Icon(Icons.select_all),
                 ),
-              PopupMenuItem(value: 'export', child: Text('Экспорт Markdown')),
-            ],
-          ),
-          if (showSync)
-            IconButton(
-              tooltip: 'Настройки синхронизации',
-              onPressed: busy ? null : _settings,
-              icon: const Icon(Icons.settings_outlined),
-            ),
-          const SizedBox(width: 12),
-        ],
+                PopupMenuButton<String>(
+                  tooltip: 'Действия с выбранными',
+                  onSelected: _batchBooks,
+                  itemBuilder: (_) => [
+                    if (!reading &&
+                        selectedBooks.length > 1 &&
+                        widget.assets != null)
+                      const PopupMenuItem(
+                        value: 'merge',
+                        child: Text('Объединить в аудиокнигу'),
+                      ),
+                    const PopupMenuItem(
+                      value: 'favorite',
+                      child: Text('Добавить в избранное'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'planned',
+                      child: Text('Отметить новыми'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'active',
+                      child: Text('Отметить начатыми'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'finished',
+                      child: Text('Отметить завершёнными'),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  tooltip: 'Отменить выбор',
+                  onPressed: () => setState(selectedBooks.clear),
+                  icon: const Icon(Icons.close),
+                ),
+              ]
+            : [
+                IconButton(
+                  tooltip: 'Выбрать видимые книги',
+                  onPressed: busy || visible.isEmpty
+                      ? null
+                      : () => setState(
+                          () => selectedBooks.addAll(
+                            visible.map((book) => book.id),
+                          ),
+                        ),
+                  icon: const Icon(Icons.select_all),
+                ),
+                IconButton(
+                  tooltip: 'Папки библиотеки',
+                  onPressed: busy || widget.assets == null
+                      ? null
+                      : _manageRoots,
+                  icon: const Icon(Icons.folder_open),
+                ),
+                IconButton(
+                  tooltip: reading
+                      ? 'Статистика чтения'
+                      : 'Статистика прослушивания',
+                  icon: const Icon(Icons.bar_chart),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => reading
+                          ? ReadingStatisticsPage(repository: widget.repository)
+                          : AudioStatisticsPage(
+                              repository: widget.repository,
+                              controller: widget.audio,
+                            ),
+                    ),
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'Добавить',
+                  icon: const Icon(Icons.add),
+                  onSelected: (value) {
+                    if (value == 'new') _addBook();
+                    if (value == 'folder') {
+                      if (reading) {
+                        _manageRoots();
+                      } else {
+                        _importAudio(folder: true);
+                      }
+                    }
+                    if (value == 'audio') _importAudio();
+                    if (value == 'book') _importBook();
+                    if (value == 'export') _export();
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(value: 'new', child: Text('Добавить книгу')),
+                    PopupMenuItem(
+                      value: 'folder',
+                      child: Text('Добавить папку библиотеки'),
+                    ),
+                    if (reading)
+                      const PopupMenuItem(
+                        value: 'book',
+                        child: Text('Импорт книги'),
+                      ),
+                    if (!reading)
+                      const PopupMenuItem(
+                        value: 'audio',
+                        child: Text('Копировать аудиофайлы'),
+                      ),
+                    PopupMenuItem(
+                      value: 'export',
+                      child: Text('Экспорт Markdown'),
+                    ),
+                  ],
+                ),
+                if (showSync)
+                  IconButton(
+                    tooltip: 'Настройки синхронизации',
+                    onPressed: busy ? null : _settings,
+                    icon: const Icon(Icons.settings_outlined),
+                  ),
+                const SizedBox(width: 12),
+              ],
       ),
       body: SafeArea(
         child: Center(
@@ -1367,7 +1544,12 @@ class _LibraryPageState extends State<LibraryPage> {
     return Material(
       color: selected ? scheme.primaryContainer : Colors.transparent,
       child: InkWell(
-        onTap: asset == null || busy
+        onLongPress: busy ? null : () => _toggleBook(book.id),
+        onTap: busy
+            ? null
+            : selectedBooks.isNotEmpty
+            ? () => _toggleBook(book.id)
+            : asset == null
             ? null
             : () => audio ? _openAudio(asset) : _openReader(asset),
         child: Padding(
@@ -1389,25 +1571,40 @@ class _LibraryPageState extends State<LibraryPage> {
                 width: 108,
                 height: 158,
                 color: scheme.surfaceContainerHighest,
-                child: audio && widget.assets != null
-                    ? AudioCover(
-                        key: ValueKey('${book.id}:$coverRevision'),
-                        assets: widget.assets!,
-                        bookId: book.id,
-                      )
-                    : !audio && _textInfo(book)['cover'] != null
-                    ? Image.file(
-                        File(_textInfo(book)['cover'] as String),
-                        fit: BoxFit.cover,
-                        cacheWidth: 240,
-                        errorBuilder: (_, _, _) =>
-                            const Icon(Icons.menu_book, size: 48),
-                      )
-                    : Icon(
-                        audio ? Icons.headphones : Icons.menu_book,
-                        size: 48,
-                        color: scheme.primary,
+                child: Stack(
+                  children: [
+                    SizedBox.expand(
+                      child: audio && widget.assets != null
+                          ? AudioCover(
+                              key: ValueKey('${book.id}:$coverRevision'),
+                              assets: widget.assets!,
+                              bookId: book.id,
+                            )
+                          : !audio && _textInfo(book)['cover'] != null
+                          ? Image.file(
+                              File(_textInfo(book)['cover'] as String),
+                              fit: BoxFit.cover,
+                              cacheWidth: 240,
+                              errorBuilder: (_, _, _) =>
+                                  const Icon(Icons.menu_book, size: 48),
+                            )
+                          : Icon(
+                              audio ? Icons.headphones : Icons.menu_book,
+                              size: 48,
+                              color: scheme.primary,
+                            ),
+                    ),
+                    if (selectedBooks.isNotEmpty)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        child: Checkbox(
+                          value: selectedBooks.contains(book.id),
+                          onChanged: busy ? null : (_) => _toggleBook(book.id),
+                        ),
                       ),
+                  ],
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(

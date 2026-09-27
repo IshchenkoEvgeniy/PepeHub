@@ -20,6 +20,7 @@ import 'reader_page.dart';
 import 'reading_activity.dart';
 import 'reading_library.dart';
 import 'reading_log.dart';
+import '../ui/reading_statistics_page.dart';
 import 'reading_notes_page.dart';
 
 class PdfReaderPage extends StatefulWidget {
@@ -944,6 +945,19 @@ class _PdfReaderPageState extends State<PdfReaderPage>
           : AppBar(
               title: Text(displayTitle ?? widget.asset.filename),
               actions: [
+                IconButton(
+                  tooltip: 'Статистика чтения и журнал',
+                  icon: const Icon(Icons.bar_chart_outlined),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => ReadingStatisticsPage(
+                        repository: widget.repository,
+                        bookId: widget.asset.bookId,
+                      ),
+                    ),
+                  ),
+                ),
                 IconButton(
                   tooltip: 'Поиск по книге',
                   onPressed: ready ? _search : null,

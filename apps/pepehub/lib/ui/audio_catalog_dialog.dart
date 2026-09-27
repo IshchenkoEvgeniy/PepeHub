@@ -22,6 +22,41 @@ class _AudioCatalogDialogState extends State<AudioCatalogDialog> {
   String mode = 'folders', error = '';
   bool busy = false;
   bool sidecar = true;
+  @override
+  void initState() {
+    super.initState();
+    final parts = numberedAudioParts(widget.folder);
+    if (parts.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final merge = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Это части одной аудиокниги?'),
+          content: Text(
+            'Найдены папки ${parts.join(', ')}. Объединить их в одну книгу с последовательным воспроизведением?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Оставить отдельно'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Объединить'),
+            ),
+          ],
+        ),
+      );
+      if (merge == true && mounted) {
+        setState(() {
+          mode = 'parts';
+          drafts = groupAudioCatalog(widget.folder, mode: mode);
+        });
+      }
+    });
+  }
+
   Future<void> save() async {
     setState(() {
       busy = true;
@@ -80,6 +115,10 @@ class _AudioCatalogDialogState extends State<AudioCatalogDialog> {
                 DropdownMenuItem(
                   value: 'folders',
                   child: Text('Отдельная книга в каждой подпапке'),
+                ),
+                DropdownMenuItem(
+                  value: 'parts',
+                  child: Text('Нумерованные папки — части одной книги'),
                 ),
                 DropdownMenuItem(
                   value: 'files',

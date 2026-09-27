@@ -17,6 +17,7 @@ import 'reading_library.dart';
 import 'reading_notes_page.dart';
 import 'reading_activity.dart';
 import 'reading_log.dart';
+import '../ui/reading_statistics_page.dart';
 import 'epub.dart';
 import 'reader_resources.dart';
 import 'reader_rebase.dart';
@@ -882,6 +883,19 @@ class _ReaderPageState extends State<ReaderPage>
                       overflow: TextOverflow.ellipsis,
                     ),
                     actions: [
+                      IconButton(
+                        tooltip: 'Статистика чтения и журнал',
+                        icon: const Icon(Icons.bar_chart_outlined),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (_) => ReadingStatisticsPage(
+                              repository: widget.repository,
+                              bookId: widget.asset.bookId,
+                            ),
+                          ),
+                        ),
+                      ),
                       IconButton(
                         tooltip: 'Заметки книги',
                         icon: const Icon(Icons.edit_note),
