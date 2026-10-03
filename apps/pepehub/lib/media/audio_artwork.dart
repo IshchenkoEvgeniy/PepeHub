@@ -65,6 +65,9 @@ class ArtworkStore {
   }
 
   Future<Uri?> _load(String bookId) async {
+    if (await assets.repository.meta('audio-cover-hidden:$bookId') == 'true') {
+      return null;
+    }
     final saved = await assets.repository.meta('audio-cover:$bookId');
     if (saved != null && await File(saved).exists()) return File(saved).uri;
     final tracks = await assets.audioTracks(bookId);
@@ -141,6 +144,7 @@ class ArtworkStore {
         );
         await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
         await assets.repository.setMeta('audio-cover:$bookId', file.path);
+        await assets.repository.setMeta('audio-cover-hidden:$bookId', 'false');
         return file.uri;
       } finally {
         frame.image.dispose();

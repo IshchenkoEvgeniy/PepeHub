@@ -9,17 +9,41 @@ import 'library_repository.dart';
 import 'library_mapper.dart';
 import 'models.dart';
 import 'obsidian_sync_service.dart';
+import 'activity_store.dart';
+import 'cover_sync.dart';
+import '../media/asset_store.dart';
 
 class LibraryService extends ChangeNotifier {
   final Repository local;
   final http.Client client;
-  LibraryService(this.local, this.client);
+  final AssetStore? assets;
+  LibraryService(this.local, this.client, {this.assets});
   ObsidianConfig? config;
   LibraryRepository? get repository =>
       config == null ? null : LibraryRepository(local, config!.namespace);
+  ActivityStore? get history =>
+      config == null ? null : ActivityStore(local, config!.namespace);
+  CoverSync? get covers => config == null || assets == null
+      ? null
+      : CoverSync(assets!, client, config!);
+  Future<String?> chooseCover() async {
+    if (covers == null) {
+      throw StateError('Подключите Obsidian перед выбором обложки.');
+    }
+    return covers!.choose();
+  }
+
+  String? coverPath(ObsidianLibraryItem item) {
+    final hash =
+        CoverSync.referenceHash(item.value('cover')) ??
+        item.coverAsset?['hash'] as String?;
+    return hash == null ? null : covers?.path(hash);
+  }
+
   List<LibraryEntry> entries = [];
   Map<String, dynamic>? snapshot;
   bool syncing = false;
+  bool _syncAgain = false;
   String? error;
   Timer? _timer;
   bool _disposed = false;
@@ -32,14 +56,27 @@ class LibraryService extends ChangeNotifier {
     _generation++;
     _timer?.cancel();
     config = next;
+    await local.setMeta('obsidian-active-namespace', next?.namespace ?? '');
     error = null;
     await reload();
     if (next != null && !_disposed) {
+      await configureTimer();
+      await sync();
+    }
+  }
+
+  Future<void> configureTimer() async {
+    final generation = _generation;
+    final seconds =
+        int.tryParse(await local.meta('obsidian-sync-seconds') ?? '') ?? 30;
+    if (_disposed || generation != _generation) return;
+    _timer?.cancel();
+    _timer = null;
+    if (config != null && seconds > 0) {
       _timer = Timer.periodic(
-        const Duration(seconds: 30),
+        Duration(seconds: seconds.clamp(30, 3600)),
         (_) => unawaited(sync()),
       );
-      await sync();
     }
   }
 
@@ -47,6 +84,9 @@ class LibraryService extends ChangeNotifier {
     final generation = _generation, repo = repository;
     final values = await repo?.entries() ?? <String, LibraryEntry>{};
     final schema = await repo?.snapshot();
+    final warning = repo == null
+        ? null
+        : await local.meta('obsidian-cover-errors:${repo.namespace}');
     if (generation != _generation || _disposed) return;
     entries = values.values.toList()
       ..sort(
@@ -54,18 +94,35 @@ class LibraryService extends ChangeNotifier {
             a.item.title.toLowerCase().compareTo(b.item.title.toLowerCase()),
       );
     snapshot = schema;
+    if (error == null && warning != null && warning.isNotEmpty) error = warning;
     _notify();
   }
 
   Future<void> sync() async {
     final repo = repository, connection = config;
-    if (syncing || repo == null || connection == null || _disposed) return;
+    if (syncing) {
+      _syncAgain = true;
+      return;
+    }
+    if (repo == null || connection == null || _disposed) return;
     final generation = _generation;
     syncing = true;
     error = null;
     _notify();
     try {
-      await ObsidianSyncService(repo, client, connection).run();
+      do {
+        _syncAgain = false;
+        if (await ObsidianSyncService(
+          repo,
+          client,
+          connection,
+          covers: assets == null
+              ? null
+              : CoverSync(assets!, client, connection),
+        ).run()) {
+          _syncAgain = true;
+        }
+      } while (_syncAgain && generation == _generation && !_disposed);
     } catch (e) {
       if (generation == _generation) error = '$e';
     } finally {
@@ -142,6 +199,7 @@ class LibraryService extends ChangeNotifier {
       data[itemId] = LibraryEntry(entry.item, sourceBookId: sourceBookId);
     });
     await reload();
+    await sync();
   }
 
   Future<void> save(

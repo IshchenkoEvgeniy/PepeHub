@@ -3,18 +3,31 @@ import 'package:flutter/material.dart';
 /// Shared visual language of the Shelf reading dashboard.
 class ShelfPalette {
   final bool dark;
-  const ShelfPalette(this.dark);
-  factory ShelfPalette.of(BuildContext context) =>
-      ShelfPalette(Theme.of(context).brightness == Brightness.dark);
+  final ThemeData? theme;
+  const ShelfPalette(this.dark, [this.theme]);
+  factory ShelfPalette.of(BuildContext context) => ShelfPalette(
+    Theme.of(context).brightness == Brightness.dark,
+    Theme.of(context),
+  );
   Color get background =>
-      dark ? const Color(0xff101116) : const Color(0xfff5f5fa);
-  Color get panel => dark ? const Color(0xff191a23) : Colors.white;
-  Color get sidebar => dark ? const Color(0xff15161e) : const Color(0xffefeff7);
-  Color get line => dark ? const Color(0xff2b2c38) : const Color(0xffe3e3ed);
-  Color get muted => dark ? const Color(0xff8c8d9f) : const Color(0xff727386);
-  Color get accent => dark ? const Color(0xffa69afb) : const Color(0xff7667d6);
+      theme?.scaffoldBackgroundColor ??
+      (dark ? const Color(0xff101116) : const Color(0xfff5f5fa));
+  Color get panel =>
+      theme?.colorScheme.surface ??
+      (dark ? const Color(0xff191a23) : Colors.white);
+  Color get sidebar => Color.lerp(background, panel, .55)!;
+  Color get line =>
+      theme?.colorScheme.outlineVariant ??
+      (dark ? const Color(0xff2b2c38) : const Color(0xffe3e3ed));
+  Color get muted =>
+      theme?.colorScheme.onSurfaceVariant ??
+      (dark ? const Color(0xff8c8d9f) : const Color(0xff727386));
+  Color get accent =>
+      theme?.colorScheme.primary ??
+      (dark ? const Color(0xffa69afb) : const Color(0xff7667d6));
   Color get selected =>
-      dark ? const Color(0xff29253f) : const Color(0xffeeebff);
+      theme?.colorScheme.primaryContainer ??
+      (dark ? const Color(0xff29253f) : const Color(0xffeeebff));
 }
 
 class ShelfPanel extends StatelessWidget {

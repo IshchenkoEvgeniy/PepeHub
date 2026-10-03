@@ -328,6 +328,7 @@ class ListeningSampler {
 }
 
 class AudioStats {
+  int knownWallMs = 0;
   int wallMs = 0,
       mediaMs = 0,
       uniqueMs = 0,
@@ -347,12 +348,26 @@ class AudioStats {
     final ranges = <String, List<(int, int)>>{};
     for (final e in events) {
       final kind = e['kind'];
+      if (kind == 'journal') {
+        final wall = (e['wallMs'] as num).toInt(),
+            media = (e['mediaMs'] as num?)?.toInt() ?? 0;
+        if (wall <= 0) continue;
+        wallMs += wall;
+        mediaMs += media;
+        unknownCoverageMs += media;
+        if (media > 0) knownWallMs += wall;
+        final day = e['localDay'] as String, book = e['bookId'] as String;
+        days[day] = (days[day] ?? 0) + wall;
+        books[book] = (books[book] ?? 0) + wall;
+        continue;
+      }
       if (kind == 'listen') {
         final wall = (e['wallMs'] as num).toInt(),
             start = (e['positionMs'] as num).toInt(),
             end = (e['endMs'] as num).toInt();
         if (wall <= 0 || end <= start) continue;
         wallMs += wall;
+        knownWallMs += wall;
         mediaMs += end - start;
         final day = e['localDay'] as String, book = e['bookId'] as String;
         days[day] = (days[day] ?? 0) + wall;
@@ -394,7 +409,9 @@ class AudioStats {
         (a, b) =>
             (b['at'] as String? ?? '').compareTo(a['at'] as String? ?? ''),
       );
-    recent.addAll(sorted.where((e) => e['kind'] != 'listen').take(100));
+    recent.addAll(
+      sorted.where((e) => !['listen', 'journal'].contains(e['kind'])).take(100),
+    );
     for (final list in ranges.values) {
       list.sort((a, b) => a.$1.compareTo(b.$1));
       int? start;
@@ -429,6 +446,7 @@ class AudioStats {
     return best;
   }
 
-  int get repeatedMs => mediaMs - uniqueMs;
-  double get averageSpeed => wallMs == 0 ? 0 : mediaMs / wallMs;
+  int get repeatedMs => mediaMs - uniqueMs - unknownCoverageMs;
+  int unknownCoverageMs = 0;
+  double get averageSpeed => knownWallMs == 0 ? 0 : mediaMs / knownWallMs;
 }

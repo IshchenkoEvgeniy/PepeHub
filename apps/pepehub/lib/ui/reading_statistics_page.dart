@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/repository.dart';
+import '../library/activity_store.dart';
 import '../reader/reading_activity.dart';
 import '../reader/reading_library.dart';
 import '../reader/reading_log.dart';
@@ -51,6 +52,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           .where((s) => s.payload?['kind'] == 'reading');
       final rows = [
         ...automatic,
+        ...await ActivityStore.foreignReading(widget.repository),
         for (final s in manual)
           {
             'id': s.id,
@@ -58,15 +60,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
             'startedAt': s.payload!['startedAt'],
             'source': 'manual',
             'closed': true,
-            'spans': [
-              {
-                'start': s.payload!['startedAt'],
-                'end': s.payload!['endedAt'],
-                'activeMs':
-                    ((s.payload!['activeSeconds'] as num?)?.toInt() ?? 0) *
-                    1000,
-              },
-            ],
+            'spans': ActivityStore.manualSpans(s.payload!),
           },
       ];
       final prefs = await library.entries('reading-book:'),
@@ -122,7 +116,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           titles
             ..clear()
             ..addAll(names);
-          goal = g.clamp(1, 1440);
+          goal = g.clamp(0, 1440);
           journalFolders = folders;
           lastJournalSave = lastSave;
           error = logWarnings.isEmpty
@@ -432,11 +426,16 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                       ),
                     ],
                   ),
-                  Text('${statTime(todayMs)} / $goal мин'),
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(
-                    value: (todayMs / (goal * 60000)).clamp(0, 1),
+                  Text(
+                    goal == 0
+                        ? '${statTime(todayMs)} · без цели'
+                        : '${statTime(todayMs)} / $goal мин',
                   ),
+                  const SizedBox(height: 8),
+                  if (goal > 0)
+                    LinearProgressIndicator(
+                      value: (todayMs / (goal * 60000)).clamp(0, 1),
+                    ),
                 ],
               ),
             ),
@@ -561,7 +560,9 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
             ListTile(
               title: Text(titles[session['bookId']] ?? 'Книга'),
               subtitle: Text(
-                '${DateTime.parse(session['startedAt'] as String).toLocal().toString().substring(0, 16)} · ${session['source'] == 'manual'
+                '${session['timeKnown'] == false ? session['day'] : DateTime.parse(session['startedAt'] as String).toLocal().toString().substring(0, 16)} · ${session['source'] == 'obsidian'
+                    ? 'Obsidian'
+                    : session['source'] == 'manual'
                     ? 'Вручную'
                     : session['closed'] == true
                     ? 'Завершена'

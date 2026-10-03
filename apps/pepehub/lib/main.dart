@@ -92,9 +92,29 @@ class _PepeHubAppState extends State<PepeHubApp> {
         title: 'PepeHub',
         navigatorObservers: [readerRoutes],
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.data(Brightness.light),
-        darkTheme: AppTheme.data(Brightness.dark),
+        theme: AppTheme.data(
+          Brightness.light,
+          style: theme.style,
+          compact: theme.compact,
+        ),
+        darkTheme: AppTheme.data(
+          Brightness.dark,
+          style: theme.style,
+          compact: theme.compact,
+        ),
         themeMode: theme.mode,
+        builder: (context, child) {
+          final media = MediaQuery.of(context);
+          return MediaQuery(
+            data: media.copyWith(
+              textScaler: TextScaler.linear(
+                media.textScaler.scale(1) * theme.textScale,
+              ),
+              disableAnimations: media.disableAnimations || theme.reduceMotion,
+            ),
+            child: child!,
+          );
+        },
         home: LibraryPage(
           repository: widget.repository,
           assets: widget.assets,

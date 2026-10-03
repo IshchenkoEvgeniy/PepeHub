@@ -1,5 +1,7 @@
 import { TFile, getFrontMatterInfo, normalizePath, parseYaml, requestUrl, stringifyYaml } from 'obsidian';
 import type HabitTimerPlugin from '../main';
+import { PepeHubCoverService } from './pepehub-cover-service';
+import { PepeHubActivityService } from './pepehub-activity-service';
 import { DEFAULT_LIBRARY_PROPERTY_ALIASES, type LibraryPropertyField } from '../types';
 import { conflictingKeys, ID_PROPERTY, validId, validOperation, type JsonValue, type MetadataField,
     type MetadataItem, type MetadataOperation, type MetadataReceipt, type MetadataSnapshot } from './pepehub-metadata';
@@ -8,22 +10,31 @@ import { conflictingKeys, ID_PROPERTY, validId, validOperation, type JsonValue, 
 export class PepeHubLibraryService {
     private timer: number | null = null;
     private syncing = false;
-    constructor(private plugin: HabitTimerPlugin) {}
+    private activity: PepeHubActivityService;
+    private covers: PepeHubCoverService;
+    constructor(private plugin: HabitTimerPlugin) {
+        this.activity = new PepeHubActivityService(plugin);
+        this.covers = new PepeHubCoverService(plugin);
+        if (typeof plugin.addCommand === 'function') {
+            plugin.addCommand({ id: 'pepehub-sync-journal', name: 'PepeHub: синхронизировать журнал', callback: () => { void this.sync(); } });
+            plugin.addCommand({ id: 'pepehub-review-journal', name: 'PepeHub: разрешить конфликты журнала', callback: () => { void this.activity.review(); } });
+        }
+    }
     start(): void {
         this.stop();
         void this.sync();
         this.timer = window.setInterval(() => void this.sync(), 30000);
     }
     stop(): void { if (this.timer !== null) window.clearInterval(this.timer); this.timer = null; }
-    private async request(path: string, body?: unknown): Promise<unknown> {
-        const base = (this.plugin.settings.cloudflareWorkerUrl || '').trim().replace(/\/$/, '');
+    private async request(path: string, body?: unknown, connection?: {url:string;token:string}): Promise<unknown> {
+        const base = (connection?.url ?? this.plugin.settings.cloudflareWorkerUrl ?? '').trim().replace(/\/$/, '');
         const url = new URL(base);
         if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) {
             throw new Error('PepeHub requires HTTPS (except localhost).');
         }
         const response = await requestUrl({ url: `${base}/api/pepehub/library${path}`,
             method: body === undefined ? 'GET' : 'POST',
-            headers: { Authorization: `Bearer ${this.plugin.settings.cloudflareApiToken}`, 'Content-Type': 'application/json' },
+            headers: { Authorization: `Bearer ${connection?.token ?? this.plugin.settings.cloudflareApiToken}`, 'Content-Type': 'application/json' },
             ...(body === undefined ? {} : { body: JSON.stringify(body) }), throw: false });
         if (response.status < 200 || response.status >= 300) throw new Error(`PepeHub library API: HTTP ${response.status}`);
         return response.json as unknown;
@@ -31,8 +42,11 @@ export class PepeHubLibraryService {
     async sync(): Promise<void> {
         if (this.syncing || !this.plugin.settings.cloudflareWorkerUrl?.trim() || !this.plugin.settings.cloudflareApiToken?.trim()) return;
         this.syncing = true;
+        const connection={url:this.plugin.settings.cloudflareWorkerUrl || '', token:this.plugin.settings.cloudflareApiToken || ''};
+        this.covers.configure(connection);
+        const request=(path:string,body?:unknown)=>this.request(path,body,connection);
         try {
-            const pending = await this.request('/pending') as { operations?: unknown[] };
+            const pending = await request('/pending') as { operations?: unknown[] };
             if (!Array.isArray(pending.operations)) throw new Error('Invalid PepeHub operation queue');
             const receipts: MetadataReceipt[] = [];
             for (const value of pending.operations) {
@@ -45,7 +59,8 @@ export class PepeHubLibraryService {
                 }
             }
             const snapshot = await this.snapshot();
-            await this.request('/snapshot', { snapshot, receipts });
+            await request('/snapshot', { snapshot, receipts });
+            await this.activity.sync(snapshot, request, `${connection.url.trim().replace(/\/+$/,'')}\n${connection.token}`);
             if (receipts.some(receipt => receipt.status === 'applied')) this.plugin.stateManager.refreshAllMedia();
         } catch (error) { console.error('PepeHub library sync:', error); }
         finally { this.syncing = false; }
@@ -91,16 +106,20 @@ export class PepeHubLibraryService {
             const values = { ...fm }; delete values[ID_PROPERTY];
             const fields = this.fields(fm);
             for (const field of fields) if (values[field.key] === undefined) values[field.key] = null;
+            let coverAsset=null;
+            try {coverAsset=await this.covers.resolve(fm[this.key(fm,'cover')],file.path);}catch(error){console.warn(`PepeHub cover sync: ${file.path}`,error);}
             const format = String(fm[this.key(fm, 'format')] || '');
             items.push({ id, path: file.path, collectionId,
                 mediaType: /audio|аудио/i.test(`${collectionId} ${format}`) ? 'audiobook' : 'book',
-                modifiedAt: file.stat.mtime, values, fields });
+                modifiedAt: file.stat.mtime, values, fields, coverAsset });
         }
         return { version: 1, ready: true, items, fields: this.fields({}),
             collections: this.plugin.settings.mediaCollections.filter(c => c.enabled && (c.id === 'book' || /audio|аудио/i.test(c.id)))
                 .map(c => ({ id: c.id, title: c.id, mediaType: /audio|аудио/i.test(c.id) ? 'audiobook' : 'book' })) };
     }
     private async apply(op: MetadataOperation): Promise<MetadataReceipt> {
+        const coverKey=this.key(op.values,'cover');
+        if(Object.prototype.hasOwnProperty.call(op.values,coverKey))op={...op,values:{...op.values,[coverKey]:await this.covers.materialize(op.values[coverKey]) as JsonValue}};
         const found: TFile[] = [];
         for (const file of this.plugin.app.vault.getMarkdownFiles()) {
             const fm = this.read(await this.plugin.app.vault.read(file));

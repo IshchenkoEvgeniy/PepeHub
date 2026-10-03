@@ -1,4 +1,6 @@
+import {handlePrivateCover,validCoverAsset,type PrivateCoverBucket} from './covers.ts';
 import { validId, validOperation, safeValues, type MetadataSnapshot, type MetadataReceipt } from './metadata.ts';
+import { handleActivityApi } from './activity-api.ts';
 
 interface Statement {
   bind(...values: unknown[]): Statement;
@@ -13,8 +15,10 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 const empty: MetadataSnapshot = { version: 1, ready: false, items: [], fields: [], collections: [] };
 
 /** The Companion router authenticates every /api/ route before calling this handler. */
-export async function handleMetadataApi(request: Request, db: MetadataDatabase, profile: string): Promise<Response> {
+export async function handleMetadataApi(request: Request, db: MetadataDatabase, profile: string, bucket?: PrivateCoverBucket): Promise<Response> {
   const url = new URL(request.url), route = url.pathname.replace('/api/pepehub/library', '');
+  if (route.startsWith('/covers/')) return handlePrivateCover(request,profile,bucket);
+  if (route === '/activity' || route.startsWith('/activity/')) return handleActivityApi(request, db, profile);
   if (request.method === 'GET' && route === '') {
     const row = await db.prepare('SELECT snapshot_json FROM pepehub_library_snapshots WHERE profile_id=?').bind(profile).first<{ snapshot_json: string }>();
     return json(row ? JSON.parse(row.snapshot_json) : empty);
@@ -63,7 +67,7 @@ export async function handleMetadataApi(request: Request, db: MetadataDatabase, 
     const snapshot = payload?.snapshot, receipts = payload?.receipts;
     if (!snapshot || snapshot.version !== 1 || snapshot.ready !== true || !Array.isArray(snapshot.items)
       || !Array.isArray(snapshot.fields) || !Array.isArray(snapshot.collections) || !Array.isArray(receipts)
-      || receipts.length > 99 || snapshot.items.some(item => !validId(item.id) || !safeValues(item.values)
+      || receipts.length > 99 || snapshot.items.some(item => (item.coverAsset != null && !validCoverAsset(item.coverAsset)) || !validId(item.id) || !safeValues(item.values)
         || !Array.isArray(item.fields) || !['book', 'audiobook'].includes(item.mediaType))
       || new Set(snapshot.items.map(item => item.id)).size !== snapshot.items.length
       || receipts.some(receipt => !validId(receipt.operationId) || !['applied', 'conflict', 'error'].includes(receipt.status))) {

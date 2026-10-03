@@ -6,6 +6,8 @@ import '../audio/audio_library_repository.dart';
 
 import 'dart:async';
 
+import '../library/activity_store.dart';
+
 import 'package:flutter/foundation.dart';
 
 import 'dart:math' as math;
@@ -83,6 +85,10 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
           .toList();
       final sessions = await widget.repository.records('session');
       final all = await widget.repository.records('audio_event');
+      final allEvents = [
+        ...all.map((r) => r.payload!),
+        ...await ActivityStore.foreignAudio(widget.repository),
+      ];
       final now = DateTime.now();
       final cutoff = requestedPeriod <= 0
           ? null
@@ -90,7 +96,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
               DateTime(now.year, now.month, now.day - requestedPeriod + 1),
             );
       final analysis = await compute(analyzeListening, <String, dynamic>{
-        'events': all.map((r) => r.payload!).toList(),
+        'events': allEvents,
         'book': requestedBook,
         'cutoff': cutoff,
         if (requestedPeriod == -1 && requestedRange != null) ...{
@@ -102,10 +108,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
           .bookSummaries();
       final result = analysis.selected;
       final savedGoals = await ListeningGoals.load(widget.repository);
-      final global = await compute(
-        AudioStats.new,
-        all.map((r) => r.payload!).toList(),
-      );
+      final global = await compute(AudioStats.new, allEvents);
 
       if (mounted &&
           requestedPeriod == period &&
@@ -912,7 +915,9 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
                     leading: const Icon(Icons.headphones),
                     title: Text(titles[session.bookId] ?? 'Книга из архива'),
                     subtitle: Text(
-                      '${session.localDay} ${_sessionTime(session.start, session.offsetMinutes)}–${_sessionTime(session.end, session.offsetMinutes)} · ${statTime(session.wallMs)} звучания / ${statTime(session.elapsedMs)} от начала до конца\nМатериал ${statTime(session.mediaMs)} · пауз ${session.pauses} · перемоток ${session.seeks}',
+                      session.timeKnown
+                          ? '${session.localDay} ${_sessionTime(session.start, session.offsetMinutes)}–${_sessionTime(session.end, session.offsetMinutes)} · ${statTime(session.wallMs)} звучания / ${statTime(session.elapsedMs)} от начала до конца\nМатериал ${statTime(session.mediaMs)} · пауз ${session.pauses} · перемоток ${session.seeks}'
+                          : '${session.localDay} · ${statTime(session.wallMs)} · журнал Obsidian',
                     ),
                     isThreeLine: true,
                   ),

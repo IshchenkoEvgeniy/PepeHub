@@ -43,6 +43,7 @@ class LibraryMetadataEditor extends StatefulWidget {
   final Future<void> Function(Map<String, dynamic>) onSave;
   final Future<void> Function()? onUseObsidian;
   final String saveLabel;
+  final Future<String?> Function()? onPickCover;
   const LibraryMetadataEditor({
     super.key,
     required this.item,
@@ -50,6 +51,7 @@ class LibraryMetadataEditor extends StatefulWidget {
     this.entry,
     this.onUseObsidian,
     this.saveLabel = 'Сохранить',
+    this.onPickCover,
   });
   @override
   State<LibraryMetadataEditor> createState() => _LibraryMetadataEditorState();
@@ -179,6 +181,24 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
       minLines: 1,
       maxLines: 5,
       decoration: InputDecoration(
+        suffixIcon: fields[key]?.field == 'cover' && widget.onPickCover != null
+            ? IconButton(
+                tooltip: 'Выбрать файл обложки',
+                icon: const Icon(Icons.image_outlined),
+                onPressed: editable && !saving
+                    ? () async {
+                        try {
+                          final selected = await widget.onPickCover!();
+                          if (selected != null && mounted) {
+                            setState(() => controllers[key]!.text = selected);
+                          }
+                        } catch (e) {
+                          if (mounted) setState(() => error = '$e');
+                        }
+                      }
+                    : null,
+              )
+            : null,
         labelText: libraryLabels[fields[key]?.field] ?? key,
         helperText:
             '${values[key] is List || fields[key]?.kind == 'list' ? 'Список JSON · ' : ''}$key',

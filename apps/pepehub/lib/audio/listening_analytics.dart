@@ -8,6 +8,7 @@ class ListeningSession {
   final String localDay;
   final int offsetMinutes;
   int wallMs = 0, mediaMs = 0, pauses = 0, seeks = 0;
+  bool timeKnown = true;
   ListeningSession(
     this.bookId,
     this.start,
@@ -61,7 +62,9 @@ ListeningAnalytics analyzeListening(Map<String, dynamic> request) {
   for (final raw in List<Map<String, dynamic>>.from(
     request['events'] as List,
   )) {
-    if (raw['kind'] != 'listen' || (rangeStart == null && rangeEnd == null)) {
+    if (!['listen', 'journal'].contains(raw['kind']) ||
+        raw['timeKnown'] == false ||
+        (rangeStart == null && rangeEnd == null)) {
       events.add(raw);
       continue;
     }
@@ -120,6 +123,23 @@ ListeningAnalytics analyzeListening(Map<String, dynamic> request) {
   for (final e in events) {
     if (!matches(e)) active = null;
     final at = DateTime.parse(e['at'] as String);
+    if (e['kind'] == 'journal') {
+      active = null;
+      if (matches(e) && (e['wallMs'] as num) > 0) {
+        final session = ListeningSession(
+          e['bookId'] as String,
+          at,
+          at.add(Duration(milliseconds: (e['wallMs'] as num).toInt())),
+          e['localDay'] as String,
+          (e['offsetMinutes'] as num?)?.toInt() ?? 0,
+        );
+        session.wallMs = (e['wallMs'] as num).toInt();
+        session.mediaMs = (e['mediaMs'] as num?)?.toInt() ?? 0;
+        session.timeKnown = e['timeKnown'] != false;
+        sessions.add(session);
+      }
+      continue;
+    }
     if (active != null &&
         (e['bookId'] != active.bookId ||
             at.difference(active.end).inMilliseconds > 300000)) {

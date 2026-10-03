@@ -24,9 +24,7 @@ class _AudioCoverState extends State<AudioCover> {
   @override
   void didUpdateWidget(AudioCover old) {
     super.didUpdateWidget(old);
-    if (old.bookId != widget.bookId || old.assets != widget.assets) {
-      image = ArtworkStore(widget.assets).load(widget.bookId);
-    }
+    image = ArtworkStore(widget.assets).load(widget.bookId);
   }
 
   @override

@@ -1,0 +1,46 @@
+import {TFile,requestUrl,normalizePath} from 'obsidian';
+import type HabitTimerPlugin from '../main';
+import {digestCover,validCoverPng,coverHash,type CoverAsset} from './pepehub-covers';
+export class PepeHubCoverService {
+  private connection:{url:string;token:string}|null=null;
+  configure(connection:{url:string;token:string}):void{this.connection=connection;}
+  private cache=new Map<string,{revision:string;asset:CoverAsset}>();
+  constructor(private plugin:HabitTimerPlugin){}
+  private get base():string{return (this.connection?.url ?? this.plugin.settings.cloudflareWorkerUrl ?? '').trim().replace(/\/+$/,'');}
+  private get headers():Record<string,string>{return {Authorization:`Bearer ${this.connection?.token ?? this.plugin.settings.cloudflareApiToken ?? ''}`};}
+  async resolve(value:unknown,source:string):Promise<CoverAsset|null>{
+    if(typeof value!=='string'||!value||/^https?:/i.test(value))return null;
+    const link=(value.replace(/^!?\[\[/,'').replace(/\]\]$/,'').split('|')[0] || '').split('#')[0]!;
+    const file=this.plugin.app.metadataCache.getFirstLinkpathDest(link,source);
+    if(!(file instanceof TFile)||file.stat.size>16777216||!/^(png|jpe?g|webp|gif|avif)$/i.test(file.extension))return null;
+    const revision=`${file.stat.mtime}:${file.stat.size}:${this.base}:${this.connection?.token ?? this.plugin.settings.cloudflareApiToken}`;
+    const cached=this.cache.get(file.path);if(cached?.revision===revision)return cached.asset;
+    const original=await this.plugin.app.vault.readBinary(file);let bytes:ArrayBuffer;
+    const named=file.path.match(/PepeHub\/Covers\/([a-f0-9]{64})\.png$/);
+    if(named&&validCoverPng(new Uint8Array(original))&&await digestCover(original)===named[1])bytes=original;
+    else {
+      const bitmap=await createImageBitmap(new Blob([original]));
+      try{
+        const scale=Math.min(1,640/Math.max(bitmap.width,bitmap.height)),canvas=document.createElement('canvas');
+        canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+        const context=canvas.getContext('2d');if(!context)throw new Error('Canvas unavailable');context.drawImage(bitmap,0,0,canvas.width,canvas.height);
+        const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error('Cover conversion failed')),'image/png'));
+        bytes=await blob.arrayBuffer();
+      }finally{bitmap.close();}
+    }
+    if(!validCoverPng(new Uint8Array(bytes)))throw new Error('Cover exceeds the supported image size');
+    const hash=await digestCover(bytes),url=`${this.base}/api/pepehub/library/covers/${hash}`;
+    const head=await requestUrl({url,method:'HEAD',headers:this.headers,throw:false});
+    if(head.status!==200){const response=await requestUrl({url,method:'POST',headers:{...this.headers,'Content-Type':'image/png'},body:bytes,throw:false});if(response.status!==200)throw new Error(`Cover upload HTTP ${response.status}`);}
+    const asset:CoverAsset={hash,bytes:bytes.byteLength,mime:'image/png'};this.cache.set(file.path,{revision,asset});return asset;
+  }
+  async materialize(value:unknown):Promise<unknown>{
+    const hash=coverHash(value);if(!hash)return value;
+    const path=normalizePath(`PepeHub/Covers/${hash}.png`),existing=this.plugin.app.vault.getAbstractFileByPath(path);
+    if(existing instanceof TFile){if(await digestCover(await this.plugin.app.vault.readBinary(existing))!==hash)throw new Error('Existing cover hash mismatch');return `[[${path}]]`;}
+    const response=await requestUrl({url:`${this.base}/api/pepehub/library/covers/${hash}`,headers:this.headers,throw:false});
+    if(response.status!==200||!validCoverPng(new Uint8Array(response.arrayBuffer))||await digestCover(response.arrayBuffer)!==hash)throw new Error('Downloaded cover failed verification');
+    for(const folder of ['PepeHub','PepeHub/Covers'])if(!this.plugin.app.vault.getAbstractFileByPath(folder))await this.plugin.app.vault.createFolder(folder);
+    await this.plugin.app.vault.createBinary(path,response.arrayBuffer);return `[[${path}]]`;
+  }
+}

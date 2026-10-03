@@ -53,9 +53,10 @@ void main() {
   late AppDatabase db;
   late Repository local;
   final config = ObsidianConfig('https://example.test', 'test-token');
-  setUp(() {
+  setUp(() async {
     db = AppDatabase(NativeDatabase.memory());
     local = Repository(db);
+    await local.setMeta('obsidian-sync-history', 'false');
   });
   tearDown(() => db.close());
   test('120 Obsidian cards are automatic, 300 local books never leave the app, and repeated pulls deduplicate', () async {

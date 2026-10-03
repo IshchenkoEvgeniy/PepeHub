@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../library/library_service.dart';
 import '../library/models.dart';
 import 'app_theme.dart';
+import 'activity_page.dart';
 import 'obsidian_library_page.dart' show LibraryMetadataEditor, libraryState;
 import 'shelf_components.dart';
 
@@ -119,13 +121,14 @@ String metadataProgressLabel(ObsidianLibraryItem item) {
 
 class ShelfBookCover extends StatelessWidget {
   final String title, mediaType;
-  final String? cover;
+  final String? cover, localPath;
   final double width, height;
   const ShelfBookCover({
     super.key,
     required this.title,
     required this.mediaType,
     this.cover,
+    this.localPath,
     this.width = 40,
     this.height = 60,
   });
@@ -168,7 +171,14 @@ class ShelfBookCover extends StatelessWidget {
       height: height,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(4),
-        child: usable
+        child: localPath != null
+            ? Image.file(
+                File(localPath!),
+                fit: BoxFit.cover,
+                cacheWidth: (width * 2).round(),
+                errorBuilder: (_, _, _) => fallback,
+              )
+            : usable
             ? Image.network(
                 cover!,
                 fit: BoxFit.cover,
@@ -274,6 +284,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     context,
     MaterialPageRoute(
       builder: (_) => LibraryMetadataEditor(
+        onPickCover: widget.service.chooseCover,
         item: entry.item,
         entry: entry,
         onSave: (values) => widget.service.save(
@@ -362,6 +373,16 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           drawer: widget.drawer,
           sidebar: widget.sidebar,
           actions: [
+            IconButton(
+              tooltip: 'Журнал чтения и прослушивания',
+              icon: const Icon(Icons.history),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ActivityPage(library: service),
+                ),
+              ),
+            ),
             PopupMenuButton<ThemeMode>(
               tooltip: 'Тема оформления',
               icon: const Icon(Icons.contrast_rounded, size: 19),
@@ -985,6 +1006,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 title: item.title,
                 mediaType: item.mediaType,
                 cover: _text(item.value('cover')),
+                localPath: widget.service.coverPath(item),
                 width: 36,
                 height: 54,
               ),
@@ -1107,6 +1129,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                     title: item.title,
                     mediaType: item.mediaType,
                     cover: _text(item.value('cover')),
+                    localPath: widget.service.coverPath(item),
                     width: 62,
                     height: 92,
                   ),
@@ -1186,6 +1209,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 title: item.title,
                 mediaType: item.mediaType,
                 cover: _text(item.value('cover')),
+                localPath: widget.service.coverPath(item),
                 width: 62,
                 height: 93,
               ),
@@ -1252,6 +1276,18 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
             onPressed: () => _open(entry),
             icon: const Icon(Icons.edit_outlined, size: 15),
             label: const Text('Редактировать метаданные'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    ActivityPage(library: widget.service, itemId: item.id),
+              ),
+            ),
+            icon: const Icon(Icons.history, size: 16),
+            label: const Text('Журнал этой книги'),
           ),
           const SizedBox(height: 13),
           Row(

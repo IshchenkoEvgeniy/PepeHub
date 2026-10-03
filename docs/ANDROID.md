@@ -1,5 +1,11 @@
 # Android: локальная сборка
 
+## Сборка 0.16.0 — 3 октября 2026
+
+[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.16.0/PepeHub-0.16.0-android-arm64-test.apk), **32,849,880 байт**, versionCode **2044**, Android 7.0+ / target SDK 36. Добавлены 10 стилей и настройки, двусторонний журнал и обложки Obsidian; [состав выпуска](RELEASE_0160.md). Прежняя подпись позволяет установить обновление поверх предыдущего APK.
+
+Проверены подпись и сертификат, версия, ABI, отсутствие режима отладки, ZIP-выравнивание 16 KiB, ресурсы аудиоуведомления и комплект шрифтов. SHA-256: `abc68ec999c49db0bc969862c42a696ea811129e9fd9872d98d6f4dbab7ff52e`. Полный Flutter suite — 142 passed, 4 skipped; анализ без замечаний. Физический Android-телефон не подключён.
+
 ## Сборка 0.15.0 — 3 октября 2026
 
 [APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.15.0/PepeHub-0.15.0-android-arm64-test.apk), **32 653 156 байт**, versionCode **2043**, Android 7.0+ / target SDK 36. Обновлены дизайн и третий раздел библиотеки Obsidian; [состав выпуска](RELEASE_0150.md). Подпись совпадает с предыдущими тестовыми APK, пакет предназначен для установки обновлением.

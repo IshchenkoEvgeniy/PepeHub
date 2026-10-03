@@ -68,6 +68,8 @@ class ReadingActivity {
       'end': at.toUtc().toIso8601String(),
       'newChars': 0,
       'repeatChars': 0,
+      'localDay': readingDay(at),
+      'offsetMinutes': at.timeZoneOffset.inMinutes,
     };
     spans.add(span!);
     accounted = at;
@@ -325,6 +327,7 @@ ReadingTotals readingTotals(
     if (bookId != null && id != bookId) continue;
     var included = false;
     for (final s in session['spans'] as List? ?? []) {
+      if (s['pepehubDeleted'] == true) continue;
       final a = DateTime.parse(s['start'] as String),
           b = DateTime.parse(s['end'] as String);
       final from = start != null && start.isAfter(a) ? start : a;
@@ -333,7 +336,15 @@ ReadingTotals readingTotals(
       final fraction =
           to.difference(from).inMicroseconds / b.difference(a).inMicroseconds;
       final ms = s['activeMs'] as int? ?? b.difference(a).inMilliseconds;
-      totals.add(id, from, to, (ms * fraction).round());
+      if (s['localDay'] is String) {
+        final part = (ms * fraction).round();
+        totals.milliseconds += part;
+        totals.books[id] = (totals.books[id] ?? 0) + part;
+        final key = s['localDay'] as String;
+        totals.days[key] = (totals.days[key] ?? 0) + part;
+      } else {
+        totals.add(id, from, to, (ms * fraction).round());
+      }
       totals.newChars += ((s['newChars'] as num? ?? 0) * fraction).round();
       totals.repeatChars += ((s['repeatChars'] as num? ?? 0) * fraction)
           .round();

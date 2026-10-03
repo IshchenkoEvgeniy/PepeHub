@@ -1,3 +1,4 @@
+import type { CoverAsset } from './covers.ts';
 /** Metadata contract for the real Habit Timer library. No media bytes or assets. */
 export type JsonValue = null | string | number | boolean | JsonValue[] | { [key: string]: JsonValue };
 export interface MetadataField { key: string; field: string; kind: 'text' | 'number' | 'list' | 'json'; }
@@ -7,6 +8,7 @@ export interface MetadataItem {
   collectionId: string;
   mediaType: 'book' | 'audiobook';
   modifiedAt: number;
+  coverAsset?: CoverAsset | null;
   values: Record<string, JsonValue>;
   fields: MetadataField[];
 }

@@ -23,13 +23,26 @@ $workerMain = [IO.File]::ReadAllText((Join-Path $bridgePlugin 'cloudflare-compan
 $workerMain = Add-BridgeHook $workerMain 'import { handleMetadataApi }' 'export default {' "import { handleMetadataApi } from './pepehub-metadata-api';`n`nexport default {"
 $workerAnchor = "    if (url.pathname === '/api/tasks') {"
 $workerMain = Add-BridgeHook $workerMain 'return handleMetadataApi(request' $workerAnchor "    if (url.pathname === '/api/pepehub/library' || url.pathname.startsWith('/api/pepehub/library/')) return handleMetadataApi(request, env.DB, profile(env));`n$workerAnchor"
-$metadata = [IO.File]::ReadAllText((Join-Path $bridgeRoot 'metadata.ts'))
+$metadata = [IO.File]::ReadAllText((Join-Path $bridgeRoot 'metadata.ts')).Replace("'./covers.ts'", "'./pepehub-covers'")
 Write-BridgeFile 'src\services\pepehub-metadata.ts' $metadata
 Write-BridgeFile 'src\services\pepehub-library-service.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'pepehub-library-service.ts.template')))
+Write-BridgeFile 'src\services\pepehub-activity-service.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'pepehub-activity-service.ts.template')))
+Write-BridgeFile 'src\services\pepehub-covers.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'covers.ts')))
+Write-BridgeFile 'src\services\pepehub-cover-service.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'pepehub-cover-service.ts.template')))
+Write-BridgeFile 'cloudflare-companion\src\pepehub-covers.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'covers.ts')))
+foreach ($bridgeActivityName in @('activity', 'activity-state', 'activity-markdown')) {
+    $bridgeActivityCode = [IO.File]::ReadAllText((Join-Path $bridgeRoot "$bridgeActivityName.ts")).Replace("'./metadata.ts'", "'./pepehub-metadata'").Replace("'./activity.ts'", "'./pepehub-activity'")
+    Write-BridgeFile "src\services\pepehub-$bridgeActivityName.ts" $bridgeActivityCode
+}
 Write-BridgeFile 'tests\pepehub-library.test.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'pepehub-library.test.ts.template')))
+Write-BridgeFile 'tests\pepehub-activity.test.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'pepehub-activity.test.ts.template')))
 Write-BridgeFile 'cloudflare-companion\src\pepehub-metadata.ts' $metadata
-Write-BridgeFile 'cloudflare-companion\src\pepehub-metadata-api.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'metadata-api.ts')).Replace("'./metadata.ts'", "'./pepehub-metadata'"))
+Write-BridgeFile 'cloudflare-companion\src\pepehub-metadata-api.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'metadata-api.ts')).Replace("'./metadata.ts'", "'./pepehub-metadata'").Replace("'./covers.ts'", "'./pepehub-covers'"))
+Write-BridgeFile 'cloudflare-companion\src\pepehub-activity.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'activity.ts')).Replace("'./metadata.ts'", "'./pepehub-metadata'").Replace("'./covers.ts'", "'./pepehub-covers'"))
+Write-BridgeFile 'cloudflare-companion\src\activity-api.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'activity-api.ts')).Replace("'./activity.ts'", "'./pepehub-activity'").Replace("'./metadata-api.ts'", "'./pepehub-metadata-api'"))
+Write-BridgeFile 'cloudflare-companion\migrations\0012_pepehub_activity.sql' ([IO.File]::ReadAllText((Join-Path $bridgeRoot '002_pepehub_activity.sql')))
 Write-BridgeFile 'cloudflare-companion\migrations\0011_pepehub_library.sql' ([IO.File]::ReadAllText((Join-Path $bridgeRoot '001_pepehub_library.sql')))
 Write-BridgeFile 'src\main.ts' $pluginMain
+$workerMain=$workerMain.Replace('handleMetadataApi(request, env.DB, profile(env));','handleMetadataApi(request, env.DB, profile(env), env.COVERS);')
 Write-BridgeFile 'cloudflare-companion\src\index.ts' $workerMain
 Write-Output 'PepeHub metadata bridge installed in plugin sources. Build the plugin and deploy Companion with the new D1 migration.'

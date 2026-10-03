@@ -16,6 +16,7 @@ class ObsidianLibraryItem {
   final int modifiedAt;
   final Map<String, dynamic> values;
   final List<LibraryField> fields;
+  final Map<String, dynamic>? coverAsset;
   const ObsidianLibraryItem({
     required this.id,
     required this.path,
@@ -24,9 +25,13 @@ class ObsidianLibraryItem {
     required this.values,
     required this.fields,
     this.modifiedAt = 0,
+    this.coverAsset,
   });
   factory ObsidianLibraryItem.fromJson(Map<String, dynamic> json) =>
       ObsidianLibraryItem(
+        coverAsset: json['coverAsset'] is Map
+            ? Map<String, dynamic>.from(json['coverAsset'] as Map)
+            : null,
         id: json['id'] as String,
         path: json['path'] as String,
         collectionId: json['collectionId'] as String,
@@ -58,6 +63,7 @@ class ObsidianLibraryItem {
     'collectionId': collectionId,
     'mediaType': mediaType,
     'modifiedAt': modifiedAt,
+    if (coverAsset != null) 'coverAsset': coverAsset,
     'values': values,
     'fields': fields.map((f) => f.toJson()).toList(),
   };
@@ -68,6 +74,7 @@ class ObsidianLibraryItem {
         collectionId: collectionId,
         mediaType: mediaType,
         modifiedAt: modifiedAt,
+        coverAsset: coverAsset,
         values: next,
         fields: fields,
       );

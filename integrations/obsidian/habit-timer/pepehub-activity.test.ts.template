@@ -1,0 +1,59 @@
+import {describe,it,expect,vi} from 'vitest';
+vi.mock('obsidian',()=>({TFile:class {path='';},Notice:class {},Modal:class {}}));
+import {TFile} from 'obsidian';
+import {PepeHubActivityService} from '../src/services/pepehub-activity-service';
+import {readActivityMarkdown} from '../src/services/pepehub-activity-markdown';
+import {type ActivityEntry,type ActivityRecord,type ActivityOperation} from '../src/services/pepehub-activity';
+import {type MetadataSnapshot} from '../src/services/pepehub-metadata';
+function setup() {
+  const itemId=crypto.randomUUID(),file=new TFile();file.path='Books/One.md';
+  let content='---\nReading time: "00:10:00"\n---\nUser notes\n### 📖 Progress\n| Date | Time | Progress | % | Notes |\n|---|---|---|---|---|\n| 2026-10-03 | 00:10:00 | 10 | - | Native |\n';
+  const stateFiles=new Map<string,string>(),changes:ActivityRecord[]=[],receipts=new Map<string,unknown>();
+  let failResponse=false,writes=0;
+  const calls:ActivityOperation[]=[];
+  const plugin={manifest:{id:'habit-timer',dir:'.obsidian/plugins/habit-timer-checkout'},settings:{cloudflareWorkerUrl:'https://example.test',cloudflareApiToken:'token'},app:{vault:{configDir:'.obsidian',
+    adapter:{exists:async(p:string)=>stateFiles.has(p),read:async(p:string)=>stateFiles.get(p),write:async(p:string,v:string)=>{stateFiles.set(p,v);}},
+    getAbstractFileByPath:(p:string)=>p===file.path?file:null,read:async()=>content,
+    process:async(_:TFile,action:(s:string)=>string)=>{const next=action(content);if(next!==content)writes++;content=next;},
+  }}};
+  const service=new PepeHubActivityService(plugin as unknown as ConstructorParameters<typeof PepeHubActivityService>[0]);
+  const snapshot:MetadataSnapshot={version:1,ready:true,items:[{id:itemId,path:file.path,collectionId:'book',mediaType:'book',modifiedAt:1,values:{},fields:[]}],fields:[],collections:[]};
+  const request=async(path:string,body?:unknown):Promise<unknown>=>{
+    if(body){const operations=(body as {operations:ActivityOperation[]}).operations,result=[];
+      for(const op of operations){calls.push(op);let receipt=receipts.get(op.operationId);if(!receipt){const old=changes.filter(r=>r.entry.id===op.entry.id).at(-1);const status=(old?.revision ?? 0)===op.baseRevision?'applied':'conflict';
+        let record=old;if(status==='applied'){record={entry:op.entry,revision:op.baseRevision+1,sequence:changes.length+1};changes.push(record);}
+        receipt={operationId:op.operationId,status,record};receipts.set(op.operationId,receipt);}result.push(receipt);}
+      if(failResponse){failResponse=false;throw new Error('response lost');}return {version:1,receipts:result};
+    }
+    const after=Number(path.split('after=')[1]);const records=changes.filter(r=>r.sequence>after);return {version:1,records,cursor:records.at(-1)?.sequence ?? after,hasMore:false};
+  };
+  const remote=(entry:ActivityEntry)=>{const old=changes.filter(r=>r.entry.id===entry.id).at(-1);changes.push({entry,revision:(old?.revision ?? 0)+1,sequence:changes.length+1});};
+  const appEntry=():ActivityEntry=>({id:crypto.randomUUID(),itemId,mediaType:'book',day:'2026-10-03',durationMs:123456,progress:1234,unit:'characters',mediaMs:0,startedAt:'2026-10-03T10:00:00.000Z',endedAt:'2026-10-03T10:02:03.456Z',offsetMinutes:180,note:'App note',origin:'app-reader',deleted:false});
+  return {service,snapshot,request,remote,appEntry,changes,calls,stateFiles,content:()=>content,edit:(value:string)=>{content=value;},lose:()=>{failResponse=true;},writes:()=>writes};
+}
+describe('PepeHub journal in the installed Obsidian bridge',()=>{
+  it('annotates native rows, retries the same request after a lost response, and avoids unchanged-note writes',async()=>{
+    const f=setup();f.lose();await expect(f.service.sync(f.snapshot,f.request)).rejects.toThrow('response lost');
+    await f.service.sync(f.snapshot,f.request);expect(f.changes).toHaveLength(1);expect(f.calls[0]!.operationId).toBe(f.calls[1]!.operationId);
+    expect([...f.stateFiles.keys()].every(p=>p.startsWith('.obsidian/plugins/habit-timer-checkout/'))).toBe(true);
+    const before=f.writes();await f.service.sync(f.snapshot,f.request);expect(f.writes()).toBe(before);expect(f.content()).toContain('User notes');
+  });
+  it('imports app intervals into the real Progress table and adjusts cumulative time atomically',async()=>{
+    const f=setup();await f.service.sync(f.snapshot,f.request);const entry=f.appEntry();f.remote(entry);
+    await f.service.sync(f.snapshot,f.request);
+    expect(readActivityMarkdown(f.content(),entry.itemId,'book',false).entries.find(e=>e.id===entry.id)).toEqual(entry);
+    expect(f.content()).toContain('Reading time: "00:12:03"');expect(f.content()).toContain('симв.: 1234');
+    await f.service.sync(f.snapshot,f.request);expect(f.content()).toContain('Reading time: "00:12:03"');
+    f.remote({...entry,deleted:true});await f.service.sync(f.snapshot,f.request);expect(f.content()).toContain('Reading time: "00:10:00"');
+    expect(readActivityMarkdown(f.content(),entry.itemId,'book',false).entries).toHaveLength(1);
+    await f.service.sync(f.snapshot,f.request);expect(f.changes).toHaveLength(3);
+  });
+  it('keeps both conflicting versions and materializes deferred imports when a note returns',async()=>{
+    const f=setup();await f.service.sync(f.snapshot,f.request);const first=f.changes[0]!.entry;
+    f.remote({...first,note:'Remote'});f.edit(f.content().replace('| Native |','| Local |'));
+    await f.service.sync(f.snapshot,f.request);const state=JSON.parse([...f.stateFiles.values()][0]!);expect(state.slots[first.id].value.note).toBe('Local');expect(state.slots[first.id].conflict.entry.note).toBe('Remote');
+    const value=f.appEntry();f.remote(value);await f.service.sync({...f.snapshot,items:[]},f.request);
+    expect(f.content()).not.toContain(value.id);await f.service.sync(f.snapshot,f.request);expect(f.content()).toContain(value.id);
+    const after=f.changes.length;await f.service.sync(f.snapshot,f.request);expect(f.changes).toHaveLength(after);
+  });
+});

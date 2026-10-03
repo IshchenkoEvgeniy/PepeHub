@@ -4,6 +4,8 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
 import 'library_repository.dart';
+import 'activity_store.dart';
+import 'cover_sync.dart';
 
 class ObsidianConfig {
   final String url, token;
@@ -37,7 +39,8 @@ class ObsidianSyncService {
   final LibraryRepository repository;
   final http.Client client;
   final ObsidianConfig config;
-  ObsidianSyncService(this.repository, this.client, this.config);
+  final CoverSync? covers;
+  ObsidianSyncService(this.repository, this.client, this.config, {this.covers});
   Future<Map<String, dynamic>> _request(
     String path, [
     Map<String, dynamic>? body,
@@ -64,7 +67,7 @@ class ObsidianSyncService {
     return json;
   }
 
-  Future<void> run() async {
+  Future<bool> run() async {
     // The only outbound data are durable operations queued by explicit user actions.
     for (final entry in (await repository.entries()).values.where(
       (e) => e.pending,
@@ -89,5 +92,36 @@ class ObsidianSyncService {
       );
     }
     await repository.receive(snapshot);
+    if (await repository.repository.meta('obsidian-sync-history') != 'false') {
+      final history = ActivityStore(repository.repository, config.namespace);
+      await history.capture();
+      final allowed = (snapshot['items'] as List)
+          .map((item) => item['id'] as String)
+          .toSet();
+      final operations = (await history.pending())
+          .where((op) => allowed.contains(op['entry']['itemId']))
+          .toList();
+      for (var offset = 0; offset < operations.length; offset += 20) {
+        final response = await _request('/activity', {
+          'operations': operations.skip(offset).take(20).toList(),
+        });
+        await history.receipts(response['receipts'] as List);
+      }
+      var cursor = (await history.state())['cursor'] as int;
+      while (true) {
+        final page = await _request('/activity?after=$cursor');
+        final next = page['cursor'] as int, records = page['records'] as List;
+        if (next < cursor || (page['hasMore'] == true && next == cursor)) {
+          throw const FormatException('Некорректный курсор журнала.');
+        }
+        await history.receive(records, next);
+        cursor = next;
+        if (page['hasMore'] != true) break;
+      }
+    }
+    return covers != null &&
+            await repository.repository.meta('obsidian-sync-covers') != 'false'
+        ? await covers!.run()
+        : false;
   }
 }

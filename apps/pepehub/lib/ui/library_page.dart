@@ -1,5 +1,7 @@
 import 'audio_mini_player.dart';
 import 'app_theme.dart';
+import 'settings_page.dart';
+import 'activity_page.dart';
 import 'shelf_components.dart';
 import '../audio/audio_roots.dart';
 import 'book_folder_dialog.dart';
@@ -77,7 +79,11 @@ class _LibraryPageState extends State<LibraryPage> {
   bool showSearch = false;
   bool reading = false;
   bool metadataSection = false;
-  late final obsidianLibrary = LibraryService(widget.repository, httpClient);
+  late final obsidianLibrary = LibraryService(
+    widget.repository,
+    httpClient,
+    assets: widget.assets,
+  );
   String statusFilter = 'all';
   String query = '',
       filter = 'all',
@@ -114,6 +120,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   void _libraryChanged() {
     if (mounted) setState(() {});
+    if (!obsidianLibrary.syncing && mounted) unawaited(_reload());
   }
 
   Future<void> _loadObsidian() async {
@@ -920,7 +927,7 @@ class _LibraryPageState extends State<LibraryPage> {
       onLibrary: () => _metadataSection(closeDrawer: !permanent),
       onSettings: () {
         if (!permanent) Navigator.pop(context);
-        _obsidianSettings();
+        _appSettings();
       },
       status: statusFilter,
       statuses: {
@@ -934,7 +941,10 @@ class _LibraryPageState extends State<LibraryPage> {
               setState(() => statusFilter = next);
             },
       onStatistics: metadataSection
-          ? null
+          ? () {
+              if (!permanent) Navigator.pop(context);
+              _journal();
+            }
           : () {
               if (!permanent) Navigator.pop(context);
               Navigator.push(
@@ -952,6 +962,21 @@ class _LibraryPageState extends State<LibraryPage> {
     );
     return permanent ? sidebar : Drawer(child: sidebar);
   }
+
+  void _journal() => Navigator.push(
+    context,
+    MaterialPageRoute(builder: (_) => ActivityPage(library: obsidianLibrary)),
+  );
+  void _appSettings() => Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => SettingsPage(
+        library: obsidianLibrary,
+        onConnection: _obsidianSettings,
+        onJournal: _journal,
+      ),
+    ),
+  );
 
   Future<void> _obsidianSettings() async {
     var url = obsidianLibrary.config?.url ?? '';
@@ -1041,6 +1066,7 @@ class _LibraryPageState extends State<LibraryPage> {
         context,
         MaterialPageRoute(
           builder: (_) => LibraryMetadataEditor(
+            onPickCover: obsidianLibrary.chooseCover,
             item: linked.item,
             entry: linked,
             onSave: (values) => obsidianLibrary.save(
@@ -1125,6 +1151,7 @@ class _LibraryPageState extends State<LibraryPage> {
       context,
       MaterialPageRoute(
         builder: (_) => LibraryMetadataEditor(
+          onPickCover: obsidianLibrary.chooseCover,
           item: draft,
           saveLabel: 'Добавить в библиотеку',
           onSave: (values) =>
@@ -1141,7 +1168,7 @@ class _LibraryPageState extends State<LibraryPage> {
         service: obsidianLibrary,
         drawer: _navigationDrawer(),
         sidebar: _navigationDrawer(permanent: true),
-        onSettings: _obsidianSettings,
+        onSettings: _appSettings,
       );
     }
     final visible = books
