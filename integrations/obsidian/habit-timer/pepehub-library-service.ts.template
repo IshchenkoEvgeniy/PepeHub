@@ -1,0 +1,142 @@
+import { TFile, getFrontMatterInfo, normalizePath, parseYaml, requestUrl, stringifyYaml } from 'obsidian';
+import type HabitTimerPlugin from '../main';
+import { DEFAULT_LIBRARY_PROPERTY_ALIASES, type LibraryPropertyField } from '../types';
+import { conflictingKeys, ID_PROPERTY, validId, validOperation, type JsonValue, type MetadataField,
+    type MetadataItem, type MetadataOperation, type MetadataReceipt, type MetadataSnapshot } from './pepehub-metadata';
+
+/** Uses Companion credentials, but never consumes or acknowledges Telegram events. */
+export class PepeHubLibraryService {
+    private timer: number | null = null;
+    private syncing = false;
+    constructor(private plugin: HabitTimerPlugin) {}
+    start(): void {
+        this.stop();
+        void this.sync();
+        this.timer = window.setInterval(() => void this.sync(), 30000);
+    }
+    stop(): void { if (this.timer !== null) window.clearInterval(this.timer); this.timer = null; }
+    private async request(path: string, body?: unknown): Promise<unknown> {
+        const base = (this.plugin.settings.cloudflareWorkerUrl || '').trim().replace(/\/$/, '');
+        const url = new URL(base);
+        if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) {
+            throw new Error('PepeHub requires HTTPS (except localhost).');
+        }
+        const response = await requestUrl({ url: `${base}/api/pepehub/library${path}`,
+            method: body === undefined ? 'GET' : 'POST',
+            headers: { Authorization: `Bearer ${this.plugin.settings.cloudflareApiToken}`, 'Content-Type': 'application/json' },
+            ...(body === undefined ? {} : { body: JSON.stringify(body) }), throw: false });
+        if (response.status < 200 || response.status >= 300) throw new Error(`PepeHub library API: HTTP ${response.status}`);
+        return response.json as unknown;
+    }
+    async sync(): Promise<void> {
+        if (this.syncing || !this.plugin.settings.cloudflareWorkerUrl?.trim() || !this.plugin.settings.cloudflareApiToken?.trim()) return;
+        this.syncing = true;
+        try {
+            const pending = await this.request('/pending') as { operations?: unknown[] };
+            if (!Array.isArray(pending.operations)) throw new Error('Invalid PepeHub operation queue');
+            const receipts: MetadataReceipt[] = [];
+            for (const value of pending.operations) {
+                if (!validOperation(value)) throw new Error('Invalid PepeHub operation');
+                try { receipts.push(await this.apply(value)); }
+                catch (error) {
+                    // Retry transient I/O failures on the next cycle, using the same UUID.
+                    console.error('PepeHub library operation failed:', error);
+                    break;
+                }
+            }
+            const snapshot = await this.snapshot();
+            await this.request('/snapshot', { snapshot, receipts });
+            if (receipts.some(receipt => receipt.status === 'applied')) this.plugin.stateManager.refreshAllMedia();
+        } catch (error) { console.error('PepeHub library sync:', error); }
+        finally { this.syncing = false; }
+    }
+    private read(content: string): Record<string, JsonValue> {
+        const info = getFrontMatterInfo(content);
+        const fm: unknown = info.exists ? parseYaml(info.frontmatter) : {};
+        if (!fm || typeof fm !== 'object' || Array.isArray(fm)) return {};
+        return JSON.parse(JSON.stringify(fm)) as Record<string, JsonValue>;
+    }
+    private key(fm: Record<string, JsonValue>, field: LibraryPropertyField): string {
+        const aliases = this.plugin.settings.libraryPropertyAliases[field] || DEFAULT_LIBRARY_PROPERTY_ALIASES[field];
+        return aliases.find(key => Object.prototype.hasOwnProperty.call(fm, key)) || aliases[0] || field;
+    }
+    private fields(fm: Record<string, JsonValue>): MetadataField[] {
+        return (Object.keys(DEFAULT_LIBRARY_PROPERTY_ALIASES) as LibraryPropertyField[]).map(field => ({
+            key: this.key(fm, field), field,
+            kind: ['author', 'genre'].includes(field) ? 'list'
+                : ['total', 'progress', 'seriesIndex', 'season', 'episode', 'queueOrder'].includes(field) ? 'number' : 'text'
+        }));
+    }
+    private collection(file: TFile, fm: Record<string, JsonValue>): string | null {
+        if (file.path.includes('Шаблоны') || file.path.includes('Template')) return null;
+        const value = String(fm[this.key(fm, 'libraryType')] || fm.Type || '').toLowerCase();
+        const collections = this.plugin.settings.mediaCollections;
+        const collection = collections.find(c => c.id.toLowerCase() === value)
+            || collections.find(c => c.folder && file.path.startsWith(`${normalizePath(c.folder)}/`));
+        return collection && (collection.id === 'book' || /audio|аудио/i.test(collection.id)) ? collection.id : null;
+    }
+    private async snapshot(): Promise<MetadataSnapshot> {
+        const items: MetadataItem[] = [], used = new Set<string>();
+        for (const file of this.plugin.app.vault.getMarkdownFiles().sort((a, b) => a.path.localeCompare(b.path))) {
+            const fm = this.read(await this.plugin.app.vault.read(file));
+            const collectionId = this.collection(file, fm);
+            if (!collectionId) continue;
+            let id = fm[ID_PROPERTY];
+            if (!validId(id) || used.has(id)) {
+                id = crypto.randomUUID();
+                await this.plugin.app.fileManager.processFrontMatter(file, live => { live[ID_PROPERTY] = id; });
+                fm[ID_PROPERTY] = id;
+            }
+            used.add(id);
+            const values = { ...fm }; delete values[ID_PROPERTY];
+            const fields = this.fields(fm);
+            for (const field of fields) if (values[field.key] === undefined) values[field.key] = null;
+            const format = String(fm[this.key(fm, 'format')] || '');
+            items.push({ id, path: file.path, collectionId,
+                mediaType: /audio|аудио/i.test(`${collectionId} ${format}`) ? 'audiobook' : 'book',
+                modifiedAt: file.stat.mtime, values, fields });
+        }
+        return { version: 1, ready: true, items, fields: this.fields({}),
+            collections: this.plugin.settings.mediaCollections.filter(c => c.enabled && (c.id === 'book' || /audio|аудио/i.test(c.id)))
+                .map(c => ({ id: c.id, title: c.id, mediaType: /audio|аудио/i.test(c.id) ? 'audiobook' : 'book' })) };
+    }
+    private async apply(op: MetadataOperation): Promise<MetadataReceipt> {
+        const found: TFile[] = [];
+        for (const file of this.plugin.app.vault.getMarkdownFiles()) {
+            const fm = this.read(await this.plugin.app.vault.read(file));
+            if (fm[ID_PROPERTY] === op.itemId && this.collection(file, fm)) found.push(file);
+        }
+        const result = (status: MetadataReceipt['status'], message?: string): MetadataReceipt => ({ operationId: op.operationId, status, ...(message ? { message } : {}) });
+        if (found.length > 1) return result('conflict', 'Несколько карточек имеют один UUID. Дождитесь обновления библиотеки.');
+        const existing = found[0];
+        if (existing) {
+            if (op.action === 'create') return result('applied');
+            let conflicts: string[] = [];
+            await this.plugin.app.fileManager.processFrontMatter(existing, live => {
+                conflicts = conflictingKeys(live as Record<string, unknown>, op);
+                if (!conflicts.length) for (const [key, value] of Object.entries(op.values)) live[key] = value;
+            });
+            return conflicts.length ? result('conflict', `Поля изменены в Obsidian: ${conflicts.join(', ')}`) : result('applied');
+        }
+        if (op.action === 'update') return result('conflict', 'Карточка удалена или больше не входит в библиотеку Obsidian.');
+        const collection = this.plugin.settings.mediaCollections.find(c => c.id === op.collectionId && c.enabled && (c.id === 'book' || /audio|аудио/i.test(c.id)));
+        if (!collection?.folder) return result('error', 'Выбранная коллекция Obsidian недоступна.');
+        const title = String(op.values[this.key(op.values, 'title')] || '').trim();
+        if (!title) return result('error', 'Введите название книги.');
+        let template = '';
+        const templateFile = this.plugin.app.vault.getAbstractFileByPath(normalizePath(collection.templatePath.endsWith('.md') ? collection.templatePath : `${collection.templatePath}.md`));
+        if (templateFile instanceof TFile) template = await this.plugin.app.vault.read(templateFile);
+        const values: Record<string, JsonValue> = { ...this.read(template), ...op.values, [ID_PROPERTY]: op.itemId };
+        values[this.key(values, 'libraryType')] = collection.id;
+        if (!values[this.key(values, 'format')]) values[this.key(values, 'format')] = op.mediaType === 'audiobook' ? 'Audiobook' : 'E-book';
+        const folder = normalizePath(collection.folder);
+        if (!this.plugin.app.vault.getAbstractFileByPath(folder)) await this.plugin.app.vault.createFolder(folder);
+        const name = title.replace(/[\\/:*?"<>|]/g, '-').replace(/[. ]+$/, '').trim() || 'Книга';
+        let path = normalizePath(`${folder}/${name}.md`), suffix = 2;
+        while (this.plugin.app.vault.getAbstractFileByPath(path)) path = normalizePath(`${folder}/${name} (${suffix++}).md`);
+        const info = getFrontMatterInfo(template), body = info.exists ? template.slice(info.contentStart) : template;
+        // UUID and metadata are in the first create: a crash cannot leave an unidentified duplicate.
+        await this.plugin.app.vault.create(path, `---\n${stringifyYaml(values)}---\n${body}`);
+        return result('applied');
+    }
+}

@@ -109,8 +109,14 @@ void main() {
         DateTime.utc(2026, 9, 21, 12),
       );
       Future<void> settle() => tester.pumpAndSettle();
+      Future<void> tapVisible(Finder finder) async {
+        await tester.ensureVisible(finder);
+        await settle();
+        await tester.tap(finder);
+      }
+
       Future<void> bookMenu(String label) async {
-        await tester.tap(find.byTooltip('Действия с книгой').first);
+        await tapVisible(find.byTooltip('Действия с книгой').first);
         await settle();
         await tester.tap(find.text(label));
         await settle();
@@ -125,6 +131,11 @@ void main() {
 
       await tester.pumpWidget(MaterialApp(home: LibraryPage(repository: repo)));
       await settle();
+      await tester.scrollUntilVisible(
+        find.text('Alpha audio'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       await bookMenu('В избранное');
       expect(find.text('★ Alpha audio'), findsOneWidget);
       await tester.tap(find.text('Избранное'));
@@ -193,6 +204,11 @@ void main() {
       await settle();
       await tester.pumpWidget(MaterialApp(home: LibraryPage(repository: repo)));
       await settle();
+      await tester.scrollUntilVisible(
+        find.text('★ Alpha audio'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('★ Alpha audio'), findsOneWidget);
       expect(
         tester.getTopLeft(find.text('Beta audio')).dy,

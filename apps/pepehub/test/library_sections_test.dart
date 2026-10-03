@@ -50,12 +50,22 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Audio story'),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Audio story'), findsOneWidget);
       expect(find.text('Text story'), findsNothing);
       await tester.tap(find.byTooltip('Open navigation menu'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Книги'));
       await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Text story'),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Text story'), findsOneWidget);
       expect(find.text('Audio story'), findsNothing);
       expect(await repo.meta('library-section'), 'reading');

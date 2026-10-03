@@ -87,6 +87,10 @@ void main() {
       ))!;
       final assets = AssetStore(repo, temp);
       await tester.runAsync(() async {
+        final manrope = File('assets/fonts/Manrope.ttf');
+        await (FontLoader(
+          'Manrope',
+        )..addFont(manrope.readAsBytes().then(ByteData.sublistView))).load();
         final font = File('C:/Windows/Fonts/segoeui.ttf');
         if (await font.exists()) {
           for (final family in [
@@ -223,6 +227,11 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Начатые'));
       await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Морские истории — сборник рассказов'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Дюна — Фрэнк Герберт'), findsNothing);
       expect(find.text('Морские истории — сборник рассказов'), findsOneWidget);
       await tester.tap(find.byTooltip('Тема оформления'));
@@ -230,6 +239,8 @@ void main() {
       await tester.tap(find.text('Светлая тема'));
       await tester.pumpAndSettle();
       expect(await repo.meta('appearance-theme'), 'light');
+      await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Все').last);
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(ChoiceChip, 'Все').last);
       await tester.pumpAndSettle();
       await capture('library-light');

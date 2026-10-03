@@ -1,0 +1,99 @@
+import { describe, expect, it, vi } from 'vitest';
+import { DEFAULT_LIBRARY_PROPERTY_ALIASES } from '../src/types';
+import { PepeHubLibraryService } from '../src/services/pepehub-library-service';
+import type { MetadataOperation, MetadataSnapshot } from '../src/services/pepehub-metadata';
+
+const transport = vi.hoisted(() => ({ pending: [] as unknown[], snapshots: [] as unknown[], failPublish: false }));
+vi.mock('obsidian', () => {
+    class TFile { stat = { mtime: 1 }; constructor(public path: string) {} }
+    return { TFile, normalizePath: (p: string) => p.replace(/\\/g, '/'),
+        getFrontMatterInfo: (content: string) => {
+            const end = content.indexOf('\n---\n', 4);
+            return content.startsWith('---\n') && end >= 0 ? { exists: true, frontmatter: content.slice(4, end), contentStart: end + 5 } : { exists: false, frontmatter: '', contentStart: 0 };
+        }, parseYaml: JSON.parse, stringifyYaml: (value: unknown) => `${JSON.stringify(value)}\n`,
+        requestUrl: async (request: { url: string; body?: string }) => {
+            if (request.url.endsWith('/pending')) return { status: 200, json: { operations: transport.pending } };
+            if (transport.failPublish) { transport.failPublish = false; throw new Error('lost publication'); }
+            const payload = JSON.parse(request.body!); transport.snapshots.push(payload.snapshot);
+            transport.pending = transport.pending.filter((op: any) => !payload.receipts.some((r: any) => r.operationId === op.operationId));
+            return { status: 200, json: { ok: true } };
+        } };
+});
+import { TFile } from 'obsidian';
+
+function setup() {
+    transport.pending = []; transport.snapshots = []; transport.failPublish = false;
+    const files = new Map<string, { file: TFile; content: string }>();
+    const content = (values: unknown, body = 'User notes\n') => `---\n${JSON.stringify(values)}\n---\n${body}`;
+    const fm = (file: TFile) => JSON.parse(files.get(file.path)!.content.split('\n')[1]!);
+    const add = (path: string, values: unknown) => { const file = new TFile(); file.path = path; files.set(path, { file, content: content(values) }); return file; };
+    const plugin = { settings: { cloudflareWorkerUrl: 'https://example.test', cloudflareApiToken: 'test',
+        libraryPropertyAliases: { ...DEFAULT_LIBRARY_PROPERTY_ALIASES, endDate: ['Дата завершения'] },
+        mediaCollections: [{ id: 'book', enabled: true, folder: 'Books', templatePath: '' }] },
+        app: { vault: {
+            getMarkdownFiles: () => [...files.values()].map(v => v.file),
+            read: async (file: TFile) => files.get(file.path)!.content,
+            getAbstractFileByPath: (path: string) => path === 'Books' ? {} : files.get(path)?.file,
+            createFolder: async () => {},
+            create: async (path: string, value: string) => { const file = new TFile(); file.path = path; files.set(path, { file, content: value }); return file; },
+        }, fileManager: { processFrontMatter: async (file: TFile, action: (fm: any) => void) => {
+            const values = fm(file); action(values); files.get(file.path)!.content = content(values);
+        } } }, stateManager: { refreshAllMedia: vi.fn() } };
+    const service = new PepeHubLibraryService(plugin as unknown as ConstructorParameters<typeof PepeHubLibraryService>[0]);
+    const latest = () => transport.snapshots.at(-1) as MetadataSnapshot;
+    return { service, files, fm, add, plugin, latest };
+}
+
+describe('PepeHub bridge with the real plugin aliases', () => {
+    it('exports all 19 properties, blanks, nested extras, and both book formats without binaries', async () => {
+        const { service, add, latest, fm } = setup();
+        const file = add('Books/One.md', { Title: 'One', Format: 'E-book', Extra: { flag: false, values: [1, 2] }, position: 'custom' });
+        add('Books/Audio.md', { Title: 'Audio', Format: 'Audiobook', Duration: '01:20:00', Listened: 3 });
+        add('Movies/Other.md', { Title: 'Other' });
+        await service.sync();
+        const snapshot = latest();
+        expect(snapshot.fields).toHaveLength(19);
+        expect(snapshot.fields.map(f => f.field).sort()).toEqual(Object.keys(DEFAULT_LIBRARY_PROPERTY_ALIASES).sort());
+        expect(snapshot.items).toHaveLength(2);
+        const book = snapshot.items.find(i => i.path === file.path)!;
+        expect(book.values['Дата завершения']).toBeNull();
+        expect(book.values.Extra).toEqual({ flag: false, values: [1, 2] });
+        expect(book.values.position).toBe('custom');
+        expect(book.values).not.toHaveProperty('pepehub_id');
+        expect(fm(file).pepehub_id).toBe(book.id);
+        expect(snapshot.items.find(i => i.path.includes('Audio'))!.mediaType).toBe('audiobook');
+        await service.sync(); expect(latest().items.find(i => i.path === file.path)!.id).toBe(book.id);
+    });
+    it('retries a create after lost publication without duplicating or overwriting an intervening edit', async () => {
+        const { service, files, fm, latest } = setup();
+        const op: MetadataOperation = { operationId: crypto.randomUUID(), itemId: crypto.randomUUID(), action: 'create', collectionId: 'book', mediaType: 'audiobook',
+            base: {}, values: { Title: 'Same title', Format: 'Audiobook', 'Library type': 'book', Author: ['Author'] } };
+        transport.pending = [op]; transport.failPublish = true;
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        await service.sync(); expect(files.size).toBe(1);
+        const file = [...files.values()][0]!.file;
+        const values = fm(file); values.Title = 'Edited after creation';
+        files.get(file.path)!.content = `---\n${JSON.stringify(values)}\n---\nUser notes\n`;
+        await service.sync(); log.mockRestore();
+        expect(files.size).toBe(1); expect(latest().items[0]!.id).toBe(op.itemId);
+        expect(fm(file).Title).toBe('Edited after creation'); expect(transport.pending).toEqual([]);
+    });
+    it('applies empty dates using aliases, keeps Markdown, and leaves conflicting changes intact', async () => {
+        const { service, add, fm, files } = setup();
+        const id = crypto.randomUUID(), file = add('Books/One.md', { Title: 'One', pepehub_id: id, Rating: '7' });
+        const op: MetadataOperation = { operationId: crypto.randomUUID(), itemId: id, action: 'update', collectionId: 'book', mediaType: 'book',
+            base: { 'Дата завершения': null }, values: { 'Дата завершения': '2026-10-03' } };
+        transport.pending = [op]; await service.sync();
+        expect(fm(file)['Дата завершения']).toBe('2026-10-03');
+        expect(files.get(file.path)!.content).toContain('User notes');
+        transport.pending = [{ ...op, operationId: crypto.randomUUID(), base: { Rating: '6' }, values: { Rating: '9' } }];
+        await service.sync(); expect(fm(file).Rating).toBe('7');
+    });
+    it('repairs copied UUIDs and preserves identity when a note is renamed', async () => {
+        const { service, add, latest, files } = setup();
+        const id = crypto.randomUUID(); add('Books/A.md', { Title: 'Same', pepehub_id: id }); add('Books/B.md', { Title: 'Same', pepehub_id: id });
+        await service.sync(); expect(new Set(latest().items.map(i => i.id)).size).toBe(2);
+        const first = files.get('Books/A.md')!; files.delete('Books/A.md'); first.file.path = 'Books/Renamed.md'; files.set(first.file.path, first);
+        await service.sync(); expect(latest().items.find(i => i.path.includes('Renamed'))!.id).toBe(id);
+    });
+});

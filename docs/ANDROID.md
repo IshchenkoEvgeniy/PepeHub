@@ -1,6 +1,12 @@
 # Android: локальная сборка
 
-## Текущая сборка 0.12.0 — 21 сентября 2026
+## Сборка 0.15.0 — 3 октября 2026
+
+[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.15.0/PepeHub-0.15.0-android-arm64-test.apk), **32 653 156 байт**, versionCode **2043**, Android 7.0+ / target SDK 36. Обновлены дизайн и третий раздел библиотеки Obsidian; [состав выпуска](RELEASE_0150.md). Подпись совпадает с предыдущими тестовыми APK, пакет предназначен для установки обновлением.
+
+Проверены подпись, версия, ABI, отсутствие режима отладки, ZIP-выравнивание 16 KiB, ресурсы аудиоуведомления и комплект шрифтов. SHA-256: `b574e7ea156d70d589a4dbfeed5a9fb835c8eaf72a7cb43b6cee4ac630c97095`. Пройден 131 Flutter-тест, 4 пропущены; анализ без замечаний. Подключённого Android-устройства нет, аппаратная проверка остаётся открытой.
+
+## Сборка 0.12.0 — 21 сентября 2026
 
 [APK ARM64](../dist/PepeHub-0.12.0-android-arm64-test.apk), **31 856 748 байт**, versionCode **2025**, Android 7.0+ / target SDK 36. Подпись совпадает с 0.11.0; zipalign 16 KiB и шесть иконок системного медиаплеера проверены. SHA-256: `85dde578cd1018f034cbafd9a892b3e8be73fa70464c95385611aeace52a6be5`.
 
@@ -77,7 +83,7 @@ JDK и command-line tools проверены по SHA-256 из официаль�
 
 Скрипт применяет локальные JAVA_HOME, ANDROID_HOME, ANDROID_USER_HOME, GRADLE_USER_HOME и PUB_CACHE только к текущему процессу и его потомкам. Системный PATH не изменяется. SDK/JDK нельзя переносить из `.tools` без обновления среды. Если исходники скопированы на другой компьютер, необходимо отдельно установить инструменты и выполнить `flutter pub get`.
 
-Результат Flutter для ARM64: `apps/pepehub/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`; для universal — `app-release.apk` в той же папке. Скрипт проверяет подпись и ZIP-выравнивание, копирует APK и SHA-256 в `dist`. Package ID — `app.pepehub.pepehub`. Минимальная версия — Android 7.0 (API 24), target SDK 36. Текущая версия приложения 0.9.3; versionCode ARM64 APK — 2019 (Flutter добавляет префикс ABI к базовому 19).
+Результат Flutter для ARM64: `apps/pepehub/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`; для universal — `app-release.apk` в той же папке. Скрипт проверяет подпись и ZIP-выравнивание, копирует APK и SHA-256 в `dist`. Package ID — `app.pepehub.pepehub`. Минимальная версия — Android 7.0 (API 24), target SDK 36. Текущая версия приложения 0.15.0; versionCode ARM64 APK — 2043 (Flutter добавляет префикс ABI к базовому 43).
 
 ARM64 использует штатный `--split-per-abi`: это исключает лишние JNI-библиотеки других архитектур. Сборка выполняет `pub get`, чтобы обновить регистрацию плагинов после integration_test; `--no-pub` здесь намеренно не используется.
 

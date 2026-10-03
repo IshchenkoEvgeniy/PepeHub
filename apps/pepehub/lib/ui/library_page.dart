@@ -1,5 +1,6 @@
 import 'audio_mini_player.dart';
 import 'app_theme.dart';
+import 'shelf_components.dart';
 import '../audio/audio_roots.dart';
 import 'book_folder_dialog.dart';
 import '../audio/audio_library_repository.dart';
@@ -44,6 +45,9 @@ import 'reading_plan_page.dart';
 import '../reader/reading_library.dart';
 import '../reader/reading_notes_page.dart';
 import '../reader/reading_collections.dart';
+import '../library/library_service.dart';
+import '../library/obsidian_sync_service.dart';
+import 'obsidian_library_page.dart';
 
 class LibraryPage extends StatefulWidget {
   final Repository repository;
@@ -72,6 +76,8 @@ class _LibraryPageState extends State<LibraryPage> {
   String? selectedRoot;
   bool showSearch = false;
   bool reading = false;
+  bool metadataSection = false;
+  late final obsidianLibrary = LibraryService(widget.repository, httpClient);
   String statusFilter = 'all';
   String query = '',
       filter = 'all',
@@ -102,13 +108,38 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void initState() {
     super.initState();
+    obsidianLibrary.addListener(_libraryChanged);
     _initialize();
+  }
+
+  void _libraryChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadObsidian() async {
+    final url = await widget.repository.meta('obsidian-library-url');
+    if (url == null) return;
+    try {
+      final token = await storage.read(key: 'obsidian-library-token');
+      if (token != null && mounted) {
+        await obsidianLibrary.connect(ObsidianConfig(url, token));
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () =>
+              obsidianLibrary.error = 'Не удалось подключить Obsidian: $error',
+        );
+      }
+    }
   }
 
   Future<void> _initialize() async {
     final section = await widget.repository.meta('library-section');
     if (!mounted) return;
     reading = section == 'reading';
+    metadataSection = section == 'metadata';
+    unawaited(_loadObsidian());
     await _reload();
     if (mounted && Platform.isAndroid && widget.assets != null) {
       incomingBooks = AndroidBookFiles(
@@ -126,10 +157,11 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
-  Future<void> _switchSection(bool next) async {
-    Navigator.pop(context);
-    if (busy || loading || reading == next) return;
+  Future<void> _switchSection(bool next, {bool closeDrawer = true}) async {
+    if (closeDrawer) Navigator.pop(context);
+    if (busy || loading || (!metadataSection && reading == next)) return;
     setState(() {
+      metadataSection = false;
       reading = next;
       selectedBooks.clear();
       books = [];
@@ -152,6 +184,8 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void dispose() {
     incomingBooks?.dispose();
+    obsidianLibrary.removeListener(_libraryChanged);
+    obsidianLibrary.dispose();
     httpClient.close();
     super.dispose();
   }
@@ -176,6 +210,7 @@ class _LibraryPageState extends State<LibraryPage> {
     }
     setState(() {
       reading = true;
+      metadataSection = false;
       selectedRoot = collectionFilter = null;
       favoritesOnly = false;
       query = '';
@@ -858,8 +893,257 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  Future<void> _metadataSection({bool closeDrawer = true}) async {
+    if (closeDrawer) Navigator.pop(context);
+    if (busy || loading) return;
+    setState(() {
+      metadataSection = true;
+      selectedBooks.clear();
+    });
+    await widget.repository.setMeta('library-section', 'metadata');
+    await obsidianLibrary.reload();
+    unawaited(obsidianLibrary.sync());
+  }
+
+  Widget _navigationDrawer({bool permanent = false}) {
+    final sidebar = ShelfSidebar(
+      section: metadataSection
+          ? 'metadata'
+          : reading
+          ? 'reading'
+          : 'audio',
+      count: obsidianLibrary.entries.length,
+      enabled: !busy && !loading,
+      connected: obsidianLibrary.config != null,
+      onReading: () => _switchSection(true, closeDrawer: !permanent),
+      onAudio: () => _switchSection(false, closeDrawer: !permanent),
+      onLibrary: () => _metadataSection(closeDrawer: !permanent),
+      onSettings: () {
+        if (!permanent) Navigator.pop(context);
+        _obsidianSettings();
+      },
+      status: statusFilter,
+      statuses: {
+        for (final key in ['active', 'finished', 'planned'])
+          key: books.where((book) => _status(book) == key).length,
+      },
+      onStatus: metadataSection
+          ? null
+          : (next) {
+              if (!permanent) Navigator.pop(context);
+              setState(() => statusFilter = next);
+            },
+      onStatistics: metadataSection
+          ? null
+          : () {
+              if (!permanent) Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => reading
+                      ? ReadingStatisticsPage(repository: widget.repository)
+                      : AudioStatisticsPage(
+                          repository: widget.repository,
+                          controller: widget.audio,
+                        ),
+                ),
+              );
+            },
+    );
+    return permanent ? sidebar : Drawer(child: sidebar);
+  }
+
+  Future<void> _obsidianSettings() async {
+    var url = obsidianLibrary.config?.url ?? '';
+    var token = obsidianLibrary.config?.token ?? '';
+    String? error;
+    final config = await showDialog<ObsidianConfig>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Подключение Obsidian'),
+          content: SizedBox(
+            width: 480,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Укажите адрес и API-токен Cloudflare Companion из настроек плагина. Библиотека Obsidian появится автоматически. Книги из приложения добавляются только по вашей команде.',
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    initialValue: url,
+                    onChanged: (v) => url = v,
+                    decoration: const InputDecoration(
+                      labelText: 'Адрес Companion',
+                      hintText: 'https://…workers.dev',
+                    ),
+                  ),
+                  TextFormField(
+                    initialValue: token,
+                    onChanged: (v) => token = v,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'API-токен Companion',
+                    ),
+                  ),
+                  if (error != null)
+                    Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () {
+                try {
+                  Navigator.pop(context, ObsidianConfig(url, token.trim()));
+                } catch (e) {
+                  update(() => error = '$e');
+                }
+              },
+              child: const Text('Подключить'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (config == null || !mounted) return;
+    try {
+      await storage.write(key: 'obsidian-library-token', value: config.token);
+      await widget.repository.setMeta('obsidian-library-url', config.url);
+      if (mounted) await obsidianLibrary.connect(config);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось сохранить подключение: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _addToObsidian(LibraryRecord book) async {
+    if (obsidianLibrary.config == null) await _obsidianSettings();
+    if (!mounted || obsidianLibrary.config == null) return;
+    final linked = obsidianLibrary.forBook(book.id);
+    if (linked != null && linked.state != 'removed') {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LibraryMetadataEditor(
+            item: linked.item,
+            entry: linked,
+            onSave: (values) => obsidianLibrary.save(
+              linked.item.id,
+              values,
+              original: linked.item.values,
+            ),
+            onUseObsidian: () => obsidianLibrary.useObsidian(linked.item.id),
+          ),
+        ),
+      );
+      return;
+    }
+    if (obsidianLibrary.snapshot == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Дождитесь получения библиотеки Obsidian в разделе «Библиотека».',
+          ),
+        ),
+      );
+      return;
+    }
+    // Explicit linking is available for a local file whose existing Obsidian UUID is unknown.
+    if (obsidianLibrary.entries.any(
+      (e) => e.state == 'synced' && e.sourceBookId == null,
+    )) {
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Добавить в библиотеку'),
+          children: [
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'create'),
+              child: const Text('Создать карточку в Obsidian'),
+            ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'link'),
+              child: const Text('Связать с существующей карточкой'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || choice == null) return;
+      if (choice == 'link') {
+        final id = await showDialog<String>(
+          context: context,
+          builder: (context) => SimpleDialog(
+            title: const Text('Карточка Obsidian'),
+            children: [
+              for (final entry in obsidianLibrary.entries.where(
+                (e) => e.state == 'synced' && e.sourceBookId == null,
+              ))
+                SimpleDialogOption(
+                  onPressed: () => Navigator.pop(context, entry.item.id),
+                  child: Text(
+                    '${entry.item.title}\n${entry.item.authors}\n${entry.item.path}',
+                  ),
+                ),
+            ],
+          ),
+        );
+        if (id != null) await obsidianLibrary.link(id, book.id);
+        return;
+      }
+    }
+    final details = reading
+        ? _textInfo(book)
+        : <String, dynamic>{...book.payload!, ...?audioPrefs[book.id]};
+    if (!reading) {
+      final summary = audioSummaries[book.id];
+      details['durationMinutes'] = summary?.total == null
+          ? null
+          : summary!.total! / 60000;
+      details['listenedMinutes'] = summary?.position == null
+          ? null
+          : summary!.position! / 60000;
+    }
+    final draft = obsidianLibrary.draft(book, details);
+    if (!mounted) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LibraryMetadataEditor(
+          item: draft,
+          saveLabel: 'Добавить в библиотеку',
+          onSave: (values) =>
+              obsidianLibrary.add(draft.withValues(values), book.id),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (metadataSection) {
+      return ObsidianLibraryPage(
+        service: obsidianLibrary,
+        drawer: _navigationDrawer(),
+        sidebar: _navigationDrawer(permanent: true),
+        onSettings: _obsidianSettings,
+      );
+    }
     final visible = books
         .where(
           (b) =>
@@ -927,190 +1211,189 @@ class _LibraryPageState extends State<LibraryPage> {
         );
       });
     }
-    return Scaffold(
-      drawer: Drawer(
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'PepeHub',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-                ),
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.headphones),
-                title: const Text('Аудиокниги'),
-                selected: !reading,
-                enabled: !busy && !loading,
-                onTap: () => _switchSection(false),
-              ),
-              ListTile(
-                leading: const Icon(Icons.auto_stories_outlined),
-                title: const Text('Книги'),
-                selected: reading,
-                enabled: !busy && !loading,
-                onTap: () => _switchSection(true),
-              ),
-              const Spacer(),
-              const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Своя библиотека, папки и статистика в каждом разделе.',
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return ShelfShell(
+      title: selectedBooks.isNotEmpty
+          ? 'Выбрано: ${selectedBooks.length}'
+          : reading
+          ? 'Книги'
+          : 'Аудиокниги',
+      drawer: _navigationDrawer(),
+      sidebar: _navigationDrawer(permanent: true),
       bottomNavigationBar: reading
           ? null
           : AudioMiniPlayer(controller: widget.audio),
-      appBar: AppBar(
-        title: Text(
-          selectedBooks.isNotEmpty
-              ? 'Выбрано: ${selectedBooks.length}'
-              : reading
-              ? 'Книги'
-              : 'Аудиокниги',
-          overflow: TextOverflow.ellipsis,
-        ),
-        actions: selectedBooks.isNotEmpty
-            ? [
-                IconButton(
-                  tooltip: 'Выбрать все видимые',
-                  onPressed: () => setState(
-                    () => selectedBooks.addAll(visible.map((book) => book.id)),
+      actions: selectedBooks.isNotEmpty
+          ? [
+              IconButton(
+                tooltip: 'Выбрать все видимые',
+                onPressed: () => setState(
+                  () => selectedBooks.addAll(visible.map((book) => book.id)),
+                ),
+                icon: const Icon(Icons.select_all),
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'Действия с выбранными',
+                onSelected: _batchBooks,
+                itemBuilder: (_) => [
+                  if (!reading &&
+                      selectedBooks.length > 1 &&
+                      widget.assets != null)
+                    const PopupMenuItem(
+                      value: 'merge',
+                      child: Text('Объединить в аудиокнигу'),
+                    ),
+                  const PopupMenuItem(
+                    value: 'favorite',
+                    child: Text('Добавить в избранное'),
                   ),
-                  icon: const Icon(Icons.select_all),
-                ),
-                PopupMenuButton<String>(
-                  tooltip: 'Действия с выбранными',
-                  onSelected: _batchBooks,
-                  itemBuilder: (_) => [
-                    if (!reading &&
-                        selectedBooks.length > 1 &&
-                        widget.assets != null)
-                      const PopupMenuItem(
-                        value: 'merge',
-                        child: Text('Объединить в аудиокнигу'),
-                      ),
-                    const PopupMenuItem(
-                      value: 'favorite',
-                      child: Text('Добавить в избранное'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'planned',
-                      child: Text('Отметить новыми'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'active',
-                      child: Text('Отметить начатыми'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'finished',
-                      child: Text('Отметить завершёнными'),
-                    ),
-                  ],
-                ),
-                IconButton(
-                  tooltip: 'Отменить выбор',
-                  onPressed: () => setState(selectedBooks.clear),
-                  icon: const Icon(Icons.close),
-                ),
-              ]
-            : [
-                IconButton(
-                  tooltip: 'Выбрать видимые книги',
-                  onPressed: busy || visible.isEmpty
-                      ? null
-                      : () => setState(
-                          () => selectedBooks.addAll(
-                            visible.map((book) => book.id),
-                          ),
+                  const PopupMenuItem(
+                    value: 'planned',
+                    child: Text('Отметить новыми'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'active',
+                    child: Text('Отметить начатыми'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'finished',
+                    child: Text('Отметить завершёнными'),
+                  ),
+                ],
+              ),
+              IconButton(
+                tooltip: 'Отменить выбор',
+                onPressed: () => setState(selectedBooks.clear),
+                icon: const Icon(Icons.close),
+              ),
+            ]
+          : [
+              IconButton(
+                tooltip: 'Выбрать видимые книги',
+                onPressed: busy || visible.isEmpty
+                    ? null
+                    : () => setState(
+                        () => selectedBooks.addAll(
+                          visible.map((book) => book.id),
                         ),
-                  icon: const Icon(Icons.select_all),
-                ),
-                IconButton(
-                  tooltip: 'Папки библиотеки',
-                  onPressed: busy || widget.assets == null
-                      ? null
-                      : _manageRoots,
-                  icon: const Icon(Icons.folder_open),
-                ),
-                IconButton(
-                  tooltip: reading
-                      ? 'Статистика чтения'
-                      : 'Статистика прослушивания',
-                  icon: const Icon(Icons.bar_chart),
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => reading
-                          ? ReadingStatisticsPage(repository: widget.repository)
-                          : AudioStatisticsPage(
-                              repository: widget.repository,
-                              controller: widget.audio,
-                            ),
-                    ),
+                      ),
+                icon: const Icon(Icons.select_all),
+              ),
+              IconButton(
+                tooltip: 'Папки библиотеки',
+                onPressed: busy || widget.assets == null ? null : _manageRoots,
+                icon: const Icon(Icons.folder_open),
+              ),
+              IconButton(
+                tooltip: reading
+                    ? 'Статистика чтения'
+                    : 'Статистика прослушивания',
+                icon: const Icon(Icons.bar_chart),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => reading
+                        ? ReadingStatisticsPage(repository: widget.repository)
+                        : AudioStatisticsPage(
+                            repository: widget.repository,
+                            controller: widget.audio,
+                          ),
                   ),
                 ),
-                PopupMenuButton<String>(
-                  tooltip: 'Добавить',
-                  icon: const Icon(Icons.add),
-                  onSelected: (value) {
-                    if (value == 'new') _addBook();
-                    if (value == 'folder') {
-                      if (reading) {
-                        _manageRoots();
-                      } else {
-                        _importAudio(folder: true);
-                      }
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'Добавить',
+                icon: const Icon(Icons.add),
+                onSelected: (value) {
+                  if (value == 'new') _addBook();
+                  if (value == 'folder') {
+                    if (reading) {
+                      _manageRoots();
+                    } else {
+                      _importAudio(folder: true);
                     }
-                    if (value == 'audio') _importAudio();
-                    if (value == 'book') _importBook();
-                    if (value == 'export') _export();
-                  },
-                  itemBuilder: (_) => [
-                    PopupMenuItem(value: 'new', child: Text('Добавить книгу')),
-                    PopupMenuItem(
-                      value: 'folder',
-                      child: Text('Добавить папку библиотеки'),
-                    ),
-                    if (reading)
-                      const PopupMenuItem(
-                        value: 'book',
-                        child: Text('Импорт книги'),
-                      ),
-                    if (!reading)
-                      const PopupMenuItem(
-                        value: 'audio',
-                        child: Text('Копировать аудиофайлы'),
-                      ),
-                    PopupMenuItem(
-                      value: 'export',
-                      child: Text('Экспорт Markdown'),
-                    ),
-                  ],
-                ),
-                if (showSync)
-                  IconButton(
-                    tooltip: 'Настройки синхронизации',
-                    onPressed: busy ? null : _settings,
-                    icon: const Icon(Icons.settings_outlined),
+                  }
+                  if (value == 'audio') _importAudio();
+                  if (value == 'book') _importBook();
+                  if (value == 'export') _export();
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'new', child: Text('Добавить книгу')),
+                  PopupMenuItem(
+                    value: 'folder',
+                    child: Text('Добавить папку библиотеки'),
                   ),
-                const SizedBox(width: 12),
-              ],
-      ),
+                  if (reading)
+                    const PopupMenuItem(
+                      value: 'book',
+                      child: Text('Импорт книги'),
+                    ),
+                  if (!reading)
+                    const PopupMenuItem(
+                      value: 'audio',
+                      child: Text('Копировать аудиофайлы'),
+                    ),
+                  PopupMenuItem(
+                    value: 'export',
+                    child: Text('Экспорт Markdown'),
+                  ),
+                ],
+              ),
+              if (showSync)
+                IconButton(
+                  tooltip: 'Настройки синхронизации',
+                  onPressed: busy ? null : _settings,
+                  icon: const Icon(Icons.settings_outlined),
+                ),
+              const SizedBox(width: 12),
+            ],
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 1200),
             child: CustomScrollView(
               slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+                  sliver: SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ShelfIntro(
+                          title: reading ? 'Книги' : 'Аудиокниги',
+                          subtitle: reading
+                              ? 'Ваши истории, заметки и планы чтения.'
+                              : 'Хорошая история всегда рядом.',
+                        ),
+                        const SizedBox(height: 26),
+                        ShelfSummary(
+                          total: books.length,
+                          books: reading ? books.length : 0,
+                          audio: reading ? 0 : books.length,
+                          active: books
+                              .where((book) => _status(book) == 'active')
+                              .length,
+                          finished: books
+                              .where((book) => _status(book) == 'finished')
+                              .length,
+                          planned: books
+                              .where((book) => _status(book) == 'planned')
+                              .length,
+                          selected: statusFilter,
+                          onStatus: (next) =>
+                              setState(() => statusFilter = next),
+                        ),
+                        const SizedBox(height: 28),
+                        Text(
+                          'Ваша коллекция · ${visible.length}',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
                   sliver: SliverToBoxAdapter(
@@ -1390,7 +1673,10 @@ class _LibraryPageState extends State<LibraryPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   sliver: SliverList.builder(
                     itemCount: visible.length,
-                    itemBuilder: (_, i) => _bookCard(visible[i]),
+                    itemBuilder: (_, i) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _bookCard(visible[i]),
+                    ),
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 40)),
@@ -1423,6 +1709,18 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _bookMenu(LibraryRecord book, String value) async {
+    if (value == 'obsidian') {
+      try {
+        await _addToObsidian(book);
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Не удалось добавить в библиотеку: $error')),
+          );
+        }
+      }
+      return;
+    }
     if (value == 'share') {
       await _action(() async {
         final files = book.payload!['format'] == 'audio'
@@ -1542,7 +1840,12 @@ class _LibraryPageState extends State<LibraryPage> {
         ? null
         : (summary!.position! / summary.total!).clamp(0.0, 1.0);
     return Material(
-      color: selected ? scheme.primaryContainer : Colors.transparent,
+      color: selected ? scheme.primaryContainer : scheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onLongPress: busy ? null : () => _toggleBook(book.id),
         onTap: busy
@@ -1553,193 +1856,208 @@ class _LibraryPageState extends State<LibraryPage> {
             ? null
             : () => audio ? _openAudio(asset) : _openReader(asset),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.all(14),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Container(
-                width: 4,
-                height: 158,
-                color: status == 'finished'
-                    ? scheme.primary
-                    : status == 'active'
-                    ? const Color(0xffe3ac59)
-                    : scheme.outlineVariant,
-              ),
-              const SizedBox(width: 5),
-              Container(
-                width: 108,
-                height: 158,
-                color: scheme.surfaceContainerHighest,
-                child: Stack(
-                  children: [
-                    SizedBox.expand(
-                      child: audio && widget.assets != null
-                          ? AudioCover(
-                              key: ValueKey('${book.id}:$coverRevision'),
-                              assets: widget.assets!,
-                              bookId: book.id,
-                            )
-                          : !audio && _textInfo(book)['cover'] != null
-                          ? Image.file(
-                              File(_textInfo(book)['cover'] as String),
-                              fit: BoxFit.cover,
-                              cacheWidth: 240,
-                              errorBuilder: (_, _, _) =>
-                                  const Icon(Icons.menu_book, size: 48),
-                            )
-                          : Icon(
-                              audio ? Icons.headphones : Icons.menu_book,
-                              size: 48,
-                              color: scheme.primary,
-                            ),
-                    ),
-                    if (selectedBooks.isNotEmpty)
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        child: Checkbox(
-                          value: selectedBooks.contains(book.id),
-                          onChanged: busy ? null : (_) => _toggleBook(book.id),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SizedBox(
-                  height: 158,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              SizedBox(
+                width: 54,
+                height: 81,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: Stack(
                     children: [
-                      Text(
-                        '${bookPrefs[book.id]?['favorite'] == true ? '★ ' : ''}${_title(book)}',
-                        maxLines: audio ? 4 : 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          height: 1.2,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      Positioned.fill(
+                        child: audio && widget.assets != null
+                            ? AudioCover(
+                                key: ValueKey('${book.id}:$coverRevision'),
+                                assets: widget.assets!,
+                                bookId: book.id,
+                              )
+                            : !audio && _textInfo(book)['cover'] != null
+                            ? Image.file(
+                                File(_textInfo(book)['cover'] as String),
+                                fit: BoxFit.cover,
+                                cacheWidth: 160,
+                                errorBuilder: (_, _, _) =>
+                                    const Icon(Icons.menu_book, size: 28),
+                              )
+                            : ColoredBox(
+                                color: scheme.surfaceContainerHighest,
+                                child: Icon(
+                                  audio
+                                      ? Icons.headphones_outlined
+                                      : Icons.auto_stories_outlined,
+                                  size: 28,
+                                  color: scheme.primary,
+                                ),
+                              ),
                       ),
-                      if (_authors(book).isNotEmpty)
-                        Text(
-                          _authors(book),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: scheme.onSurfaceVariant),
-                        ),
-                      const Spacer(),
-                      if (!audio && _textInfo(book)['series'] != null)
-                        Text(
-                          '${_textInfo(book)['series']} ${_textInfo(book)['seriesNumber'] ?? ''}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12, color: scheme.primary),
-                        ),
-                      if (!audio &&
-                          (_textInfo(book)['chapters'] as List? ?? [])
-                              .isNotEmpty)
-                        Text(
-                          '${(_textInfo(book)['chapters'] as List)[((_textPosition(book)['chapter'] as num?)?.toInt() ?? 0).clamp(0, (_textInfo(book)['chapters'] as List).length - 1)]}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              !audio && _textInfo(book)['length'] != null
-                                  ? '${formatLabel(book.payload!['format'] as String)} · ${((fraction ?? 0) * 100).toStringAsFixed(1)}%'
-                                  : summary?.total == null
-                                  ? (audio
-                                        ? 'Аудиокнига'
-                                        : formatLabel(
-                                            book.payload!['format'] as String,
-                                          ))
-                                  : '${audioTime(Duration(milliseconds: summary!.position ?? 0))} / ${audioTime(Duration(milliseconds: summary.total!))}  ${((fraction ?? 0) * 100).toStringAsFixed(0)}%',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: scheme.onSurfaceVariant,
-                              ),
-                            ),
+                      if (selectedBooks.isNotEmpty)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          child: Checkbox(
+                            value: selectedBooks.contains(book.id),
+                            onChanged: busy
+                                ? null
+                                : (_) => _toggleBook(book.id),
                           ),
-                          PopupMenuButton<String>(
-                            tooltip: 'Действия с книгой',
-                            onSelected: (v) => _bookMenu(book, v),
-                            itemBuilder: (_) => [
-                              if (Platform.isAndroid &&
-                                  widget.assets != null &&
-                                  asset != null)
-                                const PopupMenuItem(
-                                  value: 'share',
-                                  child: Text('Поделиться файлом книги'),
-                                ),
-                              PopupMenuItem(
-                                value: 'favorite',
-                                child: Text(
-                                  bookPrefs[book.id]?['favorite'] == true
-                                      ? 'Убрать из избранного'
-                                      : 'В избранное',
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'collections',
-                                child: Text('Коллекции книги'),
-                              ),
-                              if (!audio) ...[
-                                const PopupMenuItem(
-                                  value: 'details',
-                                  child: Text('Карточка книги'),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'reading-plan',
-                                  child: Text('План чтения'),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'metadata',
-                                  child: Text('Обновить сведения из файла'),
-                                ),
-                              ],
-                              const PopupMenuItem(
-                                value: 'planned',
-                                child: Text('Отметить новой'),
-                              ),
-                              const PopupMenuItem(
-                                value: 'active',
-                                child: Text('Отметить начатой'),
-                              ),
-                              const PopupMenuItem(
-                                value: 'finished',
-                                child: Text('Отметить завершённой'),
-                              ),
-                              const PopupMenuItem(
-                                value: 'session',
-                                child: Text('Записать сессию'),
-                              ),
-                              if (audio)
-                                const PopupMenuItem(
-                                  value: 'folder',
-                                  child: Text(
-                                    'Переименовать / переместить папку',
-                                  ),
-                                ),
-                              if (audio)
-                                const PopupMenuItem(
-                                  value: 'reconnect',
-                                  child: Text('Указать папку заново'),
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      if (fraction != null)
-                        LinearProgressIndicator(value: fraction, minHeight: 3),
+                        ),
                     ],
                   ),
                 ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${bookPrefs[book.id]?['favorite'] == true ? '★ ' : ''}${_title(book)}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        height: 1.4,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (_authors(book).isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          _authors(book),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    if (!audio && _textInfo(book)['series'] != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(
+                          '${_textInfo(book)['series']} ${_textInfo(book)['seriesNumber'] ?? ''}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 10, color: scheme.primary),
+                        ),
+                      ),
+                    const SizedBox(height: 9),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        ShelfStatus(status),
+                        Text(
+                          !audio
+                              ? '${formatLabel(book.payload!['format'] as String)} · ${((fraction ?? 0) * 100).toStringAsFixed(1)}%'
+                              : fraction == null
+                              ? 'Аудиокнига'
+                              : '${(fraction * 100).round()}% прослушано',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (fraction != null) ...[
+                      const SizedBox(height: 9),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: LinearProgressIndicator(
+                          value: fraction,
+                          minHeight: 3,
+                          color: status == 'finished'
+                              ? const Color(0xff8ebfae)
+                              : scheme.primary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              PopupMenuButton<String>(
+                tooltip: 'Действия с книгой',
+                onSelected: (v) => _bookMenu(book, v),
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'obsidian',
+                    child: Text(
+                      obsidianLibrary.forBook(book.id) == null ||
+                              obsidianLibrary.forBook(book.id)!.state ==
+                                  'removed'
+                          ? 'Добавить в библиотеку'
+                          : libraryState(obsidianLibrary.forBook(book.id)!),
+                    ),
+                  ),
+                  if (Platform.isAndroid &&
+                      widget.assets != null &&
+                      asset != null)
+                    const PopupMenuItem(
+                      value: 'share',
+                      child: Text('Поделиться файлом книги'),
+                    ),
+                  PopupMenuItem(
+                    value: 'favorite',
+                    child: Text(
+                      bookPrefs[book.id]?['favorite'] == true
+                          ? 'Убрать из избранного'
+                          : 'В избранное',
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'collections',
+                    child: Text('Коллекции книги'),
+                  ),
+                  if (!audio) ...[
+                    const PopupMenuItem(
+                      value: 'details',
+                      child: Text('Карточка книги'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'reading-plan',
+                      child: Text('План чтения'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'metadata',
+                      child: Text('Обновить сведения из файла'),
+                    ),
+                  ],
+                  const PopupMenuItem(
+                    value: 'planned',
+                    child: Text('Отметить новой'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'active',
+                    child: Text('Отметить начатой'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'finished',
+                    child: Text('Отметить завершённой'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'session',
+                    child: Text('Записать сессию'),
+                  ),
+                  if (audio)
+                    const PopupMenuItem(
+                      value: 'folder',
+                      child: Text('Переименовать / переместить папку'),
+                    ),
+                  if (audio)
+                    const PopupMenuItem(
+                      value: 'reconnect',
+                      child: Text('Указать папку заново'),
+                    ),
+                ],
               ),
             ],
           ),

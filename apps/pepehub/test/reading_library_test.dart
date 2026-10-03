@@ -261,6 +261,11 @@ void main() {
       await lib.update('reading-collection:travel', {'name': 'Путешествия'});
       await tester.pumpWidget(MaterialApp(home: LibraryPage(repository: repo)));
       await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Альфа'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Аудио'), findsNothing);
       expect(find.text('Альфа'), findsOneWidget);
       await tester.tap(find.text('Избранное'));
