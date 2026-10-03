@@ -1,6 +1,7 @@
 import {handlePrivateCover,validCoverAsset,type PrivateCoverBucket} from './covers.ts';
 import { validId, validOperation, safeValues, type MetadataSnapshot, type MetadataReceipt } from './metadata.ts';
 import { handleActivityApi } from './activity-api.ts';
+import { handleNoteApi } from './notes-api.ts';
 
 interface Statement {
   bind(...values: unknown[]): Statement;
@@ -18,6 +19,7 @@ const empty: MetadataSnapshot = { version: 1, ready: false, items: [], fields: [
 export async function handleMetadataApi(request: Request, db: MetadataDatabase, profile: string, bucket?: PrivateCoverBucket): Promise<Response> {
   const url = new URL(request.url), route = url.pathname.replace('/api/pepehub/library', '');
   if (route.startsWith('/covers/')) return handlePrivateCover(request,profile,bucket);
+  if (route === '/notes' || route.startsWith('/notes/')) return handleNoteApi(request, db, profile);
   if (route === '/activity' || route.startsWith('/activity/')) return handleActivityApi(request, db, profile);
   if (request.method === 'GET' && route === '') {
     const row = await db.prepare('SELECT snapshot_json FROM pepehub_library_snapshots WHERE profile_id=?').bind(profile).first<{ snapshot_json: string }>();

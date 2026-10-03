@@ -64,6 +64,7 @@ class EpubBook {
   final List<EpubChapter> chapters;
   final String? series, seriesNumber, description;
   final Uint8List? cover;
+  final Map<String, dynamic> metadata;
   const EpubBook(
     this.title,
     this.authors,
@@ -72,6 +73,7 @@ class EpubBook {
     this.description,
     this.seriesNumber,
     this.cover,
+    this.metadata = const {},
   });
 }
 
@@ -547,6 +549,52 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
       /* Optional artwork must not prevent reading. */
     }
   }
+  final extra = <String, dynamic>{};
+  final metadataElement = elements
+      .where((e) => e.name.local == 'metadata')
+      .firstOrNull;
+  final raw = <String, List<String>>{};
+  for (final e in metadataElement?.childElements ?? <XmlElement>[]) {
+    final key = e.name.local == 'meta'
+        ? e.getAttribute('property') ?? e.getAttribute('name') ?? 'meta'
+        : e.name.local;
+    final value = (e.getAttribute('content') ?? e.innerText).trim();
+    if (value.isEmpty || value.length > 10000 || raw.length >= 100) continue;
+    final values = raw.putIfAbsent(key, () => []);
+    if (values.length < 30) values.add(value);
+  }
+  for (final mapping in {
+    'language': 'language',
+    'publisher': 'publisher',
+    'date': 'publicationDate',
+    'subject': 'genres',
+    'rights': 'rights',
+    'contributor': 'contributors',
+  }.entries) {
+    final values = raw[mapping.key];
+    if (values != null) {
+      extra[mapping.value] =
+          const {'genres', 'contributors'}.contains(mapping.value)
+          ? values
+          : values.first;
+    }
+  }
+  final identifiers = raw['identifier'];
+  if (identifiers != null) {
+    extra['identifiers'] = identifiers;
+    final isbn = identifiers
+        .where(
+          (v) => RegExp(r'^(?:urn:isbn:|isbn:)?[0-9Xx -]{10,20}$').hasMatch(v),
+        )
+        .firstOrNull;
+    if (isbn != null) {
+      extra['isbn'] = isbn.replaceFirst(
+        RegExp(r'^(urn:)?isbn:', caseSensitive: false),
+        '',
+      );
+    }
+  }
+  extra['embeddedMetadata'] = raw;
   return EpubBook(
     title == null || title.isEmpty ? 'Книга EPUB' : title,
     elements
@@ -564,5 +612,6 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
     series: series,
     seriesNumber: number,
     cover: cover,
+    metadata: extra,
   );
 }

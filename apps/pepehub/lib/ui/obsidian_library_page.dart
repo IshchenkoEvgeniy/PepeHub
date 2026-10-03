@@ -14,8 +14,8 @@ const libraryLabels = {
   'series': 'Серия',
   'seriesIndex': 'Номер в серии',
   'status': 'Статус',
-  'total': 'Всего страниц / минут',
-  'progress': 'Прочитано страниц / прослушано минут',
+  'total': 'Общий объём',
+  'progress': 'Прочитано / прослушано',
   'rating': 'Рейтинг',
   'cover': 'Обложка (ссылка)',
   'format': 'Формат',
@@ -27,6 +27,7 @@ const libraryLabels = {
   'queueOrder': 'Порядок в очереди',
   'targetDate': 'Целевая дата',
   'unit': 'Единица прогресса',
+  'readingTime': 'Время чтения / прослушивания',
 };
 
 String libraryState(LibraryEntry entry) => switch (entry.state) {
@@ -71,7 +72,9 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
   void initState() {
     super.initState();
     for (final key in values.keys) {
-      controllers[key] = TextEditingController(text: metadataText(values[key]));
+      controllers[key] = TextEditingController(
+        text: _fieldText(key, values[key]),
+      );
     }
   }
 
@@ -83,12 +86,31 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
     super.dispose();
   }
 
+  String _fieldText(String key, dynamic value) =>
+      value is List && value.every((v) => v is String)
+      ? value.join(', ')
+      : metadataText(value);
   dynamic _parse(String key, String text) {
-    if (text == metadataText(widget.item.values[key])) {
+    if (text == _fieldText(key, widget.item.values[key])) {
       return widget.item.values[key];
     }
     if (text.trim().isEmpty) return null;
     final original = values[key], kind = fields[key]?.kind;
+    if (kind == 'list' ||
+        (original is List && original.every((v) => v is String))) {
+      if (text.trimLeft().startsWith('[')) {
+        final parsed = jsonDecode(text);
+        if (parsed is! List) {
+          throw const FormatException('Введите имена через запятую');
+        }
+        return parsed;
+      }
+      return text
+          .split(RegExp(r'[,;\n]'))
+          .map((v) => v.trim())
+          .where((v) => v.isNotEmpty)
+          .toList();
+    }
     if (original is Map ||
         original is List ||
         original is bool ||
@@ -201,7 +223,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
             : null,
         labelText: libraryLabels[fields[key]?.field] ?? key,
         helperText:
-            '${values[key] is List || fields[key]?.kind == 'list' ? 'Список JSON · ' : ''}$key',
+            '${values[key] is List || fields[key]?.kind == 'list' ? 'Через запятую · ' : ''}$key',
       ),
       validator: (text) {
         try {
@@ -254,6 +276,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
       'queueOrder',
       'targetDate',
       'unit',
+      'readingTime',
     };
     final main = controllers.keys.where(
       (key) =>
@@ -263,7 +286,9 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
     final progress = controllers.keys.where(
       (key) => progressFields.contains(fields[key]?.field),
     );
-    final extra = controllers.keys.where((key) => !fields.containsKey(key));
+    final extra = controllers.keys.where(
+      (key) => !fields.containsKey(key) && key != 'pepehub_time_from_journal',
+    );
     return Scaffold(
       appBar: AppBar(title: const Text('Метаданные книги')),
       bottomNavigationBar: editable

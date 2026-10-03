@@ -226,6 +226,7 @@ EpubBook parseTextBook(
   var title = p.basenameWithoutExtension(filename);
   final authors = <String>[];
   String? series, seriesNumber, description;
+  final extra = <String, dynamic>{};
   Uint8List? cover;
   final chapters = <EpubChapter>[];
   void chapter(String label, List<String> paragraphs, {dom.Node? rich}) {
@@ -302,6 +303,52 @@ EpubBook parseTextBook(
         .firstOrNull
         ?.innerText
         .trim();
+    final raw = <String, dynamic>{};
+    for (final parentName in ['title-info', 'publish-info', 'document-info']) {
+      final parent = doc.descendants
+          .whereType<XmlElement>()
+          .where((e) => e.name.local == parentName)
+          .firstOrNull;
+      for (final e in parent?.childElements ?? <XmlElement>[]) {
+        if (!const {
+          'genre',
+          'lang',
+          'src-lang',
+          'date',
+          'keywords',
+          'publisher',
+          'year',
+          'isbn',
+          'city',
+          'program-used',
+          'version',
+        }.contains(e.name.local)) {
+          continue;
+        }
+        final value = (e.getAttribute('value') ?? e.innerText).trim();
+        if (value.isEmpty || value.length > 10000) continue;
+        final key = '$parentName:${e.name.local}';
+        (raw.putIfAbsent(key, () => <String>[]) as List<String>).add(value);
+      }
+    }
+    for (final mapping in {
+      'title-info:genre': 'genres',
+      'title-info:lang': 'language',
+      'title-info:src-lang': 'sourceLanguage',
+      'publish-info:publisher': 'publisher',
+      'publish-info:year': 'year',
+      'publish-info:isbn': 'isbn',
+      'publish-info:city': 'publicationCity',
+      'title-info:date': 'publicationDate',
+    }.entries) {
+      final values = raw[mapping.key] as List<String>?;
+      if (values != null) {
+        extra[mapping.value] = mapping.value == 'genres'
+            ? values
+            : values.first;
+      }
+    }
+    extra['embeddedMetadata'] = raw;
     final image = info?.childElements
         .where((e) => e.name.local == 'coverpage')
         .firstOrNull
@@ -511,7 +558,15 @@ EpubBook parseTextBook(
     final doc = _xml(zip.read('word/document.xml'));
     if (zip.entries.containsKey('docProps/core.xml')) {
       final core = _xml(zip.read('docProps/core.xml'));
+      final raw = <String, dynamic>{};
       for (final e in core.descendants.whereType<XmlElement>()) {
+        final value = e.innerText.trim();
+        if (e.childElements.isEmpty &&
+            value.isNotEmpty &&
+            value.length <= 10000) {
+          raw[e.name.local] = value;
+        }
+
         if (e.name.local == 'title' && e.innerText.trim().isNotEmpty) {
           title = e.innerText.trim();
         }
@@ -519,6 +574,19 @@ EpubBook parseTextBook(
           authors.add(e.innerText.trim());
         }
       }
+      for (final mapping in {
+        'description': 'description',
+        'language': 'language',
+        'subject': 'subject',
+        'keywords': 'keywords',
+        'created': 'createdAt',
+        'modified': 'modifiedAt',
+      }.entries) {
+        if (raw.containsKey(mapping.key)) {
+          extra[mapping.value] = raw[mapping.key];
+        }
+      }
+      extra['embeddedMetadata'] = raw;
     }
     final thumbnail = zip.entries.keys
         .where(
@@ -682,6 +750,34 @@ EpubBook parseTextBook(
     if (author != null && author.isNotEmpty) authors.add(author);
     if (heading != null && heading.isNotEmpty) title = heading;
     final richDocument = html.parse(source);
+    final raw = <String, dynamic>{};
+    for (final meta in richDocument.querySelectorAll(
+      'meta[name],meta[property]',
+    )) {
+      final key = meta.attributes['name'] ?? meta.attributes['property'],
+          value = meta.attributes['content'];
+      if (key != null &&
+          value != null &&
+          value.length <= 10000 &&
+          raw.length < 100) {
+        raw[key] = value;
+      }
+    }
+    final language = richDocument.documentElement?.attributes['lang'];
+    if (language != null) extra['language'] = language;
+    for (final mapping in {
+      'description': 'description',
+      'keywords': 'keywords',
+      'publisher': 'publisher',
+      'isbn': 'isbn',
+      'dc.language': 'language',
+      'dc.publisher': 'publisher',
+      'dc.date': 'publicationDate',
+    }.entries) {
+      if (raw.containsKey(mapping.key)) extra[mapping.value] = raw[mapping.key];
+    }
+    if (raw.isNotEmpty) extra['embeddedMetadata'] = raw;
+
     applyBookCss(
       richDocument,
       richDocument.querySelectorAll('style').map((e) => e.text).toList(),
@@ -810,6 +906,7 @@ EpubBook parseTextBook(
   if (chapters.isEmpty) {
     throw const FormatException('В книге нет читаемого текста');
   }
+  description ??= extra['description'] as String?;
   return EpubBook(
     title,
     authors.take(30).toList(),
@@ -818,6 +915,7 @@ EpubBook parseTextBook(
     description: description,
     seriesNumber: seriesNumber,
     cover: cover,
+    metadata: extra,
   );
 }
 

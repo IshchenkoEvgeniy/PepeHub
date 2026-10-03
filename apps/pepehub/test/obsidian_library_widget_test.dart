@@ -35,6 +35,52 @@ void main() {
     expect(find.text('Подключить Obsidian'), findsNothing);
   });
   testWidgets(
+    'authors and genres accept ordinary text instead of requiring JSON',
+    (tester) async {
+      Map<String, dynamic>? saved;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LibraryMetadataEditor(
+            item: const ObsidianLibraryItem(
+              id: 'id',
+              path: '',
+              collectionId: 'book',
+              mediaType: 'book',
+              values: {
+                'Title': 'Книга',
+                'Author': <String>[],
+                'Genre': <String>[],
+              },
+              fields: [
+                LibraryField('Title', 'title', 'text'),
+                LibraryField('Author', 'author', 'list'),
+                LibraryField('Genre', 'genre', 'list'),
+              ],
+            ),
+            onSave: (value) async {
+              saved = value;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('metadata:Author')),
+        'Кирилл Клеванский',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('metadata:Genre')),
+        'Фэнтези; Приключения',
+      );
+      await tester.ensureVisible(find.text('Сохранить'));
+      await tester.tap(find.text('Сохранить'));
+      await tester.pumpAndSettle();
+      expect(saved!['Author'], ['Кирилл Клеванский']);
+      expect(saved!['Genre'], ['Фэнтези', 'Приключения']);
+      expect(find.textContaining('FormatException'), findsNothing);
+    },
+  );
+  testWidgets(
     'editor shows blank fields and saves finish date, preserving other values',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);

@@ -12,6 +12,8 @@ vi.mock('obsidian', () => {
             return content.startsWith('---\n') && end >= 0 ? { exists: true, frontmatter: content.slice(4, end), contentStart: end + 5 } : { exists: false, frontmatter: '', contentStart: 0 };
         }, parseYaml: JSON.parse, stringifyYaml: (value: unknown) => `${JSON.stringify(value)}\n`,
         requestUrl: async (request: { url: string; body?: string }) => {
+            if(request.url.includes('/notes?'))return {status:200,json:{version:1,records:[],cursor:0,hasMore:false}};
+            if(request.url.endsWith('/notes'))return {status:200,json:{version:1,receipts:JSON.parse(request.body!).operations.map((op:any)=>({operationId:op.operationId,status:'applied',record:{entry:op.entry,revision:op.baseRevision+1,sequence:1}}))}};
             if (request.url.includes('/activity?')) return { status: 200, json: { version: 1, records: [], cursor: 0, hasMore: false } };
             if (request.url.endsWith('/pending')) return { status: 200, json: { operations: transport.pending } };
             if (transport.failPublish) { transport.failPublish = false; throw new Error('lost publication'); }
@@ -50,15 +52,15 @@ function setup() {
 }
 
 describe('PepeHub bridge with the real plugin aliases', () => {
-    it('exports all 19 properties, blanks, nested extras, and both book formats without binaries', async () => {
+    it('exports all configured properties plus reading time, blanks, nested extras, and both book formats without binaries', async () => {
         const { service, add, latest, fm } = setup();
         const file = add('Books/One.md', { Title: 'One', Format: 'E-book', Extra: { flag: false, values: [1, 2] }, position: 'custom' });
         add('Books/Audio.md', { Title: 'Audio', Format: 'Audiobook', Duration: '01:20:00', Listened: 3 });
         add('Movies/Other.md', { Title: 'Other' });
         await service.sync();
         const snapshot = latest();
-        expect(snapshot.fields).toHaveLength(19);
-        expect(snapshot.fields.map(f => f.field).sort()).toEqual(Object.keys(DEFAULT_LIBRARY_PROPERTY_ALIASES).sort());
+        expect(snapshot.fields).toHaveLength(20);
+        expect(snapshot.fields.map(f => f.field).sort()).toEqual([...Object.keys(DEFAULT_LIBRARY_PROPERTY_ALIASES),'readingTime'].sort());
         expect(snapshot.items).toHaveLength(2);
         const book = snapshot.items.find(i => i.path === file.path)!;
         expect(book.values['Дата завершения']).toBeNull();

@@ -1,0 +1,133 @@
+import { Modal, Notice, TFile } from 'obsidian';
+import type HabitTimerPlugin from '../main';
+import { equalValue } from './pepehub-metadata';
+import { type NoteRecord, type NoteEntry } from './pepehub-notes';
+import { emptyNoteState, captureNote, pendingNote, receiptNote, receiveNote, type NoteState } from './pepehub-notes-state';
+import { applyNoteMarkdown, readNoteMarkdown } from './pepehub-notes-markdown';
+import type { MetadataSnapshot } from './pepehub-metadata';
+
+export class PepeHubNoteService {
+  private lastNotice='';
+  private busy=false;
+  constructor(private plugin:HabitTimerPlugin) {}
+  private async statePath(seed?:string):Promise<string> {
+    const base=(this.plugin.settings.cloudflareWorkerUrl || '').trim().replace(/\/+$/,'');
+    const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(seed ?? `${base}\n${this.plugin.settings.cloudflareApiToken}`));
+    const hash=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
+    const directory=this.plugin.manifest.dir ?? `${this.plugin.app.vault.configDir}/plugins/${this.plugin.manifest.id}`;
+    return `${directory}/pepehub-notes-${hash}.json`;
+  }
+  private async readState(path:string):Promise<NoteState> {
+    const adapter=this.plugin.app.vault.adapter;
+    if(!await adapter.exists(path))return emptyNoteState();
+    const state=JSON.parse(await adapter.read(path)) as NoteState;
+    if(state.version!==1||!state.slots||!Number.isSafeInteger(state.cursor))throw new Error('Invalid PepeHub notes state; existing state was preserved.');
+    return state;
+  }
+  private async save(path:string,state:NoteState):Promise<void> {
+    // A completed write is required before requests or cursor acknowledgement.
+    await this.plugin.app.vault.adapter.write(path,JSON.stringify(state));
+  }
+  async sync(snapshot:MetadataSnapshot,request:(path:string,body?:unknown)=>Promise<unknown>,seed?:string):Promise<void> {
+    if(this.busy)return;
+    this.busy=true;
+    try {await this.exchange(snapshot,request,seed);} finally {this.busy=false;}
+  }
+  private async exchange(snapshot:MetadataSnapshot,request:(path:string,body?:unknown)=>Promise<unknown>,seed?:string):Promise<void> {
+    const path=await this.statePath(seed),state=await this.readState(path),entries:NoteEntry[]=[];
+    const items=new Map(snapshot.items.map(item=>[item.id,item]));
+    // Restore deferred imports before observing deletions in a returning note.
+    for(const slot of Object.values(state.slots)) {
+      if(!slot.needsWrite||slot.conflict)continue;
+      const item=items.get(slot.value.itemId);if(!item)continue;
+      const file=this.plugin.app.vault.getAbstractFileByPath(item.path);if(!(file instanceof TFile))continue;
+      let applied=false;await this.plugin.app.vault.process(file,content=>{const result=applyNoteMarkdown(content,slot.value,slot.writeBase ?? null);applied=result.applied;return result.content;});
+      if(applied){delete slot.needsWrite;delete slot.writeBase;}
+      else {const current=readNoteMarkdown(await this.plugin.app.vault.read(file),item.id,item.mediaType,false).entries.find(e=>e.id===slot.value.id);slot.conflict={entry:slot.value,revision:slot.revision,sequence:0};slot.value=current ?? {...slot.value,deleted:true};}
+      await this.save(path,state);
+    }
+    for(const item of snapshot.items) {
+      const file=this.plugin.app.vault.getAbstractFileByPath(item.path);
+      if(!(file instanceof TFile))continue;
+      const original=await this.plugin.app.vault.read(file),preview=readNoteMarkdown(original,item.id,item.mediaType);
+      if(preview.content===original)entries.push(...preview.entries);
+      else await this.plugin.app.vault.process(file,content=>{
+        const parsed=readNoteMarkdown(content,item.id,item.mediaType);
+        entries.push(...parsed.entries);return parsed.content;
+      });
+    }
+    captureNote(state,entries,new Set(items.keys()));
+    const operations=pendingNote(state).filter(op=>items.has(op.entry.itemId));await this.save(path,state);
+    for(let at=0;at<operations.length;at+=2) {
+      const response=await request('/notes',{operations:operations.slice(at,at+2)}) as {version:number;receipts:Parameters<typeof receiptNote>[1][]};
+      if(response.version!==1||!Array.isArray(response.receipts))throw new Error('Invalid PepeHub notes receipts');
+      for(const receipt of response.receipts)receiptNote(state,receipt);
+      await this.save(path,state);
+    }
+    while(true) {
+      const page=await request(`/notes?after=${state.cursor}`) as {version:number;records:NoteRecord[];cursor:number;hasMore:boolean};
+      if(page.version!==1||!Array.isArray(page.records)||!Number.isSafeInteger(page.cursor)||page.cursor<state.cursor||(page.hasMore&&page.cursor===state.cursor))throw new Error('Invalid PepeHub notes page');
+      for(const record of page.records) {
+        const item=items.get(record.entry.itemId);
+        const file=item?this.plugin.app.vault.getAbstractFileByPath(item.path):null;
+        const before=state.slots[record.entry.id];
+        if(!item||!(file instanceof TFile)) {
+          if(receiveNote(state,record)){state.slots[record.entry.id]!.needsWrite=true;state.slots[record.entry.id]!.writeBase=before?.value ?? null;}
+          await this.save(path,state);continue;
+        }
+        if(!receiveNote(state,record))continue;
+        let applied=false;
+        await this.plugin.app.vault.process(file,content=>{
+          const result=applyNoteMarkdown(content,record.entry,before?.value ?? null);
+          applied=result.applied;return result.content;
+        });
+        if(!applied) {
+          const now=readNoteMarkdown(await this.plugin.app.vault.read(file),item.id,item.mediaType,false).entries.find(e=>e.id===record.entry.id);
+          state.slots[record.entry.id]={value:now ?? {...record.entry,deleted:true},synced:before?.synced ?? null,revision:before?.revision ?? 0,conflict:record};
+        }
+        // Persist each applied row before advancing the feed. Reapplying after a crash is idempotent.
+        await this.save(path,state);
+      }
+      state.cursor=page.cursor;await this.save(path,state);
+      if(!page.hasMore)break;
+    }
+    const conflicts=Object.values(state.slots).filter(s=>s.conflict).map(s=>`${s.value.id}:${s.conflict!.revision}`).sort().join(',');
+    if(conflicts&&conflicts!==this.lastNotice)new Notice('PepeHub: заметки изменены с обеих сторон. Команда «PepeHub: разрешить конфликты заметкиа» позволяет выбрать версии.');
+    this.lastNotice=conflicts;
+  }
+  async review():Promise<void> {
+    const path=await this.statePath(),state=await this.readState(path);
+    const conflicts=Object.values(state.slots).filter(s=>s.conflict);
+    if(!conflicts.length){new Notice('PepeHub: конфликтов заметкиа нет.');return;}
+    const modal=new Modal(this.plugin.app);modal.titleEl.setText('Конфликты заметкиа PepeHub');
+    for(const slot of conflicts) {
+      const remote=slot.conflict!;
+      const block=modal.contentEl.createDiv();
+      block.createEl('h3',{text:slot.value.title || 'Заметка'});
+      block.createEl('p',{text:`Локально${slot.value.deleted?' (удалено)':''}: ${slot.value.quote}\n${slot.value.text}`});
+      block.createEl('p',{text:`Сервер${remote.entry.deleted?' (удалено)':''}: ${remote.entry.quote}\n${remote.entry.text}`});
+      for(const useRemote of [true,false]) {
+        const button=block.createEl('button',{text:useRemote?'Взять с сервера':'Оставить локальную'});
+        button.onclick=async()=>{
+          if(this.busy){new Notice('Синхронизация ещё идёт. Повторите выбор после её завершения.');return;}
+          button.disabled=true;this.busy=true;
+          try {
+            const latest=await this.readState(path),live=latest.slots[slot.value.id];
+            if(!live?.conflict||!equalValue(live.value,slot.value))throw new Error('Запись изменилась. Откройте список конфликтов заново.');
+            if(useRemote) {
+              const files=this.plugin.app.vault.getMarkdownFiles();let found:TFile|undefined;
+              for(const file of files){const fm=this.plugin.app.metadataCache.getFileCache(file)?.frontmatter;if(fm?.pepehub_id===slot.value.itemId){found=file;break;}}
+              if(!found)throw new Error('Заметка книги не найдена.');
+              let applied=false;await this.plugin.app.vault.process(found,content=>{const result=applyNoteMarkdown(content,remote.entry,slot.value);applied=result.applied;return result.content;});
+              if(!applied)throw new Error('Строка изменилась. Сначала повторите синхронизацию.');
+              live.value=remote.entry;
+            }
+            live.synced=remote.entry;live.revision=remote.revision;delete live.operation;delete live.conflict;
+            await this.save(path,latest);block.remove();
+          }catch(error){new Notice(`PepeHub: ${String(error)}`);button.disabled=false;}finally{this.busy=false;}
+        };
+      }
+    }
+    modal.open();
+  }
+}

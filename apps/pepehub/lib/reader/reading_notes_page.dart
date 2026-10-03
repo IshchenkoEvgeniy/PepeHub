@@ -15,109 +15,123 @@ Future<ReadingNote?> editReadingNote(
   BuildContext context,
   ReadingNote note,
 ) async {
-  final text = TextEditingController(text: note.comment);
-  final tags = TextEditingController(text: note.tags.join(', '));
-  final characters = TextEditingController(text: note.characters.join(', '));
-  var color = note.color;
-  final result = await showDialog<ReadingNote>(
+  return showDialog<ReadingNote>(
     context: context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: const Text('Цитата и заметка'),
-        content: SizedBox(
-          width: 480,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(note.quote, maxLines: 6, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final entry in noteColors.entries)
-                      Semantics(
-                        label: switch (entry.key) {
-                          'green' => 'Зелёный',
-                          'blue' => 'Синий',
-                          'pink' => 'Розовый',
-                          _ => 'Жёлтый',
-                        },
-                        child: ChoiceChip(
-                          label: Icon(
-                            color == entry.key ? Icons.check : Icons.circle,
-                            color: Colors.black54,
-                          ),
-                          selected: color == entry.key,
-                          backgroundColor: entry.value,
-                          selectedColor: entry.value,
-                          onSelected: (_) => setState(() => color = entry.key),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: text,
-                  minLines: 2,
-                  maxLines: 5,
-                  maxLength: 10000,
-                  decoration: const InputDecoration(
-                    labelText: 'Комментарий',
-                    hintText: 'Мысль, персонаж или пояснение',
-                  ),
-                ),
-                TextField(
-                  controller: tags,
-                  maxLength: 1000,
-                  decoration: const InputDecoration(
-                    labelText: 'Теги',
-                    hintText: 'Через запятую: идея, сюжет',
-                  ),
-                ),
-                TextField(
-                  controller: characters,
-                  maxLength: 1000,
-                  decoration: const InputDecoration(
-                    labelText: 'Персонажи',
-                    hintText: 'Имена через запятую',
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(
-              context,
-              ReadingNote.fromJson({
-                ...note.toJson(),
-                'comment': text.text.trim(),
-                'color': color,
-                'tags': normalizeNoteLabels(tags.text.split(',')),
-                'characters': normalizeNoteLabels(characters.text.split(',')),
-                'updated': DateTime.now().toUtc().toIso8601String(),
-              }),
-            ),
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    ),
+    builder: (_) => _ReadingNoteEditor(note: note),
   );
-  // The dialog route retains its field until its closing animation ends.
-  Future<void>.delayed(const Duration(seconds: 1), () {
+}
+
+class _ReadingNoteEditor extends StatefulWidget {
+  final ReadingNote note;
+  const _ReadingNoteEditor({required this.note});
+  @override
+  State<_ReadingNoteEditor> createState() => _ReadingNoteEditorState();
+}
+
+class _ReadingNoteEditorState extends State<_ReadingNoteEditor> {
+  ReadingNote get note => widget.note;
+  late final text = TextEditingController(text: note.comment);
+  late final tags = TextEditingController(text: note.tags.join(', '));
+  late final characters = TextEditingController(
+    text: note.characters.join(', '),
+  );
+  late String color = note.color;
+  @override
+  void dispose() {
     text.dispose();
     tags.dispose();
     characters.dispose();
-  });
-  return result;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Цитата и заметка'),
+    content: SizedBox(
+      width: 480,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(note.quote, maxLines: 6, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final entry in noteColors.entries)
+                  Semantics(
+                    label: switch (entry.key) {
+                      'green' => 'Зелёный',
+                      'blue' => 'Синий',
+                      'pink' => 'Розовый',
+                      _ => 'Жёлтый',
+                    },
+                    child: ChoiceChip(
+                      label: Icon(
+                        color == entry.key ? Icons.check : Icons.circle,
+                        color: Colors.black54,
+                      ),
+                      selected: color == entry.key,
+                      backgroundColor: entry.value,
+                      selectedColor: entry.value,
+                      onSelected: (_) => setState(() => color = entry.key),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: text,
+              minLines: 2,
+              maxLines: 5,
+              maxLength: 10000,
+              decoration: const InputDecoration(
+                labelText: 'Комментарий',
+                hintText: 'Мысль, персонаж или пояснение',
+              ),
+            ),
+            TextField(
+              controller: tags,
+              maxLength: 1000,
+              decoration: const InputDecoration(
+                labelText: 'Теги',
+                hintText: 'Через запятую: идея, сюжет',
+              ),
+            ),
+            TextField(
+              controller: characters,
+              maxLength: 1000,
+              decoration: const InputDecoration(
+                labelText: 'Персонажи',
+                hintText: 'Имена через запятую',
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Отмена'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(
+          context,
+          ReadingNote.fromJson({
+            ...note.toJson(),
+            'comment': text.text.trim(),
+            'color': color,
+            'tags': normalizeNoteLabels(tags.text.split(',')),
+            'characters': normalizeNoteLabels(characters.text.split(',')),
+            'updated': DateTime.now().toUtc().toIso8601String(),
+          }),
+        ),
+        child: const Text('Сохранить'),
+      ),
+    ],
+  );
 }
 
 class ReadingNotesPage extends StatefulWidget {
@@ -345,7 +359,7 @@ class _ReadingNotesPageState extends State<ReadingNotesPage> {
                       color: noteColors[note.color] ?? noteColors['yellow'],
                     ),
                     title: Text(
-                      note.quote,
+                      note.quote.isEmpty ? note.chapterTitle : note.quote,
                       maxLines: 4,
                       overflow: TextOverflow.ellipsis,
                     ),

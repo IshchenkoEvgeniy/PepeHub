@@ -34,7 +34,16 @@ foreach ($bridgeActivityName in @('activity', 'activity-state', 'activity-markdo
     $bridgeActivityCode = [IO.File]::ReadAllText((Join-Path $bridgeRoot "$bridgeActivityName.ts")).Replace("'./metadata.ts'", "'./pepehub-metadata'").Replace("'./activity.ts'", "'./pepehub-activity'")
     Write-BridgeFile "src\services\pepehub-$bridgeActivityName.ts" $bridgeActivityCode
 }
+foreach ($bridgeNoteName in @('notes', 'notes-state', 'notes-markdown')) {
+    $bridgeNoteCode = [IO.File]::ReadAllText((Join-Path $bridgeRoot "$bridgeNoteName.ts")).Replace("'./metadata.ts'", "'./pepehub-metadata'").Replace("'./notes.ts'", "'./pepehub-notes'")
+    Write-BridgeFile "src\services\pepehub-$bridgeNoteName.ts" $bridgeNoteCode
+}
+Write-BridgeFile 'src\services\pepehub-notes-service.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'pepehub-notes-service.ts.template')))
+Write-BridgeFile 'cloudflare-companion\src\pepehub-notes.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'notes.ts')).Replace("'./metadata.ts'", "'./pepehub-metadata'"))
+Write-BridgeFile 'cloudflare-companion\src\notes-api.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'notes-api.ts')).Replace("'./notes.ts'", "'./pepehub-notes'").Replace("'./metadata-api.ts'", "'./pepehub-metadata-api'"))
+Write-BridgeFile 'cloudflare-companion\migrations\0013_pepehub_notes.sql' ([IO.File]::ReadAllText((Join-Path $bridgeRoot '003_pepehub_notes.sql')))
 Write-BridgeFile 'tests\pepehub-library.test.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'pepehub-library.test.ts.template')))
+Write-BridgeFile 'tests\pepehub-notes.test.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'pepehub-notes.test.ts.template')))
 Write-BridgeFile 'tests\pepehub-activity.test.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'pepehub-activity.test.ts.template')))
 Write-BridgeFile 'cloudflare-companion\src\pepehub-metadata.ts' $metadata
 Write-BridgeFile 'cloudflare-companion\src\pepehub-metadata-api.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'metadata-api.ts')).Replace("'./metadata.ts'", "'./pepehub-metadata'").Replace("'./covers.ts'", "'./pepehub-covers'"))

@@ -95,3 +95,10 @@ test('local edits during a lost request survive acknowledgements; conflicts reta
      assert.ok(first.content.startsWith(heading));
    }
  });
+
+test('automatically prefilled reading time is derived from synced rows and is not counted twice',()=>{
+  const value=entry({durationMs:600000});
+  const content='---\nReading time: "00:10:00"\npepehub_time_from_journal: true\n---\n';
+  const first=applyActivityMarkdown(content,value,null);assert.ok(first.content.includes('Reading time: "00:10:00"'));
+  const second=applyActivityMarkdown(first.content,entry({durationMs:300000}),null);assert.ok(second.content.includes('Reading time: "00:15:00"'));
+});

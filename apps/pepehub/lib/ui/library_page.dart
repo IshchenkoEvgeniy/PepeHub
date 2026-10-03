@@ -2,6 +2,7 @@ import 'audio_mini_player.dart';
 import 'app_theme.dart';
 import 'settings_page.dart';
 import 'activity_page.dart';
+import 'obsidian_notes_page.dart';
 import 'shelf_components.dart';
 import '../audio/audio_roots.dart';
 import 'book_folder_dialog.dart';
@@ -974,6 +975,12 @@ class _LibraryPageState extends State<LibraryPage> {
         library: obsidianLibrary,
         onConnection: _obsidianSettings,
         onJournal: _journal,
+        onNotes: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ObsidianNotesPage(library: obsidianLibrary),
+          ),
+        ),
       ),
     ),
   );
@@ -1133,19 +1140,7 @@ class _LibraryPageState extends State<LibraryPage> {
         return;
       }
     }
-    final details = reading
-        ? _textInfo(book)
-        : <String, dynamic>{...book.payload!, ...?audioPrefs[book.id]};
-    if (!reading) {
-      final summary = audioSummaries[book.id];
-      details['durationMinutes'] = summary?.total == null
-          ? null
-          : summary!.total! / 60000;
-      details['listenedMinutes'] = summary?.position == null
-          ? null
-          : summary!.position! / 60000;
-    }
-    final draft = obsidianLibrary.draft(book, details);
+    final draft = await obsidianLibrary.prepareDraft(book);
     if (!mounted) return;
     await Navigator.push<void>(
       context,

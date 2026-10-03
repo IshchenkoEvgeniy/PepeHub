@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'library_repository.dart';
 import 'activity_store.dart';
 import 'cover_sync.dart';
+import 'automatic_metadata.dart';
+import 'note_store.dart';
 
 class ObsidianConfig {
   final String url, token;
@@ -118,6 +120,38 @@ class ObsidianSyncService {
         cursor = next;
         if (page['hasMore'] != true) break;
       }
+    }
+    if (await repository.repository.meta('obsidian-sync-notes') != 'false') {
+      final notes = NoteStore(repository.repository, config.namespace);
+      await notes.capture();
+      final allowed = (snapshot['items'] as List)
+          .map((item) => item['id'])
+          .toSet();
+      final operations = (await notes.pending())
+          .where((op) => allowed.contains(op['entry']['itemId']))
+          .toList();
+      for (var offset = 0; offset < operations.length; offset += 2) {
+        final response = await _request('/notes', {
+          'operations': operations.skip(offset).take(2).toList(),
+        });
+        await notes.receipts(response['receipts'] as List);
+      }
+      var cursor = (await notes.state())['cursor'] as int;
+      while (true) {
+        final page = await _request('/notes?after=$cursor'),
+            next = page['cursor'] as int;
+        if (page['version'] != 1 ||
+            next < cursor ||
+            (page['hasMore'] == true && next == cursor)) {
+          throw const FormatException('Некорректный курсор заметок.');
+        }
+        await notes.receive(page['records'] as List, next);
+        cursor = next;
+        if (page['hasMore'] != true) break;
+      }
+    }
+    if (covers != null) {
+      await AutomaticMetadata(covers!.assets).refresh(repository, snapshot);
     }
     return covers != null &&
             await repository.repository.meta('obsidian-sync-covers') != 'false'

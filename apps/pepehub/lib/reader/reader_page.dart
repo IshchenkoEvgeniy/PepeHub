@@ -874,6 +874,7 @@ class _ReaderPageState extends State<ReaderPage>
             }
           },
           child: Scaffold(
+            resizeToAvoidBottomInset: false,
             appBar: fullscreen
                 ? null
                 : AppBar(

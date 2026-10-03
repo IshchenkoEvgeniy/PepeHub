@@ -57,6 +57,7 @@ void main() {
     db = AppDatabase(NativeDatabase.memory());
     local = Repository(db);
     await local.setMeta('obsidian-sync-history', 'false');
+    await local.setMeta('obsidian-sync-notes', 'false');
   });
   tearDown(() => db.close());
   test('120 Obsidian cards are automatic, 300 local books never leave the app, and repeated pulls deduplicate', () async {

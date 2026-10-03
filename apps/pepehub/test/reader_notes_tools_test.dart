@@ -242,6 +242,7 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
       late Directory temp;
       late AppDatabase db;
       late Repository repo;
@@ -331,6 +332,27 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('Закончить здесь'));
         await tester.pumpAndSettle();
+        for (final label in ['Комментарий', 'Теги', 'Персонажи']) {
+          final field = find.widgetWithText(TextField, label);
+          await tester.ensureVisible(field);
+          await tester.tap(field);
+          await tester.showKeyboard(field);
+          tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+          await tester.pumpAndSettle();
+          final editable = tester.state<EditableTextState>(
+            find.descendant(of: field, matching: find.byType(EditableText)),
+          );
+          expect(
+            editable.widget.focusNode.hasFocus,
+            true,
+            reason: 'Keyboard must not move focus away from $label',
+          );
+          await tester.enterText(field, 'Проверка ввода');
+          await tester.pump();
+          expect(editable.widget.controller.text, 'Проверка ввода');
+          tester.view.viewInsets = const FakeViewPadding();
+          await tester.pumpAndSettle();
+        }
         await tester.enterText(
           find.widgetWithText(TextField, 'Теги'),
           'Сюжет, сюжет, Море',

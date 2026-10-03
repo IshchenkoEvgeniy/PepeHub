@@ -1,6 +1,7 @@
 import { TFile, getFrontMatterInfo, normalizePath, parseYaml, requestUrl, stringifyYaml } from 'obsidian';
 import type HabitTimerPlugin from '../main';
 import { PepeHubCoverService } from './pepehub-cover-service';
+import { PepeHubNoteService } from './pepehub-notes-service';
 import { PepeHubActivityService } from './pepehub-activity-service';
 import { DEFAULT_LIBRARY_PROPERTY_ALIASES, type LibraryPropertyField } from '../types';
 import { conflictingKeys, ID_PROPERTY, validId, validOperation, type JsonValue, type MetadataField,
@@ -12,10 +13,13 @@ export class PepeHubLibraryService {
     private syncing = false;
     private activity: PepeHubActivityService;
     private covers: PepeHubCoverService;
+    private notes: PepeHubNoteService;
     constructor(private plugin: HabitTimerPlugin) {
+        this.notes = new PepeHubNoteService(plugin);
         this.activity = new PepeHubActivityService(plugin);
         this.covers = new PepeHubCoverService(plugin);
         if (typeof plugin.addCommand === 'function') {
+            plugin.addCommand({ id: 'pepehub-review-notes', name: 'PepeHub: разрешить конфликты заметок', callback: () => { void this.notes.review(); } });
             plugin.addCommand({ id: 'pepehub-sync-journal', name: 'PepeHub: синхронизировать журнал', callback: () => { void this.sync(); } });
             plugin.addCommand({ id: 'pepehub-review-journal', name: 'PepeHub: разрешить конфликты журнала', callback: () => { void this.activity.review(); } });
         }
@@ -61,6 +65,7 @@ export class PepeHubLibraryService {
             const snapshot = await this.snapshot();
             await request('/snapshot', { snapshot, receipts });
             await this.activity.sync(snapshot, request, `${connection.url.trim().replace(/\/+$/,'')}\n${connection.token}`);
+            await this.notes.sync(snapshot, request, `${connection.url.trim().replace(/\/+$/,'')}\n${connection.token}`);
             if (receipts.some(receipt => receipt.status === 'applied')) this.plugin.stateManager.refreshAllMedia();
         } catch (error) { console.error('PepeHub library sync:', error); }
         finally { this.syncing = false; }
@@ -76,11 +81,13 @@ export class PepeHubLibraryService {
         return aliases.find(key => Object.prototype.hasOwnProperty.call(fm, key)) || aliases[0] || field;
     }
     private fields(fm: Record<string, JsonValue>): MetadataField[] {
-        return (Object.keys(DEFAULT_LIBRARY_PROPERTY_ALIASES) as LibraryPropertyField[]).map(field => ({
+        const fields:MetadataField[] = (Object.keys(DEFAULT_LIBRARY_PROPERTY_ALIASES) as LibraryPropertyField[]).map(field => ({
             key: this.key(fm, field), field,
             kind: ['author', 'genre'].includes(field) ? 'list'
                 : ['total', 'progress', 'seriesIndex', 'season', 'episode', 'queueOrder'].includes(field) ? 'number' : 'text'
         }));
+        fields.push({key: Object.keys(fm).find(k => ['Reading time','Time spent'].includes(k)) ?? 'Reading time', field: 'readingTime' as LibraryPropertyField, kind:'text'});
+        return fields;
     }
     private collection(file: TFile, fm: Record<string, JsonValue>): string | null {
         if (file.path.includes('Шаблоны') || file.path.includes('Template')) return null;

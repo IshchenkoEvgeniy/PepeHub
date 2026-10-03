@@ -1158,7 +1158,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
           }
         },
         child: Focus(
-          autofocus: true,
+          autofocus: ModalRoute.of(context)?.isCurrent ?? true,
           child: Column(
             children: [
               Expanded(

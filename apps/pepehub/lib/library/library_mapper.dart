@@ -36,18 +36,30 @@ class LibraryMapper {
     set('seriesIndex', details['seriesNumber'] ?? details['seriesIndex']);
     set('format', audio ? 'Audiobook' : 'E-book');
     set('libraryType', collection['id']);
-    set('unit', audio ? 'minutes' : 'pages');
+    set('unit', details['unit'] ?? (audio ? 'minutes' : 'pages'));
     set('status', details['status']);
     set('rating', details['rating']);
-    set('startDate', details['startDate']);
-    set('endDate', details['endDate'] ?? details['finishDate']);
+    set('startDate', details['startedAt'] ?? details['startDate']);
+    set(
+      'endDate',
+      details['finishedAt'] ?? details['endDate'] ?? details['finishDate'],
+    );
+    set('readingTime', details['readingTime']);
+    if (details['readingTime'] != null) {
+      values['pepehub_time_from_journal'] = true;
+    }
     set(
       'total',
       audio
           ? details['durationMinutes']
-          : details['pdfPages'] ?? details['pages'],
+          : details['total'] ?? details['pdfPages'] ?? details['pages'],
     );
-    set('progress', audio ? details['listenedMinutes'] : details['readPages']);
+    set(
+      'progress',
+      audio
+          ? details['listenedMinutes']
+          : details['progress'] ?? details['readPages'],
+    );
     // Retain descriptive metadata; local file/cover paths and content are never exported.
     for (final key in [
       'description',
@@ -58,11 +70,25 @@ class LibraryMapper {
       'tags',
       'notes',
       'favorite',
+      'readingTime',
+      'publicationDate',
+      'sourceLanguage',
+      'publicationCity',
+      'identifiers',
+      'contributors',
+      'rights',
+      'subject',
+      'keywords',
+      'createdAt',
+      'modifiedAt',
+      'embeddedMetadata',
     ]) {
       if (details.containsKey(key)) values[key] = details[key];
     }
     final cover = details['cover'];
-    if (cover is String && Uri.tryParse(cover)?.scheme == 'https') {
+    if (cover is String &&
+        (Uri.tryParse(cover)?.scheme == 'https' ||
+            cover.startsWith('pepehub-cover:'))) {
       set('cover', cover);
     }
     return ObsidianLibraryItem(

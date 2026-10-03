@@ -1,0 +1,56 @@
+import {describe,it,expect,vi} from 'vitest';
+vi.mock('obsidian',()=>({TFile:class {path='';},Notice:class {},Modal:class {}}));
+import {TFile} from 'obsidian';
+import {PepeHubNoteService} from '../src/services/pepehub-notes-service';
+import {readNoteMarkdown} from '../src/services/pepehub-notes-markdown';
+import {type NoteEntry,type NoteRecord,type NoteOperation} from '../src/services/pepehub-notes';
+import {type MetadataSnapshot} from '../src/services/pepehub-metadata';
+function setup() {
+  const itemId=crypto.randomUUID(),file=new TFile();file.path='Books/One.md';
+  let content='---\nReading time: "00:10:00"\n---\nUser notes\n### 📖 Progress\n| Date | Time | Progress | % | Notes |\n|---|---|---|---|---|\n| 2026-10-03 | 00:10:00 | 10 | - | Native |\n';
+  const stateFiles=new Map<string,string>(),changes:NoteRecord[]=[],receipts=new Map<string,unknown>();
+  let failResponse=false,writes=0;
+  const calls:NoteOperation[]=[];
+  const plugin={manifest:{id:'habit-timer',dir:'.obsidian/plugins/habit-timer-checkout'},settings:{cloudflareWorkerUrl:'https://example.test',cloudflareApiToken:'token'},app:{vault:{configDir:'.obsidian',
+    adapter:{exists:async(p:string)=>stateFiles.has(p),read:async(p:string)=>stateFiles.get(p),write:async(p:string,v:string)=>{stateFiles.set(p,v);}},
+    getAbstractFileByPath:(p:string)=>p===file.path?file:null,read:async()=>content,
+    process:async(_:TFile,action:(s:string)=>string)=>{const next=action(content);if(next!==content)writes++;content=next;},
+  }}};
+  const service=new PepeHubNoteService(plugin as unknown as ConstructorParameters<typeof PepeHubNoteService>[0]);
+  const snapshot:MetadataSnapshot={version:1,ready:true,items:[{id:itemId,path:file.path,collectionId:'book',mediaType:'book',modifiedAt:1,values:{},fields:[]}],fields:[],collections:[]};
+  const request=async(path:string,body?:unknown):Promise<unknown>=>{
+    if(body){const operations=(body as {operations:NoteOperation[]}).operations,result=[];
+      for(const op of operations){calls.push(op);let receipt=receipts.get(op.operationId);if(!receipt){const old=changes.filter(r=>r.entry.id===op.entry.id).at(-1);const status=(old?.revision ?? 0)===op.baseRevision?'applied':'conflict';
+        let record=old;if(status==='applied'){record={entry:op.entry,revision:op.baseRevision+1,sequence:changes.length+1};changes.push(record);}
+        receipt={operationId:op.operationId,status,record};receipts.set(op.operationId,receipt);}result.push(receipt);}
+      if(failResponse){failResponse=false;throw new Error('response lost');}return {version:1,receipts:result};
+    }
+    const after=Number(path.split('after=')[1]);const records=changes.filter(r=>r.sequence>after);return {version:1,records,cursor:records.at(-1)?.sequence ?? after,hasMore:false};
+  };
+  const remote=(entry:NoteEntry)=>{const old=changes.filter(r=>r.entry.id===entry.id).at(-1);changes.push({entry,revision:(old?.revision ?? 0)+1,sequence:changes.length+1});};
+  const appEntry=():NoteEntry=>({id:crypto.randomUUID(),itemId,mediaType:'book',kind:'reader',title:'Глава',quote:'Цитата',text:'App note',tags:['сюжет'],characters:['Герой'],color:'pink',anchor:{hash:'a'.repeat(64),chapter:0,start:1,end:6},origin:'app-reader',updatedAt:'2026-10-03T10:00:00.000Z',deleted:false});
+  return {service,snapshot,request,remote,appEntry,changes,calls,stateFiles,content:()=>content,edit:(value:string)=>{content=value;},lose:()=>{failResponse=true;},writes:()=>writes};
+}
+describe('PepeHub notes in the installed Obsidian bridge',()=>{
+  it('annotates native Markdown, retries immutable requests and avoids repeated writes',async()=>{
+    const f=setup();f.lose();await expect(f.service.sync(f.snapshot,f.request)).rejects.toThrow('response lost');
+    await f.service.sync(f.snapshot,f.request);expect(f.changes).toHaveLength(1);expect(f.calls[0]!.operationId).toBe(f.calls[1]!.operationId);
+    expect([...f.stateFiles.keys()].every(p=>p.startsWith('.obsidian/plugins/habit-timer-checkout/'))).toBe(true);
+    const before=f.writes();await f.service.sync(f.snapshot,f.request);expect(f.writes()).toBe(before);expect(f.content()).toContain('| Native |');
+  });
+  it('imports quotes and tags, publishes visible edits and propagates deletions without changing journal',async()=>{
+    const f=setup();await f.service.sync(f.snapshot,f.request);const entry=f.appEntry();f.remote(entry);await f.service.sync(f.snapshot,f.request);
+    expect(readNoteMarkdown(f.content(),entry.itemId,'book',false).entries.find(e=>e.id===entry.id)).toEqual(entry);expect(f.content()).toContain('Персонажи: Герой');
+    f.edit(f.content().replace('App note','Edited in Obsidian'));await f.service.sync(f.snapshot,f.request);
+    const edited=f.changes.filter(r=>r.entry.id===entry.id).at(-1)!.entry;expect(edited.text).toBe('Edited in Obsidian');expect(edited.anchor).toEqual(entry.anchor);
+    f.remote({...edited,deleted:true});await f.service.sync(f.snapshot,f.request);expect(readNoteMarkdown(f.content(),entry.itemId,'book',false).entries.find(e=>e.id===entry.id)).toBeUndefined();
+    expect(f.content()).toContain('| Native |');expect(f.content()).toContain('Reading time: "00:10:00"');
+  });
+  it('preserves conflict versions and applies deferred notes when the book returns',async()=>{
+    const f=setup();await f.service.sync(f.snapshot,f.request);const first=f.changes[0]!.entry;
+    f.remote({...first,text:'Remote',updatedAt:'2026-10-03T11:00:00.000Z'});f.edit(f.content().replace('User notes','Local notes'));
+    await f.service.sync(f.snapshot,f.request);const state=JSON.parse([...f.stateFiles.values()][0]!);expect(state.slots[first.id].value.text).toContain('Local notes');expect(state.slots[first.id].conflict.entry.text).toBe('Remote');
+    const value=f.appEntry();f.remote(value);await f.service.sync({...f.snapshot,items:[]},f.request);expect(f.content()).not.toContain(value.id);await f.service.sync(f.snapshot,f.request);expect(f.content()).toContain(value.id);
+    const after=f.changes.length;await f.service.sync(f.snapshot,f.request);expect(f.changes).toHaveLength(after);
+  });
+});

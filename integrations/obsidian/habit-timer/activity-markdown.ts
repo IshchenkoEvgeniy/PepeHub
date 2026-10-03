@@ -42,8 +42,11 @@ function parse(line:string,itemId:string,mediaType:ActivityEntry['mediaType'],as
 }
 /** Annotates old rows in place; equal/duplicate rows each retain their own UUID. */
 export function readActivityMarkdown(content:string,itemId:string,mediaType:ActivityEntry['mediaType'],assign=true):{content:string;entries:ActivityEntry[]} {
-  let inside=false;const entries:ActivityEntry[]=[],used=new Set<string>();
+  let inside=false,inNote=false;const entries:ActivityEntry[]=[],used=new Set<string>();
   const lines=content.split(/\r?\n/).map(line=>{
+    if(line.trim().startsWith('<!-- pepehub-note:')){inNote=true;return line;}
+    if(line.trim().startsWith('<!-- /pepehub-note:')){inNote=false;return line;}
+    if(inNote)return line;
     if(heading.test(line.trim())){inside=true;return line;}
     if(anyHeading.test(line.trim()))inside=false;
     if(!inside||!line.trim().startsWith('|'))return line;
@@ -55,12 +58,13 @@ export function readActivityMarkdown(content:string,itemId:string,mediaType:Acti
   });
   return {content:lines.join(content.includes('\r\n')?'\r\n':'\n'),entries};
 }
-function accountTime(content:string,deltaMs:number):string {
+function accountTime(content:string,deltaMs:number,itemId:string,mediaType:ActivityEntry['mediaType']):string {
   const newline=content.includes('\r\n')?'\r\n':'\n', prefix=`---${newline}`;
   if(!deltaMs||!content.startsWith(prefix))return content;
   const end=content.indexOf(`${newline}---`,prefix.length);if(end<0)return content;
   const fm=content.slice(prefix.length,end),pattern=/^(?:["']?)(Reading time|Time spent)(?:["']?):\s*([^\r\n]*)\r?$/m,match=fm.match(pattern);
-  const before=match?activityDuration(match[2]!.replace(/^["']|["']$/g,'')):0;
+  let before=match?activityDuration(match[2]!.replace(/^["']|["']$/g,'')):0;
+  if(/^pepehub_time_from_journal:\s*true\s*$/m.test(fm))before=readActivityMarkdown(content,itemId,mediaType,false).entries.reduce((sum,e)=>sum+e.durationMs,0);
   if(before===null)return content; // Preserve non-duration custom values.
   const seconds=Math.max(0,Math.round((before+deltaMs)/1000));
   const value=`${String(Math.floor(seconds/3600)).padStart(2,'0')}:${String(Math.floor(seconds/60)%60).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;
@@ -72,12 +76,13 @@ export function applyActivityMarkdown(content:string,entry:ActivityEntry,baselin
   const current=readActivityMarkdown(content,entry.itemId,entry.mediaType,false).entries.find(e=>e.id===entry.id) ?? null;
   if (equalValue(current,entry.deleted?null:entry)) return {content,applied:true};
   if (!equalValue(current,baseline?.deleted?null:baseline)) return {content,applied:false};
-  const accounted=accountTime(content,(entry.deleted?0:entry.durationMs)-(current?.durationMs || 0));
+  const accounted=accountTime(content,(entry.deleted?0:entry.durationMs)-(current?.durationMs || 0),entry.itemId,entry.mediaType);
   const newline=content.includes('\r\n')?'\r\n':'\n';
   const lines=accounted.split(/\r?\n/), index=lines.findIndex(line=>line.match(marker)?.[1]===entry.id);
   if(index>=0){if(entry.deleted)lines.splice(index,1);else lines[index]=activityRow(entry);return {content:lines.join(newline),applied:true};}
   if(entry.deleted)return {content,applied:true};
-  const start=lines.findIndex(line=>heading.test(line.trim()));
+  let inNote=false;
+  const start=lines.findIndex(line=>{if(line.trim().startsWith('<!-- pepehub-note:')){inNote=true;return false;}if(line.trim().startsWith('<!-- /pepehub-note:')){inNote=false;return false;}return !inNote&&heading.test(line.trim());});
   if(start<0)return {content:`${accounted.trimEnd()}${newline}${newline}### 📖 Progress${newline}| Date | Time | Progress | % | Notes |${newline}|---|---|---|---|---|${newline}${activityRow(entry)}${newline}`,applied:true};
   let at=start+1;while(at<lines.length&&!anyHeading.test(lines[at]!.trim()))at++;
   lines.splice(at,0,activityRow(entry));return {content:lines.join(newline),applied:true};

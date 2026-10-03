@@ -71,7 +71,7 @@ class AudioFolderChannel(activity: Activity, messenger: BinaryMessenger) {
                     pending = result
                     onActivityResult(4712, Activity.RESULT_OK, Intent().setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or (if (permission.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)))
                 }
-            } else if (call.method in listOf("supportFiles", "open", "read", "close", "exists", "snapshot", "cover", "artwork", "readRange", "journal", "readingJournal", "report", "relocate")) {
+            } else if (call.method in listOf("supportFiles", "open", "read", "close", "exists", "snapshot", "cover", "artwork", "metadata", "readRange", "journal", "readingJournal", "report", "relocate")) {
                 work(result) {
                     when (call.method) {
                         "supportFiles" -> {
@@ -157,6 +157,21 @@ class AudioFolderChannel(activity: Activity, messenger: BinaryMessenger) {
                                 while (total < count) { val n = input.read(buffer, total, count-total); if (n <= 0) break; total += n }
                                 buffer.copyOf(total)
                             }
+                        }
+                        "metadata" -> {
+                            val source = Uri.parse(call.argument<String>("uri") ?: error("Нет URI"))
+                            check(source.scheme == "content" || source.scheme == "file") { "Нужен локальный файл" }
+                            val retriever = android.media.MediaMetadataRetriever()
+                            try {
+                                if (source.scheme == "file") retriever.setDataSource(source.path ?: error("Нет пути"))
+                                else retriever.setDataSource(context, source)
+                                val fields = mapOf("title" to 7, "author" to 3, "album" to 1, "genre" to 6, "year" to 8, "composer" to 4, "disc" to 14, "track" to 0, "mimeType" to 12, "writer" to 11, "albumArtist" to 13, "bitrate" to 20, "sampleRate" to 38, "bitsPerSample" to 39, "numberOfTracks" to 10, "date" to 5)
+                                val values = mutableMapOf<String, Any>()
+                                for ((key, code) in fields) runCatching { retriever.extractMetadata(code) }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() && it.length <= 10000 }?.let { values[key] = it }
+                                if (!values.containsKey("author")) retriever.extractMetadata(2)?.trim()?.takeIf { it.isNotEmpty() }?.let { values["author"] = it }
+                                retriever.extractMetadata(9)?.toLongOrNull()?.takeIf { it > 0 }?.let { values["durationMs"] = it }
+                                values
+                            } finally { retriever.release() }
                         }
                         "artwork" -> {
                             val source = Uri.parse(call.argument<String>("uri") ?: error("Нет URI"))

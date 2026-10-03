@@ -7,11 +7,13 @@ class SettingsPage extends StatefulWidget {
   final LibraryService library;
   final Future<void> Function() onConnection;
   final VoidCallback onJournal;
+  final VoidCallback? onNotes;
   const SettingsPage({
     super.key,
     required this.library,
     required this.onConnection,
     required this.onJournal,
+    this.onNotes,
   });
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -19,7 +21,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   int interval = 30, goal = 30;
-  bool history = true, covers = true, loaded = false;
+  bool history = true, covers = true, notes = true, loaded = false;
   @override
   void initState() {
     super.initState();
@@ -33,6 +35,7 @@ class _SettingsPageState extends State<SettingsPage> {
       repo.meta('obsidian-sync-history'),
       repo.meta('reading-daily-goal'),
       repo.meta('obsidian-sync-covers'),
+      repo.meta('obsidian-sync-notes'),
     ]);
     if (!mounted) return;
     setState(() {
@@ -41,6 +44,7 @@ class _SettingsPageState extends State<SettingsPage> {
           : 30;
       history = values[1] != 'false';
       covers = values[3] != 'false';
+      notes = values[4] != 'false';
       goal = (int.tryParse(values[2] ?? '') ?? 30).clamp(0, 1440);
       loaded = true;
     });
@@ -294,6 +298,25 @@ class _SettingsPageState extends State<SettingsPage> {
                     await _save('obsidian-sync-covers', '$value');
                     if (value) await widget.library.sync();
                   },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Синхронизировать заметки'),
+                  subtitle: const Text(
+                    'Цитаты, комментарии, теги, персонажи и заметки Obsidian',
+                  ),
+                  value: notes,
+                  onChanged: (value) async {
+                    setState(() => notes = value);
+                    await _save('obsidian-sync-notes', '$value');
+                    if (value) await widget.library.sync();
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Заметки Obsidian'),
+                  trailing: const Icon(Icons.notes),
+                  onTap: widget.onNotes,
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,

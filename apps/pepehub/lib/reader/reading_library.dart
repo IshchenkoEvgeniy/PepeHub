@@ -58,6 +58,8 @@ class ReadingLibrary {
     if (!retry &&
         oldIndex.isNotEmpty &&
         oldIndex['needsCoverRefresh'] != true &&
+        (bookFormat(asset.filename) == 'pdf' ||
+            oldIndex['metadataVersion'] == 2) &&
         (bookFormat(asset.filename) != 'pdf' ||
             oldIndex['pdfCoverVersion'] == 1 ||
             oldIndex['error'] != null)) {
@@ -187,6 +189,8 @@ class ReadingLibrary {
       await repository.setMeta(
         key,
         jsonEncode({
+          ...book.metadata,
+          'metadataVersion': 2,
           'title': book.title,
           'authors': book.authors,
           'series': book.series,

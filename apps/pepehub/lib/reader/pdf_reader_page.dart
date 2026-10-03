@@ -940,6 +940,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
       }
     },
     child: Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: fullscreen
           ? null
           : AppBar(

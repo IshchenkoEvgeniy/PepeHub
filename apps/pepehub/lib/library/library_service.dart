@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -11,6 +12,8 @@ import 'models.dart';
 import 'obsidian_sync_service.dart';
 import 'activity_store.dart';
 import 'cover_sync.dart';
+import 'automatic_metadata.dart';
+import 'note_store.dart';
 import '../media/asset_store.dart';
 
 class LibraryService extends ChangeNotifier {
@@ -23,6 +26,8 @@ class LibraryService extends ChangeNotifier {
       config == null ? null : LibraryRepository(local, config!.namespace);
   ActivityStore? get history =>
       config == null ? null : ActivityStore(local, config!.namespace);
+  NoteStore? get notes =>
+      config == null ? null : NoteStore(local, config!.namespace);
   CoverSync? get covers => config == null || assets == null
       ? null
       : CoverSync(assets!, client, config!);
@@ -148,6 +153,38 @@ class LibraryService extends ChangeNotifier {
       details,
       uuid.v5(Namespace.url.value, 'pepehub:${config!.namespace}:${book.id}'),
     );
+  }
+
+  Future<ObsidianLibraryItem> prepareDraft(LibraryRecord book) async {
+    final connection = config, schema = snapshot, generation = _generation;
+    if (connection == null || schema == null) {
+      throw StateError('Сначала подключите Obsidian.');
+    }
+    final details = assets == null
+        ? {...?book.payload}
+        : await AutomaticMetadata(assets!).withCover(
+            book,
+            await local.meta('obsidian-sync-covers') == 'false'
+                ? null
+                : CoverSync(assets!, client, connection),
+          );
+    if (generation != _generation) {
+      throw StateError('Соединение изменилось. Повторите добавление книги.');
+    }
+    final item = LibraryMapper.fromBook(
+      book,
+      schema,
+      details,
+      uuid.v5(
+        Namespace.url.value,
+        'pepehub:${connection.namespace}:${book.id}',
+      ),
+    );
+    await local.setMeta(
+      'obsidian-auto:${connection.namespace}:${item.id}',
+      jsonEncode(item.values),
+    );
+    return item;
   }
 
   Future<void> add(ObsidianLibraryItem item, String sourceBookId) async {
