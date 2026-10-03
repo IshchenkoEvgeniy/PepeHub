@@ -1,5 +1,11 @@
 # Android: локальная сборка
 
+## Сборка 0.18.0 — 3 октября 2026
+
+[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.18.0/PepeHub-0.18.0-android-arm64-test.apk), **33,112,596 байт**, versionCode **2046**, Android 7.0+ / target SDK 36. Добавлены книжные рекомендации: свои категории и топы, заметки, поиск и автозаполнение из Inventaire, Open Library и Author.Today; [состав выпуска](RELEASE_0180.md), [инструкция](BOOK_RECOMMENDATIONS.md).
+
+180 Flutter-тестов успешно, 5 пропущены; анализ без замечаний. Отдельный живой тест трёх каталогов прошёл. Подпись совпадает с прежними тестовыми APK. SHA-256: `7253eab201fcd98801e786f2b52014fd3794d8a4687eabb62a0edfb8c8a42ce3`. Физического Android-устройства для проверки нет.
+
 ## Сборка 0.17.0 — 3 октября 2026
 
 [APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.17.0/PepeHub-0.17.0-android-arm64-test.apk), **32,915,416 байт**, versionCode **2045**, Android 7.0+ / target SDK 36. Добавлены автозаполнение метаданных и обложки из файла, двусторонние заметки Obsidian и исправление ввода комментария/тегов/персонажей; [состав выпуска](RELEASE_0170.md). Перезапустите Obsidian для загрузки обновлённого плагина.

@@ -4,6 +4,9 @@ import 'settings_page.dart';
 import 'activity_page.dart';
 import 'obsidian_notes_page.dart';
 import 'shelf_components.dart';
+import 'recommendations_page.dart';
+import '../recommendations/recommendation_store.dart';
+import '../recommendations/book_catalog.dart';
 import '../audio/audio_roots.dart';
 import 'book_folder_dialog.dart';
 import '../audio/audio_library_repository.dart';
@@ -80,6 +83,9 @@ class _LibraryPageState extends State<LibraryPage> {
   bool showSearch = false;
   bool reading = false;
   bool metadataSection = false;
+  bool recommendationsSection = false;
+  late final recommendations = RecommendationStore(widget.repository);
+  late final bookCatalog = BookCatalog(httpClient);
   late final obsidianLibrary = LibraryService(
     widget.repository,
     httpClient,
@@ -147,6 +153,7 @@ class _LibraryPageState extends State<LibraryPage> {
     if (!mounted) return;
     reading = section == 'reading';
     metadataSection = section == 'metadata';
+    recommendationsSection = section == 'recommendations';
     unawaited(_loadObsidian());
     await _reload();
     if (mounted && Platform.isAndroid && widget.assets != null) {
@@ -167,9 +174,14 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _switchSection(bool next, {bool closeDrawer = true}) async {
     if (closeDrawer) Navigator.pop(context);
-    if (busy || loading || (!metadataSection && reading == next)) return;
+    if (busy ||
+        loading ||
+        (!metadataSection && !recommendationsSection && reading == next)) {
+      return;
+    }
     setState(() {
       metadataSection = false;
+      recommendationsSection = false;
       reading = next;
       selectedBooks.clear();
       books = [];
@@ -219,6 +231,7 @@ class _LibraryPageState extends State<LibraryPage> {
     setState(() {
       reading = true;
       metadataSection = false;
+      recommendationsSection = false;
       selectedRoot = collectionFilter = null;
       favoritesOnly = false;
       query = '';
@@ -906,6 +919,7 @@ class _LibraryPageState extends State<LibraryPage> {
     if (busy || loading) return;
     setState(() {
       metadataSection = true;
+      recommendationsSection = false;
       selectedBooks.clear();
     });
     await widget.repository.setMeta('library-section', 'metadata');
@@ -915,7 +929,9 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Widget _navigationDrawer({bool permanent = false}) {
     final sidebar = ShelfSidebar(
-      section: metadataSection
+      section: recommendationsSection
+          ? 'recommendations'
+          : metadataSection
           ? 'metadata'
           : reading
           ? 'reading'
@@ -926,6 +942,16 @@ class _LibraryPageState extends State<LibraryPage> {
       onReading: () => _switchSection(true, closeDrawer: !permanent),
       onAudio: () => _switchSection(false, closeDrawer: !permanent),
       onLibrary: () => _metadataSection(closeDrawer: !permanent),
+      onRecommendations: () async {
+        if (!permanent) Navigator.pop(context);
+        if (busy || loading) return;
+        setState(() {
+          recommendationsSection = true;
+          metadataSection = false;
+          selectedBooks.clear();
+        });
+        await widget.repository.setMeta('library-section', 'recommendations');
+      },
       onSettings: () {
         if (!permanent) Navigator.pop(context);
         _appSettings();
@@ -935,13 +961,15 @@ class _LibraryPageState extends State<LibraryPage> {
         for (final key in ['active', 'finished', 'planned'])
           key: books.where((book) => _status(book) == key).length,
       },
-      onStatus: metadataSection
+      onStatus: metadataSection || recommendationsSection
           ? null
           : (next) {
               if (!permanent) Navigator.pop(context);
               setState(() => statusFilter = next);
             },
-      onStatistics: metadataSection
+      onStatistics: recommendationsSection
+          ? null
+          : metadataSection
           ? () {
               if (!permanent) Navigator.pop(context);
               _journal();
@@ -1158,6 +1186,14 @@ class _LibraryPageState extends State<LibraryPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (recommendationsSection) {
+      return RecommendationsPage(
+        store: recommendations,
+        catalog: bookCatalog,
+        drawer: _navigationDrawer(),
+        sidebar: _navigationDrawer(permanent: true),
+      );
+    }
     if (metadataSection) {
       return ObsidianLibraryPage(
         service: obsidianLibrary,

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../library/library_service.dart';
 import 'app_theme.dart';
+import 'recommendations_page.dart';
+import '../recommendations/recommendation_store.dart';
 
 class SettingsPage extends StatefulWidget {
   final LibraryService library;
@@ -235,6 +237,23 @@ class _SettingsPageState extends State<SettingsPage> {
                       await _save('reading-daily-goal', '$result');
                     }
                   },
+                ),
+                const Divider(height: 32),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Источники книжных рекомендаций'),
+                  subtitle: const Text(
+                    'Inventaire, Open Library и Author.Today',
+                  ),
+                  trailing: const Icon(Icons.manage_search),
+                  onTap: () => Navigator.push<void>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => RecommendationSourcesPage(
+                        store: RecommendationStore(widget.library.local),
+                      ),
+                    ),
+                  ),
                 ),
                 const Divider(height: 32),
                 Text('Obsidian', style: Theme.of(context).textTheme.titleLarge),

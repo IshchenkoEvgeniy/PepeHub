@@ -403,6 +403,7 @@ class ShelfSidebar extends StatelessWidget {
   final bool connected;
   final VoidCallback onReading, onAudio, onLibrary, onSettings;
   final VoidCallback? onStatistics;
+  final VoidCallback? onRecommendations;
   final Map<String, int> statuses;
   final String status;
   final ValueChanged<String>? onStatus;
@@ -415,6 +416,7 @@ class ShelfSidebar extends StatelessWidget {
     required this.onLibrary,
     required this.onSettings,
     this.onStatistics,
+    this.onRecommendations,
     this.enabled = true,
     this.connected = false,
     this.statuses = const {},
@@ -498,6 +500,14 @@ class ShelfSidebar extends StatelessWidget {
                       onLibrary,
                       count,
                     ),
+                    if (onRecommendations != null)
+                      _navigation(
+                        context,
+                        'Рекомендации',
+                        Icons.auto_awesome_outlined,
+                        section == 'recommendations',
+                        onRecommendations!,
+                      ),
                     const SizedBox(height: 24),
                     if (onStatus != null) ...[
                       _caption(palette, 'МОЯ КОЛЛЕКЦИЯ'),
