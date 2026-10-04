@@ -191,8 +191,13 @@ class CoverSync {
     final book = await local.record(entry.sourceBookId!);
     if (book == null || book.deleted) return null;
     if (book.payload?['format'] == 'audio') {
+      if (await local.meta('audio-cover-hidden:${book.id}') == 'true') {
+        return null;
+      }
       final uri = await ArtworkStore(assets).load(book.id);
-      return uri?.scheme == 'file' ? File.fromUri(uri!).path : null;
+      return uri?.scheme == 'file'
+          ? File.fromUri(uri!).path
+          : await local.meta('audio-cover:${book.id}');
     }
     final row = await local.db
         .customSelect(
@@ -234,12 +239,17 @@ class CoverSync {
         if (entry.sourceBookId == null) continue;
         final native = await _native(entry),
             file = native == null ? null : File(native);
-        final raw =
-            file != null &&
-                await file.exists() &&
-                await file.length() <= 16777216
-            ? await file.readAsBytes()
-            : null;
+        if (file != null && !await file.exists()) {
+          throw StateError(
+            'Локальный файл обложки недоступен; обложка Obsidian сохранена.',
+          );
+        }
+        if (file != null && await file.length() > 16777216) {
+          throw StateError(
+            'Локальная обложка превышает 16 МиБ; обложка Obsidian сохранена.',
+          );
+        }
+        final raw = file == null ? null : await file.readAsBytes();
         final localHash = raw == null ? null : sha256.convert(raw).toString(),
             previous = state[entry.item.id] as Map?;
         final localChanged =
@@ -311,12 +321,12 @@ class CoverSync {
         }
         final nextPath = await _native(entry),
             nextFile = nextPath == null ? null : File(nextPath);
-        final nextHash =
-            nextFile != null &&
-                await nextFile.exists() &&
-                await nextFile.length() <= 16777216
-            ? sha256.convert(await nextFile.readAsBytes()).toString()
-            : null;
+        if (nextFile != null && await nextFile.length() > 16777216) {
+          throw StateError('Локальная обложка превышает 16 МиБ.');
+        }
+        final nextHash = nextFile == null
+            ? null
+            : sha256.convert(await nextFile.readAsBytes()).toString();
         if (entry.state == 'synced') {
           state[entry.item.id] = {
             'localHash': nextHash,

@@ -58,6 +58,7 @@ class _AudioCatalogDialogState extends State<AudioCatalogDialog> {
   }
 
   Future<void> save() async {
+    if (busy) return;
     setState(() {
       busy = true;
       error = '';
@@ -83,7 +84,9 @@ class _AudioCatalogDialogState extends State<AudioCatalogDialog> {
           return;
         }
       }
-      if (mounted) Navigator.pop(context, count);
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        Navigator.pop(context, count);
+      }
     } catch (e) {
       if (mounted) {
         setState(() {

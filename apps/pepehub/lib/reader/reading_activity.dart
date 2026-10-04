@@ -98,11 +98,11 @@ class ReadingActivity {
         sampleActiveMs += until.difference(accounted).inMilliseconds;
       }
       // Split at local midnight so daily totals stay exact across DST.
-      while (DateTime(
+      while (!DateTime(
         accounted.year,
         accounted.month,
         accounted.day + 1,
-      ).isBefore(until)) {
+      ).isAfter(until)) {
         final midnight = DateTime(
           accounted.year,
           accounted.month,

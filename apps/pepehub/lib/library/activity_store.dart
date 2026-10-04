@@ -13,10 +13,81 @@ class _Equality {
 
 const _equal = _Equality();
 
+bool validActivityValue(dynamic value) {
+  if (value is! Map) return false;
+  const keys = [
+    'id',
+    'itemId',
+    'mediaType',
+    'day',
+    'durationMs',
+    'progress',
+    'unit',
+    'mediaMs',
+    'startedAt',
+    'endedAt',
+    'offsetMinutes',
+    'note',
+    'origin',
+    'deleted',
+  ];
+  final id = RegExp(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+    caseSensitive: false,
+  );
+  bool integer(dynamic v, int min, int max) => v is int && v >= min && v <= max;
+  bool instant(dynamic v) =>
+      v == null ||
+      v is String &&
+          RegExp(r'^\d{4}-\d\d-\d\dT.*Z$').hasMatch(v) &&
+          DateTime.tryParse(v) != null;
+  final day = value['day'];
+  final date = day is String ? DateTime.tryParse('${day}T00:00:00Z') : null;
+  final progress = value['progress'];
+  if (value.length != keys.length ||
+      value.keys.any((k) => !keys.contains(k)) ||
+      value['id'] is! String ||
+      !id.hasMatch(value['id']) ||
+      value['itemId'] is! String ||
+      !id.hasMatch(value['itemId']) ||
+      !['book', 'audiobook'].contains(value['mediaType']) ||
+      day is! String ||
+      !RegExp(r'^\d{4}-\d\d-\d\d$').hasMatch(day) ||
+      date == null ||
+      dayKey(date) != day ||
+      !integer(value['durationMs'], 0, 86400000) ||
+      progress is! num ||
+      !progress.isFinite ||
+      progress < 0 ||
+      progress > 1000000000 ||
+      !['characters', 'pages', 'minutes', 'unknown'].contains(value['unit']) ||
+      !integer(value['mediaMs'], 0, 864000000) ||
+      !instant(value['startedAt']) ||
+      !instant(value['endedAt']) ||
+      value['offsetMinutes'] != null &&
+          !integer(value['offsetMinutes'], -840, 840) ||
+      value['note'] is! String ||
+      (value['note'] as String).length > 10000 ||
+      ![
+        'app-reader',
+        'app-audio',
+        'app-manual',
+        'obsidian',
+      ].contains(value['origin']) ||
+      value['deleted'] is! bool) {
+    return false;
+  }
+  return value['startedAt'] == null ||
+      value['endedAt'] == null ||
+      !DateTime.parse(value['endedAt'])
+          .isBefore(DateTime.parse(value['startedAt']));
+}
+
 class ActivityStore {
   final Repository local;
   final String namespace;
   ActivityStore(this.local, this.namespace);
+  bool validEntry(dynamic value) => validActivityValue(value);
   String get key => 'obsidian-activity:$namespace';
   Future<Map<String, dynamic>> state() async =>
       jsonDecode(await local.meta(key) ?? '{"version":1,"cursor":0,"slots":{}}')
@@ -83,7 +154,10 @@ class ActivityStore {
             'start': value['startedAt'] ?? '${value['day']}T12:00:00.000Z',
             'end':
                 value['endedAt'] ??
-                DateTime.parse('${value['day']}T12:00:00.000Z')
+                DateTime.parse(
+                      value['startedAt'] as String? ??
+                          '${value['day']}T12:00:00.000Z',
+                    )
                     .add(Duration(milliseconds: value['durationMs'] as int))
                     .toIso8601String(),
             'activeMs': value['durationMs'],
@@ -392,12 +466,30 @@ class ActivityStore {
   });
   Future<void> receipts(List<dynamic> receipts) => mutate((state) async {
     for (final receipt in receipts) {
+      if (receipt is! Map ||
+          !['applied', 'conflict'].contains(receipt['status']) ||
+          receipt['record'] is! Map ||
+          !validEntry(receipt['record']['entry']) ||
+          receipt['record']['revision'] is! int ||
+          receipt['record']['revision'] <= 0) {
+        throw const FormatException(
+          'Некорректное подтверждение журнала. Очередь сохранена.',
+        );
+      }
       final slot = (state['slots'] as Map).values
           .where(
             (s) => s['operation']?['operationId'] == receipt['operationId'],
           )
           .firstOrNull;
       if (slot == null) continue;
+      final sent = slot['operation']['entry'] as Map;
+      if (receipt['record']['entry']['id'] != sent['id'] ||
+          receipt['record']['entry']['itemId'] != sent['itemId'] ||
+          receipt['record']['entry']['mediaType'] != sent['mediaType']) {
+        throw const FormatException(
+          'Подтверждение относится к другой записи. Очередь сохранена.',
+        );
+      }
       if (receipt['status'] == 'conflict' &&
           !_equal.equals(slot['value'], receipt['record']['entry'])) {
         slot['conflict'] = receipt['record'];
@@ -412,6 +504,22 @@ class ActivityStore {
   Future<void> receive(List<dynamic> records, int cursor) =>
       mutate((state) async {
         final slots = state['slots'] as Map<String, dynamic>;
+        if (cursor < (state['cursor'] as int)) {
+          throw const FormatException('Курсор журнала откатился.');
+        }
+        for (final record in records) {
+          if (record is! Map ||
+              !validEntry(record['entry']) ||
+              record['revision'] is! int ||
+              record['revision'] <= 0 ||
+              record['sequence'] is! int ||
+              record['sequence'] <= 0 ||
+              record['sequence'] > cursor) {
+            throw const FormatException(
+              'Некорректная запись журнала. Курсор сохранён.',
+            );
+          }
+        }
         for (final record in records) {
           final value = Map<String, dynamic>.from(record['entry']),
               id = value['id'] as String;
@@ -430,13 +538,16 @@ class ActivityStore {
             slot['conflict'] = record;
             continue;
           }
-          slots[id] = {
+          final next = {
             ...?slot,
             'value': value,
             'synced': value,
             'revision': record['revision'],
             if (slot?['source'] != null) 'native': value,
           };
+          next.remove('operation');
+          next.remove('conflict');
+          slots[id] = next;
         }
         state['cursor'] = cursor;
       });
@@ -563,6 +674,12 @@ class ActivityStore {
   Future<void> edit(String id, Map<String, dynamic> next) =>
       mutate((state) async {
         final slot = state['slots'][id] as Map<String, dynamic>;
+        if (!validEntry(next) ||
+            next['id'] != id ||
+            next['itemId'] != slot['value']['itemId'] ||
+            next['mediaType'] != slot['value']['mediaType']) {
+          throw const FormatException('Некорректная правка записи журнала.');
+        }
         if (slot['conflict'] != null) {
           throw StateError('Сначала разрешите конфликт журнала.');
         }

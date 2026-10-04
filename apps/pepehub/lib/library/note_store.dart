@@ -98,6 +98,8 @@ bool validNoteValue(dynamic v) {
 class NoteStore extends ActivityStore {
   NoteStore(super.local, super.namespace);
   @override
+  bool validEntry(dynamic value) => validNoteValue(value);
+  @override
   String get key => 'obsidian-notes:$namespace';
   @override
   Future<List<Map<String, dynamic>>> entries({String? itemId}) async =>

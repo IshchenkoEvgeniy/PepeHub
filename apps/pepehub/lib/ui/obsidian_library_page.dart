@@ -141,6 +141,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
   }
 
   Future<void> _save() async {
+    if (saving || !editable) return;
     if (!form.currentState!.validate()) return;
     setState(() {
       saving = true;
@@ -152,7 +153,9 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
           entry.key: _parse(entry.key, entry.value.text),
       };
       await widget.onSave(next);
-      if (mounted) Navigator.pop(context);
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        Navigator.pop(context);
+      }
     } catch (e) {
       if (mounted) setState(() => error = '$e');
     } finally {

@@ -146,6 +146,7 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
   }
 
   Future<void> _save() async {
+    if (saving) return;
     setState(() {
       saving = true;
       error = null;
@@ -177,14 +178,17 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
         if (endEdited) 'finishedAt': finished,
         if (statusEdited) 'status': status,
       });
-      if (mounted) Navigator.pop(context);
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        Navigator.pop(context);
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
           error = '$e';
-          saving = false;
         });
       }
+    } finally {
+      if (mounted) setState(() => saving = false);
     }
   }
 

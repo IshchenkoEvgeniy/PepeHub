@@ -415,14 +415,19 @@ double readingFraction(
   );
   var offset = (position['textOffset'] as num?)?.toInt();
   if (offset == null) {
-    final paragraphs =
-        (index['paragraphStarts'] as List? ?? [])[chapter] as List;
-    final paragraph = ((position['paragraph'] as num?)?.toInt() ?? 0).clamp(
-      0,
-      paragraphs.length - 1,
-    );
+    final chapters = index['paragraphStarts'] as List? ?? [];
+    final paragraphs = chapter < chapters.length && chapters[chapter] is List
+        ? chapters[chapter] as List
+        : const [];
+    final paragraph = paragraphs.isEmpty
+        ? 0
+        : ((position['paragraph'] as num?)?.toInt() ?? 0).clamp(
+            0,
+            paragraphs.length - 1,
+          );
+    // Older indexes may lack this chapter. Preserve its known location until reindexing.
     offset =
-        (paragraphs[paragraph] as num).toInt() +
+        (paragraphs.isEmpty ? 0 : (paragraphs[paragraph] as num).toInt()) +
         ((position['offset'] as num?)?.toInt() ?? 0);
   }
   return (((starts[chapter] as num) + offset) / (index['length'] as num)).clamp(

@@ -38,6 +38,7 @@ class _AudioImportDialogState extends State<AudioImportDialog> {
   }
 
   Future<void> import() async {
+    if (busy) return;
     setState(() {
       busy = true;
       error = '';
@@ -66,7 +67,9 @@ class _AudioImportDialogState extends State<AudioImportDialog> {
                 }
               },
             );
-      if (mounted) Navigator.pop(context, asset);
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        Navigator.pop(context, asset);
+      }
     } catch (e) {
       if (mounted) {
         setState(() {

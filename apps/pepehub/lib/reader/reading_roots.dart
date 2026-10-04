@@ -95,6 +95,11 @@ class ReadingRoots {
       ));
     }
     await assets.repository.db.transaction(() async {
+      final previous = await assets.repository.meta(key);
+      if (previous != null) {
+        // A temporarily missing file stays associated with its root and retains its notes/history.
+        ids.addAll((jsonDecode(previous) as Map)['bookIds'].cast<String>());
+      }
       for (final file in candidates) {
         final hash = file.hash, format = file.format, size = file.size;
         final existing = await assets.byHash(hash);

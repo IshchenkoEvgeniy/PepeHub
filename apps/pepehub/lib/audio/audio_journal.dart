@@ -77,43 +77,50 @@ class AudioJournal {
     _listenData = null;
   }
 
-  Future<void> appendListening(ListeningSegment segment) async {
-    var data = segment.data;
-    final previous = _listenData;
-    final previousAt = previous == null
-        ? null
-        : DateTime.parse(previous['at'] as String);
-    final at = segment.at.toUtc();
-    final continuous =
-        previous != null &&
-        previous['bookId'] == data['bookId'] &&
-        previous['trackId'] == data['trackId'] &&
-        previous['endMs'] == data['positionMs'] &&
-        previous['speed'] == data['speed'] &&
-        previous['localDay'] == data['localDay'] &&
-        previousAt!.hour == at.hour &&
-        at
-                .difference(
-                  previousAt.add(
-                    Duration(milliseconds: previous['wallMs'] as int),
-                  ),
-                )
-                .inMilliseconds
-                .abs() <=
-            50;
-    final id = continuous ? _listenId! : uuid.v4();
-    if (continuous) {
-      data = {
-        ...previous,
-        'endMs': segment.endMs,
-        'mediaMs': segment.endMs - (previous['positionMs'] as int),
-        'wallMs': (previous['wallMs'] as int) + segment.wallMs,
-      };
-    }
-    await put('audio_event', id, data);
-    _listenId = id;
-    _listenData = data;
-  }
+  Future<void> appendListening(ListeningSegment segment) =>
+      repository.db.transaction(() async {
+        var data = segment.data;
+        final previous = _listenData;
+        final stored = _listenId == null
+            ? null
+            : await repository.record(_listenId!);
+        final previousAt = previous == null
+            ? null
+            : DateTime.parse(previous['at'] as String);
+        final at = segment.at.toUtc();
+        final continuous =
+            previous != null &&
+            stored != null &&
+            !stored.deleted &&
+            jsonEncode(stored.payload) == jsonEncode(previous) &&
+            previous['bookId'] == data['bookId'] &&
+            previous['trackId'] == data['trackId'] &&
+            previous['endMs'] == data['positionMs'] &&
+            previous['speed'] == data['speed'] &&
+            previous['localDay'] == data['localDay'] &&
+            previousAt!.hour == at.hour &&
+            at
+                    .difference(
+                      previousAt.add(
+                        Duration(milliseconds: previous['wallMs'] as int),
+                      ),
+                    )
+                    .inMilliseconds
+                    .abs() <=
+                50;
+        final id = continuous ? _listenId! : uuid.v4();
+        if (continuous) {
+          data = {
+            ...previous,
+            'endMs': segment.endMs,
+            'mediaMs': segment.endMs - (previous['positionMs'] as int),
+            'wallMs': (previous['wallMs'] as int) + segment.wallMs,
+          };
+        }
+        await put('audio_event', id, data);
+        _listenId = id;
+        _listenData = data;
+      });
 
   Future<void> ensureIndexes() => repository.db.customStatement(
     "CREATE INDEX IF NOT EXISTS records_audio_day ON records(type,json_extract(payload,'\$.localDay'),json_extract(payload,'\$.bookId'))",
