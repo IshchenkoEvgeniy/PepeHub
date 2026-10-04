@@ -4,14 +4,14 @@ PepeHub — локальная библиотека электронных кн�
 
 ## Сборки
 
-Версия приложения в текущих исходниках — **0.18.0+46**. Пакеты для установки:
+Версия приложения в текущих исходниках — **0.18.1+47**. Пакеты для установки:
 
 | Платформа | Доступная сборка | Примечание |
 | --- | --- | --- |
-| Android ARM64 | [APK 0.18.0](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.18.0/PepeHub-0.18.0-android-arm64-test.apk) | Android 7.0+. Книжные рекомендации, категории и поиск метаданных в интернете. APK подписан прежним тестовым ключом и устанавливается вручную поверх предыдущей версии. |
+| Android ARM64 | [APK 0.18.1](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.18.1/PepeHub-0.18.1-android-arm64-test.apk) | Android 7.0+. Исправления поиска, заполнения и сохранения книжных рекомендаций. APK подписан прежним тестовым ключом и устанавливается вручную поверх предыдущей версии. |
 | Windows x64 | [ZIP 1.14.0](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v1.14.0/PepeHub-1.14.0-windows-x64.zip) | Пакет собран по версии 0.14.0. Распакуйте архив целиком и запустите `pepehub.exe`; это не установщик. |
 
-Изменения последних версий: [Android 0.18.0](docs/RELEASE_0180.md), [Android 0.17.0](docs/RELEASE_0170.md), [Android 0.16.0](docs/RELEASE_0160.md), [Android 0.15.0](docs/RELEASE_0150.md), [Android 0.14.2](docs/RELEASE_0142.md), [Android 0.14.1](docs/RELEASE_0141.md), [Windows 1.14.0](docs/RELEASE_0140.md). Полный список сборок находится в [GitHub Releases](https://github.com/IshchenkoEvgeniy/PepeHub/releases).
+Изменения последних версий: [Android 0.18.1](docs/RELEASE_0181.md), [Android 0.18.0](docs/RELEASE_0180.md), [Android 0.17.0](docs/RELEASE_0170.md), [Android 0.16.0](docs/RELEASE_0160.md), [Android 0.15.0](docs/RELEASE_0150.md), [Android 0.14.2](docs/RELEASE_0142.md), [Android 0.14.1](docs/RELEASE_0141.md), [Windows 1.14.0](docs/RELEASE_0140.md). Полный список сборок находится в [GitHub Releases](https://github.com/IshchenkoEvgeniy/PepeHub/releases).
 
 ## Что умеет приложение
 

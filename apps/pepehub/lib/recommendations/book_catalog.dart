@@ -137,6 +137,15 @@ class CatalogTransport {
       rethrow;
     }
   }
+
+  Future<List<dynamic>> list(Uri uri, {bool guest = false}) async {
+    try {
+      return jsonDecode(await get(uri, guest: guest)) as List;
+    } catch (_) {
+      invalidate(uri);
+      rethrow;
+    }
+  }
 }
 
 class BookCatalog {
@@ -145,6 +154,34 @@ class BookCatalog {
     http.Client client, {
     Duration interval = const Duration(milliseconds: 1100),
   }) : transport = CatalogTransport(client, interval: interval);
+
+  Future<Map<String, dynamic>> _checkedJson(
+    Uri uri,
+    bool Function(Map<String, dynamic>) valid,
+    String message, {
+    bool guest = false,
+  }) async {
+    final value = await transport.json(uri, guest: guest);
+    if (!valid(value)) {
+      transport.invalidate(uri);
+      throw FormatException(message);
+    }
+    return value;
+  }
+
+  Future<Map<String, dynamic>> _titledJson(Uri uri, {bool guest = false}) =>
+      _checkedJson(
+        uri,
+        (value) => catalogText(value['title']).isNotEmpty,
+        'Изменилась структура карточки источника',
+        guest: guest,
+      );
+
+  String? _openLibraryKey(dynamic value, String kind, String suffix) {
+    if (value is! String) return null;
+    final key = value.startsWith('/') ? value : '/$kind/$value';
+    return RegExp('^/$kind/OL\\d+$suffix\$').hasMatch(key) ? key : null;
+  }
 
   Future<T?> _optional<T>(
     String label,
@@ -202,13 +239,18 @@ class BookCatalog {
       _ => Future<CatalogBook>.value(book),
     };
     // Detail payloads sometimes omit an image or title present in search.
-    return full.fillMissing(book).withData({
-      ...full.fillMissing(book).data,
+    final merged = full.fillMissing(book);
+    return merged.withData({
+      ...merged.data,
+      'fetchWarnings': strings(full.data['fetchWarnings']),
+      if (full.data.containsKey('sourceUpdatedAt'))
+        'sourceUpdatedAt': full.data['sourceUpdatedAt'],
       'fetchedAt': DateTime.now().toUtc().toIso8601String(),
     });
   }
 
-  bool _isLink(String query) => Uri.tryParse(query)?.hasScheme == true;
+  bool _isLink(String query) =>
+      RegExp(r'^[a-z][a-z\d+.-]*://', caseSensitive: false).hasMatch(query);
   Future<List<CatalogBook>> _authorSearch(String query) async {
     if (_isLink(query)) {
       final uri = Uri.tryParse(query);
@@ -265,7 +307,7 @@ class BookCatalog {
     if (!RegExp(r'^\d+$').hasMatch(id)) {
       throw const FormatException('Неверный ID Author.Today');
     }
-    final value = await transport.json(
+    final value = await _titledJson(
       Uri.https('api.author.today', '/v1/work/$id/details', {
         'recommendationsCount': '0',
       }),
@@ -276,12 +318,10 @@ class BookCatalog {
         await _optional(
           'Жанры',
           warnings,
-          () async => jsonDecode(
-            await transport.get(
-              Uri.https('api.author.today', '/v1/work/genres'),
-              guest: true,
-            ),
-          ) as List,
+          () => transport.list(
+            Uri.https('api.author.today', '/v1/work/genres'),
+            guest: true,
+          ),
         ) ??
         [];
     final genreNames = {
@@ -327,17 +367,16 @@ class BookCatalog {
 
   Future<List<CatalogBook>> _inventaireSearch(String query) async {
     if (_isLink(query)) return [];
-    final value = await transport.json(
+    final value = await _checkedJson(
       Uri.https('inventaire.io', '/api/search', {
         'types': 'works',
         'search': query,
         'lang': 'ru',
         'limit': '12',
       }),
+      (value) => value['results'] is List,
+      'Изменилась структура поиска Inventaire',
     );
-    if (value['results'] is! List) {
-      throw const FormatException('Изменилась структура поиска Inventaire');
-    }
     return [
       for (final row in (value['results'] as List? ?? []).whereType<Map>())
         if (_validEntity('${row['uri']}') &&
@@ -364,11 +403,13 @@ class BookCatalog {
     if (uris.any((id) => !_validEntity(id))) {
       throw const FormatException('Неверный ID Inventaire');
     }
-    final response = await transport.json(
+    final response = await _checkedJson(
       Uri.https('inventaire.io', '/api/entities/by-uris', {
         'uris': uris.join('|'),
         'lang': 'ru',
       }),
+      (value) => value['entities'] is Map,
+      'Изменилась структура сущностей Inventaire',
     );
     return Map<String, dynamic>.from(response['entities'] as Map? ?? {});
   }
@@ -429,7 +470,7 @@ class BookCatalog {
       final work = await _optional(
         'Аннотация Open Library',
         warnings,
-        () => transport.json(Uri.https('openlibrary.org', '/works/$olId.json')),
+        () => _titledJson(Uri.https('openlibrary.org', '/works/$olId.json')),
       );
       if (work != null) {
         data['description'] = catalogText(work['description']);
@@ -455,26 +496,25 @@ class BookCatalog {
       );
       return [await _openLibraryDetails(seed)];
     }
-    final value = await transport.json(
+    final value = await _checkedJson(
       Uri.https('openlibrary.org', '/search.json', {
         'q': query,
         'lang': 'ru',
         'limit': '12',
         'fields': 'key,title,author_name,cover_i,first_publish_year,subject,editions,editions.key,editions.title,editions.language',
       }),
+      (value) => value['docs'] is List,
+      'Изменилась структура поиска Open Library',
     );
     final found = <CatalogBook>[];
-    if (value['docs'] is! List) {
-      throw const FormatException('Изменилась структура поиска Open Library');
-    }
     for (final row in (value['docs'] as List? ?? []).whereType<Map>()) {
-      final key = row['key'];
-      if (key is! String || !RegExp(r'^/works/OL\d+W$').hasMatch(key)) continue;
+      final key = _openLibraryKey(row['key'], 'works', 'W');
+      if (key == null) continue;
       final edition =
           (row['editions'] is Map ? row['editions']['docs'] as List? : null)
               ?.whereType<Map>()
               .firstOrNull;
-      final editionId = edition?['key'];
+      final editionId = _openLibraryKey(edition?['key'], 'books', 'M');
       found.add(
         CatalogBook(
           source: 'openlibrary',
@@ -485,13 +525,11 @@ class BookCatalog {
             'originalTitle': catalogText(row['title']),
             'authors': strings(row['author_name']),
             'genres': strings(row['subject']),
-            'publicationDate': row['first_publish_year']?.toString(),
+            'firstPublicationYear': row['first_publish_year'],
             'coverUrl': _positive(row['cover_i']) == null
                 ? null
                 : 'https://covers.openlibrary.org/b/id/${row['cover_i']}-L.jpg?default=false',
-            if (editionId is String &&
-                RegExp(r'^/books/OL\d+M$').hasMatch(editionId))
-              'editionKey': editionId,
+            'editionKey': ?editionId,
             'language': strings(edition?['language']).join(', '),
           },
         ),
@@ -504,14 +542,50 @@ class BookCatalog {
     if (!RegExp(r'^/(works/OL\d+W|books/OL\d+M)$').hasMatch(book.sourceId)) {
       throw const FormatException('Неверный ID Open Library');
     }
-    final work = await transport.json(
+    final record = await _titledJson(
       Uri.https('openlibrary.org', '${book.sourceId}.json'),
     );
     final warnings = <String>[];
+    final directEdition = book.sourceId.startsWith('/books/');
+    Map<String, dynamic> work = directEdition ? {} : record;
+    Map<String, dynamic> edition = directEdition ? record : {};
+    final editionKey = directEdition
+        ? book.sourceId
+        : _openLibraryKey(book.data['editionKey'], 'books', 'M');
+    if (directEdition) {
+      final references = record['works'] as List? ?? [];
+      // Only follow an explicit, unambiguous parent relation, never a similar title.
+      if (references.length == 1 && references.single is Map) {
+        final key = _openLibraryKey(
+          (references.single as Map)['key'],
+          'works',
+          'W',
+        );
+        if (key != null) {
+          work =
+              await _optional(
+                'Сведения произведения',
+                warnings,
+                () => _titledJson(Uri.https('openlibrary.org', '$key.json')),
+              ) ??
+              {};
+        }
+      }
+    } else if (editionKey != null) {
+      edition =
+          await _optional(
+            'Данные выбранного издания',
+            warnings,
+            () => _titledJson(Uri.https('openlibrary.org', '$editionKey.json')),
+          ) ??
+          {};
+    }
     final data = <String, dynamic>{
-      'title': catalogText(work['title']),
-      'description': catalogText(work['description']),
-      'genres': strings(work['subjects']),
+      'title': catalogText(edition['title'] ?? work['title']),
+      'description': catalogText(edition['description']).isNotEmpty
+          ? catalogText(edition['description'])
+          : catalogText(work['description']),
+      'genres': strings(work['subjects'] ?? edition['subjects']),
       'fetchWarnings': warnings,
     };
     final cover = (work['covers'] as List?)
@@ -520,21 +594,6 @@ class BookCatalog {
     if (cover != null) {
       data['coverUrl'] =
           'https://covers.openlibrary.org/b/id/$cover-L.jpg?default=false';
-    }
-    final editionKey = book.data['editionKey'];
-    Map edition = book.sourceId.startsWith('/books/') ? work : {};
-    if (editionKey is String &&
-        RegExp(r'^/books/OL\d+M$').hasMatch(editionKey)) {
-      // Search chooses a preferred edition; its language and ID are shown in the card.
-      edition =
-          await _optional(
-            'Данные выбранного издания',
-            warnings,
-            () => transport.json(
-              Uri.https('openlibrary.org', '$editionKey.json'),
-            ),
-          ) ??
-          {};
     }
     if (edition.isNotEmpty) {
       final editionCover = (edition['covers'] as List?)
@@ -546,7 +605,8 @@ class BookCatalog {
       }
       data.addAll({
         'title': catalogText(edition['title']),
-        'editionKey': edition['key'],
+        'editionKey':
+            _openLibraryKey(edition['key'], 'books', 'M') ?? editionKey,
         'pages': _positive(edition['number_of_pages']),
         'isbn': [
           ...strings(edition['isbn_13']),
@@ -565,9 +625,10 @@ class BookCatalog {
     }
     if (book.authors.isEmpty) {
       final authors = <String>[];
-      for (final ref in (work['authors'] as List? ?? []).whereType<Map>().take(
-        4,
-      )) {
+      for (final ref
+          in (edition['authors'] as List? ?? work['authors'] as List? ?? [])
+              .whereType<Map>()
+              .take(4)) {
         final key = ref['author'] is Map ? ref['author']['key'] : ref['key'];
         if (key is! String || !RegExp(r'^/authors/OL\d+A$').hasMatch(key)) {
           continue;

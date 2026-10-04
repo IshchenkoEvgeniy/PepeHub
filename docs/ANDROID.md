@@ -1,5 +1,11 @@
 # Android: локальная сборка
 
+## Сборка 0.18.1 — 4 октября 2026
+
+[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.18.1/PepeHub-0.18.1-android-arm64-test.apk), **33,112,592 байт**, versionCode **2047**, Android 7.0+ / target SDK 36. Исправлены поиск по названиям с двоеточием, повторное получение метаданных, карточки изданий, сохранение авторов и ошибки навигации; [состав выпуска](RELEASE_0181.md).
+
+189 Flutter-тестов успешно, 5 пропущены; анализ без замечаний. Отдельный живой тест трёх каталогов прошёл. APK проверен по подписи, версии, ABI, ZIP-выравниванию 16 KiB, ресурсам плеера и шрифтам. Подпись совпадает с прежними тестовыми APK. SHA-256: `a352a91451b9edc4691d9e328a9508480cc545425d86bdc11ab74f2f97c43a99`. Физического Android-устройства для проверки нет.
+
 ## Сборка 0.18.0 — 3 октября 2026
 
 [APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.18.0/PepeHub-0.18.0-android-arm64-test.apk), **33,112,596 байт**, versionCode **2046**, Android 7.0+ / target SDK 36. Добавлены книжные рекомендации: свои категории и топы, заметки, поиск и автозаполнение из Inventaire, Open Library и Author.Today; [состав выпуска](RELEASE_0180.md), [инструкция](BOOK_RECOMMENDATIONS.md).

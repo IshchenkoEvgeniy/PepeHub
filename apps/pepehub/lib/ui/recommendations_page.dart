@@ -59,7 +59,7 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
   Future<void> _action(Future<void> Function() action) async {
     try {
       await action();
-      await _load();
+      if (mounted) await _load();
     } catch (e) {
       if (mounted) _message('$e');
     }
@@ -138,7 +138,10 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
                     controller.text,
                     id: existing?.id,
                   );
-                  if (!context.mounted) return;
+                  if (!context.mounted ||
+                      ModalRoute.of(context)?.isCurrent != true) {
+                    return;
+                  }
                   Navigator.pop(context);
                   if (mounted) setState(() => category = id);
                 } catch (e) {
@@ -641,6 +644,7 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
   }
 
   Future<void> _select(CatalogBook book) async {
+    if (loadingId != null || searching) return;
     setState(() {
       loadingId = '${book.source}:${book.sourceId}';
       error = null;
@@ -648,7 +652,9 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
     });
     try {
       final full = await widget.catalog.details(book);
-      if (mounted) Navigator.pop(context, full);
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        Navigator.pop(context, full);
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -669,12 +675,15 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
         IconButton(
           tooltip: 'Источники поиска',
           icon: const Icon(Icons.tune),
-          onPressed: () => Navigator.push<void>(
-            context,
-            MaterialPageRoute(
-              builder: (_) => RecommendationSourcesPage(store: widget.store),
-            ),
-          ),
+          onPressed: searching || loadingId != null
+              ? null
+              : () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        RecommendationSourcesPage(store: widget.store),
+                  ),
+                ),
         ),
       ],
     ),
@@ -756,6 +765,8 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
                         book.sourceLabel,
                         if ('${book.data['publicationDate'] ?? ''}'.isNotEmpty)
                           '${book.data['publicationDate']}',
+                        if (book.data['firstPublicationYear'] != null)
+                          'Первое издание: ${book.data['firstPublicationYear']}',
                         if ('${book.data['language'] ?? ''}'.isNotEmpty)
                           'Язык: ${book.data['language']}',
                         if (book.data['editionKey'] != null)
@@ -800,6 +811,7 @@ class RecommendationEditor extends StatefulWidget {
 class _RecommendationEditorState extends State<RecommendationEditor> {
   final form = GlobalKey<FormState>();
   final controllers = <String, TextEditingController>{};
+  final listValues = <String, List<String>>{};
   final ranks = <String, TextEditingController>{};
   final selected = <String>{};
   late CatalogBook catalog;
@@ -834,6 +846,9 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
           data: {},
         );
     for (final key in fields.keys) {
+      if (listFields.contains(key)) {
+        listValues[key] = strings(catalog.data[key]);
+      }
       controllers[key] = TextEditingController(
         text: listFields.contains(key)
             ? strings(catalog.data[key]).join(', ')
@@ -865,18 +880,27 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
   }
 
   Future<void> _enrich() async {
+    if (busy) return;
     setState(() {
       busy = true;
       error = null;
     });
     try {
-      final full = await widget.catalog.details(catalog);
+      final full = await widget.catalog.details(
+        catalog.withData({
+          if (catalog.data['editionKey'] != null)
+            'editionKey': catalog.data['editionKey'],
+        }),
+      );
       if (!mounted) return;
       for (final key in fields.keys) {
         if (controllers[key]!.text.trim().isEmpty) {
           controllers[key]!.text = listFields.contains(key)
               ? strings(full.data[key]).join(', ')
               : '${full.data[key] ?? ''}';
+          if (listFields.contains(key)) {
+            listValues[key] = strings(full.data[key]);
+          }
         }
       }
       final merged = catalog.fillMissing(full);
@@ -909,6 +933,9 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
           controllers[key]!.text = listFields.contains(key)
               ? strings(found.data[key]).join(', ')
               : '${found.data[key] ?? ''}';
+          if (listFields.contains(key)) {
+            listValues[key] = strings(found.data[key]);
+          }
         }
       }
       catalog = found;
@@ -916,6 +943,7 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
   }
 
   Future<void> _save() async {
+    if (busy) return;
     if (!form.currentState!.validate()) return;
     setState(() {
       busy = true;
@@ -926,8 +954,8 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
       for (final entry in controllers.entries.where((e) => e.key != 'notes')) {
         final value = entry.value.text.trim();
         data[entry.key] = listFields.contains(entry.key)
-            ? value == strings(catalog.data[entry.key]).join(', ')
-                  ? strings(catalog.data[entry.key])
+            ? value == (listValues[entry.key] ?? []).join(', ')
+                  ? listValues[entry.key] ?? <String>[]
                   : value
                         .split(RegExp(r'[,;\n]'))
                         .map((s) => s.trim())
@@ -951,7 +979,9 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
           },
         ),
       );
-      if (mounted) Navigator.pop(context);
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        Navigator.pop(context);
+      }
     } catch (e) {
       if (mounted) setState(() => error = '$e');
     } finally {
@@ -1080,6 +1110,11 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
                 ),
               if (catalog.data['shortDescription'] != null)
                 Text('${catalog.data['shortDescription']}'),
+              if (catalog.data['firstPublicationYear'] != null)
+                ListTile(
+                  title: const Text('Первое издание произведения'),
+                  subtitle: Text('${catalog.data['firstPublicationYear']}'),
+                ),
               if (catalog.data['publicationCompletedAt'] != null)
                 ListTile(
                   title: const Text('Завершение публикации автором'),

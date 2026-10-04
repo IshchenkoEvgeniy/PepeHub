@@ -42,6 +42,9 @@ class CatalogBook {
             entry.value != '' &&
             !(entry.value is List && (entry.value as List).isEmpty))
           entry.key: entry.value,
+      // Diagnostics and fetch times describe the latest request, not a manual edit.
+      for (final key in ['fetchWarnings', 'fetchedAt', 'sourceUpdatedAt'])
+        if (other.data.containsKey(key)) key: other.data[key],
     });
   }
 
