@@ -102,3 +102,25 @@ test('automatically prefilled reading time is derived from synced rows and is no
   const first=applyActivityMarkdown(content,value,null);assert.ok(first.content.includes('Reading time: "00:10:00"'));
   const second=applyActivityMarkdown(first.content,entry({durationMs:300000}),null);assert.ok(second.content.includes('Reading time: "00:15:00"'));
 });
+
+test('malformed synced journal rows stop capture instead of becoming tombstones',()=>{
+  const value=entry(),content=applyActivityMarkdown('',value,null).content;
+  const state=emptyActivityState();captureActivity(state,[value],new Set([book]));
+  const operation=pendingActivity(state)[0]!;
+  receiptActivity(state,{operationId:operation.operationId,status:'applied',record:{entry:value,revision:1,sequence:1}});
+  for(const broken of [
+    content.replace('00:02:03','invalid'),
+    content.replace('2026-10-03','2026-02-30'),
+    content.replace('### 📖 Progress','### Other'),
+    content.replace(/:[A-Za-z0-9+/=]+ -->/,':broken -->'),
+    content.replace(`pepehub-activity:${value.id}:`,`pepehub-activity:${randomUUID()}:`),
+    content.replace(`pepehub-activity:${value.id}:`,`pepehub-activity:${value.id}:!`),
+  ]) {
+    assert.throws(()=>{const parsed=readActivityMarkdown(broken,book,'book');captureActivity(state,parsed.entries,new Set([book]));},/PepeHub:/);
+    assert.equal(state.slots[value.id]!.value.deleted,false);
+    assert.deepEqual(pendingActivity(state),[]);
+  }
+  const removed=applyActivityMarkdown(content,{...value,deleted:true},value);
+  captureActivity(state,readActivityMarkdown(removed.content,book,'book').entries,new Set([book]));
+  assert.equal(pendingActivity(state)[0]!.entry.deleted,true);
+});

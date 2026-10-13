@@ -66,6 +66,21 @@ void main() {
         await rb.useServerVersion(conflict.read<String>('operation_id'));
         expect((await rb.records('book')).single.title, 'Правка A');
         expect(await rb.pendingCount(), 0);
+        final listeningId = uuid.v4();
+        await ra.put('session', listeningId, {
+          'bookId': book.id,
+          'kind': 'listening',
+          'startedAt': '2026-10-13T10:00:00.000Z',
+          'endedAt': '2026-10-13T10:01:00.000Z',
+          'activeSeconds': 60,
+          'timezone': 'UTC',
+          'offsetMinutes': 180,
+          'source': 'player',
+        });
+        await sa.run(configA);
+        await sb.run(configB);
+        expect((await rb.record(listeningId))!.payload!['offsetMinutes'], 180);
+        expect(await ra.pendingCount(), 0);
         expect(errors, isEmpty);
       } finally {
         ca.close();

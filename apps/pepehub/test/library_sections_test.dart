@@ -57,9 +57,7 @@ void main() {
       );
       expect(find.text('Audio story'), findsOneWidget);
       expect(find.text('Text story'), findsNothing);
-      await tester.tap(find.byTooltip('Open navigation menu'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Книги'));
+      await tester.tap(find.byTooltip('Книги'));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
         find.text('Text story'),

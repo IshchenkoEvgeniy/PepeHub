@@ -5,11 +5,18 @@ import { type NoteRecord, type NoteEntry } from './pepehub-notes';
 import { emptyNoteState, captureNote, pendingNote, receiptNote, receiveNote, type NoteState } from './pepehub-notes-state';
 import { applyNoteMarkdown, readNoteMarkdown } from './pepehub-notes-markdown';
 import type { MetadataSnapshot } from './pepehub-metadata';
+import { DurableState } from './pepehub-durable-state';
 
 export class PepeHubNoteService {
   private lastNotice='';
   private busy=false;
-  constructor(private plugin:HabitTimerPlugin) {}
+  private storage:DurableState<NoteState>;
+  constructor(private plugin:HabitTimerPlugin) {
+    this.storage=new DurableState(plugin.app.vault.adapter,emptyNoteState,value=>{
+      const state=value as NoteState;
+      return !!state&&state.version===1&&!!state.slots&&typeof state.slots==='object'&&!Array.isArray(state.slots)&&Number.isSafeInteger(state.cursor)&&state.cursor>=0;
+    });
+  }
   private async statePath(seed?:string):Promise<string> {
     const base=(this.plugin.settings.cloudflareWorkerUrl || '').trim().replace(/\/+$/,'');
     const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(seed ?? `${base}\n${this.plugin.settings.cloudflareApiToken}`));
@@ -18,15 +25,10 @@ export class PepeHubNoteService {
     return `${directory}/pepehub-notes-${hash}.json`;
   }
   private async readState(path:string):Promise<NoteState> {
-    const adapter=this.plugin.app.vault.adapter;
-    if(!await adapter.exists(path))return emptyNoteState();
-    const state=JSON.parse(await adapter.read(path)) as NoteState;
-    if(state.version!==1||!state.slots||!Number.isSafeInteger(state.cursor))throw new Error('Invalid PepeHub notes state; existing state was preserved.');
-    return state;
+    return this.storage.read(path);
   }
   private async save(path:string,state:NoteState):Promise<void> {
-    // A completed write is required before requests or cursor acknowledgement.
-    await this.plugin.app.vault.adapter.write(path,JSON.stringify(state));
+    await this.storage.save(path,state);
   }
   async sync(snapshot:MetadataSnapshot,request:(path:string,body?:unknown)=>Promise<unknown>,seed?:string):Promise<void> {
     if(this.busy)return;
@@ -46,6 +48,7 @@ export class PepeHubNoteService {
       else {const current=readNoteMarkdown(await this.plugin.app.vault.read(file),item.id,item.mediaType,false).entries.find(e=>e.id===slot.value.id);slot.conflict={entry:slot.value,revision:slot.revision,sequence:0};slot.value=current ?? {...slot.value,deleted:true};}
       await this.save(path,state);
     }
+    const observedItems=new Set<string>();
     for(const item of snapshot.items) {
       const file=this.plugin.app.vault.getAbstractFileByPath(item.path);
       if(!(file instanceof TFile))continue;
@@ -55,8 +58,9 @@ export class PepeHubNoteService {
         const parsed=readNoteMarkdown(content,item.id,item.mediaType);
         entries.push(...parsed.entries);return parsed.content;
       });
+      observedItems.add(item.id);
     }
-    captureNote(state,entries,new Set(items.keys()));
+    captureNote(state,entries,observedItems);
     const operations=pendingNote(state).filter(op=>items.has(op.entry.itemId));await this.save(path,state);
     for(let at=0;at<operations.length;at+=2) {
       const response=await request('/notes',{operations:operations.slice(at,at+2)}) as {version:number;receipts:Parameters<typeof receiptNote>[1][]};
@@ -113,7 +117,7 @@ export class PepeHubNoteService {
           button.disabled=true;this.busy=true;
           try {
             const latest=await this.readState(path),live=latest.slots[slot.value.id];
-            if(!live?.conflict||!equalValue(live.value,slot.value))throw new Error('Запись изменилась. Откройте список конфликтов заново.');
+            if(!live?.conflict||!equalValue(live.value,slot.value)||!equalValue(live.conflict,remote)||live.revision>remote.revision)throw new Error('Запись изменилась. Откройте список конфликтов заново.');
             if(useRemote) {
               const files=this.plugin.app.vault.getMarkdownFiles();let found:TFile|undefined;
               for(const file of files){const fm=this.plugin.app.metadataCache.getFileCache(file)?.frontmatter;if(fm?.pepehub_id===slot.value.itemId){found=file;break;}}

@@ -169,7 +169,9 @@ void main() {
             .listSync(recursive: true)
             .whereType<File>()
             .length,
-        2,
+        1,
+        reason:
+            'Replaying the same event revisions must not rotate the journal',
       );
       final backups =
           support

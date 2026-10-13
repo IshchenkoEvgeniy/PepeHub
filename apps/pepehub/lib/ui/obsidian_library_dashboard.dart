@@ -6,8 +6,8 @@ import 'package:flutter/services.dart';
 
 import '../library/library_service.dart';
 import '../library/models.dart';
-import 'app_theme.dart';
 import 'activity_page.dart';
+import 'app_theme.dart';
 import 'obsidian_library_page.dart' show LibraryMetadataEditor, libraryState;
 import 'shelf_components.dart';
 
@@ -193,15 +193,13 @@ class ShelfBookCover extends StatelessWidget {
 
 class ObsidianLibraryPage extends StatefulWidget {
   final LibraryService service;
-  final Widget drawer;
-  final Widget? sidebar;
+  final ShelfNavigation navigation;
   final VoidCallback onSettings;
   const ObsidianLibraryPage({
     super.key,
     required this.service,
-    required this.drawer,
+    required this.navigation,
     required this.onSettings,
-    this.sidebar,
   });
   @override
   State<ObsidianLibraryPage> createState() => _ObsidianLibraryPageState();
@@ -212,7 +210,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
   final searchFocus = FocusNode();
   String type = 'all', scope = 'all', status = 'all', sort = 'recent';
   String? selectedId;
-  bool filters = false, grid = false;
+  bool filters = false, grid = true;
   int? annualGoal;
   String? goalNamespace;
   @override
@@ -370,8 +368,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
             all.where((e) => metadataReadingStatus(e.item) == key).length;
         return ShelfShell(
           title: 'Библиотека',
-          drawer: widget.drawer,
-          sidebar: widget.sidebar,
+          navigation: widget.navigation,
           actions: [
             IconButton(
               tooltip: 'Журнал чтения и прослушивания',
@@ -383,36 +380,17 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 ),
               ),
             ),
-            PopupMenuButton<ThemeMode>(
-              tooltip: 'Тема оформления',
-              icon: const Icon(Icons.contrast_rounded, size: 19),
-              onSelected: (mode) => ThemeScope.of(context)?.set(mode),
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: ThemeMode.dark,
-                  child: Text('Тёмная тема'),
-                ),
-                PopupMenuItem(
-                  value: ThemeMode.light,
-                  child: Text('Светлая тема'),
-                ),
-                PopupMenuItem(
-                  value: ThemeMode.system,
-                  child: Text('Как в системе'),
-                ),
-              ],
-            ),
             IconButton(
               tooltip: 'Подключение Obsidian',
               onPressed: widget.onSettings,
-              icon: const Icon(Icons.tune_rounded, size: 19),
+              icon: const Icon(Icons.link, size: 20),
             ),
           ],
           body: LayoutBuilder(
             builder: (context, constraints) {
-              final inset = constraints.maxWidth < 600 ? 16.0 : 28.0;
+              const inset = 20.0;
               return SingleChildScrollView(
-                padding: EdgeInsets.all(inset),
+                padding: const EdgeInsets.fromLTRB(inset, 4, inset, 32),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -435,7 +413,9 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                         label: const Text('Синхронизировать'),
                       ),
                     ),
-                    const SizedBox(height: 26),
+                    const SizedBox(height: 22),
+                    _goal(all),
+                    const SizedBox(height: 18),
                     ShelfSummary(
                       total: all.length,
                       books: books,
@@ -497,7 +477,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                     ],
                     LayoutBuilder(
                       builder: (context, content) {
-                        final details = content.maxWidth >= 900;
+                        final details = content.maxWidth >= 1000;
                         final collection = _collection(
                           entries,
                           all,
@@ -509,38 +489,22 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(child: collection),
-                            const SizedBox(width: 18),
+                            const SizedBox(width: 24),
                             SizedBox(
-                              width: 280,
-                              child: Column(
-                                children: [
-                                  if (selected != null)
-                                    _detail(selected)
-                                  else
-                                    ShelfPanel(
+                              width: 300,
+                              child: selected != null
+                                  ? _detail(selected)
+                                  : ShelfPanel(
                                       padding: const EdgeInsets.all(22),
                                       child: Text(
                                         'Выберите запись из коллекции',
                                         style: TextStyle(color: palette.muted),
                                       ),
                                     ),
-                                  const SizedBox(height: 18),
-                                  _goal(all),
-                                ],
-                              ),
                             ),
                           ],
                         );
                       },
-                    ),
-                    if (constraints.maxWidth < 956) ...[
-                      const SizedBox(height: 18),
-                      _goal(all),
-                    ],
-                    const SizedBox(height: 24),
-                    Text(
-                      'PepeHub · Личная библиотека',
-                      style: TextStyle(fontSize: 11, color: palette.muted),
                     ),
                   ],
                 ),
@@ -558,288 +522,239 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     bool details,
   ) {
     final palette = ShelfPalette.of(context);
-    return ShelfPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Text(
-                            'Ваша коллекция',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(width: 9),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: palette.selected,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              '${all.length}',
-                              style: TextStyle(
-                                color: palette.accent,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 7),
-                      Text(
-                        'Книги и аудиокниги из вашей библиотеки',
-                        style: TextStyle(fontSize: 11, color: palette.muted),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: grid ? 'Показать списком' : 'Показать карточками',
-                  onPressed: () => setState(() => grid = !grid),
-                  icon: Icon(
-                    grid ? Icons.view_list_outlined : Icons.grid_view_rounded,
-                    size: 18,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final field = TextField(
-                  key: const ValueKey('library-search'),
-                  controller: search,
-                  focusNode: searchFocus,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    hintText: 'Название, автор или серия…',
-                    prefixIcon: const Icon(Icons.search_rounded, size: 19),
-                    suffixIcon: search.text.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: 'Очистить поиск',
-                            onPressed: () => setState(search.clear),
-                            icon: const Icon(Icons.close, size: 17),
-                          ),
-                    isDense: true,
-                  ),
-                );
-                final selector = DropdownButtonFormField<String>(
-                  key: ValueKey('library-search-scope:$scope'),
-                  initialValue: scope,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 13,
-                    ),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'all', child: Text('Везде')),
-                    DropdownMenuItem(value: 'title', child: Text('В названии')),
-                    DropdownMenuItem(value: 'author', child: Text('По автору')),
-                    DropdownMenuItem(value: 'series', child: Text('По серии')),
-                  ],
-                  onChanged: (next) => setState(() => scope = next ?? 'all'),
-                );
-                if (constraints.maxWidth < 420) {
-                  return Column(
-                    children: [field, const SizedBox(height: 10), selector],
-                  );
-                }
-                return Row(
+    final pill = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(26),
+      borderSide: BorderSide(color: palette.line),
+    );
+    final field = TextField(
+      key: const ValueKey('library-search'),
+      controller: search,
+      focusNode: searchFocus,
+      onChanged: (_) => setState(() {}),
+      decoration: InputDecoration(
+        hintText: 'Название, автор или серия…',
+        prefixIcon: const Icon(Icons.search_rounded, size: 20),
+        suffixIcon: search.text.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Очистить поиск',
+                onPressed: () => setState(search.clear),
+                icon: const Icon(Icons.close, size: 17),
+              ),
+        isDense: true,
+        border: pill,
+        enabledBorder: pill,
+      ),
+    );
+    final selector = DropdownButtonFormField<String>(
+      key: ValueKey('library-search-scope:$scope'),
+      initialValue: scope,
+      isExpanded: true,
+      decoration: InputDecoration(
+        isDense: true,
+        border: pill,
+        enabledBorder: pill,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 13,
+        ),
+      ),
+      items: const [
+        DropdownMenuItem(value: 'all', child: Text('Везде')),
+        DropdownMenuItem(value: 'title', child: Text('В названии')),
+        DropdownMenuItem(value: 'author', child: Text('По автору')),
+        DropdownMenuItem(value: 'series', child: Text('По серии')),
+      ],
+      onChanged: (next) => setState(() => scope = next ?? 'all'),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) => constraints.maxWidth < 520
+              ? Column(
+                  children: [field, const SizedBox(height: 10), selector],
+                )
+              : Row(
                   children: [
                     Expanded(child: field),
                     const SizedBox(width: 10),
-                    SizedBox(width: 130, child: selector),
+                    SizedBox(width: 160, child: selector),
                   ],
-                );
-              },
+                ),
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (final option in const {
+              'all': 'Все',
+              'book': 'Книги',
+              'audiobook': 'Аудиокниги',
+            }.entries)
+              ChoiceChip(
+                label: Text(option.value),
+                selected: type == option.key,
+                showCheckmark: false,
+                onSelected: (_) => setState(() => type = option.key),
+              ),
+            OutlinedButton.icon(
+              onPressed: () => setState(() => filters = !filters),
+              icon: Icon(
+                filters ? Icons.close : Icons.filter_list_rounded,
+                size: 15,
+              ),
+              label: Text(status == 'all' ? 'Фильтры' : 'Фильтры · 1'),
             ),
-          ),
+          ],
+        ),
+        if (filters)
           Padding(
-            padding: const EdgeInsets.all(18),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 10,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                for (final option in const {
-                  'all': 'Все',
-                  'book': 'Книги',
-                  'audiobook': 'Аудиокниги',
-                }.entries)
-                  ChoiceChip(
-                    label: Text(option.value),
-                    selected: type == option.key,
-                    showCheckmark: false,
-                    onSelected: (_) => setState(() => type = option.key),
-                  ),
-                OutlinedButton.icon(
-                  onPressed: () => setState(() => filters = !filters),
-                  icon: Icon(
-                    filters ? Icons.close : Icons.filter_list_rounded,
-                    size: 15,
-                  ),
-                  label: Text(status == 'all' ? 'Фильтры' : 'Фильтры · 1'),
+            padding: const EdgeInsets.only(top: 14),
+            child: DropdownButtonFormField<String>(
+              key: ValueKey('library-status:$status'),
+              initialValue: status,
+              decoration: const InputDecoration(
+                labelText: 'Статус',
+                isDense: true,
+              ),
+              items: const [
+                DropdownMenuItem(value: 'all', child: Text('Любой статус')),
+                DropdownMenuItem(value: 'active', child: Text('В процессе')),
+                DropdownMenuItem(value: 'finished', child: Text('Завершено')),
+                DropdownMenuItem(value: 'planned', child: Text('В планах')),
+                DropdownMenuItem(
+                  value: 'other',
+                  child: Text('Другой / не указан'),
                 ),
               ],
+              onChanged: (next) => setState(() => status = next ?? 'all'),
             ),
           ),
-          if (filters)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
-              child: DropdownButtonFormField<String>(
-                key: ValueKey('library-status:$status'),
-                initialValue: status,
-                decoration: const InputDecoration(
-                  labelText: 'Статус',
-                  isDense: true,
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButton<String>(
+                value: sort,
+                isExpanded: true,
+                underline: const SizedBox(),
+                style: TextStyle(
+                  fontFamily: AppFonts.body,
+                  color: palette.text,
+                  fontSize: 13,
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'all', child: Text('Любой статус')),
-                  DropdownMenuItem(value: 'active', child: Text('В процессе')),
-                  DropdownMenuItem(value: 'finished', child: Text('Завершено')),
-                  DropdownMenuItem(value: 'planned', child: Text('В планах')),
                   DropdownMenuItem(
-                    value: 'other',
-                    child: Text('Другой / не указан'),
+                    value: 'recent',
+                    child: Text('Недавно изменённые'),
                   ),
+                  DropdownMenuItem(
+                    value: 'title',
+                    child: Text('По названию А–Я'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'author',
+                    child: Text('По автору А–Я'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'series',
+                    child: Text('По серии А–Я'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'progress',
+                    child: Text('По прогрессу'),
+                  ),
+                  DropdownMenuItem(value: 'rating', child: Text('По оценке')),
                 ],
-                onChanged: (next) => setState(() => status = next ?? 'all'),
+                onChanged: (next) => setState(() => sort = next ?? 'recent'),
               ),
             ),
-          const Divider(),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-            child: Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 12,
+            const SizedBox(width: 8),
+            Text(
+              'Показано ${entries.length} из ${all.length}',
+              style: TextStyle(fontSize: 12, color: palette.muted),
+            ),
+            IconButton(
+              tooltip: grid ? 'Показать списком' : 'Показать карточками',
+              onPressed: () => setState(() => grid = !grid),
+              icon: Icon(
+                grid ? Icons.view_list_outlined : Icons.grid_view_rounded,
+                size: 20,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (entries.isEmpty)
+          ShelfPanel(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+            child: Column(
               children: [
-                DropdownButton<String>(
-                  value: sort,
-                  underline: const SizedBox(),
-                  style: TextStyle(
-                    fontFamily: 'Manrope',
-                    color: palette.muted,
-                    fontSize: 11,
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'recent',
-                      child: Text('Недавно изменённые'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'title',
-                      child: Text('По названию А–Я'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'author',
-                      child: Text('По автору А–Я'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'series',
-                      child: Text('По серии А–Я'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'progress',
-                      child: Text('По прогрессу'),
-                    ),
-                    DropdownMenuItem(value: 'rating', child: Text('По оценке')),
-                  ],
-                  onChanged: (next) => setState(() => sort = next ?? 'recent'),
-                ),
+                Icon(Icons.search_off_outlined, size: 36, color: palette.muted),
+                const SizedBox(height: 14),
                 Text(
-                  'Показано ${entries.length} из ${all.length}',
-                  style: TextStyle(fontSize: 11, color: palette.muted),
+                  all.isEmpty
+                      ? 'В библиотеке пока нет записей'
+                      : 'Ничего не найдено',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
+                if (all.isNotEmpty) ...[
+                  const SizedBox(height: 7),
+                  Text(
+                    'Попробуйте другой запрос или сбросьте фильтры.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: palette.muted, fontSize: 12),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() {
+                      search.clear();
+                      type = status = scope = 'all';
+                    }),
+                    child: const Text('Сбросить фильтры'),
+                  ),
+                ],
               ],
             ),
-          ),
-          if (entries.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 56),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.search_off_outlined,
-                    size: 36,
-                    color: palette.muted,
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (grid) {
+                const gap = 16.0;
+                final columns = (constraints.maxWidth / 200).floor().clamp(
+                  2,
+                  8,
+                );
+                final width =
+                    (constraints.maxWidth - gap * (columns - 1)) / columns;
+                return GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  itemCount: entries.length,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    crossAxisSpacing: gap,
+                    mainAxisSpacing: gap,
+                    mainAxisExtent:
+                        width * 1.5 +
+                        228 * MediaQuery.textScalerOf(context).scale(1) -
+                        64,
                   ),
-                  const SizedBox(height: 14),
-                  Text(
-                    all.isEmpty
-                        ? 'В библиотеке пока нет записей'
-                        : 'Ничего не найдено',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  itemBuilder: (_, i) => _gridCard(
+                    entries[i],
+                    selected?.item.id == entries[i].item.id,
+                    details,
+                    width,
                   ),
-                  if (all.isNotEmpty) ...[
-                    const SizedBox(height: 7),
-                    Text(
-                      'Попробуйте другой запрос или сбросьте фильтры.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: palette.muted, fontSize: 12),
-                    ),
-                    TextButton(
-                      onPressed: () => setState(() {
-                        search.clear();
-                        type = status = scope = 'all';
-                      }),
-                      child: const Text('Сбросить фильтры'),
-                    ),
-                  ],
-                ],
-              ),
-            )
-          else
-            LayoutBuilder(
-              builder: (context, constraints) {
-                if (grid) {
-                  final columns = constraints.maxWidth >= 760
-                      ? 4
-                      : constraints.maxWidth >= 540
-                      ? 3
-                      : constraints.maxWidth >= 330
-                      ? 2
-                      : 1;
-                  return GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    itemCount: entries.length,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      mainAxisExtent: 250,
-                    ),
-                    itemBuilder: (_, i) => _gridCard(
-                      entries[i],
-                      selected?.item.id == entries[i].item.id,
-                      details,
-                    ),
-                  );
-                }
-                final table = constraints.maxWidth >= 620;
-                return Column(
+                );
+              }
+              final table = constraints.maxWidth >= 620;
+              return ShelfPanel(
+                child: Column(
                   children: [
                     if (table) _tableHeader(),
                     for (final entry in entries)
@@ -850,19 +765,11 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                         table,
                       ),
                   ],
-                );
-              },
-            ),
-          const Divider(),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'Записей: ${entries.length} · Передаются только метаданные',
-              style: TextStyle(fontSize: 10, color: palette.muted),
-            ),
+                ),
+              );
+            },
           ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -949,7 +856,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
             value: fraction ?? 0,
             minHeight: 3,
             color: metadataReadingStatus(entry.item) == 'finished'
-                ? const Color(0xff8ebfae)
+                ? palette.muted
                 : palette.accent,
             backgroundColor: palette.line,
           ),
@@ -1019,10 +926,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                       item.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: AppFonts.book(palette.text, size: 15),
                     ),
                     if (item.authors.isNotEmpty) ...[
                       const SizedBox(height: 4),
@@ -1113,56 +1017,111 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     );
   }
 
-  Widget _gridCard(LibraryEntry entry, bool selected, bool details) {
+  Widget _gridCard(
+    LibraryEntry entry,
+    bool selected,
+    bool details,
+    double width,
+  ) {
     final item = entry.item, palette = ShelfPalette.of(context);
-    return ShelfPanel(
+    final rating = _number(item.value('rating'));
+    return Material(
+      color: palette.panel,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: selected && details ? palette.accent : Colors.transparent,
+          width: 2,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _select(entry, details),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Center(
-                  child: ShelfBookCover(
-                    title: item.title,
-                    mediaType: item.mediaType,
-                    cover: _text(item.value('cover')),
-                    localPath: widget.service.coverPath(item),
-                    width: 62,
-                    height: 92,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Stack(
+              children: [
+                ShelfBookCover(
+                  title: item.title,
+                  mediaType: item.mediaType,
+                  cover: _text(item.value('cover')),
+                  localPath: widget.service.coverPath(item),
+                  width: width,
+                  height: width * 1.5,
+                ),
+                Positioned(
+                  left: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: palette.background.withValues(alpha: .85),
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    child: Text(
+                      item.mediaType == 'audiobook' ? 'АУДИО' : 'КНИГА',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: .8,
+                        color: palette.text,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                item.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+              ],
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppFonts.book(palette.text, size: 15),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      item.authors,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: palette.muted, fontSize: 12),
+                    ),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        Flexible(child: _status(entry)),
+                        if (rating != null) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            '★ ${_amount(rating)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: palette.accent,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      metadataProgressLabel(item),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: palette.muted, fontSize: 11),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 5),
-              Text(
-                item.authors,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: palette.muted, fontSize: 10),
-              ),
-              const SizedBox(height: 10),
-              _status(entry),
-              const SizedBox(height: 9),
-              Text(
-                metadataProgressLabel(item),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: palette.muted, fontSize: 9),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -1227,11 +1186,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                       item.title,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        height: 1.3,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: AppFonts.book(palette.text, size: 20),
                     ),
                     const SizedBox(height: 6),
                     Text(
@@ -1318,85 +1273,82 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       final parts = raw.split('.');
       return parts.length == 3 && int.tryParse(parts.last) == year;
     }).length;
-    final fraction = annualGoal == null
-        ? 0.0
-        : (finished / annualGoal!).clamp(0.0, 1.0);
+    final goal = annualGoal;
+    final ticks = goal == null ? 0 : goal.clamp(1, 60);
+    final done = goal == null
+        ? 0
+        : (finished * ticks / goal).floor().clamp(0, ticks);
     return ShelfPanel(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.fromLTRB(20, 16, 10, 18),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Expanded(
-                child: Text(
-                  'Цель на $year',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Icon(Icons.track_changes, size: 17, color: palette.accent),
-            ],
-          ),
-          const SizedBox(height: 22),
-          Row(
-            children: [
-              SizedBox(
-                width: 80,
-                height: 80,
-                child: Stack(
-                  alignment: Alignment.center,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox.expand(
-                      child: CircularProgressIndicator(
-                        value: fraction,
-                        strokeWidth: 5,
-                        backgroundColor: palette.line,
-                        color: palette.accent,
+                    Text(
+                      'Цель на $year',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: palette.text,
                       ),
                     ),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          annualGoal == null
-                              ? '$finished'
-                              : '$finished/${annualGoal!}',
-                          style: const TextStyle(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          'книг',
-                          style: TextStyle(color: palette.muted, fontSize: 10),
-                        ),
-                      ],
+                    const SizedBox(height: 2),
+                    Text(
+                      'книг и аудиокниг завершено',
+                      style: TextStyle(fontSize: 12, color: palette.muted),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: Text(
-                  annualGoal == null
-                      ? 'Каждая книга имеет значение.\nЗадайте цель на этот год.'
-                      : 'Каждая книга имеет значение.\nЗавершено в $year году.',
-                  style: TextStyle(
-                    fontSize: 11,
-                    height: 1.7,
-                    color: palette.muted,
-                  ),
+              Text.rich(
+                TextSpan(
+                  text: '$finished',
+                  style: AppFonts.title(palette.text, size: 34),
+                  children: [
+                    if (goal != null)
+                      TextSpan(
+                        text: ' / $goal',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: palette.muted,
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 18),
+          if (goal != null) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: Row(
+                children: [
+                  for (var i = 0; i < ticks; i++)
+                    Expanded(
+                      child: Container(
+                        height: 14,
+                        margin: EdgeInsets.only(right: i == ticks - 1 ? 0 : 3),
+                        decoration: BoxDecoration(
+                          color: i < done ? palette.accent : palette.raised,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
           TextButton(
             onPressed: _setGoal,
-            child: Text(annualGoal == null ? 'Задать цель' : 'Изменить цель'),
+            style: TextButton.styleFrom(padding: EdgeInsets.zero),
+            child: Text(goal == null ? 'Задать цель' : 'Изменить цель'),
           ),
         ],
       ),

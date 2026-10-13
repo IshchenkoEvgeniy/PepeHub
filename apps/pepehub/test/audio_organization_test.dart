@@ -64,6 +64,7 @@ void main() {
       for (final b in [
         book('a', 'Alpha audio', 'Zoe'),
         book('b', 'Beta audio', 'Anna'),
+        book('c', 'Aardvark audio', 'Boris'),
       ]) {
         await repo.put('book', b.id, b.payload!);
       }
@@ -123,9 +124,7 @@ void main() {
       }
 
       Future<void> switchSection(String title) async {
-        await tester.tap(find.byTooltip('Open navigation menu'));
-        await settle();
-        await tester.tap(find.text(title).last);
+        await tester.tap(find.byTooltip(title));
         await settle();
       }
 
@@ -195,9 +194,10 @@ void main() {
       await settle();
       expect(await repo.meta('audio-sort'), 'author');
       expect(await repo.meta('reading-sort'), 'series');
+      expect(find.text('Сейчас слушаю'), findsOneWidget);
       expect(
         tester.getTopLeft(find.text('Beta audio')).dy,
-        lessThan(tester.getTopLeft(find.text('★ Alpha audio')).dy),
+        lessThan(tester.getTopLeft(find.text('Aardvark audio')).dy),
       );
       // Recreate the screen: favorites, memberships and sort must survive.
       await tester.pumpWidget(const SizedBox());
@@ -210,9 +210,10 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       expect(find.text('★ Alpha audio'), findsOneWidget);
+      expect(find.text('Сейчас слушаю'), findsOneWidget);
       expect(
         tester.getTopLeft(find.text('Beta audio')).dy,
-        lessThan(tester.getTopLeft(find.text('★ Alpha audio')).dy),
+        lessThan(tester.getTopLeft(find.text('Aardvark audio')).dy),
       );
       await tester.tap(find.text('Коллекции'));
       await settle();
@@ -267,7 +268,7 @@ void main() {
             .read<int>('position_ms'),
         800,
       );
-      expect((await repo.records('book')).length, 3);
+      expect((await repo.records('book')).length, 4);
       await tester.tapAt(const Offset(5, 50));
       await settle();
       await tester.tap(find.text('Избранное'));

@@ -28,6 +28,7 @@ function columns(line:string):string[] {
 }
 function parse(line:string,itemId:string,mediaType:ActivityEntry['mediaType'],assign:boolean):ActivityEntry|null {
   const match=line.match(marker), decoded=match?decode(match[2]!):null, old=decoded?.id===match?.[1]?decoded:null, cells=columns(line.replace(marker,''));
+  if(match && !old)throw new Error('PepeHub: повреждён маркер журнала; исходная строка сохранена.');
   if(cells.length<6 || !/^\d{4}-\d\d-\d\d$/.test(cells[1]||''))return null;
   const duration=activityDuration(cells[2]||'');if(duration===null)return null;
   const progress=Number((cells[3]||'').replace(/^симв\.:\s*/,'').match(/^\d+(?:\.\d+)?/)?.[0]||0);
@@ -49,8 +50,13 @@ export function readActivityMarkdown(content:string,itemId:string,mediaType:Acti
     if(inNote)return line;
     if(heading.test(line.trim())){inside=true;return line;}
     if(anyHeading.test(line.trim()))inside=false;
+    // A present marker is evidence that the row still exists. Never interpret
+    // malformed or displaced rows as deletion of the last synced entry.
+    const marked=/<!--\s*pepehub-activity:/i.test(line);
+    if(marked && (!inside || !line.trim().startsWith('|') || !marker.test(line)))throw new Error('PepeHub: повреждена строка журнала; проверьте раздел Progress и маркер.');
     if(!inside||!line.trim().startsWith('|'))return line;
-    let e=parse(line,itemId,mediaType,assign);if(!e)return line;
+    let e=parse(line,itemId,mediaType,assign);
+    if(!e){if(marked)throw new Error('PepeHub: некорректная дата или время строки журнала; исходная строка сохранена.');return line;}
     if(used.has(e.id)){if(!assign)return line;e={...e,id:crypto.randomUUID()};}
     used.add(e.id);entries.push(e);
     // Do not normalize the visible cells of existing user rows.

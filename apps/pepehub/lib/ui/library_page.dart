@@ -3,8 +3,10 @@ import 'app_theme.dart';
 import 'settings_page.dart';
 import 'activity_page.dart';
 import 'obsidian_notes_page.dart';
+import 'pepe_widgets.dart';
 import 'shelf_components.dart';
 import 'recommendations_page.dart';
+import 'statistics_hub_page.dart';
 import '../recommendations/recommendation_store.dart';
 import '../recommendations/book_catalog.dart';
 import '../audio/audio_roots.dart';
@@ -84,6 +86,7 @@ class _LibraryPageState extends State<LibraryPage> {
   bool reading = false;
   bool metadataSection = false;
   bool recommendationsSection = false;
+  bool statisticsSection = false;
   late final recommendations = RecommendationStore(widget.repository);
   late final bookCatalog = BookCatalog(httpClient);
   late final obsidianLibrary = LibraryService(
@@ -154,6 +157,7 @@ class _LibraryPageState extends State<LibraryPage> {
     reading = section == 'reading';
     metadataSection = section == 'metadata';
     recommendationsSection = section == 'recommendations';
+    statisticsSection = section == 'statistics';
     unawaited(_loadObsidian());
     await _reload();
     if (mounted && Platform.isAndroid && widget.assets != null) {
@@ -176,12 +180,16 @@ class _LibraryPageState extends State<LibraryPage> {
     if (closeDrawer) Navigator.pop(context);
     if (busy ||
         loading ||
-        (!metadataSection && !recommendationsSection && reading == next)) {
+        (!metadataSection &&
+            !recommendationsSection &&
+            !statisticsSection &&
+            reading == next)) {
       return;
     }
     setState(() {
       metadataSection = false;
       recommendationsSection = false;
+      statisticsSection = false;
       reading = next;
       selectedBooks.clear();
       books = [];
@@ -232,6 +240,7 @@ class _LibraryPageState extends State<LibraryPage> {
       reading = true;
       metadataSection = false;
       recommendationsSection = false;
+      statisticsSection = false;
       selectedRoot = collectionFilter = null;
       favoritesOnly = false;
       query = '';
@@ -920,6 +929,7 @@ class _LibraryPageState extends State<LibraryPage> {
     setState(() {
       metadataSection = true;
       recommendationsSection = false;
+      statisticsSection = false;
       selectedBooks.clear();
     });
     await widget.repository.setMeta('library-section', 'metadata');
@@ -927,69 +937,49 @@ class _LibraryPageState extends State<LibraryPage> {
     unawaited(obsidianLibrary.sync());
   }
 
-  Widget _navigationDrawer({bool permanent = false}) {
-    final sidebar = ShelfSidebar(
-      section: recommendationsSection
-          ? 'recommendations'
-          : metadataSection
-          ? 'metadata'
-          : reading
-          ? 'reading'
-          : 'audio',
-      count: obsidianLibrary.entries.length,
-      enabled: !busy && !loading,
-      connected: obsidianLibrary.config != null,
-      onReading: () => _switchSection(true, closeDrawer: !permanent),
-      onAudio: () => _switchSection(false, closeDrawer: !permanent),
-      onLibrary: () => _metadataSection(closeDrawer: !permanent),
-      onRecommendations: () async {
-        if (!permanent) Navigator.pop(context);
-        if (busy || loading) return;
+  PepeSection get _section => statisticsSection
+      ? PepeSection.statistics
+      : recommendationsSection
+      ? PepeSection.recommendations
+      : metadataSection
+      ? PepeSection.library
+      : reading
+      ? PepeSection.books
+      : PepeSection.audio;
+
+  ShelfNavigation get _navigation => ShelfNavigation(
+    current: _section,
+    enabled: !busy && !loading,
+    onSettings: _appSettings,
+    onSelect: _selectSection,
+  );
+
+  Future<void> _selectSection(PepeSection section) async {
+    if (busy || loading) return;
+    switch (section) {
+      case PepeSection.books:
+        await _switchSection(true, closeDrawer: false);
+      case PepeSection.audio:
+        await _switchSection(false, closeDrawer: false);
+      case PepeSection.library:
+        await _metadataSection(closeDrawer: false);
+      case PepeSection.recommendations:
         setState(() {
           recommendationsSection = true;
           metadataSection = false;
+          statisticsSection = false;
           selectedBooks.clear();
         });
         await widget.repository.setMeta('library-section', 'recommendations');
-      },
-      onSettings: () {
-        if (!permanent) Navigator.pop(context);
-        _appSettings();
-      },
-      status: statusFilter,
-      statuses: {
-        for (final key in ['active', 'finished', 'planned'])
-          key: books.where((book) => _status(book) == key).length,
-      },
-      onStatus: metadataSection || recommendationsSection
-          ? null
-          : (next) {
-              if (!permanent) Navigator.pop(context);
-              setState(() => statusFilter = next);
-            },
-      onStatistics: recommendationsSection
-          ? null
-          : metadataSection
-          ? () {
-              if (!permanent) Navigator.pop(context);
-              _journal();
-            }
-          : () {
-              if (!permanent) Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => reading
-                      ? ReadingStatisticsPage(repository: widget.repository)
-                      : AudioStatisticsPage(
-                          repository: widget.repository,
-                          controller: widget.audio,
-                        ),
-                ),
-              );
-            },
-    );
-    return permanent ? sidebar : Drawer(child: sidebar);
+      case PepeSection.statistics:
+        setState(() {
+          statisticsSection = true;
+          recommendationsSection = false;
+          metadataSection = false;
+          selectedBooks.clear();
+        });
+        await widget.repository.setMeta('library-section', 'statistics');
+    }
   }
 
   void _journal() => Navigator.push(
@@ -1186,19 +1176,26 @@ class _LibraryPageState extends State<LibraryPage> {
 
   @override
   Widget build(BuildContext context) {
+    PepeRoot.navigation = _navigation;
+    if (statisticsSection) {
+      return StatisticsHubPage(
+        repository: widget.repository,
+        audio: widget.audio,
+        navigation: _navigation,
+        onJournal: _journal,
+      );
+    }
     if (recommendationsSection) {
       return RecommendationsPage(
         store: recommendations,
         catalog: bookCatalog,
-        drawer: _navigationDrawer(),
-        sidebar: _navigationDrawer(permanent: true),
+        navigation: _navigation,
       );
     }
     if (metadataSection) {
       return ObsidianLibraryPage(
         service: obsidianLibrary,
-        drawer: _navigationDrawer(),
-        sidebar: _navigationDrawer(permanent: true),
+        navigation: _navigation,
         onSettings: _appSettings,
       );
     }
@@ -1269,17 +1266,32 @@ class _LibraryPageState extends State<LibraryPage> {
         );
       });
     }
+    final heroCandidate =
+        statusFilter == 'all' &&
+            filter == 'all' &&
+            query.isEmpty &&
+            selectedRoot == null &&
+            collectionFilter == null &&
+            !favoritesOnly &&
+            selectedBooks.isEmpty &&
+            !loading
+        ? _heroBook()
+        : null;
+    final hero =
+        heroCandidate != null && visible.any((b) => b.id == heroCandidate.id)
+        ? heroCandidate
+        : null;
+    final listed = hero == null
+        ? visible
+        : visible.where((b) => b.id != hero.id).toList();
     return ShelfShell(
       title: selectedBooks.isNotEmpty
           ? 'Выбрано: ${selectedBooks.length}'
           : reading
           ? 'Книги'
           : 'Аудиокниги',
-      drawer: _navigationDrawer(),
-      sidebar: _navigationDrawer(permanent: true),
-      bottomNavigationBar: reading
-          ? null
-          : AudioMiniPlayer(controller: widget.audio),
+      navigation: _navigation,
+      bottomNavigationBar: AudioMiniPlayer(controller: widget.audio),
       actions: selectedBooks.isNotEmpty
           ? [
               IconButton(
@@ -1405,64 +1417,46 @@ class _LibraryPageState extends State<LibraryPage> {
               const SizedBox(width: 12),
             ],
       body: SafeArea(
-        child: Center(
+        child: Align(
+          alignment: Alignment.topLeft,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1200),
+            constraints: const BoxConstraints(maxWidth: 1480),
             child: CustomScrollView(
               slivers: [
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
                   sliver: SliverToBoxAdapter(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        ShelfIntro(
-                          title: reading ? 'Книги' : 'Аудиокниги',
-                          subtitle: reading
-                              ? 'Ваши истории, заметки и планы чтения.'
-                              : 'Хорошая история всегда рядом.',
-                        ),
-                        const SizedBox(height: 26),
-                        ShelfSummary(
-                          total: books.length,
-                          books: reading ? books.length : 0,
-                          audio: reading ? 0 : books.length,
-                          active: books
-                              .where((book) => _status(book) == 'active')
-                              .length,
-                          finished: books
-                              .where((book) => _status(book) == 'finished')
-                              .length,
-                          planned: books
-                              .where((book) => _status(book) == 'planned')
-                              .length,
-                          selected: statusFilter,
-                          onStatus: (next) =>
-                              setState(() => statusFilter = next),
-                        ),
-                        const SizedBox(height: 28),
-                        Text(
-                          'Ваша коллекция · ${visible.length}',
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
+                        _statusTabs(),
+                        if (hero != null) ...[
+                          const SizedBox(height: 16),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 820),
+                            child: _hero(hero),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
                 ),
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
                   sliver: SliverToBoxAdapter(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            Expanded(
-                              child: DropdownButton<String?>(
+                            Flexible(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 360,
+                                ),
+                                child: DropdownButton<String?>(
                                 isExpanded: true,
+                                underline: const SizedBox(),
                                 value: selectedRoot,
                                 items: [
                                   const DropdownMenuItem<String?>(
@@ -1480,6 +1474,7 @@ class _LibraryPageState extends State<LibraryPage> {
                                 ],
                                 onChanged: (v) =>
                                     setState(() => selectedRoot = v),
+                              ),
                               ),
                             ),
                             IconButton(
@@ -1511,26 +1506,6 @@ class _LibraryPageState extends State<LibraryPage> {
                               tooltip: 'Обновить список',
                               onPressed: busy ? null : _reload,
                               icon: const Icon(Icons.refresh),
-                            ),
-                            PopupMenuButton<ThemeMode>(
-                              tooltip: 'Тема оформления',
-                              icon: const Icon(Icons.brightness_6_outlined),
-                              onSelected: (mode) =>
-                                  ThemeScope.of(context)?.set(mode),
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(
-                                  value: ThemeMode.system,
-                                  child: Text('Как в системе'),
-                                ),
-                                PopupMenuItem(
-                                  value: ThemeMode.light,
-                                  child: Text('Светлая тема'),
-                                ),
-                                PopupMenuItem(
-                                  value: ThemeMode.dark,
-                                  child: Text('Тёмная тема'),
-                                ),
-                              ],
                             ),
                           ],
                         ),
@@ -1657,29 +1632,6 @@ class _LibraryPageState extends State<LibraryPage> {
                             ],
                           ),
                         ],
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              for (final entry in {
-                                'all': 'Все',
-                                'planned': 'Новые',
-                                'active': 'Начатые',
-                                'finished': 'Завершённые',
-                              }.entries)
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: ChoiceChip(
-                                    label: Text(entry.value),
-                                    selected: statusFilter == entry.key,
-                                    onSelected: (_) => setState(
-                                      () => statusFilter = entry.key,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
                         const SizedBox(height: 12),
                       ],
                     ),
@@ -1728,13 +1680,34 @@ class _LibraryPageState extends State<LibraryPage> {
                     ),
                   ),
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  sliver: SliverList.builder(
-                    itemCount: visible.length,
-                    itemBuilder: (_, i) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _bookCard(visible[i]),
-                    ),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  // Wide windows get a grid of covers; phones keep the list.
+                  sliver: SliverLayoutBuilder(
+                    builder: (context, constraints) {
+                      final width = constraints.crossAxisExtent;
+                      if (width < 900) {
+                        return SliverList.builder(
+                          itemCount: listed.length,
+                          itemBuilder: (_, i) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _bookCard(listed[i]),
+                          ),
+                        );
+                      }
+                      const gap = 18.0;
+                      final columns = (width / 210).floor().clamp(4, 8);
+                      final tile = (width - gap * (columns - 1)) / columns;
+                      return SliverGrid.builder(
+                        itemCount: listed.length,
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: columns,
+                          crossAxisSpacing: gap,
+                          mainAxisSpacing: gap,
+                          mainAxisExtent: tile * (reading ? 1.5 : 1) + 128,
+                        ),
+                        itemBuilder: (_, i) => _bookTile(listed[i], tile),
+                      );
+                    },
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 40)),
@@ -1899,10 +1872,7 @@ class _LibraryPageState extends State<LibraryPage> {
         : (summary!.position! / summary.total!).clamp(0.0, 1.0);
     return Material(
       color: selected ? scheme.primaryContainer : scheme.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: scheme.outlineVariant),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onLongPress: busy ? null : () => _toggleBook(book.id),
@@ -1976,11 +1946,7 @@ class _LibraryPageState extends State<LibraryPage> {
                       '${bookPrefs[book.id]?['favorite'] == true ? '★ ' : ''}${_title(book)}',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        height: 1.4,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: AppFonts.book(scheme.onSurface, size: 17),
                     ),
                     if (_authors(book).isNotEmpty)
                       Padding(
@@ -1990,7 +1956,7 @@ class _LibraryPageState extends State<LibraryPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 12.5,
                             color: scheme.onSurfaceVariant,
                           ),
                         ),
@@ -2033,7 +1999,7 @@ class _LibraryPageState extends State<LibraryPage> {
                           value: fraction,
                           minHeight: 3,
                           color: status == 'finished'
-                              ? const Color(0xff8ebfae)
+                              ? scheme.onSurfaceVariant
                               : scheme.primary,
                         ),
                       ),
@@ -2042,83 +2008,441 @@ class _LibraryPageState extends State<LibraryPage> {
                 ),
               ),
               const SizedBox(width: 4),
-              PopupMenuButton<String>(
-                tooltip: 'Действия с книгой',
-                onSelected: (v) => _bookMenu(book, v),
-                itemBuilder: (_) => [
-                  PopupMenuItem(
-                    value: 'obsidian',
-                    child: Text(
-                      obsidianLibrary.forBook(book.id) == null ||
-                              obsidianLibrary.forBook(book.id)!.state ==
-                                  'removed'
-                          ? 'Добавить в библиотеку'
-                          : libraryState(obsidianLibrary.forBook(book.id)!),
+              _bookMenuButton(book),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _bookMenuButton(LibraryRecord book) {
+    final audio = book.payload!['format'] == 'audio';
+    final asset = localAssets.where((a) => a.bookId == book.id).firstOrNull;
+    return PopupMenuButton<String>(
+      tooltip: 'Действия с книгой',
+      onSelected: (v) => _bookMenu(book, v),
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: 'obsidian',
+          child: Text(
+            obsidianLibrary.forBook(book.id) == null ||
+                    obsidianLibrary.forBook(book.id)!.state ==
+                        'removed'
+                ? 'Добавить в библиотеку'
+                : libraryState(obsidianLibrary.forBook(book.id)!),
+          ),
+        ),
+        if (Platform.isAndroid &&
+            widget.assets != null &&
+            asset != null)
+          const PopupMenuItem(
+            value: 'share',
+            child: Text('Поделиться файлом книги'),
+          ),
+        PopupMenuItem(
+          value: 'favorite',
+          child: Text(
+            bookPrefs[book.id]?['favorite'] == true
+                ? 'Убрать из избранного'
+                : 'В избранное',
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'collections',
+          child: Text('Коллекции книги'),
+        ),
+        if (!audio) ...[
+          const PopupMenuItem(
+            value: 'details',
+            child: Text('Карточка книги'),
+          ),
+          const PopupMenuItem(
+            value: 'reading-plan',
+            child: Text('План чтения'),
+          ),
+          const PopupMenuItem(
+            value: 'metadata',
+            child: Text('Обновить сведения из файла'),
+          ),
+        ],
+        const PopupMenuItem(
+          value: 'planned',
+          child: Text('Отметить новой'),
+        ),
+        const PopupMenuItem(
+          value: 'active',
+          child: Text('Отметить начатой'),
+        ),
+        const PopupMenuItem(
+          value: 'finished',
+          child: Text('Отметить завершённой'),
+        ),
+        const PopupMenuItem(
+          value: 'session',
+          child: Text('Записать сессию'),
+        ),
+        if (audio)
+          const PopupMenuItem(
+            value: 'folder',
+            child: Text('Переименовать / переместить папку'),
+          ),
+        if (audio)
+          const PopupMenuItem(
+            value: 'reconnect',
+            child: Text('Указать папку заново'),
+          ),
+      ],
+    );
+  }
+
+  LibraryRecord? _heroBook() {
+    final active = books.where((b) => _status(b) == 'active').toList();
+    if (active.isEmpty) return null;
+    String recency(LibraryRecord b) => reading
+        ? '${_textPosition(b)['updatedAt'] ?? ''}'
+        : audioRecent[b.id]?.toIso8601String() ?? '';
+    active.sort((a, b) => recency(b).compareTo(recency(a)));
+    return active.first;
+  }
+
+  Widget _statusTabs() {
+    final colors = PepeColors.of(context);
+    int count(String key) => key == 'all'
+        ? books.length
+        : books.where((b) => _status(b) == key).length;
+    final labels = {
+      'all': 'Все',
+      'active': reading ? 'Читаю' : 'Слушаю',
+      'planned': 'В планах',
+      'finished': reading ? 'Прочитано' : 'Прослушано',
+    };
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: colors.line)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final entry in labels.entries)
+              Semantics(
+                button: true,
+                selected: statusFilter == entry.key,
+                child: InkWell(
+                  key: ValueKey('status-tab:${entry.key}'),
+                  onTap: () => setState(() => statusFilter = entry.key),
+                  child: Container(
+                    height: 46,
+                    margin: const EdgeInsets.only(right: 22),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          width: 3,
+                          color: statusFilter == entry.key
+                              ? colors.accent
+                              : Colors.transparent,
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          entry.value,
+                          style: TextStyle(
+                            fontFamily: AppFonts.display,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: .3,
+                            color: statusFilter == entry.key
+                                ? colors.accent
+                                : colors.muted,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${count(entry.key)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: statusFilter == entry.key
+                                ? colors.accent
+                                : colors.muted,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  if (Platform.isAndroid &&
-                      widget.assets != null &&
-                      asset != null)
-                    const PopupMenuItem(
-                      value: 'share',
-                      child: Text('Поделиться файлом книги'),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _heroCover(LibraryRecord book) {
+    final audio = book.payload!['format'] == 'audio';
+    final colors = PepeColors.of(context);
+    final cover = _textInfo(book)['cover'];
+    return SizedBox(
+      width: 92,
+      height: audio ? 92 : 138,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: audio && widget.assets != null
+            ? AudioCover(
+                key: ValueKey('hero:${book.id}:$coverRevision'),
+                assets: widget.assets!,
+                bookId: book.id,
+              )
+            : !audio && cover != null
+            ? Image.file(
+                File(cover as String),
+                fit: BoxFit.cover,
+                cacheWidth: 280,
+                errorBuilder: (_, _, _) =>
+                    Icon(Icons.menu_book, size: 32, color: colors.onAccent),
+              )
+            : ColoredBox(
+                color: colors.onAccent.withValues(alpha: .14),
+                child: Icon(
+                  audio ? Icons.headphones_outlined : Icons.auto_stories_outlined,
+                  size: 32,
+                  color: colors.onAccent,
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _hero(LibraryRecord book) {
+    final colors = PepeColors.of(context);
+    final audio = book.payload!['format'] == 'audio';
+    final asset = localAssets.where((a) => a.bookId == book.id).firstOrNull;
+    final summary = audioSummaries[book.id];
+    final total = summary?.total, position = summary?.position;
+    final double fraction = !audio
+        ? _fraction(book).clamp(0.0, 1.0)
+        : total == null || position == null || total <= 0
+        ? 0.0
+        : (position / total).clamp(0.0, 1.0);
+    final open = busy || asset == null
+        ? null
+        : () => audio ? _openAudio(asset) : _openReader(asset);
+    return Material(
+      color: colors.accent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: open,
+        onLongPress: busy ? null : () => _toggleBook(book.id),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 4, 16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _heroCover(book),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      audio ? 'Сейчас слушаю' : 'Сейчас читаю',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: .4,
+                        color: colors.onAccent,
+                      ),
                     ),
-                  PopupMenuItem(
-                    value: 'favorite',
-                    child: Text(
-                      bookPrefs[book.id]?['favorite'] == true
-                          ? 'Убрать из избранного'
-                          : 'В избранное',
+                    const SizedBox(height: 4),
+                    Text(
+                      '${bookPrefs[book.id]?['favorite'] == true ? '★ ' : ''}${_title(book)}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppFonts.book(colors.onAccent, size: 20),
                     ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'collections',
-                    child: Text('Коллекции книги'),
-                  ),
-                  if (!audio) ...[
-                    const PopupMenuItem(
-                      value: 'details',
-                      child: Text('Карточка книги'),
+                    if (_authors(book).isNotEmpty)
+                      Text(
+                        _authors(book),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13, color: colors.onAccent),
+                      ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${(fraction * 100).round()}%',
+                      style: AppFonts.title(colors.onAccent, size: 40),
                     ),
-                    const PopupMenuItem(
-                      value: 'reading-plan',
-                      child: Text('План чтения'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'metadata',
-                      child: Text('Обновить сведения из файла'),
+                    const SizedBox(height: 10),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: colors.onAccent,
+                        foregroundColor: colors.accent,
+                      ),
+                      onPressed: open,
+                      child: Text(audio ? 'Слушать' : 'Читать'),
                     ),
                   ],
-                  const PopupMenuItem(
-                    value: 'planned',
-                    child: Text('Отметить новой'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'active',
-                    child: Text('Отметить начатой'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'finished',
-                    child: Text('Отметить завершённой'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'session',
-                    child: Text('Записать сессию'),
-                  ),
-                  if (audio)
-                    const PopupMenuItem(
-                      value: 'folder',
-                      child: Text('Переименовать / переместить папку'),
-                    ),
-                  if (audio)
-                    const PopupMenuItem(
-                      value: 'reconnect',
-                      child: Text('Указать папку заново'),
-                    ),
-                ],
+                ),
+              ),
+              Theme(
+                data: Theme.of(context).copyWith(
+                  iconTheme: IconThemeData(color: colors.onAccent),
+                  popupMenuTheme: Theme.of(
+                    context,
+                  ).popupMenuTheme.copyWith(iconColor: colors.onAccent),
+                ),
+                child: _bookMenuButton(book),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _coverPlaceholder(bool audio, PepeColors colors) => ColoredBox(
+    color: colors.raised,
+    child: Center(
+      child: Icon(
+        audio ? Icons.headphones_outlined : Icons.auto_stories_outlined,
+        size: 34,
+        color: colors.muted,
+      ),
+    ),
+  );
+
+  /// Cover tile used on wide windows.
+  Widget _bookTile(LibraryRecord book, double width) {
+    final audio = book.payload!['format'] == 'audio';
+    final asset = localAssets.where((a) => a.bookId == book.id).firstOrNull;
+    final summary = audioSummaries[book.id];
+    final playing = widget.audio?.current?.bookId == book.id;
+    final colors = PepeColors.of(context);
+    final status = _status(book);
+    final total = summary?.total, position = summary?.position;
+    final double? fraction = !audio
+        ? _fraction(book).clamp(0.0, 1.0)
+        : total == null || position == null || total <= 0
+        ? null
+        : (position / total).clamp(0.0, 1.0);
+    final cover = _textInfo(book)['cover'];
+    return Material(
+      color: playing
+          ? Color.lerp(colors.surface, colors.accent, .18)
+          : colors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onLongPress: busy ? null : () => _toggleBook(book.id),
+        onTap: busy
+            ? null
+            : selectedBooks.isNotEmpty
+            ? () => _toggleBook(book.id)
+            : asset == null
+            ? null
+            : () => audio ? _openAudio(asset) : _openReader(asset),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: width * (audio ? 1 : 1.5),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  audio && widget.assets != null
+                      ? AudioCover(
+                          key: ValueKey('tile:${book.id}:$coverRevision'),
+                          assets: widget.assets!,
+                          bookId: book.id,
+                        )
+                      : !audio && cover != null
+                      ? Image.file(
+                          File(cover as String),
+                          fit: BoxFit.cover,
+                          cacheWidth: (width * 2).round(),
+                          errorBuilder: (_, _, _) =>
+                              _coverPlaceholder(audio, colors),
+                        )
+                      : _coverPlaceholder(audio, colors),
+                  if (selectedBooks.isNotEmpty)
+                    Positioned(
+                      top: 4,
+                      left: 4,
+                      child: Checkbox(
+                        value: selectedBooks.contains(book.id),
+                        onChanged: busy ? null : (_) => _toggleBook(book.id),
+                      ),
+                    ),
+                  if (fraction != null)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: LinearProgressIndicator(
+                        value: fraction,
+                        minHeight: 4,
+                        color: status == 'finished'
+                            ? colors.muted
+                            : colors.accent,
+                        backgroundColor: Colors.black.withValues(alpha: .4),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 2, 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${bookPrefs[book.id]?['favorite'] == true ? '★ ' : ''}${_title(book)}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppFonts.book(colors.text, size: 15),
+                    ),
+                    if (_authors(book).isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(
+                          _authors(book),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: colors.muted),
+                        ),
+                      ),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        ShelfStatus(status),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            fraction == null
+                                ? (audio
+                                      ? 'Аудио'
+                                      : formatLabel(
+                                          book.payload!['format'] as String,
+                                        ))
+                                : '${(fraction * 100).round()}%',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 11, color: colors.muted),
+                          ),
+                        ),
+                        _bookMenuButton(book),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

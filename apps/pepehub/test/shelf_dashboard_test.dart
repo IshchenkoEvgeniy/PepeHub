@@ -127,15 +127,6 @@ void main() {
               ))
               .load();
         });
-        final sidebar = ShelfSidebar(
-          section: 'metadata',
-          count: 4,
-          connected: true,
-          onReading: () {},
-          onAudio: () {},
-          onLibrary: () {},
-          onSettings: () {},
-        );
         await tester.pumpWidget(
           RepaintBoundary(
             key: key,
@@ -149,8 +140,11 @@ void main() {
               theme: AppTheme.data(Brightness.dark),
               home: ObsidianLibraryPage(
                 service: service,
-                drawer: Drawer(child: sidebar),
-                sidebar: sidebar,
+                navigation: ShelfNavigation(
+                  current: PepeSection.library,
+                  onSelect: (_) {},
+                  onSettings: () {},
+                ),
                 onSettings: () {},
               ),
             ),
@@ -207,8 +201,13 @@ void main() {
         await tester.enterText(query, 'Хроники Дюны');
         await tester.pumpAndSettle();
         expect(find.text('Показано 1 из 4'), findsOneWidget);
-        await tester.ensureVisible(find.byTooltip('Показать карточками'));
+        // Covers are the default view; the list can be switched on and off.
+        expect(find.byType(GridView), findsOneWidget);
+        await tester.ensureVisible(find.byTooltip('Показать списком'));
         await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Показать списком'));
+        await tester.pumpAndSettle();
+        expect(find.byType(GridView), findsNothing);
         await tester.tap(find.byTooltip('Показать карточками'));
         await tester.pumpAndSettle();
         expect(find.byType(GridView), findsOneWidget);

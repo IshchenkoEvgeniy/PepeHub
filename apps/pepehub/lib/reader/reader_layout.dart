@@ -14,7 +14,7 @@ class ReaderPreferences {
     this.margin = 24,
     this.pageHeightFactor = 1,
     this.font = 'serif',
-    this.palette = 'sepia',
+    this.palette = 'dark',
     this.mode = 'seamless',
     this.showScrollbar = false,
     this.leftTap = 'previous',
@@ -34,7 +34,7 @@ class ReaderPreferences {
     palette:
         const ['light', 'dark', 'sepia', 'system'].contains(data['palette'])
         ? data['palette'] as String
-        : 'sepia',
+        : 'dark',
     mode:
         const ['pages', 'scroll', 'seamless', 'compact'].contains(data['mode'])
         ? data['mode'] as String
@@ -99,7 +99,7 @@ class ReaderPreferences {
     inherit: false,
     fontSize: size,
     height: spacing,
-    fontFamily: font == 'serif' ? 'ReaderLora' : null,
+    fontFamily: font == 'serif' ? 'ReaderLora' : 'Onest',
     color: color,
     letterSpacing: 0,
     wordSpacing: 0,

@@ -53,6 +53,19 @@ test('independent sessions merge; unknown or another owner book cannot receive s
     assert.equal((await getChanges(db,owner,0,100)).changes.length,3);
   } finally {db.close();}
 });
+test('player timezone offsets roundtrip without weakening session input validation',async()=>{
+  const db=new SqliteDatabase();try {
+    const b=book();await applyOperation(db,owner,b);
+    const player=book({entityType:'session',payload:{bookId:b.entityId,kind:'listening',startedAt:'2026-10-13T10:00:00Z',endedAt:'2026-10-13T10:01:00Z',activeSeconds:60,timezone:'UTC',source:'player',offsetMinutes:180} as Operation['payload']});
+    const op=parseOperation(player);
+    assert.equal((await applyOperation(db,owner,op)).status,'accepted');
+    const feed=await getChanges(db,owner,0,100);
+    assert.equal((feed.changes.at(-1)!.payload as {offsetMinutes:number}).offsetMinutes,180);
+    for(const offsetMinutes of [-841,841,1.5,'180',null])assert.throws(()=>parseOperation({...player,payload:{...player.payload,offsetMinutes}}));
+    assert.throws(()=>parseOperation({...player,payload:{...player.payload,path:'private'}}));
+    assert.deepEqual(await applyOperation(db,owner,op),await applyOperation(db,owner,op));
+  }finally{db.close();}
+});
 test('pagination has no gaps despite interleaved tenants and independent device acknowledgements',async()=>{
   const db=new SqliteDatabase();try {
     for(let i=0;i<5;i++){await applyOperation(db,owner,book());await applyOperation(db,'other',book());}

@@ -3,6 +3,7 @@ name: Windows release
 on:
   push:
     tags:
+      - 'v0.*'
       - 'v1.14.*'
   workflow_dispatch:
     inputs:
@@ -32,11 +33,22 @@ jobs:
         working-directory: apps/pepehub
         run: flutter pub get
 
-      - name: Analyze and run reader tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Validate server and bridge
+        run: |
+          npm ci
+          npm test
+          npm run typecheck
+
+      - name: Analyze and run application tests
         working-directory: apps/pepehub
         run: |
           flutter analyze --no-pub
-          flutter test --no-pub test/rich_reader_test.dart test/reader_layout_test.dart
+          flutter test --no-pub
 
       - name: Build Windows release
         working-directory: apps/pepehub
@@ -50,7 +62,7 @@ jobs:
         run: |
           $versionLine = Get-Content apps/pepehub/pubspec.yaml | Where-Object { $_ -match '^version:' } | Select-Object -First 1
           $appVersion = (($versionLine -replace '^version:\s*', '') -split '\+')[0].Trim()
-          $releaseVersion = $appVersion -replace '^0\.', '1.'
+          $releaseVersion = $appVersion
           $artifactName = "PepeHub-$releaseVersion-windows-x64.zip"
           $artifactPath = Join-Path $env:RUNNER_TEMP $artifactName
           $stagingPath = Join-Path $env:RUNNER_TEMP "PepeHub-$releaseVersion-windows-x64"
@@ -61,4 +73,13 @@ jobs:
           Compress-Archive -Path (Join-Path $stagingPath '*') -DestinationPath $artifactPath -CompressionLevel Optimal -Force
           $digest = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
           "$digest  $artifactName" | Set-Content -LiteralPath "$artifactPath.sha256" -Encoding ascii
-          gh release upload $env:RELEASE_TAG $artifactPath "$artifactPath.sha256" --clobber
+          $assets = (gh release view $env:RELEASE_TAG --json assets | ConvertFrom-Json).assets.name
+          if ($LASTEXITCODE -ne 0) { throw 'Release is unavailable.' }
+          if ($assets -contains $artifactName -and $assets -contains "$artifactName.sha256") {
+            Write-Output 'Windows package is already attached; preserving the published files.'
+          } elseif ($assets -contains $artifactName -or $assets -contains "$artifactName.sha256") {
+            throw 'Incomplete existing Windows package; refusing to overwrite it.'
+          } else {
+            gh release upload $env:RELEASE_TAG $artifactPath "$artifactPath.sha256"
+            if ($LASTEXITCODE -ne 0) { throw 'Windows package upload failed.' }
+          }

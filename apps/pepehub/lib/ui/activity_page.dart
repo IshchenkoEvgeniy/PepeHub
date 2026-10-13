@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../library/library_service.dart';
 import '../library/models.dart';
 import '../audio/audio_journal.dart' show dayKey;
+import 'pepe_widgets.dart';
+import 'shelf_components.dart';
 
 String activityTime(num ms) {
   final seconds = (ms / 1000).round(), minutes = seconds ~/ 60;
@@ -195,7 +197,41 @@ class _ActivityPageState extends State<ActivityPage> {
     }
   }
 
-  Widget _row(Map<String, dynamic> slot, Map<String, String> titles) {
+  String _status(Map<String, dynamic> slot) {
+    final v = slot['value'] as Map;
+    return slot['conflict'] != null
+        ? 'Конфликт'
+        : slot['operation'] != null || !sameMetadataValue(v, slot['synced'])
+        ? 'Ожидает обмена'
+        : 'Синхронизировано';
+  }
+
+  Widget _chip(ShelfPalette palette, String text, {bool strong = false}) =>
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: strong ? palette.accent : Colors.transparent,
+          border: Border.all(
+            color: strong ? palette.accent : palette.strongLine,
+          ),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: strong ? FontWeight.w700 : FontWeight.w500,
+            color: strong ? palette.onAccent : palette.muted,
+          ),
+        ),
+      );
+
+  Widget _row(
+    ShelfPalette palette,
+    Map<String, dynamic> slot,
+    Map<String, String> titles,
+    bool wide,
+  ) {
     final v = slot['value'] as Map, conflict = slot['conflict'] as Map?;
     final unit =
         const {
@@ -205,94 +241,249 @@ class _ActivityPageState extends State<ActivityPage> {
           'unknown': '',
         }[v['unit']] ??
         '';
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  v['mediaType'] == 'book' ? Icons.menu_book : Icons.headphones,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
+    final status = _status(slot);
+    final deleted = v['deleted'] == true;
+    final title = titles[v['itemId']] ?? 'Книга';
+    final menu = conflict == null
+        ? PopupMenuButton<String>(
+            tooltip: 'Действия с записью',
+            onSelected: (value) => value == 'edit'
+                ? _edit(slot)
+                : _delete(Map<String, dynamic>.from(v)),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'edit', child: Text('Редактировать')),
+              PopupMenuItem(value: 'delete', child: Text('Удалить')),
+            ],
+          )
+        : const SizedBox(width: 48);
+    final duration = Text(
+      activityTime(v['durationMs'] as num),
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
+        decoration: deleted ? TextDecoration.lineThrough : null,
+      ),
+    );
+    final progress = v['progress'] == 0 ? '—' : '${v['progress']} $unit';
+    final origin = v['origin'] == 'obsidian' ? 'Obsidian' : 'PepeHub';
+    final head = Row(
+      children: [
+        Icon(
+          v['mediaType'] == 'book'
+              ? Icons.menu_book_outlined
+              : Icons.headphones_outlined,
+          size: 20,
+          color: palette.muted,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          flex: 5,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppFonts.book(palette.text, size: 16),
+              ),
+              if ((v['note'] as String).isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
                   child: Text(
-                    titles[v['itemId']] ?? 'Книга',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    v['note'] as String,
+                    maxLines: wide ? 1 : 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: palette.muted),
                   ),
                 ),
-                if (conflict == null)
-                  PopupMenuButton<String>(
-                    onSelected: (value) => value == 'edit'
-                        ? _edit(slot)
-                        : _delete(Map<String, dynamic>.from(v)),
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(
-                        value: 'edit',
-                        child: Text('Редактировать'),
-                      ),
-                      PopupMenuItem(value: 'delete', child: Text('Удалить')),
+              if (!wide)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      duration,
+                      if (v['progress'] != 0)
+                        Text(
+                          '· $progress',
+                          style: TextStyle(fontSize: 12, color: palette.muted),
+                        ),
+                      _chip(palette, origin),
+                      _chip(palette, status, strong: conflict != null),
                     ],
                   ),
-              ],
+                ),
+            ],
+          ),
+        ),
+        if (wide) ...[
+          SizedBox(width: 100, child: duration),
+          SizedBox(
+            width: 130,
+            child: Text(
+              progress,
+              style: TextStyle(fontSize: 13, color: palette.muted),
             ),
-            const SizedBox(height: 8),
-            Text(
-              '${activityTime(v['durationMs'] as num)}${v['progress'] == 0 ? '' : ' · ${v['progress']} $unit'}',
+          ),
+          SizedBox(
+            width: 90,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _chip(palette, origin),
             ),
-            if ((v['note'] as String).isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(v['note'] as String),
+          ),
+          SizedBox(
+            width: 150,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _chip(palette, status, strong: conflict != null),
+            ),
+          ),
+        ],
+        menu,
+      ],
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: palette.line)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          head,
+          if (conflict != null)
+            Container(
+              margin: const EdgeInsets.only(top: 8, left: 32),
+              padding: const EdgeInsets.fromLTRB(14, 10, 8, 6),
+              decoration: BoxDecoration(
+                color: palette.raised,
+                borderRadius: BorderRadius.circular(12),
               ),
-            const SizedBox(height: 6),
-            Text(
-              '${v['origin'] == 'obsidian' ? 'Obsidian' : 'PepeHub'} · ${conflict != null
-                  ? 'Конфликт'
-                  : slot['operation'] != null || !sameMetadataValue(v, slot['synced'])
-                  ? 'Ожидает обмена'
-                  : 'Синхронизировано'}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            if (conflict != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                'На сервере: ${activityTime(conflict['entry']['durationMs'] as num)}${conflict['entry']['deleted'] == true ? ' · удалено' : ''}',
-              ),
-              Wrap(
-                spacing: 8,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextButton(
-                    onPressed: () => _run(
-                      () => widget.library.history!.resolve(
-                        v['id'] as String,
-                        useRemote: true,
-                      ),
-                    ),
-                    child: const Text('Взять с сервера'),
+                  Text(
+                    'Здесь: ${activityTime(v['durationMs'] as num)} · На сервере: ${activityTime(conflict['entry']['durationMs'] as num)}${conflict['entry']['deleted'] == true ? ' · удалено' : ''}',
+                    style: const TextStyle(fontSize: 13),
                   ),
-                  TextButton(
-                    onPressed: () => _run(
-                      () => widget.library.history!.resolve(
-                        v['id'] as String,
-                        useRemote: false,
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      TextButton(
+                        onPressed: () => _run(
+                          () => widget.library.history!.resolve(
+                            v['id'] as String,
+                            useRemote: true,
+                          ),
+                        ),
+                        child: const Text('Взять с сервера'),
                       ),
-                    ),
-                    child: const Text('Оставить локальную'),
+                      TextButton(
+                        onPressed: () => _run(
+                          () => widget.library.history!.resolve(
+                            v['id'] as String,
+                            useRemote: false,
+                          ),
+                        ),
+                        child: const Text('Оставить локальную'),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ],
-        ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filters(
+    ShelfPalette palette,
+    int groups,
+    int count,
+    int total,
+    int conflicts,
+    bool wide,
+  ) {
+    final search = TextField(
+      decoration: const InputDecoration(
+        labelText: 'Поиск по книге и заметке',
+        prefixIcon: Icon(Icons.search),
+      ),
+      onChanged: (v) => setState(() => this.search = v),
+    );
+    final kinds = PepeChoices<String>(
+      options: const [
+        ('all', 'Все'),
+        ('book', 'Книги'),
+        ('audiobook', 'Аудиокниги'),
+      ],
+      selected: type,
+      onSelect: (v) => setState(() => type = v),
+    );
+    final periods = PepeChoices<int>(
+      options: const [(0, 'Всё время'), (7, '7 дней'), (30, '30 дней')],
+      selected: days,
+      onSelect: (v) => setState(() => days = v),
+    );
+    final totals = Wrap(
+      spacing: 24,
+      runSpacing: 12,
+      children: [
+        PepeFigure(activityTime(total), 'Всего', size: 26),
+        PepeFigure('$groups', 'Дней', size: 26),
+        PepeFigure('$count', 'Записей', size: 26),
+        if (conflicts > 0)
+          PepeFigure(
+            '$conflicts',
+            'Конфликтов',
+            size: 26,
+            color: palette.accent,
+          ),
+      ],
+    );
+    if (!wide) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          totals,
+          const SizedBox(height: 16),
+          search,
+          const SizedBox(height: 12),
+          kinds,
+          const SizedBox(height: 8),
+          periods,
+        ],
+      );
+    }
+    return PepePanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          search,
+          const SizedBox(height: 20),
+          const PepeCaption('Тип'),
+          const SizedBox(height: 8),
+          kinds,
+          const SizedBox(height: 20),
+          const PepeCaption('Период'),
+          const SizedBox(height: 8),
+          periods,
+          const SizedBox(height: 22),
+          totals,
+        ],
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final palette = ShelfPalette.of(context);
+    final wide = pepeWide(context);
     final titles = {
       for (final e in widget.library.entries) e.item.id: e.item.title,
     };
@@ -314,99 +505,197 @@ class _ActivityPageState extends State<ActivityPage> {
     final total = visible
         .where((s) => s['value']['deleted'] != true)
         .fold<int>(0, (sum, s) => sum + (s['value']['durationMs'] as int));
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.itemId == null
-              ? 'Журнал чтения и прослушивания'
-              : titles[widget.itemId] ?? 'Журнал книги',
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Синхронизировать',
-            onPressed: widget.library.syncing ? null : widget.library.sync,
-            icon: const Icon(Icons.sync),
+    final conflicts = slots.where((s) => s['conflict'] != null).length;
+    final waiting = slots
+        .where((s) => _status(s) == 'Ожидает обмена')
+        .length;
+
+    final notices = <Widget>[
+      if (widget.library.config == null)
+        PepePanel(
+          outlined: true,
+          child: Text(
+            'Подключите Obsidian в настройках. Журнал переносится для книг, связанных с карточками библиотеки.',
+            style: TextStyle(color: palette.muted),
           ),
-        ],
-      ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(20),
+        ),
+      if (error != null || widget.library.error != null)
+        PepePanel(
+          outlined: true,
+          child: Text(
+            [?error, ?widget.library.error].join('\n'),
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+      if (conflicts > 0)
+        Material(
+          color: palette.accent,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+            child: Row(
               children: [
-                if (widget.library.config == null)
-                  const Text(
-                    'Подключите Obsidian в настройках. Журнал переносится для книг, связанных с карточками библиотеки.',
-                  ),
-                if (error != null)
-                  Text(
-                    error!,
+                Icon(Icons.call_split, color: palette.onAccent),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Конфликтов: $conflicts. Запись изменили и здесь, и в Obsidian — выберите, какую версию оставить.',
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
+                      color: palette.onAccent,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                if (widget.library.error != null)
-                  Text(
-                    widget.library.error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                Text(
-                  '${groups.length} дней · ${visible.length} записей · ${activityTime(total)}',
-                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Поиск по книге и заметке',
-                    prefixIcon: Icon(Icons.search),
-                  ),
-                  onChanged: (v) => setState(() => search = v),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final entry in const {
-                      'all': 'Все',
-                      'book': 'Книги',
-                      'audiobook': 'Аудиокниги',
-                    }.entries)
-                      ChoiceChip(
-                        label: Text(entry.value),
-                        selected: type == entry.key,
-                        onSelected: (_) => setState(() => type = entry.key),
-                      ),
-                    for (final count in [0, 7, 30])
-                      ChoiceChip(
-                        label: Text(count == 0 ? 'Всё время' : '$count дней'),
-                        selected: days == count,
-                        onSelected: (_) => setState(() => days = count),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                if (visible.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'За этот период записей нет. Для переноса локального журнала свяжите книгу с карточкой Obsidian.',
-                    ),
-                  ),
-                for (final group in groups.entries) ...[
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Text(
-                      '${group.key} · ${activityTime(group.value.where((s) => s['value']['deleted'] != true).fold<int>(0, (sum, s) => sum + (s['value']['durationMs'] as int)))}',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                  for (final slot in group.value) _row(slot, titles),
-                ],
               ],
             ),
+          ),
+        ),
+    ];
+
+    final table = <Widget>[
+      if (wide)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: DefaultTextStyle(
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: .6,
+              color: palette.muted,
+            ),
+            child: const Row(
+              children: [
+                SizedBox(width: 32),
+                Expanded(flex: 5, child: Text('КНИГА')),
+                SizedBox(width: 100, child: Text('ВРЕМЯ')),
+                SizedBox(width: 130, child: Text('ПРОГРЕСС')),
+                SizedBox(width: 90, child: Text('ИСТОЧНИК')),
+                SizedBox(width: 150, child: Text('СТАТУС')),
+                SizedBox(width: 48),
+              ],
+            ),
+          ),
+        ),
+      if (visible.isEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Text(
+            'За этот период записей нет. Для переноса локального журнала свяжите книгу с карточкой Obsidian.',
+            style: TextStyle(color: palette.muted),
+          ),
+        ),
+      for (final group in groups.entries) ...[
+        Padding(
+          padding: const EdgeInsets.only(top: 18, bottom: 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _dayTitle(group.key),
+                  style: AppFonts.title(palette.text, size: 18),
+                ),
+              ),
+              Text(
+                activityTime(
+                  group.value
+                      .where((s) => s['value']['deleted'] != true)
+                      .fold<int>(
+                        0,
+                        (sum, s) => sum + (s['value']['durationMs'] as int),
+                      ),
+                ),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: palette.muted,
+                ),
+              ),
+            ],
+          ),
+        ),
+        for (final slot in group.value) _row(palette, slot, titles, wide),
+      ],
+    ];
+
+    final filters = _filters(
+      palette,
+      groups.length,
+      visible.length,
+      total,
+      conflicts,
+      wide,
     );
+
+    return PepeSubpage(
+      title: widget.itemId == null
+          ? 'Журнал'
+          : titles[widget.itemId] ?? 'Журнал книги',
+      back: widget.itemId == null ? 'Статистика' : 'Журнал',
+      section: PepeSection.statistics,
+      subtitle: widget.itemId == null
+          ? 'Чтение и прослушивание · ${waiting == 0 ? 'всё синхронизировано' : 'ожидают обмена: $waiting'}'
+          : null,
+      actions: [
+        IconButton(
+          tooltip: 'Синхронизировать',
+          onPressed: widget.library.syncing ? null : widget.library.sync,
+          icon: widget.library.syncing
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.sync),
+        ),
+      ],
+      children: loading
+          ? const [
+              Padding(
+                padding: EdgeInsets.all(40),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ]
+          : wide
+          ? [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: 300, child: filters),
+                  const SizedBox(width: 24),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final n in notices) ...[
+                          n,
+                          const SizedBox(height: 12),
+                        ],
+                        ...table,
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ]
+          : [
+              for (final n in notices) ...[n, const SizedBox(height: 12)],
+              filters,
+              const SizedBox(height: 8),
+              ...table,
+            ],
+    );
+  }
+
+  String _dayTitle(String key) {
+    final date = DateTime.tryParse(key);
+    if (date == null) return key;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final difference = today.difference(date).inDays;
+    final label = difference == 0
+        ? 'Сегодня'
+        : difference == 1
+        ? 'Вчера'
+        : pepeWeekdays[date.weekday - 1];
+    return '${pepeDate(date)} · $label';
   }
 }

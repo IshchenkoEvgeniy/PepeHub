@@ -1,7 +1,7 @@
 name: pepehub
 description: "Offline library and activity journal with Obsidian integration."
 publish_to: 'none'
-version: 0.18.2+48
+version: 0.19.0+49
 
 environment:
   sdk: ^3.13.3
@@ -43,6 +43,9 @@ flutter:
     - assets/fonts/Lora-OFL.txt
     - assets/fonts/Manrope-OFL.txt
     - assets/fonts/Manrope-FONTLOG.txt
+    - assets/fonts/Oswald-OFL.txt
+    - assets/fonts/CormorantGaramond-OFL.txt
+    - assets/fonts/Onest-OFL.txt
   fonts:
     - family: Manrope
       fonts:
@@ -50,3 +53,14 @@ flutter:
     - family: ReaderLora
       fonts:
         - asset: assets/fonts/Lora.ttf
+    - family: Oswald
+      fonts:
+        - asset: assets/fonts/Oswald.ttf
+    - family: CormorantGaramond
+      fonts:
+        - asset: assets/fonts/CormorantGaramond.ttf
+        - asset: assets/fonts/CormorantGaramond-Italic.ttf
+          style: italic
+    - family: Onest
+      fonts:
+        - asset: assets/fonts/Onest.ttf

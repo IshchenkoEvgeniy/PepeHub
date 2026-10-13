@@ -17,6 +17,7 @@ import 'reading_library.dart';
 import 'reading_notes_page.dart';
 import 'reading_activity.dart';
 import 'reading_log.dart';
+import '../ui/app_theme.dart';
 import '../ui/reading_statistics_page.dart';
 import 'epub.dart';
 import 'reader_resources.dart';
@@ -135,8 +136,9 @@ class _ReaderPageState extends State<ReaderPage>
   ({int chapter, int offset})? pinnedChapter;
   Future<void> writes = Future.value();
   Timer? debounce;
-  bool allowPop = false, closing = false;
+  bool allowPop = false, closing = false, tocOpen = true;
   double? dragging;
+  int? todayMs;
   List<ReadingNote> notes = [];
   ReadingActivity? activity;
   String? activityError, displayTitle;
@@ -330,6 +332,7 @@ class _ReaderPageState extends State<ReaderPage>
         return;
       }
       activity = tracker;
+      _loadToday();
       if (!foreground || !routeVisible || panels > 0 || !viewportReady) {
         await tracker.pause('loading');
       }
@@ -535,6 +538,7 @@ class _ReaderPageState extends State<ReaderPage>
 
   void _go(int c, int at, {bool remember = true, bool reading = false}) {
     if (chapter == c && offset == at) return;
+    if (c != chapter) _loadToday();
     activity?.move(
       document!.starts[c] + at,
       jump: !reading,
@@ -831,21 +835,25 @@ class _ReaderPageState extends State<ReaderPage>
         preferences.palette == 'dark' ||
         preferences.palette == 'system' &&
             Theme.of(context).brightness == Brightness.dark;
+    final pepe = PepeColors.of(context);
     final background = dark
-        ? const Color(0xff20262a)
+        ? pepe.background
         : preferences.palette == 'sepia'
         ? const Color(0xfff3e8d0)
         : const Color(0xfffafafa);
-    final foreground = dark ? const Color(0xffdedbd3) : const Color(0xff302b24);
+    final foreground = dark
+        ? Color.lerp(pepe.text, pepe.muted, .15)!
+        : const Color(0xff302b24);
     final theme = ThemeData(
       useMaterial3: true,
       brightness: dark ? Brightness.dark : Brightness.light,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xff557b70),
+        seedColor: dark ? pepe.accent : const Color(0xff557b70),
         brightness: dark ? Brightness.dark : Brightness.light,
         surface: background,
       ),
       scaffoldBackgroundColor: background,
+      extensions: [pepe],
     );
     final progress = d.length == 0
         ? 0.0
@@ -877,78 +885,7 @@ class _ReaderPageState extends State<ReaderPage>
             resizeToAvoidBottomInset: false,
             appBar: fullscreen
                 ? null
-                : AppBar(
-                    title: Text(
-                      displayTitle ?? d.book.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    actions: [
-                      IconButton(
-                        tooltip: 'Статистика чтения и журнал',
-                        icon: const Icon(Icons.bar_chart_outlined),
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute<void>(
-                            builder: (_) => ReadingStatisticsPage(
-                              repository: widget.repository,
-                              bookId: widget.asset.bookId,
-                            ),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Заметки книги',
-                        icon: const Icon(Icons.edit_note),
-                        onPressed: () => _notes(context),
-                      ),
-                      IconButton(
-                        tooltip: pinnedChapter == null
-                            ? 'Закрепить эту главу'
-                            : 'Открепить главу',
-                        icon: Icon(
-                          pinnedChapter == null
-                              ? Icons.push_pin_outlined
-                              : Icons.push_pin,
-                        ),
-                        onPressed: _toggleChapterPin,
-                      ),
-                      if (history.isNotEmpty)
-                        IconButton(
-                          tooltip: 'Вернуться к прежнему месту',
-                          icon: const Icon(Icons.undo),
-                          onPressed: () {
-                            final target = history.removeLast();
-                            if (chapter == target.chapter &&
-                                offset == target.offset) {
-                              setState(() {});
-                              _save();
-                            } else {
-                              _go(
-                                target.chapter,
-                                target.offset,
-                                remember: false,
-                              );
-                            }
-                          },
-                        ),
-                      IconButton(
-                        tooltip: 'Оглавление',
-                        icon: const Icon(Icons.list),
-                        onPressed: () => _contents(context),
-                      ),
-                      IconButton(
-                        tooltip: 'Поиск по книге',
-                        icon: const Icon(Icons.search),
-                        onPressed: () => _search(context),
-                      ),
-                      IconButton(
-                        tooltip: 'Оформление чтения',
-                        icon: const Icon(Icons.text_fields),
-                        onPressed: () => _settings(context),
-                      ),
-                    ],
-                  ),
+                : _header(context, d, background, foreground, progress),
             floatingActionButton: fullscreen
                 ? Column(
                     mainAxisSize: MainAxisSize.min,
@@ -980,42 +917,16 @@ class _ReaderPageState extends State<ReaderPage>
               onPointerDown: (_) => activity?.touch(),
               onPointerSignal: (_) => activity?.touch(),
               child: SafeArea(
-                child: Center(
+                child: LayoutBuilder(
+                  builder: (context, outer) {
+                  final wideLayout = !fullscreen && outer.maxWidth >= 1000;
+                  final showToc = wideLayout && tocOpen;
+                  final showNotes = wideLayout && outer.maxWidth >= 1250;
+                  final reader = Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 900),
                     child: Column(
                       children: [
-                        if (!fullscreen)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 6,
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    '${chapter + 1}/${d.texts.length} · ${d.book.chapters[chapter].title}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.labelMedium,
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Полный экран',
-                                  onPressed: _toggleFullscreen,
-                                  icon: const Icon(Icons.fullscreen),
-                                ),
-                                IconButton(
-                                  tooltip: 'Сноски и иллюстрации',
-                                  onPressed: () => _resources(context),
-                                  icon: const Icon(
-                                    Icons.photo_library_outlined,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                         if (!fullscreen && (linkReturn != null || pinnedAway))
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1181,76 +1092,570 @@ class _ReaderPageState extends State<ReaderPage>
                             },
                           ),
                         ),
-                        if (!fullscreen &&
-                            const [
-                              'pages',
-                              'compact',
-                            ].contains(preferences.mode))
-                          SizedBox(
-                            height: 48,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
+                      ],
+                    ),
+                  ),
+                );
+                  final body = !showToc && !showNotes
+                      ? reader
+                      : Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (showToc)
+                              SizedBox(
+                                width: 280,
+                                child: _contentsPanel(d, foreground, background),
                               ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.menu_book_outlined,
-                                    size: 18,
-                                  ),
-                                  Expanded(
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        IgnorePointer(
-                                          child: CustomPaint(
-                                            painter: ReaderChapterTicksPainter(
-                                              flow == null
-                                                  ? const [0.0, 1.0]
-                                                  : [
-                                                      0,
-                                                      for (final start
-                                                          in flow.starts.skip(
-                                                            1,
-                                                          ))
-                                                        flow.text.isEmpty
-                                                            ? 0.0
-                                                            : start /
-                                                                  flow
-                                                                      .text
-                                                                      .length,
-                                                    ],
-                                              theme.colorScheme.onSurface
-                                                  .withValues(alpha: .3),
-                                            ),
-                                          ),
-                                        ),
-                                        Slider(
-                                          value: (dragging ?? progress).clamp(
-                                            0,
-                                            1,
-                                          ),
-                                          semanticFormatterCallback: (v) =>
-                                              '${(v * 100).round()} процентов книги',
-                                          onChanged: (v) =>
-                                              setState(() => dragging = v),
-                                          onChangeEnd: (v) {
-                                            setState(() => dragging = null);
-                                            final target = d.locate(v);
-                                            _go(target.chapter, target.offset);
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width: 48,
-                                    child: Text(
-                                      '${((dragging ?? progress) * 100).toStringAsFixed(1)}%',
-                                      style: theme.textTheme.labelSmall,
-                                    ),
-                                  ),
-                                ],
+                            Expanded(child: reader),
+                            if (showNotes)
+                              SizedBox(
+                                width: 300,
+                                child: _notesPanel(d, foreground, background),
+                              ),
+                          ],
+                        );
+                  if (fullscreen) return body;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: body),
+                      _footer(d, progress, foreground),
+                    ],
+                  );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _loadToday() async {
+    try {
+      final rows = (await ReadingLibrary(
+        widget.repository,
+      ).entries('reading-session:')).values.toList();
+      final now = DateTime.now();
+      final totals = readingTotals(
+        rows,
+        start: DateTime(now.year, now.month, now.day),
+      );
+      if (mounted) setState(() => todayMs = totals.milliseconds);
+    } catch (_) {}
+  }
+
+  void _undoJump() {
+    final target = history.removeLast();
+    if (chapter == target.chapter && offset == target.offset) {
+      setState(() {});
+      _save();
+    } else {
+      _go(target.chapter, target.offset, remember: false);
+    }
+  }
+
+  String _chapterLine(ReaderDocument d) {
+    final title = d.book.chapters[chapter].title.trim();
+    if (title.isEmpty) return 'Глава ${chapter + 1} из ${d.texts.length}';
+    return title.toLowerCase().startsWith('глава')
+        ? title
+        : 'Глава ${chapter + 1}. $title';
+  }
+
+  PreferredSizeWidget _header(
+    BuildContext context,
+    ReaderDocument d,
+    Color background,
+    Color ink,
+    double progress,
+  ) {
+    final wide = MediaQuery.sizeOf(context).width >= 1000;
+    final raised = Color.lerp(background, ink, .12)!;
+    Widget pill(
+      String tooltip,
+      String label,
+      VoidCallback? onTap, {
+      bool on = false,
+    }) => Tooltip(
+      message: tooltip,
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          foregroundColor: on ? ink : ink.withValues(alpha: .62),
+          backgroundColor: on ? raised : Colors.transparent,
+          shape: const StadiumBorder(),
+          minimumSize: const Size(0, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          textStyle: TextStyle(fontFamily: AppFonts.body, fontSize: 13),
+        ),
+        child: Text(label),
+      ),
+    );
+    Widget icon(String tooltip, IconData data, VoidCallback? onTap) =>
+        IconButton(
+          tooltip: tooltip,
+          visualDensity: VisualDensity.compact,
+          color: ink.withValues(alpha: .8),
+          onPressed: onTap,
+          icon: Icon(data, size: 22),
+        );
+    final pinTooltip = pinnedChapter == null
+        ? 'Закрепить эту главу'
+        : 'Открепить главу';
+    final tools = wide
+        ? <Widget>[
+            if (history.isNotEmpty)
+              icon('Вернуться к прежнему месту', Icons.undo, _undoJump),
+            icon(
+              pinTooltip,
+              pinnedChapter == null ? Icons.push_pin_outlined : Icons.push_pin,
+              _toggleChapterPin,
+            ),
+            pill(
+              'Оглавление',
+              'Оглавление',
+              () => setState(() => tocOpen = !tocOpen),
+              on: tocOpen,
+            ),
+            pill('Поиск по книге', 'Поиск', () => _search(context)),
+            pill('Оформление чтения', 'Aa', () => _settings(context)),
+            pill(
+              'Заметки книги',
+              notes.isEmpty ? 'Заметки' : 'Заметки ${notes.length}',
+              () => _notes(context),
+            ),
+            pill('Сноски и иллюстрации', 'Сноски', () => _resources(context)),
+            pill(
+              'Статистика чтения и журнал',
+              'Статистика',
+              () => _statistics(context),
+            ),
+            pill('Полный экран', 'Полный экран', _toggleFullscreen),
+          ]
+        : <Widget>[
+            if (history.isNotEmpty)
+              icon('Вернуться к прежнему месту', Icons.undo, _undoJump),
+            icon('Оглавление', Icons.list, () => _contents(context)),
+            icon('Поиск по книге', Icons.search, () => _search(context)),
+            icon('Оформление чтения', Icons.text_fields, () => _settings(context)),
+            icon('Заметки книги', Icons.edit_note, () => _notes(context)),
+            icon('Полный экран', Icons.fullscreen, _toggleFullscreen),
+            PopupMenuButton<String>(
+              tooltip: 'Другие действия',
+              iconColor: ink.withValues(alpha: .8),
+              onSelected: (value) {
+                if (value == 'pin') {
+                  _toggleChapterPin();
+                } else if (value == 'resources') {
+                  _resources(context);
+                } else {
+                  _statistics(context);
+                }
+              },
+              itemBuilder: (_) => [
+                PopupMenuItem(value: 'pin', child: Text(pinTooltip)),
+                const PopupMenuItem(
+                  value: 'resources',
+                  child: Text('Сноски и иллюстрации'),
+                ),
+                const PopupMenuItem(
+                  value: 'statistics',
+                  child: Text('Статистика чтения и журнал'),
+                ),
+              ],
+            ),
+          ];
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(62),
+      child: Material(
+        color: background,
+        child: SafeArea(
+          bottom: false,
+          child: Container(
+            height: 62,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: ink.withValues(alpha: .12)),
+              ),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'Закрыть книгу',
+                  color: ink,
+                  onPressed: () => Navigator.maybePop(context),
+                  icon: const Icon(Icons.chevron_left, size: 26),
+                ),
+                const SizedBox(width: 2),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayTitle ?? d.book.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppFonts.book(ink, size: wide ? 21 : 18),
+                      ),
+                      Text(
+                        _chapterLine(d),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: AppFonts.body,
+                          fontSize: 12,
+                          color: ink.withValues(alpha: .58),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ...tools,
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _statistics(BuildContext context) => Navigator.push(
+    context,
+    MaterialPageRoute<void>(
+      builder: (_) => ReadingStatisticsPage(
+        repository: widget.repository,
+        bookId: widget.asset.bookId,
+      ),
+    ),
+  );
+
+  Widget _footer(ReaderDocument d, double progress, Color ink) {
+    final value = (dragging ?? progress).clamp(0.0, 1.0);
+    final ticks = <double>[
+      if (d.length > 0)
+        for (var i = 1; i < d.texts.length; i++) d.starts[i] / d.length,
+    ];
+    final left = (d.texts[chapter].length - offset).clamp(0, 1 << 40);
+    final tracker = activity;
+    final perMinute =
+        tracker != null &&
+            tracker.speedActiveMs >= 60000 &&
+            tracker.speedChars >= 300
+        ? tracker.speedChars / (tracker.speedActiveMs / 60000)
+        : null;
+    final minutesLeft = perMinute == null ? null : (left / perMinute).ceil();
+    final muted = TextStyle(
+      fontFamily: AppFonts.body,
+      fontSize: 12,
+      color: ink.withValues(alpha: .58),
+    );
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 10),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: ink.withValues(alpha: .12))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ReaderProgressBar(
+            value: value,
+            ticks: ticks,
+            ink: ink,
+            accent: PepeColors.of(context).accent,
+            onChanged: (v) => setState(() => dragging = v),
+            onChangeEnd: (v) {
+              setState(() => dragging = null);
+              final target = d.locate(v);
+              _go(target.chapter, target.offset);
+            },
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 12,
+            runSpacing: 2,
+            children: [
+              Text(
+                '${(value * 100).toStringAsFixed(dragging == null ? 0 : 1)}% книги · глава ${chapter + 1} из ${d.texts.length}',
+                style: muted,
+              ),
+              if (minutesLeft != null)
+                Text(
+                  minutesLeft <= 1
+                      ? 'до конца главы меньше минуты'
+                      : 'до конца главы около $minutesLeft мин',
+                  style: muted,
+                ),
+              if (todayMs != null)
+                Text(
+                  'сегодня ${todayMs! ~/ 60000} мин чтения',
+                  style: muted,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _contentsPanel(ReaderDocument d, Color ink, Color background) {
+    final pepe = PepeColors.of(context);
+    final raised = Color.lerp(background, ink, .1)!;
+    final pinned = pinnedChapter;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(right: BorderSide(color: ink.withValues(alpha: .12))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 18, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Text(
+                    'ОГЛАВЛЕНИЕ',
+                    style: TextStyle(
+                      fontFamily: AppFonts.display,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: .5,
+                      color: ink,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${d.texts.length} глав',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: ink.withValues(alpha: .55),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+              itemCount: d.texts.length,
+              itemBuilder: (context, i) {
+                final current = i == chapter;
+                final length = d.texts[i].length;
+                final mark = pinned?.chapter == i
+                    ? 'закреплена'
+                    : current
+                    ? '${length == 0 ? 0 : (offset * 100 / length).round()}%'
+                    : i < chapter
+                    ? '✓'
+                    : '';
+                return Material(
+                  color: current ? raised : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: current ? null : () => _go(i, 0),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 26,
+                            child: Text(
+                              '${i + 1}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: current
+                                    ? pepe.accent
+                                    : ink.withValues(alpha: .5),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              d.book.chapters[i].title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: AppFonts.body,
+                                fontSize: 13,
+                                fontWeight: current
+                                    ? FontWeight.w700
+                                    : FontWeight.w400,
+                                color: i < chapter
+                                    ? ink.withValues(alpha: .55)
+                                    : ink,
+                              ),
+                            ),
+                          ),
+                          if (mark.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 6),
+                              child: Text(
+                                mark,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: current
+                                      ? pepe.accent
+                                      : ink.withValues(alpha: .5),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          if (pinned != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: Material(
+                color: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: ink.withValues(alpha: .2)),
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: _returnToPinnedChapter,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      'Глава ${pinned.chapter + 1} закреплена. Вернуться к ней можно одним нажатием, где бы вы ни были в книге.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.45,
+                        color: ink.withValues(alpha: .6),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _notesPanel(ReaderDocument d, Color ink, Color background) {
+    final pepe = PepeColors.of(context);
+    final card = Color.lerp(background, ink, .06)!;
+    final here = notes.where((n) => n.chapter == chapter).toList()
+      ..sort((a, b) => a.start.compareTo(b.start));
+    final length = d.texts[chapter].length;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(left: BorderSide(color: ink.withValues(alpha: .12))),
+      ),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+        children: [
+          Text(
+            'В ЭТОЙ ГЛАВЕ',
+            style: TextStyle(
+              fontFamily: AppFonts.display,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              letterSpacing: .5,
+              color: ink,
+            ),
+          ),
+          if (here.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                'Заметок пока нет. Выделите текст и нажмите «Заметка».',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.45,
+                  color: ink.withValues(alpha: .55),
+                ),
+              ),
+            ),
+          for (final note in here)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Material(
+                color: card,
+                borderRadius: BorderRadius.circular(14),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => _openNote(note),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color:
+                                    noteColors[note.color] ??
+                                    noteColors['yellow'],
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              length == 0
+                                  ? 'Глава ${chapter + 1}'
+                                  : '${(note.start * 100 / length).round()}% главы',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: ink.withValues(alpha: .55),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          note.quote.isEmpty ? '—' : note.quote,
+                          maxLines: 5,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: AppFonts.reading,
+                            fontStyle: FontStyle.italic,
+                            fontSize: 14,
+                            height: 1.45,
+                            color: ink,
+                          ),
+                        ),
+                        if (note.comment.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              note.comment,
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 13, color: ink),
+                            ),
+                          ),
+                        if (note.tags.isNotEmpty || note.characters.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              [
+                                for (final t in note.tags) '#$t',
+                                for (final c in note.characters) '@$c',
+                              ].join('  '),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: pepe.accentSoft,
                               ),
                             ),
                           ),
@@ -1260,8 +1665,7 @@ class _ReaderPageState extends State<ReaderPage>
                 ),
               ),
             ),
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -1277,4 +1681,89 @@ class _ReaderPageState extends State<ReaderPage>
       activity?.resume();
     }
   }
+}
+
+/// Thin book progress bar with chapter ticks, as in the reader footer.
+class _ReaderProgressBar extends StatelessWidget {
+  final double value;
+  final List<double> ticks;
+  final Color ink, accent;
+  final ValueChanged<double> onChanged, onChangeEnd;
+  const _ReaderProgressBar({
+    required this.value,
+    required this.ticks,
+    required this.ink,
+    required this.accent,
+    required this.onChanged,
+    required this.onChangeEnd,
+  });
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) {
+      final width = box.maxWidth;
+      double at(Offset p) => (p.dx / width).clamp(0.0, 1.0);
+      return Semantics(
+        slider: true,
+        value: '${(value * 100).round()} процентов книги',
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (d) => onChangeEnd(at(d.localPosition)),
+          onHorizontalDragUpdate: (d) => onChanged(at(d.localPosition)),
+          onHorizontalDragEnd: (_) => onChangeEnd(value),
+          child: SizedBox(
+            height: 22,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 9,
+                  height: 4,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: ink.withValues(alpha: .14),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  width: width * value,
+                  top: 9,
+                  height: 4,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: accent,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                for (final t in ticks)
+                  Positioned(
+                    left: width * t - 1,
+                    top: 6,
+                    width: 2,
+                    height: 10,
+                    child: ColoredBox(color: ink.withValues(alpha: .28)),
+                  ),
+                Positioned(
+                  left: width * value - 8,
+                  top: 3,
+                  width: 16,
+                  height: 16,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: ink,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }

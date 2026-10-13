@@ -8,6 +8,7 @@ import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/library/models.dart';
 import 'package:pepehub/main.dart';
 import 'package:pepehub/ui/obsidian_library_page.dart';
+import 'package:pepehub/ui/shelf_components.dart';
 
 void main() {
   testWidgets('third section opens and restores after restart', (tester) async {
@@ -16,9 +17,7 @@ void main() {
     final repo = Repository(db);
     await tester.pumpWidget(PepeHubApp(repository: repo));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Open navigation menu'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Библиотека'));
+    await tester.tap(find.byTooltip('Библиотека'));
     await tester.pumpAndSettle();
     expect(find.text('Подключить Obsidian'), findsOneWidget);
     expect(await repo.meta('library-section'), 'metadata');
@@ -27,9 +26,7 @@ void main() {
     await tester.pumpWidget(PepeHubApp(repository: repo));
     await tester.pumpAndSettle();
     expect(find.text('Подключить Obsidian'), findsOneWidget);
-    await tester.tap(find.byTooltip('Open navigation menu'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ListTile, 'Книги'));
+    await tester.tap(find.byTooltip('Книги'));
     await tester.pumpAndSettle();
     expect(await repo.meta('library-section'), 'reading');
     expect(find.text('Подключить Obsidian'), findsNothing);
@@ -169,7 +166,11 @@ void main() {
       MaterialApp(
         home: ObsidianLibraryPage(
           service: service,
-          drawer: const Drawer(),
+          navigation: ShelfNavigation(
+            current: PepeSection.library,
+            onSelect: (_) {},
+            onSettings: () {},
+          ),
           onSettings: () {},
         ),
       ),

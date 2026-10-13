@@ -5,11 +5,18 @@ import { type ActivityRecord, type ActivityEntry } from './pepehub-activity';
 import { emptyActivityState, captureActivity, pendingActivity, receiptActivity, receiveActivity, type ActivityState } from './pepehub-activity-state';
 import { applyActivityMarkdown, readActivityMarkdown } from './pepehub-activity-markdown';
 import type { MetadataSnapshot } from './pepehub-metadata';
+import { DurableState } from './pepehub-durable-state';
 
 export class PepeHubActivityService {
   private lastNotice='';
   private busy=false;
-  constructor(private plugin:HabitTimerPlugin) {}
+  private storage:DurableState<ActivityState>;
+  constructor(private plugin:HabitTimerPlugin) {
+    this.storage=new DurableState(plugin.app.vault.adapter,emptyActivityState,value=>{
+      const state=value as ActivityState;
+      return !!state&&state.version===1&&!!state.slots&&typeof state.slots==='object'&&!Array.isArray(state.slots)&&Number.isSafeInteger(state.cursor)&&state.cursor>=0;
+    });
+  }
   private async statePath(seed?:string):Promise<string> {
     const base=(this.plugin.settings.cloudflareWorkerUrl || '').trim().replace(/\/+$/,'');
     const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(seed ?? `${base}\n${this.plugin.settings.cloudflareApiToken}`));
@@ -18,15 +25,10 @@ export class PepeHubActivityService {
     return `${directory}/pepehub-activity-${hash}.json`;
   }
   private async readState(path:string):Promise<ActivityState> {
-    const adapter=this.plugin.app.vault.adapter;
-    if(!await adapter.exists(path))return emptyActivityState();
-    const state=JSON.parse(await adapter.read(path)) as ActivityState;
-    if(state.version!==1||!state.slots||!Number.isSafeInteger(state.cursor))throw new Error('Invalid PepeHub journal state; existing state was preserved.');
-    return state;
+    return this.storage.read(path);
   }
   private async save(path:string,state:ActivityState):Promise<void> {
-    // A completed write is required before requests or cursor acknowledgement.
-    await this.plugin.app.vault.adapter.write(path,JSON.stringify(state));
+    await this.storage.save(path,state);
   }
   async sync(snapshot:MetadataSnapshot,request:(path:string,body?:unknown)=>Promise<unknown>,seed?:string):Promise<void> {
     if(this.busy)return;
@@ -46,6 +48,7 @@ export class PepeHubActivityService {
       else {const current=readActivityMarkdown(await this.plugin.app.vault.read(file),item.id,item.mediaType,false).entries.find(e=>e.id===slot.value.id);slot.conflict={entry:slot.value,revision:slot.revision,sequence:0};slot.value=current ?? {...slot.value,deleted:true};}
       await this.save(path,state);
     }
+    const observedItems=new Set<string>();
     for(const item of snapshot.items) {
       const file=this.plugin.app.vault.getAbstractFileByPath(item.path);
       if(!(file instanceof TFile))continue;
@@ -55,8 +58,9 @@ export class PepeHubActivityService {
         const parsed=readActivityMarkdown(content,item.id,item.mediaType);
         entries.push(...parsed.entries);return parsed.content;
       });
+      observedItems.add(item.id);
     }
-    captureActivity(state,entries,new Set(items.keys()));
+    captureActivity(state,entries,observedItems);
     const operations=pendingActivity(state).filter(op=>items.has(op.entry.itemId));await this.save(path,state);
     for(let at=0;at<operations.length;at+=20) {
       const response=await request('/activity',{operations:operations.slice(at,at+20)}) as {version:number;receipts:Parameters<typeof receiptActivity>[1][]};
@@ -113,7 +117,7 @@ export class PepeHubActivityService {
           button.disabled=true;this.busy=true;
           try {
             const latest=await this.readState(path),live=latest.slots[slot.value.id];
-            if(!live?.conflict||!equalValue(live.value,slot.value))throw new Error('Запись изменилась. Откройте список конфликтов заново.');
+            if(!live?.conflict||!equalValue(live.value,slot.value)||!equalValue(live.conflict,remote)||live.revision>remote.revision)throw new Error('Запись изменилась. Откройте список конфликтов заново.');
             if(useRemote) {
               const files=this.plugin.app.vault.getMarkdownFiles();let found:TFile|undefined;
               for(const file of files){const fm=this.plugin.app.metadataCache.getFileCache(file)?.frontmatter;if(fm?.pepehub_id===slot.value.itemId){found=file;break;}}

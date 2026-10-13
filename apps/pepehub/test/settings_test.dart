@@ -10,7 +10,7 @@ import 'package:pepehub/ui/settings_page.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 void main() {
-  test('ten distinct styles, appearance and accessibility preferences persist across restart', () async {
+  test('ten distinct palettes, appearance and accessibility preferences persist across restart', () async {
     final db = AppDatabase(NativeDatabase.memory()), repo = Repository(db);
     addTearDown(db.close);
     final appearance = AppTheme(repo);
@@ -32,11 +32,9 @@ void main() {
         compact: true,
         reduceMotion: true,
       );
-      await appearance.set(ThemeMode.light);
       final restored = AppTheme(repo);
       await restored.load();
       expect(restored.style, style);
-      expect(restored.mode, ThemeMode.light);
       expect(restored.textScale, 1.3);
       expect(restored.compact, true);
       expect(restored.reduceMotion, true);
@@ -47,7 +45,7 @@ void main() {
       '{"textScale":"invalid","style":"missing"}',
     );
     await appearance.load();
-    expect(appearance.style, AppStyle.shelf);
+    expect(appearance.style, AppStyle.fallback);
     expect(appearance.textScale, 1);
   });
   testWidgets(

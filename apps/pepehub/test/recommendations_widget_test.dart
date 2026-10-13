@@ -41,22 +41,18 @@ void main() {
       mobile(tester);
       await tester.pumpWidget(PepeHubApp(repository: repo));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.tap(find.byTooltip('Рекомендации'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Рекомендации'));
-      await tester.pumpAndSettle();
-      expect(find.text('Книжные рекомендации'), findsOneWidget);
+      expect(find.text('РЕКОМЕНДАЦИИ'), findsOneWidget);
       expect(await repo.meta('library-section'), 'recommendations');
-      await tester.tap(find.byTooltip('Open navigation menu'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Книги'));
+      await tester.tap(find.byTooltip('Книги'));
       await tester.pumpAndSettle();
       expect(await repo.meta('library-section'), 'reading');
       await tester.pumpWidget(const SizedBox());
       await repo.setMeta('library-section', 'recommendations');
       await tester.pumpWidget(PepeHubApp(repository: repo));
       await tester.pumpAndSettle();
-      expect(find.text('Книжные рекомендации'), findsOneWidget);
+      expect(find.text('РЕКОМЕНДАЦИИ'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

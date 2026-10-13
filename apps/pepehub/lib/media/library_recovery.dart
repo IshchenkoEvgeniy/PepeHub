@@ -14,6 +14,13 @@ Future<void> recoverAudioRoot(AssetStore assets, AudioRoot root) async {
   );
   final files = await supportFiles(root.path);
   final protectedPositions = <String>{};
+  final protectedEvents = {
+    for (final row
+        in await assets.repository.db
+            .customSelect("SELECT id FROM records WHERE type='audio_event'")
+            .get())
+      row.read<String>('id'),
+  };
   for (final row
       in await assets.repository.db
           .customSelect(
@@ -54,6 +61,7 @@ Future<void> recoverAudioRoot(AssetStore assets, AudioRoot root) async {
         backup: false,
         merge: true,
         preserveProgressBookIds: protectedPositions,
+        preserveEventIds: protectedEvents,
       );
     } catch (e) {
       failures.add('${file.name}: $e');

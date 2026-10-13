@@ -1053,7 +1053,10 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
             'startedAt': start.toIso8601String(),
             'endedAt': end.toIso8601String(),
             'activeSeconds': activeSeconds,
-            'timezone': DateTime.now().timeZoneName,
+            // The protocol requires an IANA zone. Platform abbreviations and
+            // Windows display names are not IANA IDs; retain the actual local
+            // offset separately for the journal's day boundaries.
+            'timezone': 'UTC',
             'offsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
             'source': 'player',
           }, coalesce: true);

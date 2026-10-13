@@ -40,6 +40,23 @@ test('notes pagination handles large Unicode comments and rejects private paths/
     assert.equal(validNote(note()),true);
   }finally{db.close();}
 });
+test('linked audio ordinal anchors pass the real API; external IDs are rejected without persisting requests',async()=>{
+  const {db,call}=await setup();try{
+    await handleMetadataApi(new Request('https://example.test/api/pepehub/library/snapshot',{method:'POST',body:JSON.stringify({snapshot:{version:1,ready:true,items:[{id:book,path:'Audio/One.md',collectionId:'audiobook',mediaType:'audiobook',modifiedAt:1,values:{Title:'One'},fields:[]}],fields:[],collections:[]},receipts:[]})}),db,'one');
+    const values=[0,1].map(trackIndex=>note({mediaType:'audiobook',kind:'audio',quote:'',origin:'app-audio',anchor:{positionMs:45000,noteKind:'thought',trackIndex}}));
+    const operationId=randomUUID();
+    const bad={...values[0]!,anchor:{...values[0]!.anchor,trackHash:`external:${randomUUID()}`}};
+    assert.equal(validNote(bad),false);
+    assert.equal((await call({operations:[{operationId,baseRevision:0,entry:bad}]})).status,400);
+    assert.deepEqual((await (await call()).json()).records,[]);
+    const operations=values.map((entry,i)=>({operationId:i===0?operationId:randomUUID(),baseRevision:0,entry}));
+    const applied=await (await call({operations})).json();
+    assert.deepEqual(applied.receipts.map((r:{status:string})=>r.status),['applied','applied']);
+    const feed=await (await call()).json();
+    assert.deepEqual(feed.records.map((r:{entry:NoteEntry})=>r.entry.anchor),values.map(v=>v.anchor));
+    assert.deepEqual(await (await call({operations})).json(),applied);
+  }finally{db.close();}
+});
 test('quotes, comments, labels and anchors roundtrip; visible Obsidian edits and CAS preserve both versions',()=>{
   const value=note({quote:'Цитата\n<!-- literal -->',text:'Два абзаца\n\nКомментарий & <'}),start='---\nTitle: One\n---\n';
   const applied=applyNoteMarkdown(start,value,null);assert.equal(applied.applied,true);

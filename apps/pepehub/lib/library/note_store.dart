@@ -136,10 +136,13 @@ class NoteStore extends ActivityStore {
   Future<Map<String, dynamic>> _audio(
     LibraryRecord row,
     ObsidianLibraryItem item,
-    Map? prior,
-  ) async {
-    final data = row.payload!,
-        tracks = await AssetStore(
+    Map? prior, [
+    List<LocalAsset>? trackList,
+  ]) async {
+    final data = row.payload!;
+    final tracks =
+        trackList ??
+        await AssetStore(
           local,
           Directory('.'),
         ).audioTracks(data['bookId'] as String);
@@ -158,13 +161,51 @@ class NoteStore extends ActivityStore {
       'anchor': {
         'positionMs': data['positionMs'] ?? 0,
         'noteKind': data['kind'] ?? 'thought',
-        if (index >= 0) 'trackHash': tracks[index].hash,
+        if (index >= 0 &&
+            RegExp(r'^[a-f0-9]{64}$').hasMatch(tracks[index].hash))
+          'trackHash': tracks[index].hash,
         if (index >= 0) 'trackIndex': index,
       },
       'origin': prior?['origin'] ?? 'app-audio',
       'updatedAt': data['updatedAt'] ?? data['at'],
       'deleted': row.deleted,
     };
+  }
+
+  Map<String, dynamic>? _repairLinkedAudioAnchor(dynamic value) {
+    if (value is! Map || value['kind'] != 'audio') return null;
+    final anchor = value['anchor'];
+    if (anchor is! Map ||
+        anchor['trackHash'] is! String ||
+        !(anchor['trackHash'] as String).startsWith('external:') ||
+        anchor['trackIndex'] is! int ||
+        (anchor['trackIndex'] as int) < 0) {
+      return null;
+    }
+    final next = Map<String, dynamic>.from(value);
+    next['anchor'] = Map<String, dynamic>.from(anchor)..remove('trackHash');
+    return validNoteValue(next) ? next : null;
+  }
+
+  @override
+  void preparePending(Map<String, dynamic> state) {
+    for (final slot in (state['slots'] as Map).values) {
+      if (slot['conflict'] != null) continue;
+      final operation = slot['operation'];
+      if (operation is! Map ||
+          _repairLinkedAudioAnchor(operation['entry']) == null) {
+        continue;
+      }
+      final next = _repairLinkedAudioAnchor(slot['value']) ?? slot['value'];
+      if (!validNoteValue(next)) continue;
+      slot['value'] = next;
+      slot['native'] =
+          _repairLinkedAudioAnchor(slot['native']) ?? slot['native'];
+      // The server rejects external IDs in trackHash before accepting any
+      // operation. Retire only those invalid requests; valid retries keep
+      // their original UUID and immutable payload.
+      slot.remove('operation');
+    }
   }
 
   @override
@@ -182,15 +223,19 @@ class NoteStore extends ActivityStore {
       }
       final values = <String, Map<String, dynamic>>{},
           sources = <String, Map<String, dynamic>>{};
-      Map? prior(String kind, String id, String book) => slots.values
-          .where(
-            (s) =>
-                s['source']?['kind'] == kind &&
-                s['source']?['id'] == id &&
-                s['source']?['bookId'] == book &&
-                s['value']['itemId'] == byBook[book]?.id,
-          )
-          .firstOrNull?['native'];
+      final priorBySource = <(String, String, String, String), Map>{};
+      for (final slot in slots.values) {
+        final source = slot['source'] as Map?;
+        if (source == null) continue;
+        priorBySource.putIfAbsent((
+          source['kind'] as String,
+          source['id'] as String,
+          source['bookId'] as String,
+          slot['value']['itemId'] as String,
+        ), () => slot);
+      }
+      Map? prior(String kind, String id, String book) =>
+          priorBySource[(kind, id, book, byBook[book]!.id)]?['native'];
       void add(
         Map<String, dynamic> value,
         String kind,
@@ -218,12 +263,21 @@ class NoteStore extends ActivityStore {
       final rows = await local.db
           .customSelect("SELECT * FROM records WHERE type='audio_note'")
           .get();
+      final tracksByBook = <String, List<LocalAsset>>{};
       for (final row in rows) {
         final note = LibraryRecord.fromRow(row),
             book = note.payload?['bookId'] as String?;
         if (book == null || byBook[book] == null) continue;
         add(
-          await _audio(note, byBook[book]!, prior('audio', note.id, book)),
+          await _audio(
+            note,
+            byBook[book]!,
+            prior('audio', note.id, book),
+            tracksByBook[book] ??= await AssetStore(
+              local,
+              Directory('.'),
+            ).audioTracks(book),
+          ),
           'audio',
           note.id,
           book,

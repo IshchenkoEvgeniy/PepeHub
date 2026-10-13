@@ -17,6 +17,8 @@ import 'package:flutter/material.dart';
 import '../audio/audio_journal.dart';
 import '../media/audio_controller.dart';
 import '../data/repository.dart';
+import 'pepe_widgets.dart';
+import 'shelf_components.dart';
 import 'statistics_management_page.dart';
 
 String statTime(int ms) {
@@ -234,7 +236,97 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
     }
   }
 
-  Widget _goalCard() {
+  String _sessionTime(DateTime value, int offset) {
+    final local = value.toUtc().add(Duration(minutes: offset));
+    return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _manage() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StatisticsManagementPage(
+          repository: widget.repository,
+          controller: widget.controller,
+          initialTab: 1,
+        ),
+      ),
+    );
+    if (mounted) load();
+  }
+
+  String get _periodLabel => switch (period) {
+    1 => 'за сегодня',
+    7 => 'за 7 дней',
+    30 => 'за 30 дней',
+    0 => 'за всё время',
+    _ => customRange == null ? 'за период' : rangeLabel(customRange!),
+  };
+
+  Widget _hero(ShelfPalette palette, AudioStats? s) {
+    final ink = palette.onAccent;
+    final soft = ink.withValues(alpha: .72);
+    Widget figure(String value, String label) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(value, style: AppFonts.title(ink, size: 24)),
+        const SizedBox(height: 2),
+        Text(label, style: TextStyle(fontSize: 12, color: soft)),
+      ],
+    );
+    final data = analytics;
+    return Material(
+      color: palette.accent,
+      borderRadius: BorderRadius.circular(22),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'ВРЕМЯ ДЛЯ ИСТОРИЙ · ${_periodLabel.toUpperCase()}',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                letterSpacing: .8,
+                color: soft,
+              ),
+            ),
+            const SizedBox(height: 6),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                s == null ? 'Собираем историю…' : statTime(s.wallMs),
+                style: AppFonts.title(ink, size: s == null ? 34 : 58),
+              ),
+            ),
+            Text(
+              'Реальное время звучания · без пауз и перемоток',
+              style: TextStyle(fontSize: 13, color: soft),
+            ),
+            if (s != null && data != null) ...[
+              const SizedBox(height: 18),
+              Wrap(
+                spacing: 28,
+                runSpacing: 12,
+                children: [
+                  figure('${data.sessions.length}', 'Сессий'),
+                  figure('${s.days.length}', 'Активных дней'),
+                  figure(
+                    '${s.averageSpeed.toStringAsFixed(2)}×',
+                    'Средняя скорость',
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _goalPanel(ShelfPalette palette) {
     final now = DateTime.now();
     final day = DateTime.utc(now.year, now.month, now.day);
     final monday = day.subtract(Duration(days: day.weekday - 1));
@@ -249,165 +341,166 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
             .fold<int>(0, (sum, e) => sum + e.value) ??
         0;
     Widget line(String title, int ms, int target) => Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$title · ${statTime(ms)} / $target мин'),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-            value: (ms / (target * 60000)).clamp(0, 1),
-            minHeight: 7,
-            borderRadius: BorderRadius.circular(7),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                '${pepeTime(ms)} / $target мин',
+                style: TextStyle(fontSize: 13, color: palette.muted),
+              ),
+            ],
           ),
-          if (ms >= target * 60000) const Text('Цель достигнута ✓'),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: (ms / (target * 60000)).clamp(0, 1),
+              minHeight: 10,
+              color: palette.accent,
+              backgroundColor: palette.raised,
+            ),
+          ),
+          if (ms >= target * 60000)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Цель достигнута ✓',
+                style: TextStyle(fontSize: 12, color: palette.accent),
+              ),
+            ),
         ],
       ),
     );
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Мои цели · все книги',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Настроить цели',
-                  onPressed: _goals,
-                  icon: const Icon(Icons.tune),
-                ),
-              ],
-            ),
-            if (goals.dailyMinutes > 0)
-              line('Сегодня', todayMs, goals.dailyMinutes),
-            if (goals.weeklyMinutes > 0)
-              line('Неделя с понедельника', weekMs, goals.weeklyMinutes),
-            if (goals.dailyMinutes == 0 && goals.weeklyMinutes == 0)
-              const Text('Цели выключены'),
-          ],
-        ),
+    return PepePanel(
+      title: 'Мои цели · все книги',
+      trailing: IconButton(
+        tooltip: 'Настроить цели',
+        onPressed: _goals,
+        icon: const Icon(Icons.tune, size: 20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (goals.dailyMinutes > 0)
+            line('Сегодня', todayMs, goals.dailyMinutes),
+          if (goals.weeklyMinutes > 0)
+            line('Неделя с понедельника', weekMs, goals.weeklyMinutes),
+          if (goals.dailyMinutes == 0 && goals.weeklyMinutes == 0)
+            Text('Цели выключены', style: TextStyle(color: palette.muted)),
+        ],
       ),
     );
   }
 
-  String _sessionTime(DateTime value, int offset) {
-    final local = value.toUtc().add(Duration(minutes: offset));
-    return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-  }
-
-  Widget _calendar() {
-    final activity = analytics!.lifetime.days;
-    final first = DateTime.utc(calendarMonth.year, calendarMonth.month);
-    final count = DateTime.utc(first.year, first.month + 1, 0).day;
-    final offset = first.weekday - 1;
-    final maxDay = activity.values.fold<int>(1, math.max);
-    return Column(
-      children: [
-        Row(
-          children: [
-            IconButton(
-              tooltip: 'Предыдущий месяц',
-              onPressed: () => setState(
-                () => calendarMonth = DateTime(first.year, first.month - 1),
-              ),
-              icon: const Icon(Icons.chevron_left),
-            ),
-            Expanded(
-              child: Text(
-                'Календарь · ${first.month.toString().padLeft(2, '0')}.${first.year}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
+  Widget _streakPanel(ShelfPalette palette) {
+    final data = analytics!;
+    final now = DateTime.now();
+    final cells = [
+      for (var i = 29; i >= 0; i--)
+        data.lifetime.days[dayKey(
+              DateTime(now.year, now.month, now.day - i),
+            )] ??
+            0,
+    ];
+    return PepePanel(
+      title: 'Текущая серия',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: '${data.currentStreak(now)}',
+                  style: AppFonts.title(palette.text, size: 44),
                 ),
-              ),
+                TextSpan(
+                  text: '  лучшая серия дней: ${data.lifetime.longestStreak}',
+                  style: TextStyle(fontSize: 13, color: palette.muted),
+                ),
+              ],
             ),
-            IconButton(
-              tooltip: 'Следующий месяц',
-              onPressed: () => setState(
-                () => calendarMonth = DateTime(first.year, first.month + 1),
-              ),
-              icon: const Icon(Icons.chevron_right),
-            ),
-          ],
-        ),
-        const Text(
-          'Вся история выбранных книг · нажмите день для деталей',
-          style: TextStyle(fontSize: 12),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            for (final label in ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'])
-              Expanded(child: Center(child: Text(label))),
-          ],
-        ),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 7,
-            mainAxisSpacing: 5,
-            crossAxisSpacing: 5,
           ),
-          itemCount: ((offset + count + 6) ~/ 7) * 7,
-          itemBuilder: (context, i) {
-            final number = i - offset + 1;
-            if (number < 1 || number > count) return const SizedBox();
-            final key = dayKey(DateTime(first.year, first.month, number));
-            final value = activity[key] ?? 0;
-            return Material(
-              color: value == 0
-                  ? Theme.of(context).colorScheme.surfaceContainerHighest
-                  : Color.lerp(
-                      const Color(0xffc3e4c9),
-                      const Color(0xff216b54),
-                      value / maxDay,
-                    ),
-              borderRadius: BorderRadius.circular(9),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(9),
-                onTap: () => showDialog<void>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: Text(key),
-                    content: Text('Активное прослушивание: ${statTime(value)}'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Закрыть'),
-                      ),
-                    ],
-                  ),
-                ),
-                child: Center(
-                  child: Text(
-                    '$number',
-                    style: TextStyle(
-                      color: value / maxDay > .6
-                          ? Colors.white
-                          : value > 0
-                          ? Colors.black87
-                          : Theme.of(context).colorScheme.onSurface,
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-      ],
+          const SizedBox(height: 14),
+          PepeStreak(values: cells, goalMinutes: goals.dailyMinutes),
+          const SizedBox(height: 6),
+          Text(
+            'последние 30 дней · за всю историю, включая вчера',
+            style: TextStyle(fontSize: 11, color: palette.muted),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _comparisons() {
+  Widget _calendarPanel() {
+    final activity = analytics!.lifetime.days;
+    return PepePanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PepeMonthCalendar(
+            month: calendarMonth,
+            title:
+                'Календарь · ${pepeMonthNames[calendarMonth.month - 1]} ${calendarMonth.year}',
+            dayValue: (d) => activity[dayKey(d)] ?? 0,
+            goalMinutes: goals.dailyMinutes,
+            describe: statTime,
+            onPrevious: () => setState(
+              () => calendarMonth = DateTime(
+                calendarMonth.year,
+                calendarMonth.month - 1,
+              ),
+            ),
+            onNext: () => setState(
+              () => calendarMonth = DateTime(
+                calendarMonth.year,
+                calendarMonth.month + 1,
+              ),
+            ),
+            onDay: (date) {
+              final value = activity[dayKey(date)] ?? 0;
+              showDialog<void>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: Text('${pepeDate(date)} ${date.year}'),
+                  content: Text('Активное прослушивание: ${statTime(value)}'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Закрыть'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Вся история выбранных книг · нажмите день для деталей',
+            style: TextStyle(
+              fontSize: 11.5,
+              color: ShelfPalette.of(context).muted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _comparisons(ShelfPalette palette) {
     final now = DateTime.now();
     final today = DateTime.utc(now.year, now.month, now.day);
     final week = today.subtract(Duration(days: today.weekday - 1));
@@ -418,552 +511,683 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
       previousMonth.month,
       math.min(now.day, DateTime.utc(now.year, now.month, 0).day) + 1,
     );
-    Widget row(String title, int value, int previous) => ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(title),
-      subtitle: Text(
-        'Сейчас ${statTime(value)} · раньше ${statTime(previous)}',
-      ),
-      trailing: Text(
-        previous == 0
-            ? '—'
-            : '${value >= previous ? '+' : ''}${((value / previous - 1) * 100).toStringAsFixed(0)}%',
-      ),
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 24),
-        const Text(
-          'Сравнение периодов',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-        ),
-        const Text(
-          'По календарным дням до сегодня включительно; сегодняшний день ещё не завершён.',
-          style: TextStyle(fontSize: 12),
-        ),
-        row(
-          'Эта неделя / те же дни прошлой',
-          analytics!.timeBetween(week, today.add(const Duration(days: 1))),
-          analytics!.timeBetween(
-            week.subtract(const Duration(days: 7)),
-            today.subtract(const Duration(days: 6)),
-          ),
-        ),
-        row(
-          'Этот месяц / те же даты прошлого',
-          analytics!.timeBetween(month, today.add(const Duration(days: 1))),
-          analytics!.timeBetween(previousMonth, priorMonthEnd),
-        ),
-      ],
-    );
-  }
-
-  Widget metric(String title, String value, IconData icon, {String? note}) =>
-      Container(
-        width: MediaQuery.sizeOf(context).width < 500
-            ? (MediaQuery.sizeOf(context).width - 52) / 2
-            : 220,
-        padding: const EdgeInsets.all(20),
+    Widget row(String title, int value, int previous) {
+      final change = previous == 0
+          ? '—'
+          : '${value >= previous ? '+' : ''}${((value / previous - 1) * 100).toStringAsFixed(0)}%';
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-          ),
+          border: Border(top: BorderSide(color: palette.line)),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Icon(icon, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 16),
-            Text(
-              value,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
-            ),
-            Text(title),
-            if (note != null)
-              Text(
-                note,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontSize: 13.5)),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Сейчас ${pepeTime(value)} · раньше ${pepeTime(previous)}',
+                    style: TextStyle(fontSize: 12, color: palette.muted),
+                  ),
+                ],
               ),
+            ),
+            Text(
+              change,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: previous != 0 && value >= previous
+                    ? palette.accent
+                    : palette.text,
+              ),
+            ),
           ],
         ),
       );
-  @override
-  Widget build(BuildContext context) {
-    final s = stats;
-    final top = s?.books.entries.toList() ?? [];
-    top.sort((a, b) => b.value.compareTo(a.value));
-    final chartEnd = period == -1 && customRange != null
-        ? customRange!.end.subtract(const Duration(microseconds: 1))
-        : DateTime.now();
-    final chartStart = period == -1 && customRange != null
-        ? customRange!.start
-        : DateTime(
-            chartEnd.year,
-            chartEnd.month,
-            chartEnd.day - (period == 0 ? 13 : period - 1),
-          );
-    final count =
-        (DateTime.utc(chartEnd.year, chartEnd.month, chartEnd.day)
-                    .difference(
-                      DateTime.utc(
-                        chartStart.year,
-                        chartStart.month,
-                        chartStart.day,
-                      ),
-                    )
-                    .inDays +
-                1)
-            .clamp(1, 31);
-    final days = List.generate(
-      count,
-      (i) => dayKey(
-        DateTime(chartEnd.year, chartEnd.month, chartEnd.day - count + 1 + i),
+    }
+
+    return PepePanel(
+      title: 'Сравнение периодов',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'По календарным дням до сегодня включительно; сегодняшний день ещё не завершён.',
+            style: TextStyle(fontSize: 11.5, color: palette.muted),
+          ),
+          const SizedBox(height: 8),
+          row(
+            'Эта неделя / те же дни прошлой',
+            analytics!.timeBetween(week, today.add(const Duration(days: 1))),
+            analytics!.timeBetween(
+              week.subtract(const Duration(days: 7)),
+              today.subtract(const Duration(days: 6)),
+            ),
+          ),
+          row(
+            'Этот месяц / те же даты прошлого',
+            analytics!.timeBetween(month, today.add(const Duration(days: 1))),
+            analytics!.timeBetween(previousMonth, priorMonthEnd),
+          ),
+        ],
       ),
     );
-    final maximum = s == null
-        ? 1
-        : math.max(1, days.map((d) => s.days[d] ?? 0).reduce(math.max));
-    return Scaffold(
+  }
+
+  Widget _rhythm(ShelfPalette palette, AudioStats s) {
+    final speedTotal = s.speeds.values.fold<int>(0, (a, b) => a + b);
+    final speeds = s.speeds.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final hourMax = math.max(1, s.hours.values.fold<int>(0, math.max));
+    return PepePanel(
+      title: 'Скорость и время суток',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (speeds.isEmpty)
+            Text('Пока нет данных.', style: TextStyle(color: palette.muted)),
+          for (final e in speeds.take(5))
+            PepeShareRow(
+              title: '${e.key}×',
+              value: pepeTime(e.value),
+              share: e.value / math.max(1, speedTotal),
+            ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              for (var hour = 0; hour < 24; hour++)
+                Expanded(
+                  child: Tooltip(
+                    message: '$hour:00 · ${pepeTime(s.hours[hour] ?? 0)}',
+                    child: Container(
+                      height: 30,
+                      margin: const EdgeInsets.only(right: 2),
+                      decoration: BoxDecoration(
+                        color: (s.hours[hour] ?? 0) == 0
+                            ? palette.raised
+                            : Color.lerp(
+                                palette.muted,
+                                palette.accent,
+                                (s.hours[hour]! / hourMax).clamp(0.0, 1.0),
+                              ),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              for (final label in ['0', '6', '12', '18', '23'])
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(fontSize: 10.5, color: palette.muted),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _booksPanel(ShelfPalette palette, AudioStats s) {
+    final top = s.books.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final sum = math.max(1, top.fold<int>(0, (a, e) => a + e.value));
+    return PepePanel(
+      title: 'Книги',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (top.isEmpty)
+            Text(
+              'За этот период книг нет.',
+              style: TextStyle(color: palette.muted),
+            ),
+          for (final e in top) _bookRow(palette, e.key, e.value, sum),
+        ],
+      ),
+    );
+  }
+
+  Widget _bookRow(ShelfPalette palette, String id, int ms, int sum) {
+    final title = titles[id] ?? 'Книга из архива';
+    final data = analytics!.byBook[id];
+    final summary = summaries[id];
+    final known = summary?.total != null && summary?.position != null;
+    final progress = known
+        ? (summary!.position! / summary.total!).clamp(0.0, 1.0)
+        : null;
+    return InkWell(
+      onTap: () {
+        setState(() => selectedBook = id);
+        load();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: palette.line)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            PepeSpine(title, width: 36, height: 36),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppFonts.book(palette.text, size: 17),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    data == null
+                        ? '${(ms * 100 / sum).round()}% времени'
+                        : 'Уникально: ${pepeTime(data.uniqueMs)} · материал: ${pepeTime(data.mediaMs)}',
+                    style: TextStyle(fontSize: 12, color: palette.muted),
+                  ),
+                  const SizedBox(height: 7),
+                  if (progress != null) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 5,
+                        color: palette.accent,
+                        backgroundColor: palette.raised,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'По позиции: ${(progress * 100).toStringAsFixed(1)}% · осталось ${pepeTime(((summary!.total! - summary.position!).clamp(0, 1 << 60) / summary.speed).round())}',
+                      style: TextStyle(fontSize: 11.5, color: palette.muted),
+                    ),
+                  ] else
+                    Text(
+                      'Для общей длительности откройте книгу в плеере',
+                      style: TextStyle(fontSize: 11.5, color: palette.muted),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              pepeTime(ms),
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sessionsPanel(ShelfPalette palette) {
+    final list = analytics!.sessions;
+    final rows = <Widget>[];
+    String? lastDay;
+    for (final session in list.take(50)) {
+      if (session.localDay != lastDay) {
+        lastDay = session.localDay;
+        final date = DateTime.tryParse(session.localDay);
+        rows.add(
+          Padding(
+            padding: EdgeInsets.only(top: rows.isEmpty ? 0 : 14, bottom: 4),
+            child: Text(
+              date == null
+                  ? session.localDay
+                  : '${pepeDate(date)} · ${pepeWeekdays[date.weekday - 1]}',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                letterSpacing: .4,
+                color: palette.muted,
+              ),
+            ),
+          ),
+        );
+      }
+      rows.add(
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: palette.line)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 92,
+                child: Text(
+                  session.timeKnown
+                      ? '${_sessionTime(session.start, session.offsetMinutes)}–${_sessionTime(session.end, session.offsetMinutes)}'
+                      : 'Obsidian',
+                  style: TextStyle(fontSize: 12.5, color: palette.muted),
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      titles[session.bookId] ?? 'Книга из архива',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppFonts.book(palette.text, size: 16),
+                    ),
+                    if (session.timeKnown)
+                      Text(
+                        'от начала до конца ${pepeTime(session.elapsedMs)} · материал ${pepeTime(session.mediaMs)} · пауз ${session.pauses} · перемоток ${session.seeks}',
+                        style: TextStyle(fontSize: 11.5, color: palette.muted),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                pepeTime(session.wallMs),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return PepePanel(
+      title: 'Сессии прослушивания',
+      trailing: Text(
+        '${list.length}',
+        style: TextStyle(fontSize: 13, color: palette.muted),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Период — по дате начала. Короткие паузы не добавляют активного времени.',
+            style: TextStyle(fontSize: 11.5, color: palette.muted),
+          ),
+          const SizedBox(height: 10),
+          if (list.isEmpty)
+            Text(
+              'Сессий за период нет.',
+              style: TextStyle(color: palette.muted),
+            ),
+          ...rows,
+          if (list.length > 50)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Показаны последние 50 сессий; сводка учитывает все.',
+                style: TextStyle(fontSize: 12, color: palette.muted),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _playerPanel(ShelfPalette palette, AudioStats s) {
+    Widget line(String label, String value, [String? note]) => Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: palette.line)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(fontSize: 13.5)),
+                if (note != null)
+                  Text(
+                    note,
+                    style: TextStyle(fontSize: 11, color: palette.muted),
+                  ),
+              ],
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+    return PepePanel(
+      title: 'В плеере',
+      child: Column(
+        children: [
+          line('Перемоток', '${s.seeks}'),
+          line('Паузы', '${s.pauses}'),
+          line('Буферизации / ошибки', '${s.bufferings} / ${s.errors}'),
+          line(
+            'Переходы вперёд',
+            pepeTime(s.forwardMs),
+            'В пределах одного трека',
+          ),
+          line(
+            'Переходы назад',
+            pepeTime(s.backwardMs),
+            'В пределах одного трека',
+          ),
+          line('Добавлено закладок', '${s.bookmarks}'),
+          line('Срабатываний таймера', '${s.timers}'),
+        ],
+      ),
+    );
+  }
+
+  Widget _eventsPanel(ShelfPalette palette) => PepePanel(
+    padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+    child: Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        title: const Text(
+          'Подробный журнал · последние 100 событий',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        children: [
+          if (events.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                'Включите аудиокнигу — здесь появится история прослушивания.',
+                style: TextStyle(color: palette.muted),
+              ),
+            ),
+          for (final e in events)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              leading: Icon(
+                e['kind'] == 'listen' ? Icons.headphones : Icons.history,
+                size: 18,
+                color: palette.muted,
+              ),
+              title: Text(
+                '${eventLabel(e['kind'] as String)} · ${titles[e['bookId']] ?? 'Книга'}',
+              ),
+              subtitle: Text(
+                '${e['at']} · ${pepeTime((e['positionMs'] as num).toInt())}${e['kind'] == 'listen' ? ' → ${pepeTime((e['endMs'] as num).toInt())} · ${pepeTime((e['wallMs'] as num).toInt())} · ${e['speed']}×' : ''}',
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ShelfPalette.of(context);
+    final s = stats;
+    final data = analytics;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final barEnd = period == -1 && customRange != null
+        ? DateTime(
+            customRange!.end.year,
+            customRange!.end.month,
+            customRange!.end.day - 1,
+          )
+        : today;
+    final barCount = period == -1 && customRange != null
+        ? customRange!.duration.inDays.clamp(7, 60)
+        : period == 30 || period == 0
+        ? 30
+        : 14;
+    final barDays = [
+      for (var i = barCount - 1; i >= 0; i--)
+        DateTime(barEnd.year, barEnd.month, barEnd.day - i),
+    ];
+    final lifetime = data?.lifetime.days ?? const <String, int>{};
+
+    final picker = Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        PepeChoices<int>(
+          options: const [
+            (1, '1 день'),
+            (7, '7 дней'),
+            (30, '30 дней'),
+            (0, 'Всё время'),
+            (-1, 'Произвольный'),
+          ],
+          selected: period,
+          onSelect: (p) async {
+            if (p != -1) {
+              setState(() => period = p);
+              load();
+              return;
+            }
+            final picked = await pickStatisticsRange(context, customRange);
+            if (picked == null || !mounted) return;
+            setState(() {
+              customRange = picked;
+              period = -1;
+              calendarMonth = DateTime(picked.start.year, picked.start.month);
+            });
+            load();
+          },
+        ),
+        Container(
+          constraints: const BoxConstraints(maxWidth: 320),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            border: Border.all(color: palette.strongLine),
+            borderRadius: BorderRadius.circular(30),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String?>(
+              isExpanded: true,
+              isDense: true,
+              value: titles.containsKey(selectedBook) ? selectedBook : null,
+              items: [
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('Все книги'),
+                ),
+                for (final e in titles.entries)
+                  DropdownMenuItem<String?>(
+                    value: e.key,
+                    child: Text(e.value, overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: (v) {
+                setState(() => selectedBook = v);
+                load();
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+
+    final stacked = MediaQuery.sizeOf(context).width < 1100;
+    final Widget figures = s == null || data == null
+        ? const SizedBox()
+        : PepeFigureStrip([
+            (statTime(s.mediaMs), 'Пройдено материала'),
+            (pepeTime(s.uniqueMs), 'Уникальные участки'),
+            (pepeTime(data.repeatedHistoryMs), 'Повторное прослушивание'),
+            (pepeTime(data.firstHeardMs), 'Впервые прослушано'),
+            (
+              pepeTime(
+                data.sessions.isEmpty
+                    ? 0
+                    : data.sessions.fold<int>(0, (sum, x) => sum + x.wallMs) ~/
+                          data.sessions.length,
+              ),
+              'Средняя сессия',
+            ),
+            (
+              pepeTime(
+                data.sessions.fold<int>(
+                  0,
+                  (value, x) => math.max(value, x.wallMs),
+                ),
+              ),
+              'Самая длинная сессия',
+            ),
+            ('${s.books.length}', 'Книг в прослушивании'),
+            ('${data.lifetime.longestStreak}', 'Лучшая серия дней'),
+          ]);
+    return PepeSubpage(
+      title: 'Прослушивание',
+      back: 'Статистика',
+      section: PepeSection.statistics,
+      onRefresh: load,
       bottomNavigationBar: AudioMiniPlayer(
         controller: widget.controller,
         onOpen: widget.returnToPlayer ? () => Navigator.pop(context) : null,
       ),
-      appBar: AppBar(
-        title: const Text('Моё прослушивание'),
-        actions: [
-          IconButton(
-            tooltip: 'Управление статистикой',
-            onPressed: () async {
-              await Navigator.push<void>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => StatisticsManagementPage(
-                    repository: widget.repository,
-                    controller: widget.controller,
-                    initialTab: 1,
-                  ),
-                ),
-              );
-              if (mounted) load();
-            },
-            icon: const Icon(Icons.edit_note),
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Экспорт статистики',
-            icon: const Icon(Icons.file_download_outlined),
-            onSelected: _exportStats,
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'csv', child: Text('Экспорт CSV')),
-              PopupMenuItem(value: 'json', child: Text('Экспорт JSON')),
-            ],
-          ),
-          IconButton(onPressed: load, icon: const Icon(Icons.refresh)),
-        ],
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1050),
-          child: ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xff174d3e), Color(0xff328b6a)],
-                  ),
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'ВРЕМЯ ДЛЯ ИСТОРИЙ',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        letterSpacing: 2,
-                        fontSize: 11,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      s == null ? 'Собираем историю…' : statTime(s.wallMs),
-                      style: const TextStyle(
-                        fontSize: 38,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const Text(
-                      'Реальное время звучания · без пауз и перемоток',
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              if (goalStats != null) _goalCard(),
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (final p in [1, 7, 30, 0])
-                    ChoiceChip(
-                      label: Text(
-                        p == 0
-                            ? 'Всё время'
-                            : p == 1
-                            ? '1 день'
-                            : '$p дней',
-                      ),
-                      selected: period == p,
-                      onSelected: (_) {
-                        setState(() => period = p);
-                        load();
-                      },
-                    ),
-                  ChoiceChip(
-                    label: const Text('Произвольный'),
-                    selected: period == -1,
-                    onSelected: (_) async {
-                      final picked = await pickStatisticsRange(
-                        context,
-                        customRange,
-                      );
-                      if (picked == null || !mounted) return;
-                      setState(() {
-                        customRange = picked;
-                        period = -1;
-                        calendarMonth = DateTime(
-                          picked.start.year,
-                          picked.start.month,
-                        );
-                      });
-                      load();
-                    },
-                  ),
-                ],
-              ),
-              if (period == -1 && customRange != null)
-                Text(rangeLabel(customRange!)),
-              DropdownButton<String?>(
-                isExpanded: true,
-                value: titles.containsKey(selectedBook) ? selectedBook : null,
-                items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('Все книги'),
-                  ),
-                  for (final e in titles.entries)
-                    DropdownMenuItem<String?>(
-                      value: e.key,
-                      child: Text(e.value, overflow: TextOverflow.ellipsis),
-                    ),
-                ],
-                onChanged: (v) {
-                  setState(() => selectedBook = v);
-                  load();
-                },
-              ),
-              if (error != null) Text(error!),
-              if (s == null) const LinearProgressIndicator(),
-              if (s != null) ...[
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    metric(
-                      'Пройдено материала',
-                      statTime(s.mediaMs),
-                      Icons.headphones,
-                    ),
-                    metric(
-                      'Уникальные участки',
-                      statTime(s.uniqueMs),
-                      Icons.auto_stories_outlined,
-                    ),
-                    metric(
-                      'Повторное прослушивание',
-                      statTime(analytics!.repeatedHistoryMs),
-                      Icons.replay,
-                    ),
-                    metric(
-                      'Впервые прослушано',
-                      statTime(analytics!.firstHeardMs),
-                      Icons.fiber_new,
-                      note: 'С учётом всей сохранённой истории',
-                    ),
-                    metric(
-                      'Текущая серия',
-                      '${analytics!.currentStreak(DateTime.now())}',
-                      Icons.local_fire_department,
-                      note: 'За всю историю, включая вчера',
-                    ),
-                    metric(
-                      'Сессий',
-                      '${analytics!.sessions.length}',
-                      Icons.timelapse,
-                      note: 'Перерыв до 5 минут внутри одной книги',
-                    ),
-                    metric(
-                      'Средняя сессия',
-                      statTime(
-                        analytics!.sessions.isEmpty
-                            ? 0
-                            : analytics!.sessions.fold<int>(
-                                    0,
-                                    (sum, x) => sum + x.wallMs,
-                                  ) ~/
-                                  analytics!.sessions.length,
-                      ),
-                      Icons.av_timer,
-                    ),
-                    metric(
-                      'Самая длинная сессия',
-                      statTime(
-                        analytics!.sessions.fold<int>(
-                          0,
-                          (value, x) => math.max(value, x.wallMs),
-                        ),
-                      ),
-                      Icons.timer_outlined,
-                    ),
-                    metric(
-                      'Средняя скорость',
-                      '${s.averageSpeed.toStringAsFixed(2)}×',
-                      Icons.speed,
-                      note: 'Материал / реальное время',
-                    ),
-                    metric(
-                      'Активных дней',
-                      '${s.days.length}',
-                      Icons.calendar_month,
-                    ),
-                    metric(
-                      'Книг в прослушивании',
-                      '${s.books.length}',
-                      Icons.library_books_outlined,
-                    ),
-                    metric('Перемоток', '${s.seeks}', Icons.swap_horiz),
-                    metric(
-                      'Лучшая серия дней',
-                      '${analytics!.lifetime.longestStreak}',
-                      Icons.local_fire_department_outlined,
-                    ),
-                    metric('Паузы', '${s.pauses}', Icons.pause_circle_outline),
-                    metric(
-                      'Буферизации / ошибки',
-                      '${s.bufferings} / ${s.errors}',
-                      Icons.network_check,
-                    ),
-                    metric(
-                      'Переходы вперёд',
-                      statTime(s.forwardMs),
-                      Icons.fast_forward,
-                      note: 'В пределах одного трека',
-                    ),
-                    metric(
-                      'Переходы назад',
-                      statTime(s.backwardMs),
-                      Icons.fast_rewind,
-                      note: 'В пределах одного трека',
-                    ),
-                    metric(
-                      'Добавлено закладок',
-                      '${s.bookmarks}',
-                      Icons.bookmark_outline,
-                    ),
-                    metric(
-                      'Срабатываний таймера',
-                      '${s.timers}',
-                      Icons.bedtime_outlined,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 28),
-                _calendar(),
-                _comparisons(),
-                const SizedBox(height: 24),
-                Text(
-                  period == -1
-                      ? 'Активность · до 31 дня выбранного периода'
-                      : period == 1
-                      ? 'Сегодня'
-                      : 'Последние $count дней',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 155,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      for (final d in days)
-                        Expanded(
-                          child: Tooltip(
-                            message: '$d · ${statTime(s.days[d] ?? 0)}',
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 3,
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  Container(
-                                    height: math.max(
-                                      3,
-                                      (s.days[d] ?? 0) / maximum * 120,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: d == dayKey(DateTime.now())
-                                          ? const Color(0xffe1ad58)
-                                          : const Color(0xff438b70),
-                                      borderRadius: BorderRadius.circular(5),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    d.substring(8),
-                                    style: const TextStyle(fontSize: 9),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 28),
-                const Text(
-                  'Книги',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-                ),
-                for (final e in top)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.headphones),
-                    title: Text(titles[e.key] ?? 'Книга из архива'),
-                    onTap: () {
-                      setState(() => selectedBook = e.key);
-                      load();
-                    },
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Уникально: ${statTime(analytics!.byBook[e.key]!.uniqueMs)} · материал: ${statTime(analytics!.byBook[e.key]!.mediaMs)}',
-                        ),
-                        if (summaries[e.key]?.total != null &&
-                            summaries[e.key]?.position != null) ...[
-                          const SizedBox(height: 6),
-                          LinearProgressIndicator(
-                            value:
-                                (summaries[e.key]!.position! /
-                                        summaries[e.key]!.total!)
-                                    .clamp(0, 1),
-                          ),
-                          Text(
-                            'По позиции: ${(summaries[e.key]!.position! / summaries[e.key]!.total! * 100).toStringAsFixed(1)}% · осталось ${statTime(((summaries[e.key]!.total! - summaries[e.key]!.position!).clamp(0, 1 << 60) / summaries[e.key]!.speed).round())}',
-                          ),
-                        ] else
-                          const Text(
-                            'Для общей длительности откройте книгу в плеере',
-                          ),
-                      ],
-                    ),
-                    trailing: Text(statTime(e.value)),
-                  ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Скорость и время суток',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-                ),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final e in s.speeds.entries)
-                      Chip(label: Text('${e.key}× · ${statTime(e.value)}')),
-                  ],
-                ),
-                Wrap(
-                  spacing: 6,
-                  children: [
-                    for (var hour = 0; hour < 24; hour++)
-                      if (s.hours.containsKey(hour))
-                        Chip(
-                          label: Text('$hour:00 · ${statTime(s.hours[hour]!)}'),
-                        ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'Сессии прослушивания',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-                ),
-                const Text(
-                  'Период — по дате начала. Короткие паузы не добавляют активного времени.',
-                ),
-                for (final session in analytics!.sessions.take(50))
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.headphones),
-                    title: Text(titles[session.bookId] ?? 'Книга из архива'),
-                    subtitle: Text(
-                      session.timeKnown
-                          ? '${session.localDay} ${_sessionTime(session.start, session.offsetMinutes)}–${_sessionTime(session.end, session.offsetMinutes)} · ${statTime(session.wallMs)} звучания / ${statTime(session.elapsedMs)} от начала до конца\nМатериал ${statTime(session.mediaMs)} · пауз ${session.pauses} · перемоток ${session.seeks}'
-                          : '${session.localDay} · ${statTime(session.wallMs)} · журнал Obsidian',
-                    ),
-                    isThreeLine: true,
-                  ),
-                if (analytics!.sessions.length > 50)
-                  const Text(
-                    'Показаны последние 50 сессий; сводка учитывает все.',
-                  ),
-                const SizedBox(height: 24),
-                Text(
-                  'Старый журнал сессий: ${statTime(legacyMs)} за всё время. Он пересекается с новым журналом и не прибавляется к нему. Подробные интервалы собираются с версии 0.7.0.',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'Подробный журнал · последние 100 событий',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-                ),
-                for (final e in events)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    leading: Icon(
-                      e['kind'] == 'listen' ? Icons.headphones : Icons.history,
-                    ),
-                    title: Text(
-                      '${eventLabel(e['kind'] as String)} · ${titles[e['bookId']] ?? 'Книга'}',
-                    ),
-                    subtitle: Text(
-                      '${e['at']} · ${statTime((e['positionMs'] as num).toInt())}${e['kind'] == 'listen' ? ' → ${statTime((e['endMs'] as num).toInt())} · ${statTime((e['wallMs'] as num).toInt())} · ${e['speed']}×' : ''}',
-                    ),
-                  ),
-                if (events.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'Включите аудиокнигу — здесь появится история прослушивания.',
-                    ),
-                  ),
-              ],
-            ],
-          ),
+      actions: [
+        IconButton(
+          tooltip: 'Управление статистикой',
+          onPressed: _manage,
+          icon: const Icon(Icons.edit_note),
         ),
-      ),
+        PopupMenuButton<String>(
+          tooltip: 'Экспорт статистики',
+          icon: const Icon(Icons.file_download_outlined),
+          onSelected: _exportStats,
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'csv', child: Text('Экспорт CSV')),
+            PopupMenuItem(value: 'json', child: Text('Экспорт JSON')),
+          ],
+        ),
+        IconButton(
+          tooltip: 'Обновить статистику',
+          onPressed: load,
+          icon: const Icon(Icons.refresh),
+        ),
+      ],
+      children: [
+        picker,
+        if (period == -1 && customRange != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              rangeLabel(customRange!),
+              style: TextStyle(fontSize: 12, color: palette.muted),
+            ),
+          ),
+        const SizedBox(height: 18),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: PepePanel(
+              outlined: true,
+              child: Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          ),
+        if (s == null || data == null) ...[
+          _hero(palette, null),
+          const SizedBox(height: 12),
+          const LinearProgressIndicator(),
+        ] else ...[
+          if (stacked) ...[
+            _hero(palette, s),
+            const SizedBox(height: 18),
+            figures,
+            const SizedBox(height: 18),
+            if (goalStats != null) ...[
+              _goalPanel(palette),
+              const SizedBox(height: 16),
+            ],
+            _streakPanel(palette),
+          ] else ...[
+            PepeRow(
+              breakpoint: 0,
+              children: [
+                (6, _hero(palette, s)),
+                (4, goalStats == null ? const SizedBox() : _goalPanel(palette)),
+                (4, _streakPanel(palette)),
+              ],
+            ),
+            const SizedBox(height: 18),
+            figures,
+          ],
+          const SizedBox(height: 18),
+          PepeRow(
+            children: [
+              (
+                7,
+                PepePanel(
+                  title: 'По дням',
+                  trailing: goals.dailyMinutes > 0
+                      ? Text(
+                          '- - цель ${goals.dailyMinutes} мин',
+                          style: TextStyle(fontSize: 12, color: palette.muted),
+                        )
+                      : null,
+                  child: PepeBars(
+                    values: [for (final d in barDays) lifetime[dayKey(d)] ?? 0],
+                    tooltips: [
+                      for (final d in barDays)
+                        '${pepeDate(d)} · ${pepeTime(lifetime[dayKey(d)] ?? 0)}',
+                    ],
+                    goalMinutes: goals.dailyMinutes,
+                    startLabel: pepeDate(barDays.first),
+                    endLabel: barDays.last == today
+                        ? 'сегодня'
+                        : pepeDate(barDays.last),
+                  ),
+                ),
+              ),
+              (4, _rhythm(palette, s)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          PepeRow(
+            children: [(4, _calendarPanel()), (7, _booksPanel(palette, s))],
+          ),
+          const SizedBox(height: 16),
+          PepeRow(
+            children: [
+              (7, _sessionsPanel(palette)),
+              (
+                4,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _comparisons(palette),
+                    const SizedBox(height: 16),
+                    _playerPanel(palette, s),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _eventsPanel(palette),
+          const SizedBox(height: 14),
+          Text(
+            'Старый журнал сессий: ${pepeTime(legacyMs)} за всё время. Он пересекается с новым журналом и не прибавляется к нему. Подробные интервалы собираются с версии 0.7.0.',
+            style: TextStyle(color: palette.muted, fontSize: 12),
+          ),
+        ],
+      ],
     );
   }
 }

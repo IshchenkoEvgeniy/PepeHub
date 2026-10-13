@@ -39,6 +39,7 @@ foreach ($bridgeNoteName in @('notes', 'notes-state', 'notes-markdown')) {
     Write-BridgeFile "src\services\pepehub-$bridgeNoteName.ts" $bridgeNoteCode
 }
 Write-BridgeFile 'src\services\pepehub-notes-service.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'pepehub-notes-service.ts.template')))
+Write-BridgeFile 'src\services\pepehub-durable-state.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'durable-state.ts')))
 Write-BridgeFile 'cloudflare-companion\src\pepehub-notes.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'notes.ts')).Replace("'./metadata.ts'", "'./pepehub-metadata'"))
 Write-BridgeFile 'cloudflare-companion\src\notes-api.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'notes-api.ts')).Replace("'./notes.ts'", "'./pepehub-notes'").Replace("'./metadata-api.ts'", "'./pepehub-metadata-api'"))
 Write-BridgeFile 'cloudflare-companion\migrations\0013_pepehub_notes.sql' ([IO.File]::ReadAllText((Join-Path $bridgeRoot '003_pepehub_notes.sql')))

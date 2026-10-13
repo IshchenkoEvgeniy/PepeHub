@@ -85,6 +85,74 @@ class AssetStore {
     return row == null ? null : LocalAsset.fromRow(row);
   }
 
+  String _bookExtension(String name) => name.toLowerCase().endsWith('.fb2.zip')
+      ? '.fb2.zip'
+      : p.extension(name).toLowerCase();
+
+  String _managedBookPath(LocalAsset asset) =>
+      p.join(directory.path, '${asset.hash}${_bookExtension(asset.filename)}');
+
+  bool isManagedBookPath(LocalAsset asset) =>
+      p.equals(p.absolute(asset.path), p.absolute(_managedBookPath(asset)));
+
+  /// Reading caches are temporary; only a published import in the store's
+  /// root is an independent copy. Also finds imports demoted by older scans.
+  Future<LocalAsset?> managedBookCopy(LocalAsset asset) async {
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(asset.hash)) return null;
+    final file = File(_managedBookPath(asset));
+    if (!await file.exists() || await file.length() != asset.bytes) return null;
+    if (!isManagedBookPath(asset) &&
+        (await sha256.bind(file.openRead(0, asset.bytes + 1)).first)
+                .toString() !=
+            asset.hash) {
+      return null;
+    }
+    return LocalAsset(
+      id: asset.id,
+      bookId: asset.bookId,
+      filename: asset.filename,
+      path: file.path,
+      hash: asset.hash,
+      bytes: asset.bytes,
+    );
+  }
+
+  Future<bool> restoreManagedBookCopy(String bookId) async {
+    final rows = await repository.db
+        .customSelect(
+          'SELECT * FROM local_assets WHERE book_id=?',
+          variables: [Variable(bookId)],
+        )
+        .get();
+    var found = false;
+    for (final row in rows) {
+      final copy = await managedBookCopy(LocalAsset.fromRow(row));
+      if (copy == null) continue;
+      await repository.db.customStatement(
+        'UPDATE local_assets SET path=? WHERE id=?',
+        [copy.path, copy.id],
+      );
+      found = true;
+    }
+    return found;
+  }
+
+  Future<void> _publishCopy(
+    File temporary,
+    File target,
+    String hash,
+    int bytes,
+  ) async {
+    if (await target.exists()) {
+      if (await target.length() != bytes ||
+          (await sha256.bind(target.openRead()).first).toString() != hash) {
+        throw StateError('Повреждена локальная копия. Исходник сохранён.');
+      }
+    } else {
+      await temporary.rename(target.path);
+    }
+  }
+
   /// Copies only a user-selected file. Original paths never enter the sync payload.
   Future<LocalAsset> importAudio(
     XFile selected, {
@@ -145,9 +213,7 @@ class AssetStore {
     required String format,
   }) async {
     final audio = format == 'audio';
-    final extension = selected.name.toLowerCase().endsWith('.fb2.zip')
-        ? '.fb2.zip'
-        : p.extension(selected.name).toLowerCase();
+    final extension = _bookExtension(selected.name);
     if (audio && !audioExtensions.contains(extension.substring(1))) {
       throw ArgumentError('Неподдерживаемый аудиоформат');
     }
@@ -216,6 +282,32 @@ class AssetStore {
             'Эта книга удалена из библиотеки. Автоматическое восстановление отключено.',
           );
         }
+        if (!audio) {
+          final target = File(_managedBookPath(existing));
+          await _publishCopy(temporary, target, hash, size);
+          await repository.db.transaction(() async {
+            await repository.db.customStatement(
+              'UPDATE local_assets SET path=?,bytes=? WHERE id=?',
+              [target.path, size, existing.id],
+            );
+            await repository.setMeta(
+              'reading-imported:${existing.bookId}',
+              '1',
+            );
+            await repository.setMeta(
+              'reading-library-hidden:${existing.bookId}',
+              '0',
+            );
+          });
+          return LocalAsset(
+            id: existing.id,
+            bookId: existing.bookId,
+            filename: existing.filename,
+            path: target.path,
+            hash: hash,
+            bytes: size,
+          );
+        }
         // Re-import can repair a removed local file, but never overwrites an existing one.
         if (!existing.path.startsWith('content:') &&
             !await File(existing.path).exists()) {
@@ -224,14 +316,7 @@ class AssetStore {
         return existing;
       }
       final target = File(p.join(directory.path, '$hash$extension'));
-      if (await target.exists()) {
-        final targetHash = await sha256.bind(target.openRead()).first;
-        if (targetHash.toString() != hash) {
-          throw StateError('Повреждена локальная копия. Исходник сохранён.');
-        }
-      } else {
-        await temporary.rename(target.path);
-      }
+      await _publishCopy(temporary, target, hash, size);
       final asset = LocalAsset(
         id: uuid.v4(),
         bookId: uuid.v4(),
@@ -271,6 +356,13 @@ class AssetStore {
             asset.bytes,
           ],
         );
+        if (!audio) {
+          await repository.setMeta('reading-imported:${asset.bookId}', '1');
+          await repository.setMeta(
+            'reading-library-hidden:${asset.bookId}',
+            '0',
+          );
+        }
         if (audio) {
           await AudioLibraryRepository(repository.db).registerSingleTrack(
             bookId: asset.bookId,

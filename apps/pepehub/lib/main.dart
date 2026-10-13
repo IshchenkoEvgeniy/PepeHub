@@ -93,16 +93,11 @@ class _PepeHubAppState extends State<PepeHubApp> {
         navigatorObservers: [readerRoutes],
         debugShowCheckedModeBanner: false,
         theme: AppTheme.data(
-          Brightness.light,
-          style: theme.style,
-          compact: theme.compact,
-        ),
-        darkTheme: AppTheme.data(
           Brightness.dark,
           style: theme.style,
           compact: theme.compact,
         ),
-        themeMode: theme.mode,
+        themeMode: ThemeMode.dark,
         builder: (context, child) {
           final media = MediaQuery.of(context);
           return MediaQuery(

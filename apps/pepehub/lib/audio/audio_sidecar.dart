@@ -174,10 +174,25 @@ Map<String, dynamic> parseAudioSnapshot(String text) {
   final data = jsonDecode(text);
   if (data is! Map<String, dynamic> ||
       data['format'] != 'pepehub-library-snapshot' ||
-      data['version'] != 1 ||
+      !(data['version'] == 1 ||
+          data['version'] == 2 && data['kind'] == 'audio-journal') ||
       data['books'] is! List ||
       data['sessions'] is! List) {
     throw StateError('Неподдерживаемый снимок');
+  }
+  if (data['version'] == 2 &&
+      (data['events'] is! List ||
+          (data['events'] as List).any(
+            (event) =>
+                event is! Map ||
+                event['id'] is! String ||
+                (event['id'] as String).isEmpty ||
+                event['revision'] is! int ||
+                (event['revision'] as int) < 1 ||
+                event['deleted'] is! bool ||
+                event['data'] is! Map,
+          ))) {
+    throw StateError('Некорректная версия события журнала');
   }
   return data;
 }
@@ -189,6 +204,7 @@ Future<int> restoreAudioSnapshot(
   bool backup = true,
   bool merge = false,
   Set<String>? preserveProgressBookIds,
+  Set<String>? preserveEventIds,
 }) async {
   // Revalidate even when called without the UI preview.
   parseAudioSnapshot(jsonEncode(snapshot));
@@ -384,6 +400,42 @@ Future<int> restoreAudioSnapshot(
               existing.payload?['bookId'] != id)) {
         throw StateError('Конфликт события');
       }
+      // Automatic reconnect never replaces events that existed before recovery,
+      // including edits that reduced time and local deletion tombstones.
+      if (merge &&
+          existing != null &&
+          (preserveEventIds?.contains(existing.id) ?? true)) {
+        continue;
+      }
+      final versionKey = 'audio-event-portable-version:${event['id']}';
+      if (snapshot['version'] == 2) {
+        final revision = event['revision'] as int;
+        final knownVersion = await assets.repository.meta(versionKey);
+        if (existing != null &&
+            existing.revision >= revision &&
+            (!merge || knownVersion != null)) {
+          await assets.repository.setMeta(versionKey, '${existing.revision}');
+          continue;
+        }
+        await assets.repository.setMeta(versionKey, '$revision');
+        // Keep the portable revision so an older backup cannot win simply
+        // because it contains a longer listening interval.
+        await assets.repository.db.customStatement(
+          "INSERT INTO records(id,type,revision,deleted,payload) VALUES(?,'audio_event',?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,deleted=excluded.deleted,payload=excluded.payload",
+          [
+            event['id'],
+            revision,
+            event['deleted'] == true ? 1 : 0,
+            jsonEncode(data),
+          ],
+        );
+        continue;
+      }
+      if (existing != null &&
+          (existing.deleted ||
+              await assets.repository.meta(versionKey) != null)) {
+        continue;
+      }
       // A daily journal backup may contain an earlier checkpoint of the same
       // growing interval. Restoring it must not shorten already recorded time.
       if (data['kind'] == 'listen' &&
@@ -429,7 +481,7 @@ Future<void> exportAudioJournal(AssetStore assets, AudioRoot root) async {
   final placeholders = List.filled(ids.length, '?').join(',');
   final days = await repo.db
       .customSelect(
-        "SELECT json_extract(payload,'\$.localDay') AS day,COUNT(*) AS n,SUM(revision) AS rev FROM records WHERE type='audio_event' AND deleted=0 AND json_extract(payload,'\$.bookId') IN ($placeholders) GROUP BY day",
+        "SELECT json_extract(payload,'\$.localDay') AS day,COUNT(*) AS n,SUM(revision) AS rev FROM records WHERE type='audio_event' AND json_extract(payload,'\$.bookId') IN ($placeholders) GROUP BY day",
         variables: [for (final id in ids) Variable(id)],
       )
       .get();
@@ -440,12 +492,12 @@ Future<void> exportAudioJournal(AssetStore assets, AudioRoot root) async {
     }
     final key = 'audio-journal-daily:${root.key}:$day';
     final fingerprint =
-        '${row.read<int>('n')}:${row.read<int>('rev')}:${ids.join(',')}';
+        'v2:${row.read<int>('n')}:${row.read<int>('rev')}:${ids.join(',')}';
     if (await repo.meta(key) == fingerprint) continue;
     final events =
         (await repo.db
                 .customSelect(
-                  "SELECT * FROM records WHERE type='audio_event' AND deleted=0 AND json_extract(payload,'\$.localDay')=? AND json_extract(payload,'\$.bookId') IN ($placeholders) ORDER BY json_extract(payload,'\$.at'),id",
+                  "SELECT * FROM records WHERE type='audio_event' AND json_extract(payload,'\$.localDay')=? AND json_extract(payload,'\$.bookId') IN ($placeholders) ORDER BY json_extract(payload,'\$.at'),id",
                   variables: [
                     Variable(day),
                     for (final id in ids) Variable(id),
@@ -469,14 +521,20 @@ Future<void> exportAudioJournal(AssetStore assets, AudioRoot root) async {
     }
     final packet = jsonEncode({
       'format': 'pepehub-library-snapshot',
-      'version': 1,
+      'version': 2,
       'kind': 'audio-journal',
       'createdAt': DateTime.now().toUtc().toIso8601String(),
       'library': root.title,
       'books': books,
       'sessions': [],
       'events': [
-        for (final e in events) {'id': e.id, 'data': e.payload},
+        for (final e in events)
+          {
+            'id': e.id,
+            'revision': e.revision,
+            'deleted': e.deleted,
+            'data': e.payload,
+          },
       ],
     });
     await writeAudioSupport(root, 'events-$day.json', packet, day: day);

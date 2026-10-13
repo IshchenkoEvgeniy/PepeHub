@@ -49,7 +49,23 @@ class ReadingRoots {
       final remaining = (await list()).expand((r) => r.bookIds).toSet();
       for (final id in root.bookIds) {
         if (!remaining.contains(id)) {
-          await assets.repository.setMeta('reading-library-hidden:$id', '1');
+          final managed = await assets.restoreManagedBookCopy(id);
+          final imported =
+              managed ||
+              await assets.repository.meta('reading-imported:$id') == '1';
+          if (managed) {
+            await assets.repository.setMeta('reading-imported:$id', '1');
+          }
+          await assets.repository.setMeta(
+            'reading-library-hidden:$id',
+            imported ? '0' : '1',
+          );
+          if (imported) {
+            await assets.repository.db.customStatement(
+              'DELETE FROM metadata WHERE key=?',
+              ['reading-source-path:$id'],
+            );
+          }
         }
       }
     });
@@ -122,9 +138,17 @@ class ReadingRoots {
             [uuid.v4(), id, p.basename(file.name), file.path, hash, size],
           );
         } else {
+          final managed = await assets.managedBookCopy(existing);
+          if (managed != null || assets.isManagedBookPath(existing)) {
+            await assets.repository.setMeta('reading-imported:$id', '1');
+          }
           await assets.repository.db.customStatement(
             'UPDATE local_assets SET path=?,filename=? WHERE id=?',
-            [file.path, p.basename(file.name), existing.id],
+            [
+              managed?.path ?? file.path,
+              managed?.filename ?? p.basename(file.name),
+              existing.id,
+            ],
           );
         }
         await assets.repository.setMeta('reading-library-hidden:$id', '0');
@@ -148,6 +172,11 @@ class ReadingRoots {
 
   Future<LocalAsset> forReading(LocalAsset asset) async {
     if (!asset.path.startsWith('content:')) return asset;
+    final maxBytes =
+        (bookFormat(asset.filename) == 'pdf' ? 256 : 64) * 1024 * 1024;
+    if (asset.bytes <= 0 || asset.bytes > maxBytes) {
+      throw StateError('Недопустимый размер книги. Обновите папку книг.');
+    }
     // Text/PDF engines need a seekable local file. Cache only the opened book.
     final cache = Directory(p.join(assets.directory.path, 'reading-cache'));
     await cache.create(recursive: true);
@@ -159,9 +188,19 @@ class ReadingRoots {
       try {
         final sink = temporary.openWrite();
         try {
-          await sink.addStream(
-            SafAudioFile(asset.path, asset.filename, asset.bytes).openRead(),
-          );
+          var received = 0;
+          await for (final chunk in SafAudioFile(
+            asset.path,
+            asset.filename,
+            asset.bytes,
+          ).openRead()) {
+            received += chunk.length;
+            if (received > asset.bytes || received > maxBytes) {
+              throw StateError('Размер файла изменился. Обновите папку книг.');
+            }
+            sink.add(chunk);
+            await sink.flush();
+          }
         } finally {
           await sink.close();
         }

@@ -220,12 +220,10 @@ void main() {
       }
 
       await capture('library-dark');
-      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.tap(find.byTooltip('Аудиокниги'));
       await tester.pumpAndSettle();
-      await capture('library-drawer');
-      await tester.tap(find.text('Аудиокниги').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Начатые'));
+      await capture('library-audio');
+      await tester.tap(find.byKey(const ValueKey('status-tab:active')));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
         find.text('Морские истории — сборник рассказов'),
@@ -234,16 +232,9 @@ void main() {
       );
       expect(find.text('Дюна — Фрэнк Герберт'), findsNothing);
       expect(find.text('Морские истории — сборник рассказов'), findsOneWidget);
-      await tester.tap(find.byTooltip('Тема оформления'));
+      await tester.tap(find.byKey(const ValueKey('status-tab:all')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Светлая тема'));
-      await tester.pumpAndSettle();
-      expect(await repo.meta('appearance-theme'), 'light');
-      await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Все').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(ChoiceChip, 'Все').last);
-      await tester.pumpAndSettle();
-      await capture('library-light');
+      await capture('library-all');
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       await tester.runAsync(() async {

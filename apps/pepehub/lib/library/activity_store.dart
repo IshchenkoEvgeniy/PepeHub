@@ -446,7 +446,10 @@ class ActivityStore {
     });
   });
 
+  void preparePending(Map<String, dynamic> state) {}
+
   Future<List<Map<String, dynamic>>> pending() => mutate((state) async {
+    preparePending(state);
     final ops = <Map<String, dynamic>>[];
     for (final slot in (state['slots'] as Map).values) {
       if (slot['conflict'] != null) continue;

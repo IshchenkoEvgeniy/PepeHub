@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../library/library_service.dart';
+import 'pepe_widgets.dart';
+import 'shelf_components.dart';
 
 class ObsidianNotesPage extends StatefulWidget {
   final LibraryService library;
@@ -42,9 +44,25 @@ class _ObsidianNotesPageState extends State<ObsidianNotesPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('Заметки Obsidian'),
+  Widget build(BuildContext context) {
+    final palette = ShelfPalette.of(context);
+    final wide = pepeWide(context);
+    final visible = [
+      for (final slot in notes)
+        if ('${slot['value']['title']} ${slot['value']['quote']} ${slot['value']['text']} ${slot['value']['tags']} ${slot['value']['characters']}'
+            .toLowerCase()
+            .contains(query))
+          slot,
+    ];
+    final conflicts = notes.where((n) => n['conflict'] != null).length;
+    final pad = wide ? 28.0 : 16.0;
+    return PepeSubpage(
+      title: 'Заметки Obsidian',
+      back: 'Библиотека',
+      section: PepeSection.library,
+      subtitle: notes.isEmpty
+          ? null
+          : '${notes.length} заметок${conflicts == 0 ? '' : ' · конфликтов: $conflicts'}',
       actions: [
         IconButton(
           tooltip: 'Синхронизировать',
@@ -52,85 +70,192 @@ class _ObsidianNotesPageState extends State<ObsidianNotesPage> {
           icon: const Icon(Icons.sync),
         ),
       ],
-    ),
-    body: Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: TextField(
-            decoration: const InputDecoration(
-              labelText: 'Поиск по цитатам, заметкам и тегам',
-              prefixIcon: Icon(Icons.search),
-            ),
-            onChanged: (v) => setState(() => query = v.toLowerCase()),
-          ),
-        ),
-        if (error.isNotEmpty)
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           Padding(
-            padding: const EdgeInsets.all(12),
-            child: Text(
-              error,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            padding: EdgeInsets.symmetric(horizontal: pad),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: TextField(
+                decoration: const InputDecoration(
+                  labelText: 'Поиск по цитатам, заметкам и тегам',
+                  prefixIcon: Icon(Icons.search),
+                ),
+                onChanged: (v) => setState(() => query = v.toLowerCase()),
+              ),
             ),
           ),
-        Expanded(
-          child: notes.isEmpty
-              ? const Center(
-                  child: Text(
-                    'Заметки связанных книг появятся после синхронизации.',
-                  ),
-                )
-              : ListView(
-                  children: [
-                    for (final slot in notes)
-                      if ('${slot['value']['title']} ${slot['value']['quote']} ${slot['value']['text']} ${slot['value']['tags']} ${slot['value']['characters']}'
-                          .toLowerCase()
-                          .contains(query))
-                        Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 6,
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: _note(slot),
-                          ),
+          if (error.isNotEmpty)
+            Padding(
+              padding: EdgeInsets.fromLTRB(pad, 12, pad, 0),
+              child: Text(
+                error,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: notes.isEmpty
+                ? Center(
+                    child: Text(
+                      'Заметки связанных книг появятся после синхронизации.',
+                      style: TextStyle(color: palette.muted),
+                    ),
+                  )
+                : ListView(
+                    padding: EdgeInsets.fromLTRB(pad, 0, pad, 28),
+                    children: [
+                      for (final slot in visible)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _card(palette, slot),
                         ),
-                  ],
-                ),
-        ),
-      ],
-    ),
-  );
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _card(ShelfPalette palette, Map<String, dynamic> slot) {
+    final conflict = slot['conflict'] != null;
+    return Material(
+      color: palette.panel,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 4,
+            child: ColoredBox(
+              color: conflict ? palette.accent : palette.strongLine,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 16, 10),
+            child: _note(slot),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _note(Map<String, dynamic> slot) {
+    final palette = ShelfPalette.of(context);
     final value = Map<String, dynamic>.from(slot['value'] as Map),
         book = widget.library.entries
             .where((e) => e.item.id == value['itemId'])
             .firstOrNull
             ?.item
             .title;
+    final tags = value['tags'] as List, characters = value['characters'] as List;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          book ?? 'Книга Obsidian',
-          style: Theme.of(context).textTheme.titleMedium,
+        Row(
+          children: [
+            Icon(
+              value['kind'] == 'audio'
+                  ? Icons.headphones_outlined
+                  : Icons.menu_book_outlined,
+              size: 16,
+              color: palette.muted,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                [
+                  book ?? 'Книга Obsidian',
+                  if ('${value['title']}'.isNotEmpty) '${value['title']}',
+                ].join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: palette.muted,
+                ),
+              ),
+            ),
+          ],
         ),
-        if ('${value['title']}'.isNotEmpty) Text('${value['title']}'),
         if ('${value['quote']}'.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: SelectableText('${value['quote']}'),
+            padding: const EdgeInsets.only(top: 10),
+            child: SelectableText(
+              '${value['quote']}',
+              style: AppFonts.book(palette.text, size: 17).copyWith(
+                height: 1.45,
+              ),
+            ),
           ),
-        SelectableText('${value['text']}'),
-        if ((value['tags'] as List).isNotEmpty)
-          Text('Теги: ${(value['tags'] as List).join(', ')}'),
-        if ((value['characters'] as List).isNotEmpty)
-          Text('Персонажи: ${(value['characters'] as List).join(', ')}'),
+        if ('${value['text']}'.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: SelectableText(
+              '${value['text']}',
+              style: TextStyle(
+                fontSize: 13.5,
+                height: 1.45,
+                color: palette.text.withValues(alpha: .85),
+              ),
+            ),
+          ),
+        if (tags.isNotEmpty || characters.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 4,
+              children: [
+                for (final t in tags)
+                  Text(
+                    '#$t',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: palette.accent,
+                    ),
+                  ),
+                if (characters.isNotEmpty)
+                  Text(
+                    'Персонажи: ${characters.join(', ')}',
+                    style: TextStyle(fontSize: 12, color: palette.muted),
+                  ),
+              ],
+            ),
+          ),
         if (slot['conflict'] != null) ...[
-          const Text('Изменено с обеих сторон. Версия сервера:'),
-          SelectableText(
-            '${slot['conflict']['entry']['quote']}\n${slot['conflict']['entry']['text']}',
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: palette.raised,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Изменено с обеих сторон. Версия сервера:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: palette.accent,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SelectableText(
+                  '${slot['conflict']['entry']['quote']}\n${slot['conflict']['entry']['text']}',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ],
+            ),
           ),
           Wrap(
             children: [

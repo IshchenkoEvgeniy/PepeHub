@@ -13,6 +13,7 @@ export interface Session {
   endedAt: string;
   activeSeconds: number;
   timezone: string;
+  offsetMinutes?: number;
   source: 'manual' | 'timer' | 'player';
 }
 export interface Operation {
@@ -75,7 +76,7 @@ export function parseOperation(input: unknown): Operation {
     payload = { title: text(p.title, 500), authors: p.authors.map(a => text(a, 200)), format: choice(p.format, bookFormats), status: choice(p.status, ['planned', 'active', 'finished']) };
   } else {
     const p = record(o.payload);
-    exactKeys(p, ['bookId','kind','startedAt','endedAt','activeSeconds','timezone','source']);
+    exactKeys(p, ['bookId','kind','startedAt','endedAt','activeSeconds','timezone','source','offsetMinutes']);
     if (!isUuid(p.bookId)) throw new InputError('Invalid book ID');
     const startedAt = text(p.startedAt, 40), endedAt = text(p.endedAt, 40);
     const canonicalDate = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -88,6 +89,10 @@ export function parseOperation(input: unknown): Operation {
     const timezone = text(p.timezone, 100);
     try { new Intl.DateTimeFormat('en', { timeZone: timezone }); } catch { throw new InputError('Invalid timezone'); }
     payload = { bookId: p.bookId, kind: choice(p.kind, ['reading', 'listening']), startedAt, endedAt, activeSeconds: seconds as number, timezone, source: choice(p.source, ['manual','timer','player']) };
+    if(p.offsetMinutes!==undefined) {
+      if(!Number.isSafeInteger(p.offsetMinutes)||(p.offsetMinutes as number)<-840||(p.offsetMinutes as number)>840)throw new InputError('Invalid timezone offset');
+      payload.offsetMinutes=p.offsetMinutes as number;
+    }
   }
   return { schemaVersion: 1, operationId: o.operationId, deviceId: o.deviceId, entityType, entityId: o.entityId, baseRevision: o.baseRevision as number, action, payload };
 }

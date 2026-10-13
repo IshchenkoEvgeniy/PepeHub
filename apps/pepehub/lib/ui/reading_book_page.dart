@@ -9,9 +9,14 @@ import 'package:path/path.dart' as p;
 
 import '../data/repository.dart';
 import '../media/asset_store.dart';
+import '../reader/reading_activity.dart';
 import '../reader/reading_library.dart';
-import 'reading_statistics_page.dart';
+import '../reader/reading_plan.dart';
+import 'audio_statistics_page.dart' show statTime;
+import 'pepe_widgets.dart';
 import 'reading_plan_page.dart';
+import 'reading_statistics_page.dart';
+import 'shelf_components.dart';
 
 class ReadingBookPage extends StatefulWidget {
   final Repository repository;
@@ -41,6 +46,7 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
   Uint8List? pickedCover;
   bool loading = true, saving = false;
   bool startEdited = false, endEdited = false, statusEdited = false;
+  ReadingPlanData? plan;
   @override
   void initState() {
     super.initState();
@@ -60,6 +66,12 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
       final info = await library.bookInfo(widget.book, widget.asset?.hash);
       final prefs = await library.value('reading-book:${widget.book.id}');
       final overrides = prefs['overrides'] as Map? ?? {};
+      ReadingPlanData? planData;
+      try {
+        planData = await ReadingPlans(widget.repository).load(widget.book.id);
+      } catch (_) {
+        planData = null;
+      }
       if (!mounted) return;
       setState(() {
         title.text = info['title'] as String? ?? widget.book.title;
@@ -74,6 +86,7 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
         startEdited = overrides.containsKey('startedAt');
         endEdited = overrides.containsKey('finishedAt');
         statusEdited = overrides.containsKey('status');
+        plan = planData;
         loading = false;
       });
     } catch (e) {
@@ -197,151 +210,403 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
     return d == null ? 'Не указана' : '${d.day}.${d.month}.${d.year}';
   }
 
+  Future<void> _openPlan() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReadingPlanPage(
+          repository: widget.repository,
+          bookId: widget.book.id,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    try {
+      final data = await ReadingPlans(widget.repository).load(widget.book.id);
+      if (mounted) setState(() => plan = data);
+    } catch (_) {}
+  }
+
+  void _openStatistics() => Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => ReadingStatisticsPage(
+        repository: widget.repository,
+        bookId: widget.book.id,
+      ),
+    ),
+  );
+
+  Widget _coverImage(ShelfPalette palette, double width) {
+    final placeholder = Container(
+      color: palette.raised,
+      alignment: Alignment.center,
+      child: Icon(Icons.menu_book, size: width / 3, color: palette.muted),
+    );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox(
+        width: width,
+        height: width * 1.45,
+        child: pickedCover != null
+            ? Image.memory(pickedCover!, fit: BoxFit.cover)
+            : cover != null
+            ? Image.file(
+                File(cover!),
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => placeholder,
+              )
+            : placeholder,
+      ),
+    );
+  }
+
+  Widget _coverButtons() => Wrap(
+    spacing: 4,
+    children: [
+      TextButton(
+        onPressed: widget.assets == null ? null : _cover,
+        child: const Text('Выбрать обложку'),
+      ),
+      TextButton(
+        onPressed: () {
+          setState(() {
+            cover = null;
+            pickedCover = null;
+          });
+        },
+        child: const Text('Убрать обложку'),
+      ),
+    ],
+  );
+
+  Widget _status() => PepeChoices<String>(
+    options: const [
+      ('planned', 'Новая'),
+      ('active', 'Читаю'),
+      ('finished', 'Завершена'),
+    ],
+    selected: status,
+    onSelect: (v) => setState(() {
+      status = v;
+      statusEdited = true;
+    }),
+  );
+
+  Widget _planPanel(
+    ShelfPalette palette,
+    ReadingPlanData data,
+    ReadingForecast forecast,
+  ) {
+    final saved = data.saved;
+    String date(DateTime d) =>
+        '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
+    return PepePanel(
+      title: 'План чтения',
+      trailing: TextButton(
+        onPressed: _openPlan,
+        child: Text(saved == null ? 'Составить' : 'Изменить'),
+      ),
+      child: saved == null
+          ? Text(
+              'Плана пока нет. Задайте минуты в день и срок — приложение посчитает, когда вы закончите.',
+              style: TextStyle(fontSize: 13, height: 1.4, color: palette.muted),
+            )
+          : Row(
+              children: [
+                PepeRing(
+                  value: forecast.todayMs / (saved.dailyMinutes * 60000),
+                  center: '${forecast.todayMs ~/ 60000}',
+                  below: 'из ${saved.dailyMinutes} мин',
+                  size: 96,
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        forecast.complete
+                            ? 'Цель по объёму достигнута'
+                            : forecast.remainingMinutes == null
+                            ? 'Мало данных для прогноза'
+                            : 'Осталось ≈ ${statTime(forecast.remainingMinutes! * 60000)}',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        [
+                          'цель — первые ${saved.targetPercent}%',
+                          if (saved.deadline != null)
+                            'срок ${date(saved.deadline!)}',
+                          if (forecast.expectedDate != null &&
+                              !forecast.complete)
+                            'закончите ${date(forecast.expectedDate!)}',
+                        ].join(' · '),
+                        style: TextStyle(fontSize: 12.5, color: palette.muted),
+                      ),
+                      if (forecast.overdue)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            'Срок прошёл',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _details(ShelfPalette palette, bool wide) {
+    Widget field(TextEditingController controller, String label) => TextField(
+      controller: controller,
+      maxLength: controller == description ? 10000 : 500,
+      maxLines: controller == description ? 5 : 1,
+      decoration: InputDecoration(labelText: label),
+    );
+    Widget pair(Widget a, Widget b) => wide
+        ? Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: a),
+              const SizedBox(width: 16),
+              Expanded(child: b),
+            ],
+          )
+        : Column(children: [a, const SizedBox(height: 6), b]);
+    Widget dateTile(bool first) => Material(
+      color: palette.raised,
+      borderRadius: BorderRadius.circular(14),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Text(first ? 'Начало чтения' : 'Завершение чтения'),
+        subtitle: Text(_label(first ? started : finished)),
+        onTap: () => _date(first),
+        trailing: IconButton(
+          tooltip: 'Очистить дату',
+          icon: const Icon(Icons.clear),
+          onPressed: () => setState(() {
+            if (first) {
+              started = null;
+              startEdited = true;
+            } else {
+              finished = null;
+              endEdited = true;
+            }
+          }),
+        ),
+      ),
+    );
+    return PepePanel(
+      title: 'Сведения',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          pair(field(title, 'Название'), field(authors, 'Авторы через ;')),
+          const SizedBox(height: 6),
+          pair(field(series, 'Серия'), field(number, 'Номер в серии')),
+          const SizedBox(height: 6),
+          field(description, 'Описание'),
+          const SizedBox(height: 10),
+          pair(dateTile(true), dateTile(false)),
+          const SizedBox(height: 12),
+          Text(
+            'Ручные сведения сохраняются при повторном сканировании файла.',
+            style: TextStyle(fontSize: 12, color: palette.muted),
+          ),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton(
+              onPressed: _save,
+              child: Text(saving ? 'Сохранение…' : 'Сохранить карточку'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('Карточка книги'),
+  Widget build(BuildContext context) {
+    final palette = ShelfPalette.of(context);
+    final wide = pepeWide(context);
+    final data = plan;
+    final forecast = data == null
+        ? null
+        : forecastReading(
+            plan: data.saved ?? const ReadingPlan(),
+            bookId: widget.book.id,
+            hash: data.hash,
+            length: data.length,
+            coverage: data.coverage,
+            sessions: data.sessions,
+            now: DateTime.now(),
+          );
+    final totals = readingTotals(
+      data?.sessions ?? const [],
+      bookId: widget.book.id,
+    );
+    final now = DateTime.now();
+    final fortnight = [
+      for (var i = 13; i >= 0; i--) DateTime(now.year, now.month, now.day - i),
+    ];
+    final covered = data == null || data.length == 0 || forecast == null
+        ? null
+        : forecast.coveredChars / data.length;
+    final authorLine = [
+      if (authors.text.trim().isNotEmpty) authors.text.trim(),
+      if (series.text.trim().isNotEmpty)
+        number.text.trim().isEmpty
+            ? series.text.trim()
+            : '${series.text.trim()} · №${number.text.trim()}',
+    ].join(' · ');
+
+    final heading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (authorLine.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Text(
+              authorLine,
+              style: AppFonts.book(palette.muted, size: wide ? 20 : 16),
+            ),
+          ),
+        _status(),
+      ],
+    );
+    final figures = PepeFigureStrip([
+      (
+        covered == null ? '—' : '${(covered * 100).toStringAsFixed(0)}%',
+        'Прочитано',
+      ),
+      (pepeTime(totals.milliseconds), 'Всего за книгу'),
+      ('${totals.sessions}', 'Сессий'),
+      (_label(started), 'Начало чтения'),
+    ]);
+    final bars = PepePanel(
+      title: 'Две недели',
+      trailing: IconButton(
+        tooltip: 'Статистика книги',
+        onPressed: _openStatistics,
+        icon: const Icon(Icons.bar_chart),
+      ),
+      child: PepeBars(
+        height: 110,
+        values: [for (final d in fortnight) totals.days[readingDay(d)] ?? 0],
+        tooltips: [
+          for (final d in fortnight)
+            '${pepeDate(d)} · ${pepeTime(totals.days[readingDay(d)] ?? 0)}',
+        ],
+        goalMinutes: data?.saved?.dailyMinutes ?? 0,
+        startLabel: pepeDate(fortnight.first),
+        endLabel: 'сегодня',
+      ),
+    );
+    final description = this.description.text.trim();
+    final main = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (wide) ...[heading, const SizedBox(height: 22)],
+        figures,
+        if (description.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          Text(
+            description,
+            maxLines: 8,
+            overflow: TextOverflow.ellipsis,
+            style: AppFonts.book(palette.text, size: 16).copyWith(height: 1.55),
+          ),
+        ],
+        const SizedBox(height: 18),
+        PepeRow(
+          children: [
+            if (data != null && forecast != null)
+              (5, _planPanel(palette, data, forecast)),
+            (6, bars),
+          ],
+        ),
+        const SizedBox(height: 18),
+        _details(palette, wide),
+      ],
+    );
+    final content = wide
+        ? Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 240,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [_coverImage(palette, 240), _coverButtons()],
+                ),
+              ),
+              const SizedBox(width: 32),
+              Expanded(child: main),
+            ],
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _coverImage(palette, 112),
+                  const SizedBox(width: 16),
+                  Expanded(child: heading),
+                ],
+              ),
+              _coverButtons(),
+              const SizedBox(height: 8),
+              main,
+            ],
+          );
+    return PepeSubpage(
+      title: loading || title.text.trim().isEmpty
+          ? 'Карточка книги'
+          : title.text.trim(),
+      back: 'Книги',
+      section: PepeSection.books,
       actions: [
         IconButton(
           tooltip: 'План чтения',
           icon: const Icon(Icons.event_note),
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ReadingPlanPage(
-                repository: widget.repository,
-                bookId: widget.book.id,
-              ),
-            ),
-          ),
+          onPressed: _openPlan,
         ),
-        IconButton(
-          tooltip: 'Статистика книги',
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ReadingStatisticsPage(
-                repository: widget.repository,
-                bookId: widget.book.id,
-              ),
-            ),
+        if (!wide)
+          IconButton(
+            tooltip: 'Статистика книги',
+            onPressed: _openStatistics,
+            icon: const Icon(Icons.bar_chart),
           ),
-          icon: const Icon(Icons.bar_chart),
-        ),
       ],
-    ),
-    body: loading
-        ? const Center(child: CircularProgressIndicator())
-        : AbsorbPointer(
-            absorbing: saving,
-            child: ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                Center(
-                  child: SizedBox(
-                    width: 130,
-                    height: 185,
-                    child: pickedCover != null
-                        ? Image.memory(pickedCover!, fit: BoxFit.cover)
-                        : cover != null
-                        ? Image.file(
-                            File(cover!),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) =>
-                                const Icon(Icons.menu_book, size: 64),
-                          )
-                        : const Icon(Icons.menu_book, size: 64),
-                  ),
-                ),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  children: [
-                    TextButton(
-                      onPressed: widget.assets == null ? null : _cover,
-                      child: const Text('Выбрать обложку'),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        setState(() {
-                          cover = null;
-                          pickedCover = null;
-                        });
-                      },
-                      child: const Text('Убрать обложку'),
-                    ),
-                  ],
-                ),
-                for (final entry in [
-                  (title, 'Название'),
-                  (authors, 'Авторы через ;'),
-                  (series, 'Серия'),
-                  (number, 'Номер в серии'),
-                  (description, 'Описание'),
-                ])
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: TextField(
-                      controller: entry.$1,
-                      maxLength: entry.$1 == description ? 10000 : 500,
-                      maxLines: entry.$1 == description ? 5 : 1,
-                      decoration: InputDecoration(labelText: entry.$2),
-                    ),
-                  ),
-                DropdownButtonFormField<String>(
-                  initialValue: status,
-                  decoration: const InputDecoration(labelText: 'Статус'),
-                  items: const [
-                    DropdownMenuItem(value: 'planned', child: Text('Новая')),
-                    DropdownMenuItem(value: 'active', child: Text('Читаю')),
-                    DropdownMenuItem(
-                      value: 'finished',
-                      child: Text('Завершена'),
-                    ),
-                  ],
-                  onChanged: (v) => setState(() {
-                    status = v!;
-                    statusEdited = true;
-                  }),
-                ),
-                for (final first in [true, false])
-                  ListTile(
-                    title: Text(first ? 'Начало чтения' : 'Завершение чтения'),
-                    subtitle: Text(_label(first ? started : finished)),
-                    onTap: () => _date(first),
-                    trailing: IconButton(
-                      tooltip: 'Очистить дату',
-                      icon: const Icon(Icons.clear),
-                      onPressed: () => setState(() {
-                        if (first) {
-                          started = null;
-                          startEdited = true;
-                        } else {
-                          finished = null;
-                          endEdited = true;
-                        }
-                      }),
-                    ),
-                  ),
-                const Text(
-                  'Ручные сведения сохраняются при повторном сканировании файла.',
-                ),
-                if (error != null)
-                  Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(
-                      error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: _save,
-                  child: Text(saving ? 'Сохранение…' : 'Сохранить карточку'),
-                ),
-              ],
-            ),
-          ),
-  );
+      children: loading
+          ? const [
+              Padding(
+                padding: EdgeInsets.all(40),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ]
+          : [AbsorbPointer(absorbing: saving, child: content)],
+    );
+  }
 }
