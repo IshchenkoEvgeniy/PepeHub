@@ -23,10 +23,13 @@ import '../audio/audio_folder.dart';
 import 'asset_store.dart';
 import 'audio_artwork.dart';
 import 'listening_clock.dart';
+import 'shared_media_handler.dart';
 
 class AudioController extends BaseAudioHandler with ChangeNotifier {
   final AssetStore assets;
   final AudioPlayer player;
+  late final systemHandler = SharedMediaHandler(this);
+  Future<void> Function()? beforeBookPlayback;
   final Stopwatch monotonic = Stopwatch()..start();
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   List<LocalAsset> _tracks = [];
@@ -259,11 +262,11 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       }
     } catch (_) {}
     if (Platform.isAndroid) {
-      await AudioService.init<AudioController>(
-        builder: () => controller,
+      await AudioService.init<SharedMediaHandler>(
+        builder: () => controller.systemHandler,
         config: const AudioServiceConfig(
           androidNotificationChannelId: 'app.pepehub.audio',
-          androidNotificationChannelName: 'Аудиокниги',
+          androidNotificationChannelName: 'Медиа PepeHub',
           androidNotificationOngoing: false,
           androidStopForegroundOnPause: false,
           androidNotificationIcon: 'drawable/ic_audio_notification',
@@ -406,8 +409,11 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> open(LocalAsset asset, String bookTitle) =>
-      _command(() => _open(asset, bookTitle));
+  Future<void> open(LocalAsset asset, String bookTitle) async {
+    await beforeBookPlayback?.call();
+    await _command(() => _open(asset, bookTitle));
+  }
+
   Future<void> _open(LocalAsset asset, String bookTitle) async {
     if (current?.bookId == asset.bookId && _ready) return;
     ++_durationGeneration;
@@ -481,7 +487,11 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   }
 
   @override
-  Future<void> play() => _command(_play);
+  Future<void> play() async {
+    await beforeBookPlayback?.call();
+    await _command(_play);
+  }
+
   Future<void> _play() async {
     if (current == null || !canPlay) return;
     if (_sleepStopped) await _open(current!, title);
@@ -1104,6 +1114,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     }
     await flushJournal();
     await player.dispose();
+    await systemHandler.close();
     super.dispose();
   }
 }

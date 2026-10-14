@@ -7,6 +7,8 @@ import 'pepe_widgets.dart';
 import 'shelf_components.dart';
 import 'recommendations_page.dart';
 import 'statistics_hub_page.dart';
+import '../video/video_library_page.dart';
+import '../video/video_repository.dart';
 import '../recommendations/recommendation_store.dart';
 import '../recommendations/book_catalog.dart';
 import '../audio/audio_roots.dart';
@@ -87,6 +89,8 @@ class _LibraryPageState extends State<LibraryPage> {
   bool metadataSection = false;
   bool recommendationsSection = false;
   bool statisticsSection = false;
+  bool videoSection = false;
+  late final videoLibrary = VideoRepository(widget.repository);
   late final recommendations = RecommendationStore(widget.repository);
   late final bookCatalog = BookCatalog(httpClient);
   late final obsidianLibrary = LibraryService(
@@ -158,6 +162,7 @@ class _LibraryPageState extends State<LibraryPage> {
     metadataSection = section == 'metadata';
     recommendationsSection = section == 'recommendations';
     statisticsSection = section == 'statistics';
+    videoSection = section == 'video';
     unawaited(_loadObsidian());
     await _reload();
     if (mounted && Platform.isAndroid && widget.assets != null) {
@@ -183,6 +188,7 @@ class _LibraryPageState extends State<LibraryPage> {
         (!metadataSection &&
             !recommendationsSection &&
             !statisticsSection &&
+            !videoSection &&
             reading == next)) {
       return;
     }
@@ -190,6 +196,7 @@ class _LibraryPageState extends State<LibraryPage> {
       metadataSection = false;
       recommendationsSection = false;
       statisticsSection = false;
+      videoSection = false;
       reading = next;
       selectedBooks.clear();
       books = [];
@@ -241,6 +248,7 @@ class _LibraryPageState extends State<LibraryPage> {
       metadataSection = false;
       recommendationsSection = false;
       statisticsSection = false;
+      videoSection = false;
       selectedRoot = collectionFilter = null;
       favoritesOnly = false;
       query = '';
@@ -930,6 +938,7 @@ class _LibraryPageState extends State<LibraryPage> {
       metadataSection = true;
       recommendationsSection = false;
       statisticsSection = false;
+      videoSection = false;
       selectedBooks.clear();
     });
     await widget.repository.setMeta('library-section', 'metadata');
@@ -937,7 +946,9 @@ class _LibraryPageState extends State<LibraryPage> {
     unawaited(obsidianLibrary.sync());
   }
 
-  PepeSection get _section => statisticsSection
+  PepeSection get _section => videoSection
+      ? PepeSection.video
+      : statisticsSection
       ? PepeSection.statistics
       : recommendationsSection
       ? PepeSection.recommendations
@@ -961,11 +972,21 @@ class _LibraryPageState extends State<LibraryPage> {
         await _switchSection(true, closeDrawer: false);
       case PepeSection.audio:
         await _switchSection(false, closeDrawer: false);
+      case PepeSection.video:
+        setState(() {
+          videoSection = true;
+          metadataSection = false;
+          recommendationsSection = false;
+          statisticsSection = false;
+          selectedBooks.clear();
+        });
+        await widget.repository.setMeta('library-section', 'video');
       case PepeSection.library:
         await _metadataSection(closeDrawer: false);
       case PepeSection.recommendations:
         setState(() {
           recommendationsSection = true;
+          videoSection = false;
           metadataSection = false;
           statisticsSection = false;
           selectedBooks.clear();
@@ -974,6 +995,7 @@ class _LibraryPageState extends State<LibraryPage> {
       case PepeSection.statistics:
         setState(() {
           statisticsSection = true;
+          videoSection = false;
           recommendationsSection = false;
           metadataSection = false;
           selectedBooks.clear();
@@ -1177,6 +1199,10 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   Widget build(BuildContext context) {
     PepeRoot.navigation = _navigation;
+    if (videoSection) {
+      return VideoLibraryPage(repository: videoLibrary,
+          navigation: _navigation, audio: widget.audio);
+    }
     if (statisticsSection) {
       return StatisticsHubPage(
         repository: widget.repository,

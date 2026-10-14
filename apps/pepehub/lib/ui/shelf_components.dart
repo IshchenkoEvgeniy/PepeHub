@@ -46,10 +46,11 @@ class ShelfPanel extends StatelessWidget {
   }
 }
 
-/// The five top-level sections of the app, in navigation order.
+/// Top-level sections of the app, in navigation order.
 enum PepeSection {
   books('Книги', Icons.menu_book_outlined, Icons.menu_book),
   audio('Аудиокниги', Icons.headphones_outlined, Icons.headphones),
+  video('Видео', Icons.ondemand_video_outlined, Icons.ondemand_video),
   library(
     'Библиотека',
     Icons.local_library_outlined,

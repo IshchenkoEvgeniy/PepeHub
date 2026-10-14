@@ -8,6 +8,10 @@ import 'media/asset_store.dart';
 import 'media/audio_controller.dart';
 import 'ui/library_page.dart';
 import 'reader/reader_routes.dart';
+import 'video/video_repository.dart';
+import 'video/video_session.dart';
+import 'video/video_player_page.dart';
+import 'video/video_mini_player.dart';
 
 Future<void> main() => startPepeHub();
 
@@ -71,6 +75,11 @@ class PepeHubApp extends StatefulWidget {
 
 class _PepeHubAppState extends State<PepeHubApp> {
   late final theme = AppTheme(widget.repository);
+  final navigator = GlobalKey<NavigatorState>();
+  late final videos = VideoPlaybackSession(
+    VideoRepository(widget.repository),
+    audio: widget.audio,
+  );
   @override
   void initState() {
     super.initState();
@@ -80,6 +89,7 @@ class _PepeHubAppState extends State<PepeHubApp> {
   @override
   void dispose() {
     theme.dispose();
+    videos.dispose();
     super.dispose();
   }
 
@@ -90,6 +100,7 @@ class _PepeHubAppState extends State<PepeHubApp> {
       controller: theme,
       child: MaterialApp(
         title: 'PepeHub',
+        navigatorKey: navigator,
         navigatorObservers: [readerRoutes],
         debugShowCheckedModeBanner: false,
         theme: AppTheme.data(
@@ -107,7 +118,38 @@ class _PepeHubAppState extends State<PepeHubApp> {
               ),
               disableAnimations: media.disableAnimations || theme.reduceMotion,
             ),
-            child: child!,
+            child: VideoSessionScope(
+              session: videos,
+              child: Overlay.wrap(
+                child: Stack(
+                  children: [
+                    child!,
+                    VideoMiniPlayer(
+                      session: videos,
+                      onOpen: () {
+                        final item = videos.item, player = videos.controller;
+                        if (item == null ||
+                            player == null ||
+                            videos.pageAttached) {
+                          return;
+                        }
+                        navigator.currentState?.push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => VideoPlayerPage(
+                              repository: videos.repository,
+                              item: item,
+                              lessons: player.lessons,
+                              initialIndex: player.index,
+                              session: videos,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
           );
         },
         home: LibraryPage(

@@ -3,6 +3,8 @@
 
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <flutter/method_channel.h>
+#include <flutter/encodable_value.h>
 
 #include <memory>
 
@@ -28,6 +30,17 @@ class FlutterWindow : public Win32Window {
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> video_window_channel_;
+  bool SetVideoFullscreen(bool enabled);
+  bool ResizeVideoFullscreen();
+  bool SetVideoMiniWindow(bool enabled);
+  bool video_mini_window_ = false;
+  LONG_PTR video_mini_style_ = 0;
+  LONG_PTR video_mini_ex_style_ = 0;
+  WINDOWPLACEMENT video_mini_placement_ = {sizeof(WINDOWPLACEMENT)};
+  bool video_fullscreen_ = false;
+  LONG_PTR video_window_style_ = 0;
+  WINDOWPLACEMENT video_window_placement_ = {sizeof(WINDOWPLACEMENT)};
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

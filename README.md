@@ -244,6 +244,8 @@ Pop-Location
 
 Для подготовленной среды `.tools` есть `./scripts/build-android.ps1`: он проверяет подпись, версию, ABI, выравнивание и аудиоресурсы, создаёт пакет в `dist`. [Android-среда и подпись](docs/ANDROID.md). Для обычной работы приложения локальный API не нужен.
 
+Локальные кнопки `.local/claude-check.cmd` и `.local/claude-android.cmd` используют общий `scripts/run-local-build.ps1`: подготовка зависимостей, анализ, тесты, сборка и открытие результата после успеха. [Порядок запуска и логи](docs/LOCAL_BUILDS.md).
+
 ### Проверки
 
 ~~~powershell
