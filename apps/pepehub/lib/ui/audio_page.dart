@@ -9,6 +9,8 @@ import '../data/repository.dart';
 import '../media/audio_controller.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
+import '../vocabulary/vocabulary_editor.dart';
+import '../vocabulary/vocabulary_repository.dart';
 
 String audioTime(Duration duration) {
   final seconds = duration.inSeconds;
@@ -28,6 +30,31 @@ class AudioPage extends StatefulWidget {
 class _AudioPageState extends State<AudioPage> {
   double? dragPosition, bookDragPosition;
   AudioController get controller => widget.controller;
+  Future<void> _anki() async {
+    final track = controller.current;
+    if (track == null) return;
+    final source = VocabularySource(
+      kind: 'audio',
+      title: controller.title,
+      detail: 'Глава ${controller.trackIndex + 1}',
+      mediaId: track.bookId,
+      trackId: track.id,
+      mediaVersion: track.hash,
+      positionMs: controller.position.inMilliseconds,
+    );
+    await controller.pause();
+    if (!mounted) return;
+    await Navigator.push<VocabularyCard>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => VocabularyEditorPage(
+          repository: VocabularyRepository(controller.assets.repository),
+          source: source,
+        ),
+      ),
+    );
+  }
+
   Future<void> _showTracks() async {
     final tracks = controller.tracks;
     final selected = await showDialog<int>(
@@ -600,7 +627,8 @@ class _AudioPageState extends State<AudioPage> {
   }
 
   Widget _skip(int seconds, {bool compact = false}) => IconButton(
-    tooltip: '${seconds < 0 ? 'Назад' : 'Вперёд'} на ${seconds.abs() == 60 ? '1 минуту' : '10 секунд'}',
+    tooltip:
+        '${seconds < 0 ? 'Назад' : 'Вперёд'} на ${seconds.abs() == 60 ? '1 минуту' : '10 секунд'}',
     onPressed: controller.canPlay
         ? () => controller.skipSeconds(seconds)
         : null,
@@ -653,11 +681,8 @@ class _AudioPageState extends State<AudioPage> {
                 ? Image.file(
                     File.fromUri(controller.artwork!),
                     fit: BoxFit.cover,
-                    errorBuilder: (_, error, stack) => Icon(
-                      Icons.headphones,
-                      size: 90,
-                      color: palette.accent,
-                    ),
+                    errorBuilder: (_, error, stack) =>
+                        Icon(Icons.headphones, size: 90, color: palette.accent),
                   )
                 : Icon(
                     Icons.headphones_rounded,
@@ -790,33 +815,33 @@ class _AudioPageState extends State<AudioPage> {
   Widget _controls(ShelfPalette palette, {required bool wide}) => FittedBox(
     fit: BoxFit.scaleDown,
     child: Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      IconButton(
-        tooltip: 'Предыдущая глава',
-        onPressed: controller.canPlay && controller.trackIndex > 0
-            ? controller.skipToPrevious
-            : null,
-        icon: const Icon(Icons.skip_previous_rounded),
-      ),
-      _skip(-60, compact: !wide),
-      _skip(-10, compact: !wide),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: _playButton(palette, wide ? 84 : 68),
-      ),
-      _skip(10, compact: !wide),
-      _skip(60, compact: !wide),
-      IconButton(
-        tooltip: 'Следующая глава',
-        onPressed:
-            controller.canPlay &&
-                controller.trackIndex < controller.tracks.length - 1
-            ? controller.skipToNext
-            : null,
-        icon: const Icon(Icons.skip_next_rounded),
-      ),
-    ],
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'Предыдущая глава',
+          onPressed: controller.canPlay && controller.trackIndex > 0
+              ? controller.skipToPrevious
+              : null,
+          icon: const Icon(Icons.skip_previous_rounded),
+        ),
+        _skip(-60, compact: !wide),
+        _skip(-10, compact: !wide),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: _playButton(palette, wide ? 84 : 68),
+        ),
+        _skip(10, compact: !wide),
+        _skip(60, compact: !wide),
+        IconButton(
+          tooltip: 'Следующая глава',
+          onPressed:
+              controller.canPlay &&
+                  controller.trackIndex < controller.tracks.length - 1
+              ? controller.skipToNext
+              : null,
+          icon: const Icon(Icons.skip_next_rounded),
+        ),
+      ],
     ),
   );
 
@@ -951,7 +976,9 @@ class _AudioPageState extends State<AudioPage> {
           dense: true,
           selected: i == controller.trackIndex,
           selectedTileColor: palette.selected,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
           leading: Text(
             '${i + 1}',
             style: AppFonts.title(
@@ -1129,6 +1156,11 @@ class _AudioPageState extends State<AudioPage> {
           .toDouble();
       final actions = [
         IconButton(
+          tooltip: 'Карточка Anki',
+          onPressed: controller.current == null ? null : _anki,
+          icon: const Icon(Icons.style_outlined),
+        ),
+        IconButton(
           tooltip: 'Заметки к книге',
           icon: const Icon(Icons.edit_note),
           onPressed: controller.current == null
@@ -1166,6 +1198,7 @@ class _AudioPageState extends State<AudioPage> {
       ];
       return PepeSubpage(
         title: 'Сейчас играет',
+        showAudioMiniPlayer: false,
         back: 'Аудиокниги',
         section: PepeSection.audio,
         actions: actions,

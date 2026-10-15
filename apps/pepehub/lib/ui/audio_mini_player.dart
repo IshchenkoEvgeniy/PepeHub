@@ -3,7 +3,33 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../media/audio_controller.dart';
+import '../media/audio_player_scope.dart';
 import 'audio_page.dart';
+
+/// Keeps playback available even on pages with their own bottom actions.
+class AudioPlayerFooter extends StatelessWidget {
+  final Widget? child;
+  final bool enabled;
+  const AudioPlayerFooter({super.key, this.child, this.enabled = true});
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled || child is AudioMiniPlayer) {
+      return child ?? const SizedBox.shrink();
+    }
+    Widget player = AudioMiniPlayer(controller: AudioPlayerScope.of(context));
+    if (child != null) {
+      player = MediaQuery.removePadding(
+        context: context,
+        removeBottom: true,
+        child: player,
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [player, ?child],
+    );
+  }
+}
 
 /// Uses the existing playback controller; opening the screen never reloads audio.
 class AudioMiniPlayer extends StatelessWidget {
@@ -12,7 +38,7 @@ class AudioMiniPlayer extends StatelessWidget {
   const AudioMiniPlayer({super.key, required this.controller, this.onOpen});
   @override
   Widget build(BuildContext context) {
-    final audio = controller;
+    final audio = controller ?? AudioPlayerScope.of(context);
     if (audio == null) return const SizedBox.shrink();
     return ListenableBuilder(
       listenable: audio,

@@ -38,6 +38,7 @@ import '../audio/audio_merge.dart';
 import '../export/markdown.dart';
 import '../media/asset_store.dart';
 import '../media/audio_controller.dart';
+import '../media/library_folder_preference.dart';
 import '../sync/sync_client.dart';
 import 'dialogs.dart';
 import 'audio_page.dart';
@@ -84,6 +85,7 @@ class _LibraryPageState extends State<LibraryPage> {
   List<AudioRoot> roots = [];
   Map<String, String> statusOverrides = {};
   String? selectedRoot;
+  String? pinnedRoot;
   bool showSearch = false;
   bool reading = false;
   bool metadataSection = false;
@@ -164,7 +166,7 @@ class _LibraryPageState extends State<LibraryPage> {
     statisticsSection = section == 'statistics';
     videoSection = section == 'video';
     unawaited(_loadObsidian());
-    await _reload();
+    await _reload(restoreDefault: true);
     if (mounted && Platform.isAndroid && widget.assets != null) {
       incomingBooks = AndroidBookFiles(
         onFile: _receiveBook,
@@ -213,7 +215,7 @@ class _LibraryPageState extends State<LibraryPage> {
       'library-section',
       next ? 'reading' : 'audio',
     );
-    await _reload();
+    await _reload(restoreDefault: true);
   }
 
   @override
@@ -261,7 +263,7 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   int coverRevision = 0;
-  Future<void> _reload() async {
+  Future<void> _reload({bool restoreDefault = false}) async {
     final readingSection = reading;
     coverRevision++;
     try {
@@ -309,6 +311,10 @@ class _LibraryPageState extends State<LibraryPage> {
                 )
                 .toList()
           : await AudioRoots(widget.assets!).list();
+      final defaultRoot = await LibraryFolderPreference(
+        widget.repository,
+        reading: readingSection,
+      ).load();
       final summary = readingSection
           ? <String, ({int? total, int? position, double speed})>{}
           : await AudioLibraryRepository(widget.repository.db).bookSummaries();
@@ -351,7 +357,14 @@ class _LibraryPageState extends State<LibraryPage> {
           books = b;
           statusOverrides = overrides;
           roots = rootList;
-          if (!roots.any((r) => r.key == selectedRoot)) selectedRoot = null;
+          pinnedRoot = defaultRoot;
+          if (restoreDefault ||
+              selectedRoot != null &&
+                  !roots.any((r) => r.key == selectedRoot)) {
+            selectedRoot = roots.any((r) => r.key == defaultRoot)
+                ? defaultRoot
+                : null;
+          }
           localAssets = files;
           audioSummaries = summary;
           sessions = s
@@ -479,6 +492,25 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     );
   }
+
+  Future<void> _pinFolder() => _action(() async {
+    final next = selectedRoot == pinnedRoot ? null : selectedRoot;
+    await LibraryFolderPreference(
+      widget.repository,
+      reading: reading,
+    ).set(next);
+    if (!mounted) return;
+    setState(() => pinnedRoot = next);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          next == null
+              ? 'По умолчанию будет открываться вся библиотека'
+              : 'Эта папка будет открываться по умолчанию',
+        ),
+      ),
+    );
+  });
 
   Future<void> _action(Future<void> Function() work) async {
     if (busy) return;
@@ -1200,8 +1232,11 @@ class _LibraryPageState extends State<LibraryPage> {
   Widget build(BuildContext context) {
     PepeRoot.navigation = _navigation;
     if (videoSection) {
-      return VideoLibraryPage(repository: videoLibrary,
-          navigation: _navigation, audio: widget.audio);
+      return VideoLibraryPage(
+        repository: videoLibrary,
+        navigation: _navigation,
+        audio: widget.audio,
+      );
     }
     if (statisticsSection) {
       return StatisticsHubPage(
@@ -1481,28 +1516,50 @@ class _LibraryPageState extends State<LibraryPage> {
                                   maxWidth: 360,
                                 ),
                                 child: DropdownButton<String?>(
-                                isExpanded: true,
-                                underline: const SizedBox(),
-                                value: selectedRoot,
-                                items: [
-                                  const DropdownMenuItem<String?>(
-                                    value: null,
-                                    child: Text('Вся библиотека'),
-                                  ),
-                                  for (final root in roots)
-                                    DropdownMenuItem(
-                                      value: root.key,
-                                      child: Text(
-                                        root.title,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                  key: const ValueKey('library-folder'),
+                                  isExpanded: true,
+                                  underline: const SizedBox(),
+                                  value: selectedRoot,
+                                  items: [
+                                    const DropdownMenuItem<String?>(
+                                      value: null,
+                                      child: Text('Вся библиотека'),
                                     ),
-                                ],
-                                onChanged: (v) =>
-                                    setState(() => selectedRoot = v),
-                              ),
+                                    for (final root in roots)
+                                      DropdownMenuItem(
+                                        value: root.key,
+                                        child: Text(
+                                          root.title,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                  ],
+                                  onChanged: (v) =>
+                                      setState(() => selectedRoot = v),
+                                ),
                               ),
                             ),
+                            if (roots.isNotEmpty)
+                              IconButton(
+                                key: const ValueKey('library-pin-folder'),
+                                tooltip: selectedRoot == null
+                                    ? 'Открывать всю библиотеку по умолчанию'
+                                    : selectedRoot == pinnedRoot
+                                    ? 'Открепить папку по умолчанию'
+                                    : 'Открывать эту папку по умолчанию',
+                                onPressed:
+                                    busy ||
+                                        (selectedRoot == null &&
+                                            pinnedRoot == null)
+                                    ? null
+                                    : _pinFolder,
+                                icon: Icon(
+                                  selectedRoot != null &&
+                                          selectedRoot == pinnedRoot
+                                      ? Icons.push_pin
+                                      : Icons.push_pin_outlined,
+                                ),
+                              ),
                             IconButton(
                               tooltip: 'Поиск',
                               onPressed: () => setState(() {
@@ -2053,15 +2110,12 @@ class _LibraryPageState extends State<LibraryPage> {
           value: 'obsidian',
           child: Text(
             obsidianLibrary.forBook(book.id) == null ||
-                    obsidianLibrary.forBook(book.id)!.state ==
-                        'removed'
+                    obsidianLibrary.forBook(book.id)!.state == 'removed'
                 ? 'Добавить в библиотеку'
                 : libraryState(obsidianLibrary.forBook(book.id)!),
           ),
         ),
-        if (Platform.isAndroid &&
-            widget.assets != null &&
-            asset != null)
+        if (Platform.isAndroid && widget.assets != null && asset != null)
           const PopupMenuItem(
             value: 'share',
             child: Text('Поделиться файлом книги'),
@@ -2079,10 +2133,7 @@ class _LibraryPageState extends State<LibraryPage> {
           child: Text('Коллекции книги'),
         ),
         if (!audio) ...[
-          const PopupMenuItem(
-            value: 'details',
-            child: Text('Карточка книги'),
-          ),
+          const PopupMenuItem(value: 'details', child: Text('Карточка книги')),
           const PopupMenuItem(
             value: 'reading-plan',
             child: Text('План чтения'),
@@ -2092,22 +2143,13 @@ class _LibraryPageState extends State<LibraryPage> {
             child: Text('Обновить сведения из файла'),
           ),
         ],
-        const PopupMenuItem(
-          value: 'planned',
-          child: Text('Отметить новой'),
-        ),
-        const PopupMenuItem(
-          value: 'active',
-          child: Text('Отметить начатой'),
-        ),
+        const PopupMenuItem(value: 'planned', child: Text('Отметить новой')),
+        const PopupMenuItem(value: 'active', child: Text('Отметить начатой')),
         const PopupMenuItem(
           value: 'finished',
           child: Text('Отметить завершённой'),
         ),
-        const PopupMenuItem(
-          value: 'session',
-          child: Text('Записать сессию'),
-        ),
+        const PopupMenuItem(value: 'session', child: Text('Записать сессию')),
         if (audio)
           const PopupMenuItem(
             value: 'folder',
@@ -2233,7 +2275,9 @@ class _LibraryPageState extends State<LibraryPage> {
             : ColoredBox(
                 color: colors.onAccent.withValues(alpha: .14),
                 child: Icon(
-                  audio ? Icons.headphones_outlined : Icons.auto_stories_outlined,
+                  audio
+                      ? Icons.headphones_outlined
+                      : Icons.auto_stories_outlined,
                   size: 32,
                   color: colors.onAccent,
                 ),
@@ -2317,9 +2361,8 @@ class _LibraryPageState extends State<LibraryPage> {
               Theme(
                 data: Theme.of(context).copyWith(
                   iconTheme: IconThemeData(color: colors.onAccent),
-                  popupMenuTheme: Theme.of(
-                    context,
-                  ).popupMenuTheme.copyWith(iconColor: colors.onAccent),
+                  popupMenuTheme: Theme.of(context).popupMenuTheme
+                      .copyWith(iconColor: colors.onAccent),
                 ),
                 child: _bookMenuButton(book),
               ),

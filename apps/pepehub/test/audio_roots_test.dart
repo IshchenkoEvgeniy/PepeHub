@@ -11,6 +11,7 @@ import 'package:pepehub/audio/models.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/media/asset_store.dart';
+import 'package:pepehub/media/library_folder_preference.dart';
 
 void main() {
   test('legacy separate-file grouping survives refresh', () async {
@@ -65,6 +66,8 @@ void main() {
         final scan = await scanAudioFolder(source.path);
         await connectAudioCatalog(assets, scan, groupAudioCatalog(scan));
         var root = (await roots.list()).single;
+        final preference = LibraryFolderPreference(repo, reading: false);
+        await preference.set(root.key);
         final id = root.bookIds.single;
         final track = (await assets.audioTracks(id)).single;
         final library = AudioLibraryRepository(db);
@@ -84,6 +87,7 @@ void main() {
         await roots.rename(root, 'My library');
         root = (await roots.list()).single;
         expect(root.title, 'My library');
+        expect(await preference.load(), root.key);
         expect(await source.exists(), isTrue);
         await book(source.path, 'Book B');
         final refresh = await roots.refresh(root);
@@ -107,6 +111,7 @@ void main() {
         await roots.refresh(root, replacement: replacement);
         root = (await roots.list()).single;
         expect(root.path, replacement.root);
+        expect(await preference.load(), root.key);
         expect(root.title, 'My library');
         expect((await assets.audioTracks(id)).single.id, track.id);
         expect(
@@ -120,6 +125,7 @@ void main() {
         );
         expect((await roots.list()).single.path, replacement.root);
         await roots.remove(root);
+        expect(await preference.load(), isNull);
         expect(await roots.list(), isEmpty);
         expect(await repo.meta('audio-library-hidden:$id'), '1');
         expect(await File('${moved.path}/Book A/01.mp3').exists(), isTrue);

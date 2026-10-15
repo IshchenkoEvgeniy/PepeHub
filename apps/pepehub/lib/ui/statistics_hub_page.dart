@@ -56,9 +56,8 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
       final records = await repository.records('book');
       final library = ReadingLibrary(repository);
       final automatic = (await library.entries('reading-session:')).values;
-      final manual = (await repository.records(
-        'session',
-      )).where((s) => s.payload?['kind'] == 'reading');
+      final manual = (await repository.records('session'))
+          .where((s) => s.payload?['kind'] == 'reading');
       final rows = <Map<String, dynamic>>[
         ...automatic,
         ...await ActivityStore.foreignReading(repository),
@@ -189,16 +188,19 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
             const SizedBox(height: 10),
             Row(
               children: [
-                Text(
-                  'Летопись $year года',
-                  style: TextStyle(
-                    fontFamily: AppFonts.serif,
-                    fontStyle: FontStyle.italic,
-                    fontSize: 18,
-                    color: palette.muted,
+                Expanded(
+                  child: Text(
+                    'Летопись $year года',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: AppFonts.serif,
+                      fontStyle: FontStyle.italic,
+                      fontSize: 18,
+                      color: palette.muted,
+                    ),
                   ),
                 ),
-                const Spacer(),
                 IconButton(
                   tooltip: 'Предыдущий год',
                   onPressed: loading
@@ -360,9 +362,10 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
             alignment: Alignment.centerLeft,
             child: Text(
               value,
-              style: AppFonts.book(palette.text, size: 30).copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+              style: AppFonts.book(
+                palette.text,
+                size: 30,
+              ).copyWith(fontWeight: FontWeight.w700),
             ),
           ),
           const SizedBox(height: 4),
@@ -378,9 +381,10 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
       Expanded(
         child: Text(
           title,
-          style: AppFonts.book(palette.text, size: 22).copyWith(
-            fontStyle: FontStyle.italic,
-          ),
+          style: AppFonts.book(
+            palette.text,
+            size: 22,
+          ).copyWith(fontStyle: FontStyle.italic),
         ),
       ),
       if (note != null)
@@ -467,7 +471,12 @@ class _YearDots extends StatelessWidget {
                           shape: BoxShape.circle,
                           color: DateTime(year, month, day).isAfter(today)
                               ? palette.panel
-                              : tone(days[readingDay(DateTime(year, month, day))] ?? 0),
+                              : tone(
+                                  days[readingDay(
+                                        DateTime(year, month, day),
+                                      )] ??
+                                      0,
+                                ),
                         ),
                       ),
                     ),

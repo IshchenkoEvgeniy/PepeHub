@@ -13,6 +13,7 @@ import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/audio/audio_folder.dart';
 import 'package:pepehub/reader/pdf_support.dart';
 import 'package:pepehub/reader/pdf_reader_page.dart';
+import 'package:pepehub/reader/reader_viewport.dart';
 import 'package:pepehub/reader/reading_library.dart';
 
 import 'support/pdf_fixture.dart';
@@ -287,9 +288,25 @@ void main() {
         await settle();
       }
 
+      Future<void> palette(String name) async {
+        await menu('Оформление');
+        await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+        await settle();
+        await tester.tap(find.text(name).last);
+        await settle();
+        await tester.ensureVisible(find.text('Применить'));
+        await settle();
+        await tester.tap(find.text('Применить'));
+        await settle();
+      }
+
+      tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
+      addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+
       try {
         await tester.pumpWidget(
           MaterialApp(
+            theme: ThemeData.dark(),
             home: PdfReaderPage(repository: repo, asset: asset),
           ),
         );
@@ -370,20 +387,67 @@ void main() {
         expect(find.byTooltip('Выйти из полного экрана'), findsOneWidget);
         await tester.tap(find.byTooltip('Выйти из полного экрана'));
         await settle();
-        await menu('Оформление');
-        await tester.tap(find.text('Сепия'));
+        await palette('Системная');
+        final filtered = find
+            .ancestor(
+              of: find.byType(PdfViewer),
+              matching: find.byType(ColorFiltered),
+            )
+            .first;
+        final light = tester.widget<ColorFiltered>(filtered).colorFilter;
+        expect(
+          light,
+          const ColorFilter.mode(Colors.transparent, BlendMode.srcOver),
+        );
+        tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
         await settle();
-        await tester.tap(find.text('Тёмная (инверсия страниц)').last);
-        await settle();
-        await tester.ensureVisible(find.text('Применить'));
-        await tester.tap(find.text('Применить'));
-        await settle();
+        expect(
+          tester.widget<ColorFiltered>(filtered).colorFilter,
+          isNot(light),
+        );
+        await palette('Сепия');
+        await palette('Тёмная (инверсия страниц)');
         await tester.runAsync(() async {
           expect(await repo.meta('reader:appearance'), contains('dark'));
         });
+        final beforeHiding = await tester.runAsync(
+          () async => [
+            for (final note in await ReadingLibrary(
+              repo,
+            ).notes(hash: asset.hash))
+              note.toJson(),
+          ],
+        );
+        await menu('Оформление');
+        await tester.tap(find.byType(SwitchListTile));
+        await settle();
+        await tester.ensureVisible(find.text('Применить'));
+        await settle();
+        await tester.tap(find.text('Применить'));
+        await settle();
+        await tester.runAsync(() async {
+          expect(
+            (await ReadingLibrary(repo)
+                .value('reader:appearance'))['showHighlights'],
+            isFalse,
+          );
+          expect([
+            for (final note in await ReadingLibrary(
+              repo,
+            ).notes(hash: asset.hash))
+              note.toJson(),
+          ], beforeHiding);
+        });
         await menu('Текстовый режим');
+        expect(
+          tester
+              .widget<ReaderViewport>(find.byType(ReaderViewport))
+              .preferences!
+              .showHighlights,
+          isFalse,
+        );
         expect(find.textContaining('PepeHub page one'), findsWidgets);
-        await tester.pageBack();
+        await tester.binding.handlePopRoute();
         await settle();
         expect(find.textContaining('Страница 1 / 2'), findsOneWidget);
         await tester.runAsync(() async {

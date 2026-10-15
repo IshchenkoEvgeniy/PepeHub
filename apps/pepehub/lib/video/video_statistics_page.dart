@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../ui/pepe_widgets.dart';
+import '../ui/audio_mini_player.dart';
 import '../ui/shelf_components.dart';
 import '../ui/statistics_range.dart';
 import 'models.dart';
@@ -184,6 +185,7 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
   Widget build(BuildContext context) {
     final palette = ShelfPalette.of(context), result = stats;
     return Scaffold(
+      bottomNavigationBar: const AudioPlayerFooter(),
       appBar: AppBar(
         title: Text(widget.item?.title ?? 'Статистика видео'),
         actions: [

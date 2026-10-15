@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import 'audio_mini_player.dart';
+
 import '../library/models.dart';
 import 'shelf_components.dart';
 
@@ -294,45 +296,49 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
     );
     return Scaffold(
       appBar: AppBar(title: const Text('Метаданные книги')),
-      bottomNavigationBar: editable
-          ? SafeArea(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: palette.panel,
-                  border: Border(top: BorderSide(color: palette.line)),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 14,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: saving ? null : () => Navigator.pop(context),
-                      child: const Text('Отмена'),
-                    ),
-                    const SizedBox(width: 12),
-                    Flexible(
-                      child: FilledButton.icon(
-                        onPressed: saving ? null : _save,
-                        icon: saving
-                            ? const SizedBox(
-                                width: 15,
-                                height: 15,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.check_rounded, size: 17),
-                        label: Text(saving ? 'Сохранение…' : widget.saveLabel),
+      bottomNavigationBar: AudioPlayerFooter(
+        child: editable
+            ? SafeArea(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: palette.panel,
+                    border: Border(top: BorderSide(color: palette.line)),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 14,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: saving ? null : () => Navigator.pop(context),
+                        child: const Text('Отмена'),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: FilledButton.icon(
+                          onPressed: saving ? null : _save,
+                          icon: saving
+                              ? const SizedBox(
+                                  width: 15,
+                                  height: 15,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.check_rounded, size: 17),
+                          label: Text(
+                            saving ? 'Сохранение…' : widget.saveLabel,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            )
-          : null,
+              )
+            : null,
+      ),
       body: Form(
         key: form,
         child: SingleChildScrollView(

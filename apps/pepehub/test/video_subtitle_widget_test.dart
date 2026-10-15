@@ -13,6 +13,7 @@ import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/video/models.dart';
 import 'package:pepehub/video/video_player_page.dart';
 import 'package:pepehub/video/video_repository.dart';
+import 'package:pepehub/vocabulary/vocabulary_repository.dart';
 import 'package:pepehub/video/video_subtitle_import.dart';
 import 'package:pepehub/video/video_subtitles.dart';
 import 'package:pepehub/video/video_transcript_panel.dart';
@@ -239,7 +240,10 @@ void main() {
       await tester.tap(find.text('Сохранить'));
       await ready(
         tester,
-        () => find.text('Закладка / заметка').evaluate().isEmpty,
+        () => find
+            .byKey(const ValueKey('video-annotation-editor'))
+            .evaluate()
+            .isEmpty,
       );
       final note = (await tester.runAsync(
         () => f.videos.annotations(f.lesson),
@@ -247,6 +251,43 @@ void main() {
       expect(note.startMs, 3500);
       expect(note.endMs, 5500);
       expect(note.body, 'I had already finished.');
+      await expose(tester, find.byTooltip('Действия с репликой'));
+      await tester.tap(find.byTooltip('Действия с репликой'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Карточка Anki'));
+      await ready(
+        tester,
+        () => find
+            .byKey(const ValueKey('vocabulary-front'))
+            .evaluate()
+            .isNotEmpty,
+      );
+      expect(
+        tester
+            .widget<TextFormField>(
+              find.byKey(const ValueKey('vocabulary-front')),
+            )
+            .controller!
+            .text,
+        'I had already finished.',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('vocabulary-back')),
+        'Я уже закончил.',
+      );
+      await tester.tap(find.text('Сохранить'));
+      await ready(
+        tester,
+        () =>
+            find.byKey(const ValueKey('vocabulary-editor')).evaluate().isEmpty,
+      );
+      final card = (await tester.runAsync(
+        () => VocabularyRepository(f.videos.repository).list(),
+      ))!.single;
+      expect(card.source!.positionMs, 3500);
+      expect(card.source!.endMs, 5500);
+      expect(card.source!.mediaVersion, f.lesson.mediaVersion);
+      expect(card.front, note.body);
       await expose(tester, find.byTooltip('Действия с репликой'));
       await tester.tap(find.byTooltip('Действия с репликой'));
       await tester.pumpAndSettle();

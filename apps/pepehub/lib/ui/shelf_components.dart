@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
+import 'audio_mini_player.dart';
 
 /// Older name for the palette tokens, kept so existing screens read the
 /// active palette without change.
@@ -51,11 +52,7 @@ enum PepeSection {
   books('Книги', Icons.menu_book_outlined, Icons.menu_book),
   audio('Аудиокниги', Icons.headphones_outlined, Icons.headphones),
   video('Видео', Icons.ondemand_video_outlined, Icons.ondemand_video),
-  library(
-    'Библиотека',
-    Icons.local_library_outlined,
-    Icons.local_library,
-  ),
+  library('Библиотека', Icons.local_library_outlined, Icons.local_library),
   recommendations('Рекомендации', Icons.star_outline, Icons.star_rounded),
   statistics('Статистика', Icons.bar_chart_outlined, Icons.bar_chart_rounded);
 
@@ -112,7 +109,7 @@ class ShelfShell extends StatelessWidget {
     builder: (context, constraints) {
       final wide = constraints.maxWidth >= wideBreakpoint;
       final palette = ShelfPalette.of(context);
-      final extra = bottomNavigationBar;
+      final extra = AudioPlayerFooter(child: bottomNavigationBar);
       return Scaffold(
         backgroundColor: palette.background,
         bottomNavigationBar: wide
@@ -120,12 +117,11 @@ class ShelfShell extends StatelessWidget {
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (extra != null)
-                    MediaQuery.removePadding(
-                      context: context,
-                      removeBottom: true,
-                      child: extra,
-                    ),
+                  MediaQuery.removePadding(
+                    context: context,
+                    removeBottom: true,
+                    child: extra,
+                  ),
                   ShelfBottomBar(navigation: navigation),
                 ],
               ),
@@ -462,9 +458,7 @@ class ShelfPill extends StatelessWidget {
       child: Material(
         color: selected ? palette.text : Colors.transparent,
         shape: StadiumBorder(
-          side: BorderSide(
-            color: selected ? palette.text : palette.strongLine,
-          ),
+          side: BorderSide(color: selected ? palette.text : palette.strongLine),
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -484,28 +478,30 @@ class ShelfPill extends StatelessWidget {
                     ),
                   )
                 : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color: ink,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: selected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: ink,
+                        ),
+                      ),
+                      if (count != null) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          '$count',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: selected ? ink : palette.muted,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                ),
-                if (count != null) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    '$count',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: selected ? ink : palette.muted,
-                    ),
-                  ),
-                ],
-              ],
-            ),
           ),
         ),
       ),

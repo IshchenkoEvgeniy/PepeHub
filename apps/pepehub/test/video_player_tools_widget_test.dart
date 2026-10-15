@@ -170,6 +170,8 @@ void main() {
       expect(fixture.engine.seeks.last, 70125);
       await tool(tester, 'note');
       await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Параметры заметки'));
+      await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('video-annotation-title')),
         'Past perfect',
@@ -178,6 +180,8 @@ void main() {
         find.byKey(const ValueKey('video-annotation-end')),
         '1:12.500',
       );
+      await tester.tap(find.byTooltip('Скрыть параметры заметки'));
+      await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('video-annotation-body')),
         'Use had + past participle',
@@ -185,7 +189,10 @@ void main() {
       await tester.tap(find.text('Сохранить'));
       await ready(
         tester,
-        () => find.text('Закладка / заметка').evaluate().isEmpty,
+        () => find
+            .byKey(const ValueKey('video-annotation-editor'))
+            .evaluate()
+            .isEmpty,
       );
       await notesPanel(tester);
       await ready(

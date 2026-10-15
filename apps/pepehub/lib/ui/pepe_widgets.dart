@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
 import 'shelf_components.dart';
+import 'audio_mini_player.dart';
 
 export 'app_theme.dart' show AppFonts;
 
@@ -92,6 +93,7 @@ class PepeSubpage extends StatelessWidget {
   final String? back, subtitle;
   final PepeSection? section;
   final bool settings;
+  final bool showAudioMiniPlayer;
   final List<Widget> actions;
   final List<Widget>? children;
   final Widget? body;
@@ -105,6 +107,7 @@ class PepeSubpage extends StatelessWidget {
     this.subtitle,
     this.section,
     this.settings = false,
+    this.showAudioMiniPlayer = true,
     this.actions = const [],
     this.children,
     this.body,
@@ -147,7 +150,10 @@ class PepeSubpage extends StatelessWidget {
       }
       return Scaffold(
         backgroundColor: palette.background,
-        bottomNavigationBar: bottomNavigationBar,
+        bottomNavigationBar: AudioPlayerFooter(
+          enabled: showAudioMiniPlayer,
+          child: bottomNavigationBar,
+        ),
         floatingActionButton: floatingActionButton,
         body: SafeArea(
           child: Row(
@@ -717,7 +723,8 @@ class PepeMonthCalendar extends StatelessWidget {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final values = [
-      for (var d = 1; d <= count; d++) dayValue(DateTime(first.year, first.month, d)),
+      for (var d = 1; d <= count; d++)
+        dayValue(DateTime(first.year, first.month, d)),
     ];
     final maximum = math.max(1, values.fold<int>(0, math.max));
     return Column(
@@ -908,15 +915,12 @@ class PepeStepper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = ShelfPalette.of(context);
-    Widget button(IconData icon, String tip, VoidCallback? onTap) =>
-        IconButton(
-          tooltip: tip,
-          onPressed: onTap,
-          style: IconButton.styleFrom(
-            side: BorderSide(color: palette.strongLine),
-          ),
-          icon: Icon(icon, size: 18),
-        );
+    Widget button(IconData icon, String tip, VoidCallback? onTap) => IconButton(
+      tooltip: tip,
+      onPressed: onTap,
+      style: IconButton.styleFrom(side: BorderSide(color: palette.strongLine)),
+      icon: Icon(icon, size: 18),
+    );
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -939,12 +943,7 @@ class PepeStepper extends StatelessWidget {
 class PepeSpine extends StatelessWidget {
   final String title;
   final double width, height;
-  const PepeSpine(
-    this.title, {
-    super.key,
-    this.width = 32,
-    this.height = 48,
-  });
+  const PepeSpine(this.title, {super.key, this.width = 32, this.height = 48});
   static const _tones = [
     Color(0xff2e7d78),
     Color(0xff2b4a8c),
@@ -960,8 +959,8 @@ class PepeSpine extends StatelessWidget {
     width: width,
     height: height,
     decoration: BoxDecoration(
-      color: _tones[title.codeUnits.fold<int>(0, (a, b) => a + b) %
-          _tones.length],
+      color:
+          _tones[title.codeUnits.fold<int>(0, (a, b) => a + b) % _tones.length],
       borderRadius: BorderRadius.circular(4),
     ),
   );

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../media/audio_controller.dart';
 import '../ui/pepe_widgets.dart';
+import '../ui/audio_mini_player.dart';
 import '../ui/shelf_components.dart';
 import 'models.dart';
 import 'video_import.dart';
@@ -15,6 +16,8 @@ import 'video_course_editor.dart';
 import 'video_folder_sync.dart';
 import 'video_folder_dialog.dart';
 import 'video_session.dart';
+import '../vocabulary/vocabulary_page.dart';
+import '../vocabulary/vocabulary_repository.dart';
 
 class VideoLibraryPage extends StatefulWidget {
   final VideoRepository repository;
@@ -211,6 +214,18 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
       title: 'Видео',
       navigation: widget.navigation,
       actions: [
+        IconButton(
+          tooltip: 'Словарь Anki',
+          icon: const Icon(Icons.style_outlined),
+          onPressed: () => Navigator.push<void>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => VocabularyPage(
+                repository: VocabularyRepository(widget.repository.repository),
+              ),
+            ),
+          ),
+        ),
         IconButton(
           tooltip: 'Статистика видео',
           onPressed: () => Navigator.push<void>(
@@ -542,6 +557,7 @@ class _VideoCoursePageState extends State<_VideoCoursePage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    bottomNavigationBar: const AudioPlayerFooter(),
     appBar: AppBar(
       title: Text(currentItem.title),
       actions: [

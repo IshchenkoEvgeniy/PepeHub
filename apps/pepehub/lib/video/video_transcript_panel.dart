@@ -9,12 +9,14 @@ class VideoTranscriptPanel extends StatefulWidget {
   final Future<void> Function(VideoSubtitleRecord, VideoSubtitleCue) onSeek,
       onRepeat,
       onNote;
+  final Future<void> Function(VideoSubtitleRecord, VideoSubtitleCue)? onAnki;
   const VideoTranscriptPanel({
     super.key,
     required this.captions,
     required this.onSeek,
     required this.onRepeat,
     required this.onNote,
+    this.onAnki,
   });
   @override
   State<VideoTranscriptPanel> createState() => _VideoTranscriptPanelState();
@@ -222,14 +224,27 @@ class _VideoTranscriptPanelState extends State<VideoTranscriptPanel> {
                     await widget.onRepeat(source, document.cues[index]);
                   case 'note':
                     await widget.onNote(source, document.cues[index]);
+                  case 'anki':
+                    await widget.onAnki?.call(source, document.cues[index]);
                   case 'text':
                     await _fullText(document.cues[index]);
                 }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'repeat', child: Text('Повторить фразу')),
-                PopupMenuItem(value: 'note', child: Text('Заметка с цитатой')),
-                PopupMenuItem(value: 'text', child: Text('Полный текст')),
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'repeat',
+                  child: Text('Повторить фразу'),
+                ),
+                const PopupMenuItem(
+                  value: 'note',
+                  child: Text('Заметка с цитатой'),
+                ),
+                if (widget.onAnki != null)
+                  const PopupMenuItem(
+                    value: 'anki',
+                    child: Text('Карточка Anki'),
+                  ),
+                const PopupMenuItem(value: 'text', child: Text('Полный текст')),
               ],
             ),
           ),

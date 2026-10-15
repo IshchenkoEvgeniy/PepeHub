@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../ui/audio_mini_player.dart';
+
 import 'models.dart';
 import 'video_repository.dart';
 import 'video_session.dart';
@@ -126,6 +128,7 @@ class _VideoCourseEditorState extends State<VideoCourseEditor> {
   Widget build(BuildContext context) => PopScope(
     canPop: !saving,
     child: Scaffold(
+      bottomNavigationBar: const AudioPlayerFooter(),
       appBar: AppBar(
         title: const Text('Структура курса'),
         actions: [

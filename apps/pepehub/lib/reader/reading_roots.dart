@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 
 import '../audio/audio_folder.dart';
 import '../media/asset_store.dart';
+import '../media/library_folder_preference.dart';
 import '../media/library_recovery.dart';
 import '../data/repository.dart';
 import 'book_formats.dart';
@@ -42,6 +43,10 @@ class ReadingRoots {
   );
   Future<void> disconnect(ReadingRoot root) async {
     await assets.repository.db.transaction(() async {
+      await LibraryFolderPreference(
+        assets.repository,
+        reading: true,
+      ).replace(root.key, null);
       await assets.repository.db.customStatement(
         'DELETE FROM metadata WHERE key=?',
         [root.key],

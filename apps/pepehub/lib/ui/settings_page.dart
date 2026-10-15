@@ -7,6 +7,8 @@ import 'app_theme.dart';
 import 'pepe_widgets.dart';
 import 'recommendations_page.dart';
 import 'shelf_components.dart';
+import '../vocabulary/vocabulary_page.dart';
+import '../vocabulary/vocabulary_repository.dart';
 
 class SettingsPage extends StatefulWidget {
   final LibraryService library;
@@ -88,9 +90,8 @@ class _SettingsPageState extends State<SettingsPage> {
       await next.save(widget.library.local);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Цель не сохранена: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Цель не сохранена: $e')));
       }
     }
   }
@@ -108,10 +109,7 @@ class _SettingsPageState extends State<SettingsPage> {
         runSpacing: 10,
         children: [
           for (final style in AppStyle.values)
-            SizedBox(
-              width: width,
-              child: _swatch(appearance, style),
-            ),
+            SizedBox(width: width, child: _swatch(appearance, style)),
         ],
       );
     },
@@ -288,15 +286,19 @@ class _SettingsPageState extends State<SettingsPage> {
     ),
   );
 
-  Widget _link(String title, String? subtitle, IconData icon, VoidCallback? onTap) =>
-      ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: Icon(icon),
-        title: Text(title),
-        subtitle: subtitle == null ? null : Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
-      );
+  Widget _link(
+    String title,
+    String? subtitle,
+    IconData icon,
+    VoidCallback? onTap,
+  ) => ListTile(
+    contentPadding: EdgeInsets.zero,
+    leading: Icon(icon),
+    title: Text(title),
+    subtitle: subtitle == null ? null : Text(subtitle),
+    trailing: const Icon(Icons.chevron_right),
+    onTap: onTap,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -484,6 +486,19 @@ class _SettingsPageState extends State<SettingsPage> {
         children: [
           _link('Заметки Obsidian', null, Icons.notes, widget.onNotes),
           _link(
+            'Словарь Anki',
+            'Слова, предложения и экспорт карточек',
+            Icons.style_outlined,
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => VocabularyPage(
+                  repository: VocabularyRepository(widget.library.local),
+                ),
+              ),
+            ),
+          ),
+          _link(
             'Журнал чтения и прослушивания',
             null,
             Icons.history,
@@ -586,7 +601,13 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
             const SizedBox(width: 24),
-            SizedBox(width: 320, child: data),
+            SizedBox(
+              width: 320,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: 40),
+                child: data,
+              ),
+            ),
           ],
         ),
       ),

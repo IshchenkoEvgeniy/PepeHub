@@ -1,9 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'reader_layout.dart';
+import 'reader_search.dart';
 
 Future<ReaderPreferences?> showReaderSettings(
   BuildContext context,
@@ -83,6 +83,19 @@ Future<ReaderPreferences?> showReaderSettings(
                 divisions: 9,
                 onChanged: (v) => setState(() => value = value.copy(margin: v)),
               ),
+              Text('Ширина колонки: ${value.columnWidth.round()}'),
+              Slider(
+                key: const ValueKey('reader-column-width'),
+                value: value.columnWidth,
+                min: 360,
+                max: 1200,
+                divisions: 21,
+                onChanged: (v) =>
+                    setState(() => value = value.copy(columnWidth: v)),
+              ),
+              const Text(
+                'Ограничение ширины на ПК. На телефоне колонка подстраивается под экран.',
+              ),
               Wrap(
                 spacing: 8,
                 children: [
@@ -126,6 +139,16 @@ Future<ReaderPreferences?> showReaderSettings(
                 value: value.showScrollbar,
                 onChanged: (v) =>
                     setState(() => value = value.copy(showScrollbar: v)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Показывать выделения'),
+                subtitle: const Text(
+                  'Цитаты и заметки сохраняются при скрытии',
+                ),
+                value: value.showHighlights,
+                onChanged: (v) =>
+                    setState(() => value = value.copy(showHighlights: v)),
               ),
               const SizedBox(height: 16),
               const Text('Зоны нажатия: слева · центр · справа'),
@@ -183,7 +206,7 @@ Future<ReaderPreferences?> showReaderSettings(
                   vertical: 12,
                 ),
                 decoration: BoxDecoration(
-                  color: value.palette == 'dark'
+                  color: value.isDark(MediaQuery.platformBrightnessOf(context))
                       ? const Color(0xff20262a)
                       : value.palette == 'sepia'
                       ? const Color(0xfff3e8d0)
@@ -193,7 +216,7 @@ Future<ReaderPreferences?> showReaderSettings(
                 child: Text(
                   'Книга открывает мир — строка за строкой.',
                   style: value.style(
-                    value.palette == 'dark'
+                    value.isDark(MediaQuery.platformBrightnessOf(context))
                         ? const Color(0xffdedbd3)
                         : const Color(0xff302b24),
                   ),
@@ -217,54 +240,100 @@ Future<ReaderPreferences?> showReaderSettings(
 
 class ReaderSearch extends StatefulWidget {
   final ReaderDocument document;
-  const ReaderSearch({super.key, required this.document});
+  final int currentChapter;
+  final ReaderSearchSession? session;
+  const ReaderSearch({
+    super.key,
+    required this.document,
+    this.currentChapter = 0,
+    this.session,
+  });
   @override
   State<ReaderSearch> createState() => _ReaderSearchState();
 }
 
 class _ReaderSearchState extends State<ReaderSearch> {
+  final worker = ReaderSearchWorker();
+  late final ReaderSearchSession session =
+      widget.session ?? ReaderSearchSession();
+  late final controller = TextEditingController(text: session.query);
   Timer? debounce;
   int generation = 0;
   bool busy = false;
-  String query = '', error = '';
+  String error = '';
   List<Map<String, dynamic>> results = [];
+  bool hasMore = false;
+  int? get scope => session.inCurrentChapter ? widget.currentChapter : null;
+
+  @override
+  void initState() {
+    super.initState();
+    if (session.complete && session.scannedChapter == scope) {
+      results = session.hits;
+      hasMore = session.hasMore;
+    } else {
+      _changed(controller.text);
+    }
+  }
+
   @override
   void dispose() {
     debounce?.cancel();
+    worker.cancel();
+    controller.dispose();
     super.dispose();
   }
 
   void _changed(String text) {
     debounce?.cancel();
+    worker.cancel();
     final token = ++generation;
     setState(() {
-      query = text;
+      session.query = text;
+      session.complete = text.trim().isEmpty;
+      session.hits = results = [];
+      session.hasMore = hasMore = false;
+      session.scannedChapter = scope;
       busy = text.trim().isNotEmpty;
-      results = [];
       error = '';
     });
     if (!busy) return;
-    debounce = Timer(const Duration(milliseconds: 250), () async {
-      try {
-        final found = await compute(searchReader, {
-          'texts': widget.document.texts,
-          'query': text,
-        });
-        if (mounted && generation == token) {
-          setState(() {
-            results = found;
-            busy = false;
-          });
-        }
-      } catch (e) {
-        if (mounted && generation == token) {
-          setState(() {
-            error = '$e';
-            busy = false;
-          });
-        }
+    debounce = Timer(const Duration(milliseconds: 250), () => _scan(token));
+  }
+
+  Future<void> _scan(int token, {bool more = false}) async {
+    try {
+      final next = await worker.search(
+        texts: widget.document.texts,
+        query: session.query,
+        chapter: scope,
+        after: more && results.isNotEmpty ? results.last : null,
+      );
+      if (!mounted || generation != token || next == null) return;
+      setState(() {
+        results = List.unmodifiable([if (more) ...results, ...next.hits]);
+        hasMore = next.hasMore;
+        session.hits = results;
+        session.hasMore = hasMore;
+        session.complete = true;
+        session.scannedChapter = scope;
+      });
+    } catch (e) {
+      if (mounted && generation == token) {
+        setState(() => error = 'Не удалось выполнить поиск: $e');
       }
+    } finally {
+      if (mounted && generation == token) setState(() => busy = false);
+    }
+  }
+
+  void _more() {
+    if (busy || !hasMore) return;
+    setState(() {
+      busy = true;
+      error = '';
     });
+    _scan(generation, more: true);
   }
 
   @override
@@ -275,29 +344,73 @@ class _ReaderSearchState extends State<ReaderSearch> {
         children: [
           Padding(
             padding: const EdgeInsets.all(16),
-            child: TextField(
-              autofocus: true,
-              onChanged: _changed,
-              decoration: const InputDecoration(
-                hintText: 'Слово или фраза',
-                prefixIcon: Icon(Icons.search),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  onChanged: _changed,
+                  decoration: InputDecoration(
+                    hintText: 'Слово или фраза',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: controller.text.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Очистить поиск',
+                            icon: const Icon(Icons.close),
+                            onPressed: () {
+                              controller.clear();
+                              _changed('');
+                            },
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Вся книга'),
+                      selected: !session.inCurrentChapter,
+                      onSelected: (_) {
+                        session.inCurrentChapter = false;
+                        _changed(controller.text);
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Текущая глава'),
+                      selected: session.inCurrentChapter,
+                      onSelected: (_) {
+                        session.inCurrentChapter = true;
+                        _changed(controller.text);
+                      },
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
           if (busy) const LinearProgressIndicator(),
-          if (error.isNotEmpty) Text(error),
-          if (!busy && query.trim().isNotEmpty)
+          if (error.isNotEmpty)
+            Padding(padding: const EdgeInsets.all(8), child: Text(error)),
+          if (session.query.trim().isNotEmpty && (!busy || results.isNotEmpty))
             Text(
               results.isEmpty
                   ? 'Ничего не найдено'
-                  : results.length == 200
-                  ? 'Показаны первые 200 совпадений'
-                  : 'Совпадений: ${results.length}',
+                  : 'Совпадений: ${results.length}${hasMore ? '+' : ''}',
             ),
           Expanded(
             child: ListView.builder(
-              itemCount: results.length,
+              itemCount: results.length + (hasMore ? 1 : 0),
               itemBuilder: (context, i) {
+                if (i == results.length) {
+                  return TextButton.icon(
+                    onPressed: busy ? null : _more,
+                    icon: const Icon(Icons.expand_more),
+                    label: const Text('Показать ещё совпадения'),
+                  );
+                }
                 final hit = results[i];
                 return ListTile(
                   title: Text(

@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import '../audio/audio_roots.dart';
 import '../audio/audio_folder.dart';
 import '../media/asset_store.dart';
+import '../media/library_folder_preference.dart';
+import '../media/audio_player_scope.dart';
+import 'audio_mini_player.dart';
 
 class AudioRootsPage extends StatefulWidget {
   final AssetStore assets;
@@ -18,6 +21,11 @@ class AudioRootsPage extends StatefulWidget {
 class _AudioRootsPageState extends State<AudioRootsPage> {
   late final manager = AudioRoots(widget.assets);
   List<AudioRoot> roots = [];
+  String? pinnedRoot;
+  late final preference = LibraryFolderPreference(
+    widget.assets.repository,
+    reading: false,
+  );
   bool busy = false;
   String message = '';
   @override
@@ -29,7 +37,13 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
   Future<void> load() async {
     try {
       final items = await manager.list();
-      if (mounted) setState(() => roots = items);
+      final pinned = await preference.load();
+      if (mounted) {
+        setState(() {
+          roots = items;
+          pinnedRoot = pinned;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => message = '$e');
     }
@@ -228,6 +242,9 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
     canPop: !busy,
     child: Scaffold(
       appBar: AppBar(title: const Text('Папки библиотеки')),
+      bottomNavigationBar: AudioMiniPlayer(
+        controller: AudioPlayerScope.of(context),
+      ),
       body: Column(
         children: [
           if (busy) const LinearProgressIndicator(),
@@ -275,6 +292,30 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
                               Wrap(
                                 spacing: 8,
                                 children: [
+                                  TextButton.icon(
+                                    onPressed: busy
+                                        ? null
+                                        : () => run(() async {
+                                            await preference.set(
+                                              pinnedRoot == root.key
+                                                  ? null
+                                                  : root.key,
+                                            );
+                                            return pinnedRoot == root.key
+                                                ? 'Закрепление снято'
+                                                : 'Папка будет открываться по умолчанию';
+                                          }),
+                                    icon: Icon(
+                                      pinnedRoot == root.key
+                                          ? Icons.push_pin
+                                          : Icons.push_pin_outlined,
+                                    ),
+                                    label: Text(
+                                      pinnedRoot == root.key
+                                          ? 'Открепить по умолчанию'
+                                          : 'Открывать по умолчанию',
+                                    ),
+                                  ),
                                   TextButton.icon(
                                     onPressed: busy
                                         ? null

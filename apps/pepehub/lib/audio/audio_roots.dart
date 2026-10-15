@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import '../media/asset_store.dart';
+import '../media/library_folder_preference.dart';
 import '../media/library_recovery.dart';
 import 'audio_catalog.dart';
 import 'audio_folder.dart';
@@ -59,6 +60,10 @@ class AudioRoots {
 
   Future<void> remove(AudioRoot root) =>
       assets.repository.db.transaction(() async {
+        await LibraryFolderPreference(
+          assets.repository,
+          reading: false,
+        ).replace(root.key, null);
         final others = (await list())
             .where((r) => r.key != root.key)
             .expand((r) => r.bookIds)
@@ -184,6 +189,10 @@ class AudioRoots {
         }),
       );
       if (newKey != root.key) {
+        await LibraryFolderPreference(
+          repo,
+          reading: false,
+        ).replace(root.key, newKey);
         await repo.db.customStatement('DELETE FROM metadata WHERE key=?', [
           root.key,
         ]);

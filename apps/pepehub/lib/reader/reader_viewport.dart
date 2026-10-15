@@ -19,8 +19,11 @@ class ReaderViewport extends StatefulWidget {
   final int? highlightStart, highlightEnd;
   final bool scrolling, compactFlow, firstChapter, lastChapter;
   final ValueChanged<int> onPosition, onChapter;
+  final ValueChanged<int>? onSeek;
   final List<ReadingNote> notes;
   final void Function(int start, int end, bool comment)? onAnnotate;
+  final void Function(int start, int end)? onAnki;
+  final void Function(int start, int end, String color)? onHighlight;
   final VoidCallback? onLoading, onReady;
   final ReaderPreferences? preferences;
   final VoidCallback? onToggleControls;
@@ -51,8 +54,11 @@ class ReaderViewport extends StatefulWidget {
     required this.lastChapter,
     required this.onPosition,
     required this.onChapter,
+    this.onSeek,
     this.notes = const [],
     this.onAnnotate,
+    this.onAnki,
+    this.onHighlight,
     this.onLoading,
     this.onReady,
     this.preferences,
@@ -95,6 +101,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
   late List<int> markupPrefixMaxEnd;
   double contentHeight = 0;
   bool layoutComplete = false;
+  late final int layoutStart = widget.onSeek == null
+      ? 0
+      : readerWindowStart(widget.text, widget.anchor);
   Completer<void>? morePagesRequested;
   bool get progressiveLayout => widget.text.length > 40000;
   String _text(ReaderSlice page) {
@@ -447,7 +456,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
         if (usedPageHeight >= pageCapacity) finishPage();
       }
 
-      var from = 0;
+      var from = layoutStart;
       var laidOutSlices = 0;
       Future<void> appendText(int end) async {
         if (end <= from) return;
@@ -557,7 +566,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
         from = end;
       }
 
-      for (final image in orderedImages) {
+      for (final image in orderedImages.where(
+        (image) => image.offset >= layoutStart,
+      )) {
         final at = image.offset.clamp(from, widget.text.length);
         await appendText(at);
         if (widget.scrolling && !widget.compactFlow) finishPage();
@@ -663,7 +674,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
         return;
       }
       if (delta < 0 && at <= 1) {
-        if (!widget.firstChapter) widget.onChapter(-1);
+        _earlier();
         return;
       }
       interacted = true;
@@ -676,7 +687,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
     }
     final next = index + delta;
     if (next < 0) {
-      if (!widget.firstChapter) widget.onChapter(-1);
+      _earlier();
       return;
     }
     if (next >= list.length) {
@@ -730,13 +741,23 @@ class _ReaderViewportState extends State<ReaderViewport> {
     itemBuilder: (_, i) => item(i),
   );
 
+  void _earlier() {
+    if (layoutStart > 0) {
+      widget.onSeek?.call(layoutStart - 1);
+    } else if (!widget.firstChapter) {
+      widget.onChapter(-1);
+    }
+  }
+
+  String _pageLabel(int shown, int count) =>
+      '${layoutStart > 0 ? 'Участок: ' : ''}$shown из $count${layoutComplete ? '' : '+'}';
+
   Widget _pageSlider(int pageCount) {
     final lastPage = pageCount - 1;
     final value = (draggingPage ?? index.toDouble())
         .clamp(0, lastPage)
         .toDouble();
     final shownPage = value.round() + 1;
-    final countLabel = layoutComplete ? '$pageCount' : '$pageCount+';
     return SizedBox(
       height: 48,
       child: Padding(
@@ -761,9 +782,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
                     value: value,
                     min: 0,
                     max: lastPage > 0 ? lastPage.toDouble() : 1,
-                    label: '$shownPage из $countLabel',
+                    label: _pageLabel(shownPage, pageCount),
                     semanticFormatterCallback: (v) =>
-                        'Страница ${v.round() + 1} из $countLabel',
+                        _pageLabel(v.round() + 1, pageCount),
                     onChanged: pageCount > 1
                         ? (v) => setState(() => draggingPage = v)
                         : null,
@@ -784,12 +805,18 @@ class _ReaderViewportState extends State<ReaderViewport> {
               ),
             ),
             SizedBox(
-              width: 72,
-              child: Text(
-                '$shownPage из $countLabel',
-                textAlign: TextAlign.end,
-                maxLines: 1,
-                style: Theme.of(context).textTheme.labelSmall,
+              width: layoutStart > 0 ? 124 : 72,
+              child: Tooltip(
+                message: layoutStart > 0
+                    ? 'Страницы загруженного участка. Общая позиция — на нижней шкале книги.'
+                    : 'Страницы рассчитанного текста',
+                child: Text(
+                  _pageLabel(shownPage, pageCount),
+                  textAlign: TextAlign.end,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
               ),
             ),
           ],
@@ -804,11 +831,12 @@ class _ReaderViewportState extends State<ReaderViewport> {
     return {
       0.0,
       for (final start in widget.chapterBreaks)
-        (() {
-          final page = pages!.indexWhere((item) => item.start >= start);
-          if (page < 0) return 1.0;
-          return page / lastItem;
-        })(),
+        if (start >= layoutStart)
+          (() {
+            final page = pages!.indexWhere((item) => item.start >= start);
+            if (page < 0) return 1.0;
+            return page / lastItem;
+          })(),
     }.toList()..sort();
   }
 
@@ -827,7 +855,10 @@ class _ReaderViewportState extends State<ReaderViewport> {
       final base = segment.start;
       final markupRanges = _markupOverlapping(base, base + raw.length).toList();
       final ranges = <({int start, int end, Color color})>[
-        for (final note in widget.notes)
+        for (final note
+            in (widget.preferences?.showHighlights ?? true)
+                ? widget.notes
+                : const <ReadingNote>[])
           (
             start: note.start,
             end: note.end,
@@ -990,6 +1021,50 @@ class _ReaderViewportState extends State<ReaderViewport> {
                     context: context,
                     width: widget.width,
                     anchors: state.contextMenuAnchors,
+                    palette:
+                        widget.onHighlight == null || savedSelection.isCollapsed
+                        ? null
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (final color in noteColors.entries)
+                                IconButton(
+                                  tooltip:
+                                      'Выделить: ${switch (color.key) {
+                                        'green' => 'зелёный',
+                                        'blue' => 'синий',
+                                        'pink' => 'розовый',
+                                        _ => 'жёлтый',
+                                      }}',
+                                  onPressed: () {
+                                    state.hideToolbar();
+                                    widget.onHighlight!(
+                                      segment.start + savedSelection.start,
+                                      segment.start + savedSelection.end,
+                                      color.key,
+                                    );
+                                  },
+                                  icon: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: color.value,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: SizedBox.square(
+                                      dimension: 26,
+                                      child:
+                                          widget.preferences?.highlightColor ==
+                                              color.key
+                                          ? const Icon(
+                                              Icons.check,
+                                              size: 18,
+                                              color: Colors.black87,
+                                            )
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                     buttonItems: [
                       if (widget.onBoundary != null &&
                           !state.textEditingValue.selection.isCollapsed)
@@ -1024,6 +1099,17 @@ class _ReaderViewportState extends State<ReaderViewport> {
                               );
                             },
                           ),
+                      if (widget.onAnki != null && !savedSelection.isCollapsed)
+                        ContextMenuButtonItem(
+                          label: 'Карточка Anki',
+                          onPressed: () {
+                            state.hideToolbar();
+                            widget.onAnki!(
+                              segment.start + savedSelection.start,
+                              segment.start + savedSelection.end,
+                            );
+                          },
+                        ),
                       ...state.contextMenuButtonItems,
                     ],
                   );
@@ -1227,14 +1313,17 @@ class _ReaderViewportState extends State<ReaderViewport> {
                     children: [
                       IconButton(
                         tooltip: 'Предыдущая страница',
-                        onPressed: index == 0 && widget.firstChapter
+                        onPressed:
+                            index == 0 &&
+                                widget.firstChapter &&
+                                layoutStart == 0
                             ? null
                             : () => _step(-1),
                         icon: const Icon(Icons.chevron_left),
                       ),
                       Expanded(
                         child: Text(
-                          '${widget.scrolling ? 'Прокрутка' : 'Страница'} · ${index + 1}/${list.length}${layoutComplete ? '' : '+'}',
+                          '${layoutStart > 0 ? 'Участок' : 'Страница'} · ${index + 1}/${list.length}${layoutComplete ? '' : '+'}',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.labelSmall,
                         ),
@@ -1261,6 +1350,13 @@ class _ReaderViewportState extends State<ReaderViewport> {
     final delta = overscroll > 0 ? 1 : -1;
     if (delta > 0 && !layoutComplete) {
       _requestMorePages();
+      return;
+    }
+    if (delta < 0 && layoutStart > 0) {
+      crossingChapter = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _earlier();
+      });
       return;
     }
     if (delta > 0 && widget.lastChapter || delta < 0 && widget.firstChapter) {
@@ -1306,6 +1402,7 @@ Widget readerSelectionToolbar({
   required TextSelectionToolbarAnchors anchors,
   required List<ContextMenuButtonItem> buttonItems,
   VoidCallback? onMore,
+  Widget? palette,
 }) => Padding(
   padding: const EdgeInsets.all(8),
   child: CustomSingleChildLayout(
@@ -1323,6 +1420,11 @@ Widget readerSelectionToolbar({
         width: (width - 32).clamp(200, 400),
         child: Wrap(
           children: [
+            if (palette != null)
+              SizedBox(
+                width: double.infinity,
+                child: Center(child: palette),
+              ),
             for (final item in buttonItems.where(_primarySelectionAction))
               TextButton(
                 onPressed: item.onPressed,

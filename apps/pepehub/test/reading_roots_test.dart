@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/media/asset_store.dart';
+import 'package:pepehub/media/library_folder_preference.dart';
 import 'package:pepehub/reader/reading_roots.dart';
 import 'package:pepehub/audio/audio_roots.dart';
 import 'package:pepehub/audio/audio_folder.dart';
@@ -31,6 +32,8 @@ void main() {
       await scanAudioFolder(dir.path, books: true),
     );
     expect(root.bookIds, hasLength(1));
+    final preference = LibraryFolderPreference(repo, reading: true);
+    await preference.set(root.key);
     final asset = (await assets.list()).single;
     expect(p.normalize(asset.path), p.normalize(text.path));
     await repo.setMeta('reader:${asset.hash}', 'saved-position');
@@ -39,10 +42,12 @@ void main() {
       await scanAudioFolder(dir.path, books: true),
     );
     expect(updated.bookIds, root.bookIds);
+    expect(await preference.load(), updated.key);
     expect((await assets.list()).single.path, endsWith('renamed.txt'));
     expect(await repo.meta('reader:${asset.hash}'), 'saved-position');
     expect(await AudioRoots(assets).list(), isEmpty);
     await roots.disconnect(updated);
+    expect(await preference.load(), isNull);
     expect(await repo.meta('reading-library-hidden:${asset.bookId}'), '1');
     expect(await File('${dir.path}/renamed.txt').exists(), isTrue);
     await roots.connect(await scanAudioFolder(dir.path, books: true));

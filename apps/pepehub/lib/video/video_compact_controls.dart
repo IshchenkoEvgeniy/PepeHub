@@ -9,7 +9,13 @@ class VideoCompactControls extends StatelessWidget {
   final bool enabled, fullscreen, visible, locked, miniWindow;
   final double? scrub;
   final Widget? seekPreview;
-  final VoidCallback onBack, onMore, onStudy, onCaptions, onFullscreen, onLock;
+  final VoidCallback onBack,
+      onMore,
+      onStudy,
+      onCaptions,
+      onNote,
+      onFullscreen,
+      onLock;
   final void Function(double) onScrub;
   final void Function(double) onSeek;
   final VoidCallback onScrubStart;
@@ -28,6 +34,7 @@ class VideoCompactControls extends StatelessWidget {
     required this.onMore,
     required this.onStudy,
     required this.onCaptions,
+    required this.onNote,
     required this.onFullscreen,
     required this.onLock,
     required this.onScrub,
@@ -110,6 +117,11 @@ class VideoCompactControls extends StatelessWidget {
                           ),
                         ),
                         if (!miniWindow) ...[
+                          button(
+                            'Быстрая заметка',
+                            Icons.edit_note,
+                            enabled ? onNote : null,
+                          ),
                           button(
                             'Дорожки и субтитры',
                             Icons.closed_caption_outlined,

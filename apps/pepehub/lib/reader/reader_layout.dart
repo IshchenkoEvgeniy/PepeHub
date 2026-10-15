@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'epub.dart';
 
 class ReaderPreferences {
-  final double size, spacing, margin, pageHeightFactor;
+  final double size, spacing, margin, pageHeightFactor, columnWidth;
   final String font, palette, mode;
-  final bool showScrollbar;
+  final bool showScrollbar, showHighlights;
+  final String highlightColor;
+  static const highlightColors = ['yellow', 'green', 'blue', 'pink'];
   final String leftTap, centerTap, rightTap;
   final double zoneWidth;
   const ReaderPreferences({
@@ -13,10 +15,13 @@ class ReaderPreferences {
     this.spacing = 1.35,
     this.margin = 24,
     this.pageHeightFactor = 1,
+    this.columnWidth = 900,
     this.font = 'serif',
     this.palette = 'dark',
     this.mode = 'seamless',
     this.showScrollbar = false,
+    this.showHighlights = true,
+    this.highlightColor = 'yellow',
     this.leftTap = 'previous',
     this.centerTap = 'controls',
     this.rightTap = 'next',
@@ -30,6 +35,10 @@ class ReaderPreferences {
     margin: ((data['margin'] as num?)?.toDouble() ?? 24).clamp(12, 48),
     pageHeightFactor: ((data['pageHeightFactor'] as num?)?.toDouble() ?? 1)
         .clamp(.65, 1.5),
+    columnWidth: ((data['columnWidth'] as num?)?.toDouble() ?? 900).clamp(
+      360,
+      1200,
+    ),
     font: data['font'] == 'sans' ? 'sans' : 'serif',
     palette:
         const ['light', 'dark', 'sepia', 'system'].contains(data['palette'])
@@ -40,6 +49,10 @@ class ReaderPreferences {
         ? data['mode'] as String
         : 'seamless',
     showScrollbar: data['showScrollbar'] == true,
+    showHighlights: data['showHighlights'] != false,
+    highlightColor: highlightColors.contains(data['highlightColor'])
+        ? data['highlightColor'] as String
+        : 'yellow',
     leftTap: _tap(data['leftTap'], 'previous'),
     centerTap: _tap(data['centerTap'], 'controls'),
     rightTap: _tap(data['rightTap'], 'next'),
@@ -50,10 +63,13 @@ class ReaderPreferences {
     double? spacing,
     double? margin,
     double? pageHeightFactor,
+    double? columnWidth,
     String? font,
     String? palette,
     String? mode,
     bool? showScrollbar,
+    bool? showHighlights,
+    String? highlightColor,
     String? leftTap,
     String? centerTap,
     String? rightTap,
@@ -63,10 +79,13 @@ class ReaderPreferences {
     spacing: spacing ?? this.spacing,
     margin: margin ?? this.margin,
     pageHeightFactor: pageHeightFactor ?? this.pageHeightFactor,
+    columnWidth: columnWidth ?? this.columnWidth,
     font: font ?? this.font,
     palette: palette ?? this.palette,
     mode: mode ?? this.mode,
     showScrollbar: showScrollbar ?? this.showScrollbar,
+    showHighlights: showHighlights ?? this.showHighlights,
+    highlightColor: highlightColor ?? this.highlightColor,
     leftTap: leftTap ?? this.leftTap,
     centerTap: centerTap ?? this.centerTap,
     rightTap: rightTap ?? this.rightTap,
@@ -77,10 +96,13 @@ class ReaderPreferences {
     'spacing': spacing,
     'margin': margin,
     'pageHeightFactor': pageHeightFactor,
+    'columnWidth': columnWidth,
     'font': font,
     'palette': palette,
     'mode': mode,
     'showScrollbar': showScrollbar,
+    'showHighlights': showHighlights,
+    'highlightColor': highlightColor,
     'leftTap': leftTap,
     'centerTap': centerTap,
     'rightTap': rightTap,
@@ -90,6 +112,9 @@ class ReaderPreferences {
       const ['previous', 'next', 'controls', 'none'].contains(v)
       ? v as String
       : fallback;
+  bool isDark(Brightness systemBrightness) =>
+      palette == 'dark' ||
+      palette == 'system' && systemBrightness == Brightness.dark;
   String tapAt(double fraction) => fraction < zoneWidth
       ? leftTap
       : fraction > 1 - zoneWidth
@@ -115,7 +140,23 @@ class ReaderDocument {
       .toList();
   late final List<int> starts = _starts();
   late final int length = texts.fold(0, (sum, text) => sum + text.length);
+  late final _paragraphIndexes = List<List<int>?>.filled(
+    book.chapters.length,
+    null,
+  );
   ReaderDocument(this.book);
+  List<int> _paragraphStarts(int chapter) =>
+      _paragraphIndexes[chapter] ??= (() {
+        var start = 0;
+        return [
+          for (final paragraph in book.chapters[chapter].paragraphs)
+            (() {
+              final value = start;
+              start += paragraph.length + 2;
+              return value;
+            })(),
+        ];
+      })();
   List<int> _starts() {
     var sum = 0;
     return [
@@ -130,21 +171,30 @@ class ReaderDocument {
 
   int offset(int chapter, int paragraph, int within) {
     final paragraphs = book.chapters[chapter].paragraphs;
+    if (paragraphs.isEmpty) return 0;
     paragraph = paragraph.clamp(0, paragraphs.length - 1);
-    return paragraphs.take(paragraph).fold(0, (sum, p) => sum + p.length + 2) +
+    return _paragraphStarts(chapter)[paragraph] +
         within.clamp(0, paragraphs[paragraph].length);
   }
 
   ({int paragraph, int within}) paragraphAt(int chapter, int offset) {
     final paragraphs = book.chapters[chapter].paragraphs;
-    var rest = offset.clamp(0, texts[chapter].length);
-    for (var i = 0; i < paragraphs.length; i++) {
-      if (rest <= paragraphs[i].length || i == paragraphs.length - 1) {
-        return (paragraph: i, within: rest.clamp(0, paragraphs[i].length));
+    if (paragraphs.isEmpty) return (paragraph: 0, within: 0);
+    final at = offset.clamp(0, texts[chapter].length);
+    final starts = _paragraphStarts(chapter);
+    var low = 0, high = paragraphs.length - 1;
+    while (low < high) {
+      final middle = (low + high) >> 1;
+      if (starts[middle] + paragraphs[middle].length < at) {
+        low = middle + 1;
+      } else {
+        high = middle;
       }
-      rest -= paragraphs[i].length + 2;
     }
-    return (paragraph: 0, within: 0);
+    return (
+      paragraph: low,
+      within: (at - starts[low]).clamp(0, paragraphs[low].length),
+    );
   }
 
   ({int chapter, int offset}) locate(double fraction) {
@@ -166,6 +216,20 @@ class ReaderSlice {
   final double? height;
   final List<ReaderSlice>? segments;
   const ReaderSlice(this.start, this.end, {this.height, this.segments});
+}
+
+/// A bounded lead-in restores the original UTF-16 anchor without laying out
+/// every preceding chapter. The viewport can request an earlier window later.
+int readerWindowStart(String text, int anchor) {
+  if (anchor < 24000) return 0;
+  final target = (anchor - 12000).clamp(0, text.length);
+  final paragraph = text.lastIndexOf('\n\n', target);
+  if (paragraph >= target - 6000) return paragraph < 0 ? 0 : paragraph + 2;
+  final line = text.lastIndexOf('\n', target);
+  if (line >= target - 6000) return line < 0 ? 0 : line + 1;
+  final word = text.lastIndexOf(' ', target);
+  // Preserve a word (and its Unicode sequence) rather than slicing a glyph.
+  return word >= target - 256 ? word + 1 : 0;
 }
 
 /// Page boundaries use original UTF-16 offsets, never page numbers as identity.
@@ -282,9 +346,15 @@ List<Map<String, dynamic>> searchReader(Map<String, dynamic> request) {
     unicode: true,
   );
   final texts = (request['texts'] as List).cast<String>();
+  final scope = request['scopeChapter'] as int?;
+  final afterChapter = request['afterChapter'] as int? ?? -1;
+  final afterOffset = request['afterOffset'] as int? ?? 0;
+  final limit = ((request['limit'] as int?) ?? 200).clamp(1, 2001);
   final results = <Map<String, dynamic>>[];
   for (var c = 0; c < texts.length; c++) {
-    for (final match in pattern.allMatches(texts[c])) {
+    if (scope != null && c != scope || c < afterChapter) continue;
+    final start = c == afterChapter ? afterOffset.clamp(0, texts[c].length) : 0;
+    for (final match in pattern.allMatches(texts[c], start)) {
       results.add({
         'chapter': c,
         'offset': match.start,
@@ -296,7 +366,7 @@ List<Map<String, dynamic>> searchReader(Map<String, dynamic> request) {
             )
             .replaceAll('\n', ' '),
       });
-      if (results.length == 200) return results;
+      if (results.length == limit) return results;
     }
   }
   return results;

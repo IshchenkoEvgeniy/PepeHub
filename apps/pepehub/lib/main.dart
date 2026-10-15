@@ -6,6 +6,7 @@ import 'data/database.dart';
 import 'data/repository.dart';
 import 'media/asset_store.dart';
 import 'media/audio_controller.dart';
+import 'media/audio_player_scope.dart';
 import 'ui/library_page.dart';
 import 'reader/reader_routes.dart';
 import 'video/video_repository.dart';
@@ -118,35 +119,38 @@ class _PepeHubAppState extends State<PepeHubApp> {
               ),
               disableAnimations: media.disableAnimations || theme.reduceMotion,
             ),
-            child: VideoSessionScope(
-              session: videos,
-              child: Overlay.wrap(
-                child: Stack(
-                  children: [
-                    child!,
-                    VideoMiniPlayer(
-                      session: videos,
-                      onOpen: () {
-                        final item = videos.item, player = videos.controller;
-                        if (item == null ||
-                            player == null ||
-                            videos.pageAttached) {
-                          return;
-                        }
-                        navigator.currentState?.push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => VideoPlayerPage(
-                              repository: videos.repository,
-                              item: item,
-                              lessons: player.lessons,
-                              initialIndex: player.index,
-                              session: videos,
+            child: AudioPlayerScope(
+              controller: widget.audio,
+              child: VideoSessionScope(
+                session: videos,
+                child: Overlay.wrap(
+                  child: Stack(
+                    children: [
+                      child!,
+                      VideoMiniPlayer(
+                        session: videos,
+                        onOpen: () {
+                          final item = videos.item, player = videos.controller;
+                          if (item == null ||
+                              player == null ||
+                              videos.pageAttached) {
+                            return;
+                          }
+                          navigator.currentState?.push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => VideoPlayerPage(
+                                repository: videos.repository,
+                                item: item,
+                                lessons: player.lessons,
+                                initialIndex: player.index,
+                                session: videos,
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

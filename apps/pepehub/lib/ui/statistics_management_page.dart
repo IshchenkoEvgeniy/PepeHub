@@ -1,6 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+
+import 'audio_mini_player.dart';
+
 import 'package:flutter/services.dart';
 
 import '../audio/audio_journal.dart';
@@ -1083,6 +1086,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    bottomNavigationBar: const AudioPlayerFooter(),
     appBar: AppBar(
       title: Text(
         selectedEntries.isEmpty

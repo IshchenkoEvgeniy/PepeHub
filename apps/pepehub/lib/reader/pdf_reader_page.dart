@@ -433,9 +433,10 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   }
 
   void _paint(Canvas canvas, Rect rect, PdfPage pdfPage) {
-    final relevant = notes.where(
-      (n) => n.chapter == pdfPage.pageNumber - 1 && n.end > n.start,
-    );
+    final relevant =
+        (preferences.showHighlights ? notes : const <ReadingNote>[]).where(
+          (n) => n.chapter == pdfPage.pageNumber - 1 && n.end > n.start,
+        );
     final hit = highlighted?.page == pdfPage.pageNumber ? highlighted : null;
     if (relevant.isEmpty && hit == null) return;
     final text = glyphs[pdfPage.pageNumber];
@@ -584,6 +585,16 @@ class _PdfReaderPageState extends State<PdfReaderPage>
                       ],
                       onChanged: (v) =>
                           update(() => value = value.copy(mode: v)),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Показывать выделения'),
+                      subtitle: const Text(
+                        'Цитаты и заметки сохраняются при скрытии',
+                      ),
+                      value: value.showHighlights,
+                      onChanged: (v) =>
+                          update(() => value = value.copy(showHighlights: v)),
                     ),
                     for (final zone in ['left', 'center', 'right'])
                       DropdownButtonFormField<String>(
@@ -1040,10 +1051,9 @@ class _PdfReaderPageState extends State<PdfReaderPage>
                 ),
               );
             }
-            final dark =
-                preferences.palette == 'dark' ||
-                preferences.palette == 'system' &&
-                    Theme.of(context).brightness == Brightness.dark;
+            final dark = preferences.isDark(
+              MediaQuery.platformBrightnessOf(context),
+            );
             final filter = dark
                 ? const ColorFilter.matrix([
                     -.82,

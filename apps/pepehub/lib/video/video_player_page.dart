@@ -23,6 +23,10 @@ import 'video_session.dart';
 import 'video_compact_controls.dart';
 import 'video_frame_export.dart';
 import 'video_seek_previews.dart';
+import 'video_annotation_editor.dart';
+import '../vocabulary/vocabulary_editor.dart';
+import '../vocabulary/vocabulary_repository.dart';
+import '../vocabulary/vocabulary_page.dart';
 
 class VideoPlayerPage extends StatefulWidget {
   final VideoRepository repository;
@@ -51,7 +55,7 @@ class VideoPlayerPage extends StatefulWidget {
 }
 
 class _VideoPlayerPageState extends State<VideoPlayerPage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   VideoPlaybackController? controller;
   VideoCaptionsController? captions;
   String? startupError;
@@ -61,6 +65,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _changingFullscreen = false;
   bool _controlsVisible = true, _dialogOpen = false;
   bool _studyOpen = false;
+  VideoAnnotationDraft? _annotation;
+  bool _openingAnnotation = false;
+  final _annotationKey = GlobalKey<VideoAnnotationEditorState>();
+  final _vocabularyKey = GlobalKey<VocabularyEditorState>();
+  late final _studyTabs = TabController(length: 4, vsync: this);
   bool _wasPlaying = false;
   double? _scrub;
   int? _pointA, _pointB;
@@ -166,7 +175,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   void _showControls() {
     _controlsTimer?.cancel();
     if (mounted) setState(() => _controlsVisible = true);
-    if (!_dialogOpen && !_studyOpen && !_locked) {
+    if (!_dialogOpen && !_studyOpen && !_locked && _annotation == null) {
       _controlsTimer = Timer(const Duration(seconds: 4), () {
         if (mounted &&
             controller?.state.playing == true &&
@@ -204,6 +213,18 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   }
 
   Future<void> _back() async {
+    if (_annotation != null) {
+      if (_annotation!.forAnki) {
+        await _vocabularyKey.currentState?.requestClose();
+      } else {
+        await _annotationKey.currentState?.requestClose();
+      }
+      return;
+    }
+    if (_studyOpen) {
+      _closeStudy();
+      return;
+    }
     if (_locked) {
       setState(() => _locked = false);
       _showControls();
@@ -248,6 +269,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   void dispose() {
     _controlsTimer?.cancel();
     _focus.dispose();
+    _studyTabs.dispose();
     _zoom.dispose();
     _previews.removeListener(_previewChanged);
     _previews.dispose();
@@ -322,23 +344,52 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     }
   }
 
-  Future<void> _note({VideoAnnotation? existing, bool fragment = false}) async {
+  Future<void> _note({
+    VideoAnnotation? existing,
+    bool fragment = false,
+    bool forAnki = false,
+  }) async {
     final player = controller!, lesson = controller!.current!;
-    final saved = await _dialog(
-      () => showVideoAnnotationDialog(
-        context,
-        repository: widget.repository,
+    await _openAnnotation(
+      VideoAnnotationDraft(
         lesson: lesson,
-        positionMs: fragment ? _pointA! : player.positionMs,
+        positionMs:
+            existing?.startMs ?? (fragment ? _pointA! : player.positionMs),
         durationMs: player.state.durationMs,
         existing: existing,
         endMs: fragment ? _pointB : null,
+        forAnki: forAnki,
       ),
     );
-    if (saved != null && mounted) {
-      setState(() => _notesRefresh++);
-      _session.refresh();
+  }
+
+  Future<void> _openAnnotation(
+    VideoAnnotationDraft draft, {
+    bool seek = false,
+  }) async {
+    if (_annotation != null || _openingAnnotation || _dialogOpen) return;
+    _openingAnnotation = true;
+    _controlsTimer?.cancel();
+    try {
+      await controller!.pause();
+      if (seek || draft.existing != null) {
+        await controller!.seek(draft.positionMs);
+      }
+      if (mounted) setState(() => _annotation = draft);
+    } finally {
+      _openingAnnotation = false;
     }
+  }
+
+  void _finishAnnotation({bool saved = false}) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _annotation = null;
+      if (saved) _notesRefresh++;
+    });
+    if (saved) _session.refresh();
+    _showControls();
+    _focus.requestFocus();
   }
 
   Future<void> _statistics() async {
@@ -436,26 +487,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
 
   Future<void> _noteCue(
     VideoSubtitleRecord source,
-    VideoSubtitleCue cue,
-  ) async {
+    VideoSubtitleCue cue, {
+    bool forAnki = false,
+  }) async {
     final (start, end) = _cueRange(source, cue);
     final lesson = controller!.current!;
-    final saved = await _dialog(
-      () => showVideoAnnotationDialog(
-        context,
-        repository: widget.repository,
+    await _openAnnotation(
+      VideoAnnotationDraft(
         lesson: lesson,
         positionMs: start,
         durationMs: controller!.state.durationMs,
         endMs: end,
         initialTitle: 'Фраза ${videoTimestamp(start)}',
         initialBody: cue.text,
+        forAnki: forAnki,
       ),
+      seek: true,
     );
-    if (saved != null && mounted) {
-      setState(() => _notesRefresh++);
-      _session.refresh();
-    }
   }
 
   Future<void> _command(String action) async {
@@ -463,6 +511,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       await _back();
       return;
     }
+    if (_annotation != null || _openingAnnotation) return;
     if (action == 'fullscreen') {
       await _setFullscreen(!_fullscreen);
       return;
@@ -541,7 +590,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         }
       }
     },
-    onDoubleTap: _locked
+    onDoubleTap: _locked || _annotation != null
         ? null
         : () => _perform(() => _setFullscreen(!_fullscreen)),
     child: Stack(
@@ -593,7 +642,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           Positioned.fill(
             child: VideoCaptionOverlay(
               captions: captions!,
-              bottom: _controlsVisible && !_fullscreenHost.pip ? 130 : 12,
+              bottom:
+                  _controlsVisible &&
+                      !_fullscreenHost.pip &&
+                      _annotation == null
+                  ? 130
+                  : 12,
               fontScale: _fullscreenHost.pip ? .65 : 1,
               maxLines: _fullscreenHost.pip ? 2 : 4,
             ),
@@ -724,6 +778,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       ('loop', 'Повтор A–B', Icons.repeat),
       ('timer', 'Таймер сна', Icons.timer_outlined),
       ('note', 'Закладка / заметка', Icons.bookmark_add_outlined),
+      ('anki', 'Карточка Anki', Icons.style_outlined),
+      ('vocabulary', 'Словарь Anki', Icons.collections_bookmark_outlined),
       (
         'audio',
         player.audioOnly ? 'Вернуться к видео' : 'Аудиорежим',
@@ -840,6 +896,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         await _sleepDialog();
       case 'note':
         await _note();
+      case 'anki':
+        await _note(forAnki: true);
+      case 'vocabulary':
+        await controller!.pause();
+        if (!mounted) return;
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => VocabularyPage(
+              repository: VocabularyRepository(widget.repository.repository),
+            ),
+          ),
+        );
       case 'audio':
         await _session.setAudioOnly(!player.audioOnly);
       case 'mute':
@@ -943,180 +1012,183 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   }
 
   Future<void> _studyPanel({int initialTab = 0}) async {
-    if (_dialogOpen || _studyOpen) return;
-    setState(() => _studyOpen = true);
+    if (_dialogOpen || _studyOpen || _annotation != null) return;
     _controlsTimer?.cancel();
-    try {
-      if (controller?.audioOnly != true) await controller?.pause();
-      if (!mounted) return;
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        showDragHandle: true,
-        constraints: const BoxConstraints(maxWidth: 1000),
-        builder: (sheetContext) => SizedBox(
-          height: MediaQuery.sizeOf(sheetContext).height * .82,
-          child: ScaffoldMessenger(
-            child: Scaffold(
-              backgroundColor: Colors.transparent,
-              body: DefaultTabController(
-                length: 4,
-                initialIndex: initialTab,
-                child: Column(
-                  children: [
-                    const TabBar(
-                      tabAlignment: TabAlignment.start,
-                      isScrollable: true,
-                      tabs: [
-                        Tab(text: 'Уроки'),
-                        Tab(text: 'Расшифровка'),
-                        Tab(text: 'Заметки'),
-                        Tab(text: 'Главы'),
-                      ],
-                    ),
-                    Expanded(
-                      child: AnimatedBuilder(
-                        animation: _session,
-                        builder: (context, _) {
-                          final player = controller!;
-                          return TabBarView(
-                            children: [
-                              ListView(
-                                children: [
-                                  for (
-                                    var i = 0;
-                                    i < player.lessons.length;
-                                    i++
-                                  )
-                                    ListTile(
-                                      key: ValueKey(
-                                        'video-lesson-${player.lessons[i].id}',
-                                      ),
-                                      selected: player.index == i,
-                                      leading: Text('${i + 1}'),
-                                      title: Text(player.lessons[i].title),
-                                      subtitle: player.lessons[i].module.isEmpty
-                                          ? null
-                                          : Text(player.lessons[i].module),
-                                      onTap:
-                                          _enabled &&
-                                              player.lessons[i].available
-                                          ? () => _perform(() => player.load(i))
-                                          : null,
-                                    ),
-                                ],
-                              ),
-                              ListView(
-                                padding: const EdgeInsets.all(12),
-                                children: [
-                                  if (captions != null && captions!.bound) ...[
-                                    if (captions!.settings.translation != null)
-                                      TextButton.icon(
-                                        onPressed: captions!.busy
-                                            ? null
-                                            : () => _perform(
-                                                () => captions!.save(
-                                                  VideoPlaybackSettings.fromJson({
-                                                    ...captions!.settings
-                                                        .toJson(),
-                                                    'translationVisible':
-                                                        !captions!
-                                                            .settings
-                                                            .translationVisible,
-                                                  }),
-                                                ),
-                                              ),
-                                        icon: const Icon(Icons.translate),
-                                        label: Text(
-                                          captions!.settings.translationVisible
-                                              ? 'Скрыть перевод'
-                                              : 'Показать перевод',
-                                        ),
-                                      ),
-                                    VideoTranscriptPanel(
-                                      key: ValueKey(_lessonKey),
-                                      captions: captions!,
-                                      onSeek: (source, cue) =>
-                                          _perform(() => _seekCue(source, cue)),
-                                      onRepeat: (source, cue) async {
-                                        await _perform(
-                                          () => _repeatCue(source, cue),
-                                        );
-                                      },
-                                      onNote: (source, cue) async {
-                                        await _perform(
-                                          () => _noteCue(source, cue),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              ListView(
-                                padding: const EdgeInsets.all(12),
-                                children: [
-                                  if (player.current != null)
-                                    VideoAnnotationsPanel(
-                                      repository: widget.repository,
-                                      lesson: player.current!,
-                                      refresh: _notesRefresh,
-                                      onEdit: (note) async {
-                                        await _perform(
-                                          () => _note(existing: note),
-                                        );
-                                      },
-                                      onSeek: (note) => _perform(
-                                        () => player.seek(note.startMs),
-                                      ),
-                                      onRepeat: (note) async {
-                                        await _perform(
-                                          () => _loopDialog(annotation: note),
-                                        );
-                                      },
-                                    ),
-                                ],
-                              ),
-                              ListView(
-                                children: [
-                                  if (_session.chapters.isEmpty)
-                                    const Padding(
-                                      padding: EdgeInsets.all(20),
-                                      child: Text(
-                                        'В этом файле нет встроенных глав. Используйте заметки к времени или расшифровку.',
-                                      ),
-                                    ),
-                                  for (final chapter in _session.chapters)
-                                    ListTile(
-                                      title: Text(chapter.title),
-                                      subtitle: Text(
-                                        videoTimestamp(chapter.startMs),
-                                      ),
-                                      onTap: () => _perform(
-                                        () => player.seek(chapter.startMs),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
+    if (controller?.audioOnly != true) await controller?.pause();
+    if (!mounted) return;
+    _studyTabs.index = initialTab;
+    setState(() => _studyOpen = true);
+  }
+
+  void _closeStudy() {
+    setState(() => _studyOpen = false);
+    FocusManager.instance.primaryFocus?.unfocus();
+    _showControls();
+    _focus.requestFocus();
+  }
+
+  Widget _studyContents() => ScaffoldMessenger(
+    child: Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Column(
+        children: [
+          Row(
+            children: [
+              const SizedBox(width: 16),
+              const Expanded(child: Text('Материалы урока')),
+              IconButton(
+                tooltip: 'Закрыть панель урока',
+                onPressed: _closeStudy,
+                icon: const Icon(Icons.close),
+              ),
+            ],
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                TabBar(
+                  controller: _studyTabs,
+                  tabAlignment: TabAlignment.start,
+                  isScrollable: true,
+                  tabs: [
+                    Tab(text: 'Уроки'),
+                    Tab(text: 'Расшифровка'),
+                    Tab(text: 'Заметки'),
+                    Tab(text: 'Главы'),
                   ],
                 ),
-              ),
+                Expanded(
+                  child: AnimatedBuilder(
+                    animation: _session,
+                    builder: (context, _) {
+                      final player = controller!;
+                      return TabBarView(
+                        controller: _studyTabs,
+                        children: [
+                          ListView(
+                            children: [
+                              for (var i = 0; i < player.lessons.length; i++)
+                                ListTile(
+                                  key: ValueKey(
+                                    'video-lesson-${player.lessons[i].id}',
+                                  ),
+                                  selected: player.index == i,
+                                  leading: Text('${i + 1}'),
+                                  title: Text(player.lessons[i].title),
+                                  subtitle: player.lessons[i].module.isEmpty
+                                      ? null
+                                      : Text(player.lessons[i].module),
+                                  onTap: _enabled && player.lessons[i].available
+                                      ? () => _perform(() => player.load(i))
+                                      : null,
+                                ),
+                            ],
+                          ),
+                          ListView(
+                            padding: const EdgeInsets.all(12),
+                            children: [
+                              if (captions != null && captions!.bound) ...[
+                                if (captions!.settings.translation != null)
+                                  TextButton.icon(
+                                    onPressed: captions!.busy
+                                        ? null
+                                        : () => _perform(
+                                            () => captions!.save(
+                                              VideoPlaybackSettings.fromJson({
+                                                ...captions!.settings.toJson(),
+                                                'translationVisible': !captions!
+                                                    .settings
+                                                    .translationVisible,
+                                              }),
+                                            ),
+                                          ),
+                                    icon: const Icon(Icons.translate),
+                                    label: Text(
+                                      captions!.settings.translationVisible
+                                          ? 'Скрыть перевод'
+                                          : 'Показать перевод',
+                                    ),
+                                  ),
+                                VideoTranscriptPanel(
+                                  key: ValueKey(_lessonKey),
+                                  captions: captions!,
+                                  onSeek: (source, cue) =>
+                                      _perform(() => _seekCue(source, cue)),
+                                  onRepeat: (source, cue) async {
+                                    await _perform(
+                                      () => _repeatCue(source, cue),
+                                    );
+                                  },
+                                  onNote: (source, cue) async {
+                                    await _perform(() => _noteCue(source, cue));
+                                  },
+                                  onAnki: (source, cue) => _perform(
+                                    () => _noteCue(source, cue, forAnki: true),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          ListView(
+                            padding: const EdgeInsets.all(12),
+                            children: [
+                              TextButton.icon(
+                                onPressed: () =>
+                                    _perform(() => _note(forAnki: true)),
+                                icon: const Icon(Icons.style_outlined),
+                                label: const Text('Карточка Anki'),
+                              ),
+                              if (player.current != null)
+                                VideoAnnotationsPanel(
+                                  repository: widget.repository,
+                                  lesson: player.current!,
+                                  refresh: _notesRefresh,
+                                  onEdit: (note) async {
+                                    await _perform(() => _note(existing: note));
+                                  },
+                                  onSeek: (note) =>
+                                      _perform(() => player.seek(note.startMs)),
+                                  onRepeat: (note) async {
+                                    await _perform(
+                                      () => _loopDialog(annotation: note),
+                                    );
+                                  },
+                                ),
+                            ],
+                          ),
+                          ListView(
+                            children: [
+                              if (_session.chapters.isEmpty)
+                                const Padding(
+                                  padding: EdgeInsets.all(20),
+                                  child: Text(
+                                    'В этом файле нет встроенных глав. Используйте заметки к времени или расшифровку.',
+                                  ),
+                                ),
+                              for (final chapter in _session.chapters)
+                                ListTile(
+                                  title: Text(chapter.title),
+                                  subtitle: Text(
+                                    videoTimestamp(chapter.startMs),
+                                  ),
+                                  onTap: () => _perform(
+                                    () => player.seek(chapter.startMs),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _studyOpen = false);
-        _showControls();
-        _focus.requestFocus();
-      }
-    }
-  }
+        ],
+      ),
+    ),
+  );
 
   Widget _playerBody(VideoPlaybackController player) => Theme(
     data: Theme.of(context).copyWith(
@@ -1131,115 +1203,212 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       onHover: (_) {
         if (!_locked) _showControls();
       },
-      child: Stack(
-        children: [
-          Positioned.fill(child: _surface(player)),
-          if (player.audioOnly)
-            const Positioned.fill(
-              child: IgnorePointer(
-                child: ColoredBox(
-                  color: Colors.black,
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.headphones, size: 64, color: Colors.white70),
-                        SizedBox(height: 16),
-                        Text(
-                          'Аудиорежим',
-                          style: TextStyle(color: Colors.white70),
+      child: LayoutBuilder(
+        builder: (context, bounds) {
+          final noteLayout = _annotation == null
+              ? null
+              : VideoAnnotationLayout(
+                  bounds.biggest,
+                  MediaQuery.paddingOf(context),
+                  _rotation.isOdd
+                      ? 1 / player.engine.aspectRatio
+                      : player.engine.aspectRatio,
+                );
+          return Stack(
+            children: [
+              Positioned.fromRect(
+                rect: noteLayout?.video ?? (Offset.zero & bounds.biggest),
+                child: KeyedSubtree(
+                  key: const ValueKey('video-visible-frame'),
+                  child: _surface(player),
+                ),
+              ),
+              if (player.audioOnly)
+                const Positioned.fill(
+                  child: IgnorePointer(
+                    child: ColoredBox(
+                      color: Colors.black,
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.headphones,
+                              size: 64,
+                              color: Colors.white70,
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'Аудиорежим',
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
+                    ),
+                  ),
+                ),
+              if (!_fullscreenHost.pip && _annotation == null && !_studyOpen)
+                Positioned.fill(
+                  child: VideoCompactControls(
+                    player: player,
+                    enabled: _enabled,
+                    fullscreen: _fullscreen,
+                    visible:
+                        _controlsVisible ||
+                        !player.state.playing ||
+                        player.error != null,
+                    locked: _locked,
+                    miniWindow: _session.miniWindow,
+                    scrub: _scrub,
+                    seekPreview: _scrub != null && _previews.image != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.memory(
+                              _previews.image!,
+                              key: const ValueKey('video-seek-preview'),
+                              width: 160,
+                              height: 90,
+                              fit: BoxFit.contain,
+                              gaplessPlayback: false,
+                            ),
+                          )
+                        : null,
+                    perform: _perform,
+                    onBack: _back,
+                    onMore: () => _perform(_tools),
+                    onStudy: () => _perform(_studyPanel),
+                    onCaptions: () => _perform(_captionSettings),
+                    onNote: () => _perform(_note),
+                    onFullscreen: () =>
+                        _perform(() => _setFullscreen(!_fullscreen)),
+                    onLock: () {
+                      setState(() => _locked = !_locked);
+                      _showControls();
+                    },
+                    onScrubStart: () => _controlsTimer?.cancel(),
+                    onScrub: (value) {
+                      setState(() => _scrub = value);
+                      if (_showPreviews &&
+                          player.engine.canCaptureFrame &&
+                          !player.audioOnly &&
+                          player.current != null) {
+                        _previews.request(
+                          player.current!,
+                          value.round(),
+                          player.state.durationMs,
+                        );
+                      }
+                    },
+                    onSeek: (value) {
+                      setState(() => _scrub = null);
+                      _previews.dismiss();
+                      _perform(() => player.seek(value.round()));
+                      _showControls();
+                    },
+                  ),
+                ),
+              if (player.error != null)
+                Positioned(
+                  top: 76,
+                  left: 16,
+                  right: 16,
+                  child: SafeArea(
+                    child: Material(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Expanded(child: Text(player.error!)),
+                            TextButton(
+                              onPressed: () =>
+                                  _perform(() => player.load(player.index)),
+                              child: const Text('Повторить'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (_studyOpen && _annotation == null)
+                Positioned.fill(
+                  child: ModalBarrier(
+                    color: Colors.black54,
+                    dismissible: true,
+                    onDismiss: _closeStudy,
+                  ),
+                ),
+              Positioned(
+                key: const ValueKey('video-study-panel'),
+                left: ((bounds.maxWidth - 1000) / 2).clamp(0, double.infinity),
+                right: ((bounds.maxWidth - 1000) / 2).clamp(0, double.infinity),
+                bottom: 0,
+                height: bounds.maxHeight * .82,
+                child: ExcludeFocus(
+                  excluding: !_studyOpen || _annotation != null,
+                  child: Offstage(
+                    offstage: !_studyOpen || _annotation != null,
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(24),
+                      ),
+                      child: Material(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerLow,
+                        child: _studyContents(),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          if (!_fullscreenHost.pip)
-            Positioned.fill(
-              child: VideoCompactControls(
-                player: player,
-                enabled: _enabled,
-                fullscreen: _fullscreen,
-                visible:
-                    _controlsVisible ||
-                    !player.state.playing ||
-                    player.error != null,
-                locked: _locked,
-                miniWindow: _session.miniWindow,
-                scrub: _scrub,
-                seekPreview: _scrub != null && _previews.image != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.memory(
-                          _previews.image!,
-                          key: const ValueKey('video-seek-preview'),
-                          width: 160,
-                          height: 90,
-                          fit: BoxFit.contain,
-                          gaplessPlayback: false,
+              if (noteLayout != null)
+                Positioned.fromRect(
+                  rect: noteLayout.editor,
+                  child: _annotation!.forAnki
+                      ? VocabularyEditor(
+                          key: _vocabularyKey,
+                          repository: VocabularyRepository(
+                            widget.repository.repository,
+                          ),
+                          initialFront: _annotation!.initialBody ?? '',
+                          source: VocabularySource(
+                            kind: 'video',
+                            title: widget.item.title,
+                            detail: _annotation!.lesson.title,
+                            mediaId: _annotation!.lesson.id,
+                            mediaVersion: _annotation!.lesson.mediaVersion,
+                            positionMs: _annotation!.positionMs,
+                            endMs: _annotation!.endMs,
+                          ),
+                          onSaved: (_) {
+                            _finishAnnotation();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Карточка добавлена в словарь Anki',
+                                ),
+                              ),
+                            );
+                          },
+                          onCancel: _finishAnnotation,
+                        )
+                      : VideoAnnotationEditor(
+                          key: _annotationKey,
+                          repository: widget.repository,
+                          draft: _annotation!,
+                          onSaved: (_) => _finishAnnotation(saved: true),
+                          onCancel: _finishAnnotation,
+                          onAnki: (draft) =>
+                              setState(() => _annotation = draft),
                         ),
-                      )
-                    : null,
-                perform: _perform,
-                onBack: _back,
-                onMore: () => _perform(_tools),
-                onStudy: () => _perform(_studyPanel),
-                onCaptions: () => _perform(_captionSettings),
-                onFullscreen: () =>
-                    _perform(() => _setFullscreen(!_fullscreen)),
-                onLock: () {
-                  setState(() => _locked = !_locked);
-                  _showControls();
-                },
-                onScrubStart: () => _controlsTimer?.cancel(),
-                onScrub: (value) {
-                  setState(() => _scrub = value);
-                  if (_showPreviews &&
-                      player.engine.canCaptureFrame &&
-                      !player.audioOnly &&
-                      player.current != null) {
-                    _previews.request(
-                      player.current!,
-                      value.round(),
-                      player.state.durationMs,
-                    );
-                  }
-                },
-                onSeek: (value) {
-                  setState(() => _scrub = null);
-                  _previews.dismiss();
-                  _perform(() => player.seek(value.round()));
-                  _showControls();
-                },
-              ),
-            ),
-          if (player.error != null)
-            Positioned(
-              top: 76,
-              left: 16,
-              right: 16,
-              child: SafeArea(
-                child: Material(
-                  color: Colors.black87,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        Expanded(child: Text(player.error!)),
-                        TextButton(
-                          onPressed: () =>
-                              _perform(() => player.load(player.index)),
-                          child: const Text('Повторить'),
-                        ),
-                      ],
-                    ),
-                  ),
                 ),
-              ),
-            ),
-        ],
+            ],
+          );
+        },
       ),
     ),
   );
