@@ -213,6 +213,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Found book'));
       await tester.pumpAndSettle();
+      expect(find.byType(RecommendationDetailPage), findsOneWidget);
+      await tester.tap(find.text('Редактировать'));
+      await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('recommendation-title')),
         'Моё название',

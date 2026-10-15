@@ -26,7 +26,28 @@ class RecommendationsPage extends StatefulWidget {
 class _RecommendationsPageState extends State<RecommendationsPage> {
   RecommendationShelf? shelf;
   String? category, error;
-  String query = '';
+  final queryController = TextEditingController();
+  String get query => queryController.text.trim();
+  RecommendationSort? sort;
+  bool changing = false;
+  bool get hasCategory => category != null && category!.isNotEmpty;
+  RecommendationSort get effectiveSort =>
+      sort == RecommendationSort.top && !hasCategory
+      ? RecommendationSort.title
+      : sort ??
+            (hasCategory ? RecommendationSort.top : RecommendationSort.title);
+  bool get canReorder =>
+      hasCategory &&
+      query.isEmpty &&
+      effectiveSort == RecommendationSort.top &&
+      !changing;
+
+  @override
+  void dispose() {
+    queryController.dispose();
+    super.dispose();
+  }
+
   String? selectedId;
   bool loading = true;
   @override
@@ -58,12 +79,107 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
   }
 
   Future<void> _action(Future<void> Function() action) async {
+    if (changing) return;
+    setState(() => changing = true);
     try {
       await action();
       if (mounted) await _load();
     } catch (e) {
       if (mounted) _message('$e');
+    } finally {
+      if (mounted) setState(() => changing = false);
     }
+  }
+
+  Future<void> _view(RecommendedBook book) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RecommendationDetailPage(
+          store: widget.store,
+          catalog: widget.catalog,
+          book: book,
+          categories: shelf!.categories,
+        ),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  Future<void> _chooseCategories(RecommendedBook book) async {
+    final selected = book.categories.keys.toSet();
+    var saving = false;
+    String? error;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('В подборки'),
+          content: SizedBox(
+            width: 360,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(book.catalog.title),
+                  const SizedBox(height: 12),
+                  for (final c in shelf!.categories)
+                    CheckboxListTile(
+                      key: ValueKey('quick-category-${c.id}'),
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(c.name),
+                      value: selected.contains(c.id),
+                      onChanged: saving
+                          ? null
+                          : (value) => update(() {
+                              value == true
+                                  ? selected.add(c.id)
+                                  : selected.remove(c.id);
+                            }),
+                    ),
+                  if (error != null)
+                    Text(
+                      error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(context),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      update(() {
+                        saving = true;
+                        error = null;
+                      });
+                      try {
+                        await widget.store.setBookCategories(book.id, selected);
+                        if (dialogContext.mounted &&
+                            ModalRoute.of(dialogContext)?.isCurrent == true) {
+                          Navigator.pop(dialogContext);
+                        }
+                      } catch (e) {
+                        if (dialogContext.mounted) update(() => error = '$e');
+                      } finally {
+                        if (dialogContext.mounted) update(() => saving = false);
+                      }
+                    },
+              child: const Text('Сохранить'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (mounted) await _load();
   }
 
   void _message(String text) =>
@@ -194,8 +310,18 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
   }
 
   Future<void> _bookMenu(RecommendedBook book, String value) async {
-    if (value == 'edit') {
+    if (value == 'view') {
+      await _view(book);
+    } else if (value == 'edit') {
       await _edit(book: book);
+    } else if (value == 'categories') {
+      await _chooseCategories(book);
+    } else if (value == 'up' || value == 'down') {
+      if (!canReorder) return;
+      final id = category!;
+      await _action(
+        () => widget.store.moveInTop(id, book.id, value == 'up' ? -1 : 1),
+      );
     } else if (await _confirm(
       'Удалить рекомендацию?',
       'Книга «${book.catalog.title}» и заметка к ней будут удалены из подборок.',
@@ -204,14 +330,33 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
     }
   }
 
-  Widget _bookMenuButton(RecommendedBook book) => PopupMenuButton<String>(
-    tooltip: 'Действия с рекомендацией',
-    onSelected: (value) => _bookMenu(book, value),
-    itemBuilder: (_) => const [
-      PopupMenuItem(value: 'edit', child: Text('Открыть карточку')),
-      PopupMenuItem(value: 'delete', child: Text('Удалить рекомендацию')),
-    ],
-  );
+  Widget _bookMenuButton(RecommendedBook book, int index, int count) =>
+      PopupMenuButton<String>(
+        key: ValueKey('recommendation-menu-${book.id}'),
+        tooltip: 'Действия с рекомендацией',
+        onSelected: (value) => _bookMenu(book, value),
+        itemBuilder: (_) => [
+          const PopupMenuItem(value: 'view', child: Text('Посмотреть')),
+          const PopupMenuItem(value: 'edit', child: Text('Редактировать')),
+          const PopupMenuItem(value: 'categories', child: Text('В подборки')),
+          if (canReorder) ...[
+            PopupMenuItem(
+              value: 'up',
+              enabled: index > 0,
+              child: const Text('Поднять'),
+            ),
+            PopupMenuItem(
+              value: 'down',
+              enabled: index < count - 1,
+              child: const Text('Опустить'),
+            ),
+          ],
+          const PopupMenuItem(
+            value: 'delete',
+            child: Text('Удалить рекомендацию'),
+          ),
+        ],
+      );
 
   Widget _categoryMenuButton() => PopupMenuButton<String>(
     tooltip: 'Управление категорией',
@@ -223,12 +368,19 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
     icon: const Icon(Icons.more_horiz),
   );
 
-  Widget _row(ShelfPalette palette, RecommendedBook book, bool wide) {
+  Widget _row(
+    ShelfPalette palette,
+    RecommendedBook book,
+    bool wide,
+    int index,
+    int count,
+  ) {
     final rank = category != null && category!.isNotEmpty
         ? book.categories[category]
         : null;
     final active = wide && selectedId == book.id;
     return Padding(
+      key: ValueKey('recommendation-row-${book.id}'),
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
         color: active ? palette.selected : palette.panel,
@@ -237,13 +389,28 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
         child: InkWell(
           onTap: wide
               ? () => setState(() => selectedId = book.id)
-              : () => _edit(book: book),
+              : () => _view(book),
           onDoubleTap: wide ? () => _edit(book: book) : null,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (canReorder)
+                  ReorderableDragStartListener(
+                    index: index,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 6, top: 8),
+                      child: Tooltip(
+                        message: 'Перетащить в топе',
+                        child: Icon(
+                          Icons.drag_handle,
+                          color: palette.muted,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  ),
                 if (rank != null)
                   SizedBox(
                     width: wide ? 64 : 44,
@@ -322,7 +489,7 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
                     ],
                   ),
                 ),
-                _bookMenuButton(book),
+                _bookMenuButton(book, index, count),
               ],
             ),
           ),
@@ -418,120 +585,120 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
         ),
       );
     }
-    final description = '${book.catalog.data['description'] ?? ''}'.trim();
-    final genres = strings(book.catalog.data['genres']);
     return SingleChildScrollView(
-      child: PepePanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CatalogCover(book.catalog, width: 96),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        book.catalog.title,
-                        style: AppFonts.book(palette.text, size: 21),
-                      ),
-                      if (book.catalog.authors.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            book.catalog.authors.join(', '),
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: palette.muted,
-                            ),
-                          ),
-                        ),
-                      const SizedBox(height: 8),
-                      Text(
-                        book.catalog.sourceLabel,
-                        style: TextStyle(fontSize: 12, color: palette.muted),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (genres.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final g in genres.take(6)) ShelfPill(label: g),
-                ],
-              ),
-            ],
-            if (description.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              Text(
-                description,
-                maxLines: 9,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, height: 1.5, color: palette.text),
-              ),
-            ],
-            const SizedBox(height: 16),
-            const PepeCaption('Моя заметка'),
-            const SizedBox(height: 6),
-            Text(
-              book.notes.isEmpty ? 'Заметки нет' : book.notes,
-              style: TextStyle(
-                fontSize: 13.5,
-                height: 1.45,
-                color: book.notes.isEmpty ? palette.muted : palette.text,
-              ),
-            ),
-            if (book.categories.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              const PepeCaption('В подборках'),
-              const SizedBox(height: 6),
-              for (final c in shelf!.categories.where(
-                (c) => book.categories.containsKey(c.id),
-              ))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(c.name)),
-                      Text(
-                        book.categories[c.id] == null
-                            ? '—'
-                            : '#${book.categories[c.id]}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: palette.accent,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-            const SizedBox(height: 18),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton(
-                  onPressed: () => _edit(book: book),
-                  child: const Text('Открыть карточку'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _bookMenu(book, 'delete'),
-                  child: const Text('Удалить'),
-                ),
-              ],
-            ),
-          ],
-        ),
+      child: RecommendationDetails(
+        book: book,
+        categories: shelf!.categories,
+        compact: true,
+        onEdit: () => _edit(book: book),
+        onDelete: () => _bookMenu(book, 'delete'),
       ),
+    );
+  }
+
+  void _resetQuery() => setState(queryController.clear);
+
+  String _sortLabel(RecommendationSort value) => switch (value) {
+    RecommendationSort.top => 'По месту в топе',
+    RecommendationSort.title => 'По названию',
+    RecommendationSort.recent => 'Недавно добавленные',
+    RecommendationSort.author => 'По автору',
+  };
+
+  Widget _sortControl() => DropdownButtonFormField<RecommendationSort>(
+    key: ValueKey('recommendation-sort-${effectiveSort.name}'),
+    initialValue: effectiveSort,
+    isExpanded: true,
+    decoration: const InputDecoration(labelText: 'Сортировка'),
+    items: [
+      for (final value in RecommendationSort.values)
+        if (value != RecommendationSort.top || hasCategory)
+          DropdownMenuItem(value: value, child: Text(_sortLabel(value))),
+    ],
+    onChanged: changing ? null : (value) => setState(() => sort = value),
+  );
+
+  Widget _empty(ShelfPalette palette) {
+    final searching = query.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 36),
+      child: Column(
+        children: [
+          Icon(
+            searching ? Icons.search_off : Icons.bookmarks_outlined,
+            size: 48,
+            color: palette.muted,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            searching
+                ? 'Ничего не найдено'
+                : category == ''
+                ? 'Нет книг без категории'
+                : hasCategory
+                ? 'Подборка пуста'
+                : 'Подборки пока пусты',
+          ),
+          const SizedBox(height: 8),
+          Text(
+            searching
+                ? 'Попробуйте другое название, автора или заметку.'
+                : category == ''
+                ? 'Все сохранённые книги уже распределены по подборкам.'
+                : 'Найдите книгу в интернете или добавьте её вручную.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: palette.muted),
+          ),
+          if (searching)
+            TextButton(onPressed: _resetQuery, child: const Text('Сбросить')),
+        ],
+      ),
+    );
+  }
+
+  Widget _bookList(
+    ShelfPalette palette,
+    List<RecommendedBook> books,
+    bool wide, {
+    required Widget header,
+    required EdgeInsets padding,
+  }) {
+    if (!canReorder) {
+      return ListView.builder(
+        padding: padding,
+        itemCount: books.length + 1,
+        itemBuilder: (_, index) => index == 0
+            ? header
+            : _row(palette, books[index - 1], wide, index - 1, books.length),
+      );
+    }
+    final categoryId = category!;
+    return ReorderableListView.builder(
+      padding: padding,
+      buildDefaultDragHandles: false,
+      header: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          header,
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Перетащите книгу или выберите «Поднять / Опустить». '
+              'Места в этой подборке будут пронумерованы заново.',
+              style: TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+      itemCount: books.length,
+      itemBuilder: (_, index) =>
+          _row(palette, books[index], wide, index, books.length),
+      onReorderItem: (oldIndex, newIndex) {
+        final ids = books.map((b) => b.id).toList();
+        if (oldIndex == newIndex) return;
+        ids.insert(newIndex, ids.removeAt(oldIndex));
+        _action(() => widget.store.reorderTop(categoryId, ids));
+      },
     );
   }
 
@@ -552,17 +719,10 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
             )
             .toList() ??
         [];
-    visible.sort((a, b) {
-      if (category != null) {
-        final rank = (a.categories[category] ?? 100000).compareTo(
-          b.categories[category] ?? 100000,
-        );
-        if (rank != 0) return rank;
-      }
-      return a.catalog.title.toLowerCase().compareTo(
-        b.catalog.title.toLowerCase(),
-      );
-    });
+    visible.sort(
+      (a, b) =>
+          compareRecommendations(a, b, sort: effectiveSort, category: category),
+    );
     final actions = [
       IconButton(
         tooltip: 'Источники поиска',
@@ -581,9 +741,8 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
             : () async {
                 await Clipboard.setData(
                   ClipboardData(
-                    text: const JsonEncoder.withIndent(
-                      '  ',
-                    ).convert(shelf!.toJson()),
+                    text: const JsonEncoder.withIndent('  ')
+                        .convert(shelf!.toJson()),
                   ),
                 );
                 if (mounted) {
@@ -610,28 +769,21 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
       ],
     );
     final search = TextField(
-      decoration: const InputDecoration(
-        prefixIcon: Icon(Icons.search),
+      controller: queryController,
+      decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.search),
         labelText: 'Поиск в моих подборках',
+        suffixIcon: queryController.text.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Сбросить поиск',
+                onPressed: _resetQuery,
+                icon: const Icon(Icons.close),
+              ),
       ),
-      onChanged: (value) => setState(() => query = value),
+      onChanged: (_) => setState(() {}),
     );
-    final empty = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 36),
-      child: Column(
-        children: [
-          Icon(Icons.bookmarks_outlined, size: 48, color: palette.muted),
-          const SizedBox(height: 12),
-          const Text('Здесь пока нет книг'),
-          const SizedBox(height: 8),
-          Text(
-            'Найдите книгу по названию или добавьте её вручную.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: palette.muted),
-          ),
-        ],
-      ),
-    );
+    final empty = _empty(palette);
     final currentName = category == null
         ? 'Все книги'
         : category == ''
@@ -658,56 +810,63 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
         );
       }
       if (!wide) {
-        return ListView(
+        return _bookList(
+          palette,
+          visible,
+          false,
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-          children: [
-            Text(
-              '${shelf!.books.length} книг · ${shelf!.categories.length} категорий · свои топы и планы на чтение',
-              style: TextStyle(fontSize: 13, color: palette.muted),
-            ),
-            const SizedBox(height: 16),
-            buttons,
-            const SizedBox(height: 16),
-            search,
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ChoiceChip(
-                  label: const Text('Все книги'),
-                  selected: category == null,
-                  onSelected: (_) => setState(() => category = null),
-                ),
-                for (final c in shelf!.categories)
-                  ChoiceChip(
-                    label: Text(
-                      '${c.name} (${shelf!.books.where((b) => b.categories.containsKey(c.id)).length})',
-                    ),
-                    selected: category == c.id,
-                    onSelected: (_) => setState(() => category = c.id),
-                  ),
-                ChoiceChip(
-                  label: const Text('Без категории'),
-                  selected: category == '',
-                  onSelected: (_) => setState(() => category = ''),
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.add, size: 16),
-                  label: const Text('Новая категория'),
-                  onPressed: _category,
-                ),
-              ],
-            ),
-            if (category != null && category!.isNotEmpty)
-              Align(
-                alignment: Alignment.centerRight,
-                child: _categoryMenuButton(),
+          header: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '${shelf!.books.length} книг · ${shelf!.categories.length} категорий · свои топы и планы на чтение',
+                style: TextStyle(fontSize: 13, color: palette.muted),
               ),
-            const SizedBox(height: 14),
-            if (visible.isEmpty) empty,
-            for (final book in visible) _row(palette, book, false),
-          ],
+              const SizedBox(height: 16),
+              buttons,
+              const SizedBox(height: 16),
+              search,
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('Все книги'),
+                    selected: category == null,
+                    onSelected: (_) => setState(() => category = null),
+                  ),
+                  for (final c in shelf!.categories)
+                    ChoiceChip(
+                      label: Text(
+                        '${c.name} (${shelf!.books.where((b) => b.categories.containsKey(c.id)).length})',
+                      ),
+                      selected: category == c.id,
+                      onSelected: (_) => setState(() => category = c.id),
+                    ),
+                  ChoiceChip(
+                    label: const Text('Без категории'),
+                    selected: category == '',
+                    onSelected: (_) => setState(() => category = ''),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.add, size: 16),
+                    label: const Text('Новая категория'),
+                    onPressed: _category,
+                  ),
+                ],
+              ),
+              if (category != null && category!.isNotEmpty)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _categoryMenuButton(),
+                ),
+              const SizedBox(height: 14),
+              _sortControl(),
+              const SizedBox(height: 14),
+              if (visible.isEmpty) empty,
+            ],
+          ),
         );
       }
       final current = visible.where((b) => b.id == selectedId).firstOrNull;
@@ -719,38 +878,41 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
             SizedBox(width: 230, child: _categories(palette)),
             const SizedBox(width: 24),
             Expanded(
-              child: ListView(
+              child: _bookList(
+                palette,
+                visible,
+                detail,
                 padding: const EdgeInsets.only(bottom: 28),
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          currentName,
-                          style: AppFonts.title(palette.text, size: 30),
+                header: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            currentName,
+                            style: AppFonts.title(palette.text, size: 30),
+                          ),
                         ),
-                      ),
-                      if (category != null && category!.isNotEmpty)
-                        _categoryMenuButton(),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${visible.length} книг · ${category != null && category!.isNotEmpty ? 'по месту в топе' : 'по названию'}',
-                    style: TextStyle(fontSize: 13, color: palette.muted),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(child: search),
-                      const SizedBox(width: 12),
-                      buttons,
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  if (visible.isEmpty) empty,
-                  for (final book in visible) _row(palette, book, detail),
-                ],
+                        if (category != null && category!.isNotEmpty)
+                          _categoryMenuButton(),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${visible.length} книг · ${_sortLabel(effectiveSort).toLowerCase()}',
+                      style: TextStyle(fontSize: 13, color: palette.muted),
+                    ),
+                    const SizedBox(height: 16),
+                    search,
+                    const SizedBox(height: 12),
+                    buttons,
+                    const SizedBox(height: 12),
+                    _sortControl(),
+                    const SizedBox(height: 18),
+                    if (visible.isEmpty) empty,
+                  ],
+                ),
               ),
             ),
             if (detail) ...[
@@ -774,20 +936,232 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
         section: PepeSection.recommendations,
         actions: actions,
         maxWidth: 1600,
-        body: LayoutBuilder(
-          builder: (context, c) => content(c.maxWidth),
-        ),
+        body: LayoutBuilder(builder: (context, c) => content(c.maxWidth)),
       );
     }
     return ShelfShell(
       title: 'Рекомендации',
       navigation: widget.navigation!,
       actions: actions,
-      body: LayoutBuilder(
-        builder: (context, c) => content(c.maxWidth),
+      body: LayoutBuilder(builder: (context, c) => content(c.maxWidth)),
+    );
+  }
+}
+
+class RecommendationDetails extends StatelessWidget {
+  final RecommendedBook book;
+  final List<RecommendationCategory> categories;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+  final bool compact;
+  const RecommendationDetails({
+    super.key,
+    required this.book,
+    required this.categories,
+    required this.onEdit,
+    this.onDelete,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ShelfPalette.of(context);
+    final description = '${book.catalog.data['description'] ?? ''}'.trim();
+    final genres = strings(book.catalog.data['genres']);
+    return PepePanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CatalogCover(book.catalog, width: 96),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      book.catalog.title,
+                      style: AppFonts.book(palette.text, size: 21),
+                    ),
+                    if (book.catalog.authors.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          book.catalog.authors.join(', '),
+                          style: TextStyle(fontSize: 13, color: palette.muted),
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                    Text(
+                      book.catalog.sourceLabel,
+                      style: TextStyle(fontSize: 12, color: palette.muted),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (genres.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [for (final g in genres.take(6)) ShelfPill(label: g)],
+            ),
+          ],
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Text(
+              description,
+              maxLines: compact ? 9 : null,
+              overflow: compact ? TextOverflow.ellipsis : TextOverflow.visible,
+              style: TextStyle(fontSize: 13, height: 1.5, color: palette.text),
+            ),
+          ],
+          const SizedBox(height: 16),
+          const PepeCaption('Моя заметка'),
+          const SizedBox(height: 6),
+          Text(
+            book.notes.isEmpty ? 'Заметки нет' : book.notes,
+            style: TextStyle(
+              fontSize: 13.5,
+              height: 1.45,
+              color: book.notes.isEmpty ? palette.muted : palette.text,
+            ),
+          ),
+          if (book.categories.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const PepeCaption('В подборках'),
+            const SizedBox(height: 6),
+            for (final c in categories.where(
+              (c) => book.categories.containsKey(c.id),
+            ))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(c.name)),
+                    Text(
+                      book.categories[c.id] == null
+                          ? '—'
+                          : '#${book.categories[c.id]}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: palette.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (onEdit != null)
+                FilledButton(
+                  onPressed: onEdit,
+                  child: const Text('Редактировать'),
+                ),
+              if (onDelete != null)
+                OutlinedButton(
+                  onPressed: onDelete,
+                  child: const Text('Удалить'),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }
+}
+
+class RecommendationDetailPage extends StatefulWidget {
+  final RecommendationStore store;
+  final BookCatalog catalog;
+  final RecommendedBook book;
+  final List<RecommendationCategory> categories;
+  const RecommendationDetailPage({
+    super.key,
+    required this.store,
+    required this.catalog,
+    required this.book,
+    required this.categories,
+  });
+  @override
+  State<RecommendationDetailPage> createState() =>
+      _RecommendationDetailPageState();
+}
+
+class _RecommendationDetailPageState extends State<RecommendationDetailPage> {
+  late RecommendedBook book = widget.book;
+  late List<RecommendationCategory> categories = widget.categories;
+  bool opening = false;
+  Future<void> _edit() async {
+    if (opening) return;
+    setState(() => opening = true);
+    try {
+      final current = await widget.store.load();
+      final live = current.books.where((b) => b.id == book.id).firstOrNull;
+      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
+      if (live == null) throw StateError('Рекомендация удалена');
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RecommendationEditor(
+            store: widget.store,
+            catalog: widget.catalog,
+            categories: current.categories,
+            book: live,
+          ),
+        ),
+      );
+      final next = await widget.store.load();
+      if (!mounted) return;
+      final updated = next.books.where((b) => b.id == book.id).firstOrNull;
+      if (updated != null) {
+        setState(() {
+          book = updated;
+          categories = next.categories;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$e')));
+      }
+    } finally {
+      if (mounted) setState(() => opening = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PepeSubpage(
+    title: 'Рекомендация',
+    back: 'Рекомендации',
+    section: PepeSection.recommendations,
+    maxWidth: 860,
+    bottomNavigationBar: SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: FilledButton.icon(
+          onPressed: opening ? null : _edit,
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text('Редактировать'),
+        ),
+      ),
+    ),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+      children: [
+        if (opening) const LinearProgressIndicator(),
+        RecommendationDetails(book: book, categories: categories, onEdit: null),
+      ],
+    ),
+  );
 }
 
 class CatalogCover extends StatelessWidget {
@@ -858,54 +1232,53 @@ class _RecommendationSourcesPageState extends State<RecommendationSourcesPage> {
     back: 'Рекомендации',
     section: PepeSection.recommendations,
     maxWidth: 900,
-    subtitle:
-        'Выбранные источники используются при поиске. Сохранённые карточки доступны без интернета.',
+    subtitle: 'Выбранные источники используются при поиске. Сохранённые карточки доступны без интернета.',
     children: [
-        const SizedBox(height: 4),
-        if (sources == null && error == null)
-          const Center(child: CircularProgressIndicator()),
-        if (error != null) Text(error!),
-        for (final entry in catalogSources.entries)
-          SwitchListTile(
-            title: Text(entry.value),
-            subtitle: Text(switch (entry.key) {
-              'inventaire' =>
-                'Произведения, переводы, авторы и циклы. Без ключа.',
-              'openlibrary' =>
-                'Зарубежные книги, издания, ISBN и страницы. Без ключа.',
-              _ => 'Русскоязычная фантастика. Гостевой API; поиск через сайт.',
-            }),
-            value: sources?.contains(entry.key) ?? false,
-            onChanged: sources == null || saving
-                ? null
-                : (value) async {
-                    final next = {...sources!};
-                    value ? next.add(entry.key) : next.remove(entry.key);
-                    setState(() => saving = true);
-                    try {
-                      await widget.store.setSources(next);
-                      if (mounted) {
-                        setState(() {
-                          sources = next;
-                          error = null;
-                        });
-                      }
-                    } catch (e) {
-                      if (mounted) setState(() => error = '$e');
-                    } finally {
-                      if (mounted) setState(() => saving = false);
+      const SizedBox(height: 4),
+      if (sources == null && error == null)
+        const Center(child: CircularProgressIndicator()),
+      if (error != null) Text(error!),
+      for (final entry in catalogSources.entries)
+        SwitchListTile(
+          title: Text(entry.value),
+          subtitle: Text(switch (entry.key) {
+            'inventaire' =>
+              'Произведения, переводы, авторы и циклы. Без ключа.',
+            'openlibrary' =>
+              'Зарубежные книги, издания, ISBN и страницы. Без ключа.',
+            _ => 'Русскоязычная фантастика. Гостевой API; поиск через сайт.',
+          }),
+          value: sources?.contains(entry.key) ?? false,
+          onChanged: sources == null || saving
+              ? null
+              : (value) async {
+                  final next = {...sources!};
+                  value ? next.add(entry.key) : next.remove(entry.key);
+                  setState(() => saving = true);
+                  try {
+                    await widget.store.setSources(next);
+                    if (mounted) {
+                      setState(() {
+                        sources = next;
+                        error = null;
+                      });
                     }
-                  },
-          ),
-        const SizedBox(height: 20),
-        Text(
-          'По названию могут найтись разные тома и переводы. Проверяйте автора, цикл и издание перед добавлением. Неизвестные сведения остаются пустыми.',
-          style: TextStyle(
-            fontSize: 12.5,
-            height: 1.45,
-            color: ShelfPalette.of(context).muted,
-          ),
+                  } catch (e) {
+                    if (mounted) setState(() => error = '$e');
+                  } finally {
+                    if (mounted) setState(() => saving = false);
+                  }
+                },
         ),
+      const SizedBox(height: 20),
+      Text(
+        'По названию могут найтись разные тома и переводы. Проверяйте автора, цикл и издание перед добавлением. Неизвестные сведения остаются пустыми.',
+        style: TextStyle(
+          fontSize: 12.5,
+          height: 1.45,
+          color: ShelfPalette.of(context).muted,
+        ),
+      ),
     ],
   );
 }
@@ -931,6 +1304,13 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
   bool searching = false;
   String? loadingId, error;
   CatalogBook? incomplete;
+  int searchGeneration = 0;
+  String searchedQuery = '';
+  Set<String> searchedSources = {};
+  final pendingSources = <String>{};
+  Set<String> savedCards = {};
+  bool _saved(CatalogBook book) =>
+      savedCards.contains('${book.source}:${book.sourceId}');
   @override
   void initState() {
     super.initState();
@@ -944,30 +1324,126 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
     super.dispose();
   }
 
+  void _acceptProgress(CatalogSearch next, Set<String> completed) {
+    final previous = result ?? const CatalogSearch([], {});
+    final combined = [
+      ...previous.books.where((b) => !completed.contains(b.source)),
+      ...next.books.where((b) => completed.contains(b.source)),
+    ]..sort((a, b) => compareCatalogBooks(a, b, searchedQuery));
+    result = CatalogSearch(
+      List.unmodifiable(combined),
+      {
+        for (final entry in previous.failures.entries)
+          if (!completed.contains(entry.key)) entry.key: entry.value,
+        for (final entry in next.failures.entries)
+          if (completed.contains(entry.key)) entry.key: entry.value,
+      },
+      completedSources: {...previous.completedSources, ...completed},
+    );
+    pendingSources.removeAll(completed);
+    searching = pendingSources.isNotEmpty;
+  }
+
   Future<void> _search() async {
     if (searching || loadingId != null) return;
+    final generation = ++searchGeneration;
+    final text = query.text.trim();
     setState(() {
       searching = true;
       error = null;
       incomplete = null;
       result = null;
+      searchedSources = {};
+      searchedQuery = text;
+      pendingSources.clear();
     });
     try {
-      final sources = await widget.store.enabledSources();
-      if (sources.isEmpty) {
+      final enabled = await widget.store.enabledSources();
+      if (enabled.isEmpty) {
         throw StateError('Включите хотя бы один источник поиска');
       }
-      final next = await widget.catalog.search(query.text, sources);
-      if (mounted) setState(() => result = next);
+      if (!mounted || generation != searchGeneration) return;
+      setState(() {
+        searchedSources = enabled;
+        pendingSources.addAll(enabled);
+      });
+      // Later aggregate snapshots include earlier failures. Only accept newly
+      // finished providers so they cannot undo an independent retry.
+      final completed = <String>{};
+      await widget.catalog.search(
+        text,
+        enabled,
+        onProgress: (progress) {
+          final newlyCompleted = progress.completedSources.difference(
+            completed,
+          );
+          completed.addAll(newlyCompleted);
+          if (mounted && generation == searchGeneration) {
+            setState(() => _acceptProgress(progress, newlyCompleted));
+          }
+        },
+      );
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted && generation == searchGeneration) {
+        setState(() {
+          error = '$e';
+          searchedSources = {};
+          pendingSources.clear();
+        });
+      }
     } finally {
-      if (mounted) setState(() => searching = false);
+      if (mounted && generation == searchGeneration) {
+        setState(() => searching = pendingSources.isNotEmpty);
+      }
+    }
+  }
+
+  Future<void> _retrySource(String source) async {
+    if (pendingSources.contains(source) ||
+        loadingId != null ||
+        searchedQuery.isEmpty ||
+        result == null) {
+      return;
+    }
+    final generation = searchGeneration;
+    final previous = result!;
+    setState(() {
+      pendingSources.add(source);
+      searching = true;
+      error = null;
+      incomplete = null;
+      result = CatalogSearch(
+        previous.books,
+        {...previous.failures}..remove(source),
+        completedSources: {...previous.completedSources}..remove(source),
+      );
+    });
+    try {
+      await widget.catalog.search(
+        searchedQuery,
+        {source},
+        onProgress: (progress) {
+          if (mounted && generation == searchGeneration) {
+            setState(() => _acceptProgress(progress, {source}));
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted && generation == searchGeneration) {
+        setState(() => error = '$e');
+      }
+    } finally {
+      if (mounted && generation == searchGeneration) {
+        setState(() {
+          pendingSources.remove(source);
+          searching = pendingSources.isNotEmpty;
+        });
+      }
     }
   }
 
   Future<void> _select(CatalogBook book) async {
-    if (loadingId != null || searching) return;
+    if (loadingId != null) return;
     setState(() {
       loadingId = '${book.source}:${book.sourceId}';
       error = null;
@@ -995,8 +1471,68 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
   Future<void> _loadSources() async {
     try {
       final next = await widget.store.enabledSources();
-      if (mounted) setState(() => sources = next);
-    } catch (_) {}
+      final shelf = await widget.store.load();
+      if (mounted) {
+        setState(() {
+          sources = next;
+          savedCards = {
+            for (final b in shelf.books)
+              if (b.catalog.sourceId.isNotEmpty)
+                '${b.catalog.source}:${b.catalog.sourceId}',
+          };
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => error = 'Не удалось прочитать настройки поиска: $e');
+      }
+    }
+  }
+
+  Widget _sourceStatus(String source, ShelfPalette palette) {
+    final complete = result?.completedSources.contains(source) ?? false;
+    final failure = result?.failures[source];
+    final count = result?.books.where((b) => b.source == source).length ?? 0;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${catalogSources[source]} · ${!complete && searching
+                      ? 'Ищет…'
+                      : failure != null
+                      ? 'Ошибка'
+                      : 'Найдено: $count'}',
+                  style: TextStyle(fontSize: 12.5, color: palette.muted),
+                ),
+                if (failure != null)
+                  Text(
+                    failure,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (failure != null)
+            TextButton.icon(
+              key: ValueKey('retry-$source'),
+              onPressed: pendingSources.contains(source) || loadingId != null
+                  ? null
+                  : () => _retrySource(source),
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Повторить'),
+            ),
+        ],
+      ),
+    );
   }
 
   Future<void> _toggleSource(String key) async {
@@ -1018,6 +1554,7 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
   }
 
   String _details(CatalogBook book) => [
+    if (_saved(book)) 'Уже в подборках',
     if (book.authors.isNotEmpty) book.authors.join(', '),
     book.sourceLabel,
     if ('${book.data['publicationDate'] ?? ''}'.isNotEmpty)
@@ -1160,17 +1697,18 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
                           ),
                         ),
                       ),
-                    for (final failure
-                        in result?.failures.entries ??
-                            <MapEntry<String, String>>[])
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Text(
-                          '${catalogSources[failure.key]}: ${failure.value}',
-                          style: TextStyle(color: palette.muted),
-                        ),
+                    if (searchedSources.isNotEmpty) ...[
+                      Text(
+                        'Результаты для «$searchedQuery»',
+                        style: TextStyle(fontSize: 12.5, color: palette.muted),
                       ),
-                    if (result != null && books.isEmpty)
+                      const SizedBox(height: 10),
+                      for (final source in catalogSources.keys.where(
+                        searchedSources.contains,
+                      ))
+                        _sourceStatus(source, palette),
+                    ],
+                    if (result != null && books.isEmpty && !searching)
                       Text(
                         'Книг не найдено. Попробуйте оригинальное название или другого автора. Можно добавить книгу вручную.',
                         style: TextStyle(color: palette.muted),
@@ -1212,8 +1750,14 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
                               maxLines: 4,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            trailing: const Icon(Icons.add_circle_outline),
-                            onTap: busy ? null : () => _select(book),
+                            trailing: Icon(
+                              _saved(book)
+                                  ? Icons.check_circle_outline
+                                  : Icons.add_circle_outline,
+                            ),
+                            onTap: loadingId != null
+                                ? null
+                                : () => _select(book),
                           ),
                         ),
                       ),
@@ -1681,10 +2225,7 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
                       ),
                     ),
                   ),
-                PepeRow(
-                  breakpoint: 860,
-                  children: [(6, main), (5, mine)],
-                ),
+                PepeRow(breakpoint: 860, children: [(6, main), (5, mine)]),
               ],
             );
           },

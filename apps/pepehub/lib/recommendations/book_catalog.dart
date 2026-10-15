@@ -10,7 +10,28 @@ import 'recommendation_store.dart';
 class CatalogSearch {
   final List<CatalogBook> books;
   final Map<String, String> failures;
-  const CatalogSearch(this.books, this.failures);
+  final Set<String> completedSources;
+  const CatalogSearch(
+    this.books,
+    this.failures, {
+    this.completedSources = const {},
+  });
+}
+
+int compareCatalogBooks(CatalogBook a, CatalogBook b, String query) {
+  final exactA = a.title.toLowerCase() == query.toLowerCase();
+  final exactB = b.title.toLowerCase() == query.toLowerCase();
+  if (exactA != exactB) return exactA ? -1 : 1;
+  final source = catalogSources.keys
+      .toList()
+      .indexOf(a.source)
+      .compareTo(catalogSources.keys.toList().indexOf(b.source));
+  final title = a.title.compareTo(b.title);
+  return source != 0
+      ? source
+      : title != 0
+      ? title
+      : a.sourceId.compareTo(b.sourceId);
 }
 
 String catalogText(dynamic value) {
@@ -196,13 +217,28 @@ class BookCatalog {
     }
   }
 
-  Future<CatalogSearch> search(String query, Set<String> sources) async {
+  Future<CatalogSearch> search(
+    String query,
+    Set<String> sources, {
+    void Function(CatalogSearch)? onProgress,
+  }) async {
     query = query.trim();
     if (query.length < 2 || query.length > 300) {
       throw ArgumentError('Введите от 2 до 300 символов');
     }
     final books = <CatalogBook>[];
     final failures = <String, String>{};
+    final completed = <String>{};
+    CatalogSearch snapshot() {
+      final sorted = [...books]
+        ..sort((a, b) => compareCatalogBooks(a, b, query));
+      return CatalogSearch(
+        List.unmodifiable(sorted),
+        Map.unmodifiable(failures),
+        completedSources: Set.unmodifiable(completed),
+      );
+    }
+
     await Future.wait(
       sources.where(catalogSources.containsKey).map((source) async {
         try {
@@ -215,20 +251,12 @@ class BookCatalog {
         } catch (error) {
           failures[source] = _message(error);
         }
+        completed.add(source);
+        onProgress?.call(snapshot());
       }),
     );
-    // Deterministic order even when the providers finish in a different order.
-    books.sort((a, b) {
-      final exactA = a.title.toLowerCase() == query.toLowerCase();
-      final exactB = b.title.toLowerCase() == query.toLowerCase();
-      if (exactA != exactB) return exactA ? -1 : 1;
-      final source = catalogSources.keys
-          .toList()
-          .indexOf(a.source)
-          .compareTo(catalogSources.keys.toList().indexOf(b.source));
-      return source != 0 ? source : a.title.compareTo(b.title);
-    });
-    return CatalogSearch(books, failures);
+    // Deterministic order even when providers finish in a different order.
+    return snapshot();
   }
 
   Future<CatalogBook> details(CatalogBook book) async {

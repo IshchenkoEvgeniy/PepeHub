@@ -171,6 +171,39 @@ class RecommendationShelf {
   }
 }
 
+enum RecommendationSort { top, title, recent, author }
+
+int compareRecommendations(
+  RecommendedBook a,
+  RecommendedBook b, {
+  required RecommendationSort sort,
+  String? category,
+}) {
+  int order = 0;
+  switch (sort) {
+    case RecommendationSort.top:
+      order = (a.categories[category] ?? 100000).compareTo(
+        b.categories[category] ?? 100000,
+      );
+    case RecommendationSort.recent:
+      order = (DateTime.tryParse(b.createdAt) ?? DateTime(1970)).compareTo(
+        DateTime.tryParse(a.createdAt) ?? DateTime(1970),
+      );
+    case RecommendationSort.author:
+      order = a.catalog.authors
+          .join(', ')
+          .toLowerCase()
+          .compareTo(b.catalog.authors.join(', ').toLowerCase());
+    case RecommendationSort.title:
+      break;
+  }
+  if (order != 0) return order;
+  order = a.catalog.title.toLowerCase().compareTo(
+    b.catalog.title.toLowerCase(),
+  );
+  return order != 0 ? order : a.id.compareTo(b.id);
+}
+
 /// The existing SQLite metadata table provides durable, transactional storage.
 /// These curated lists never enter the reading-session or Obsidian-card outbox.
 class RecommendationStore {
@@ -272,6 +305,96 @@ class RecommendationStore {
       ]),
     );
   });
+
+  /// Read the live card inside the transaction so quick actions cannot replace
+  /// a newer note, catalog correction, or a rank in another category.
+  Future<void> setBookCategories(String bookId, Set<String> selected) =>
+      _change((shelf) async {
+        if (!shelf.books.any((b) => b.id == bookId)) {
+          throw StateError('Рекомендация удалена');
+        }
+        final valid = shelf.categories.map((c) => c.id).toSet();
+        if (!valid.containsAll(selected)) throw StateError('Категория удалена');
+        await _write(
+          RecommendationShelf(shelf.categories, [
+            for (final b in shelf.books)
+              if (b.id != bookId)
+                b
+              else
+                RecommendedBook(
+                  id: b.id,
+                  catalog: b.catalog,
+                  notes: b.notes,
+                  createdAt: b.createdAt,
+                  categories: {for (final id in selected) id: b.categories[id]},
+                ),
+          ]),
+        );
+      });
+
+  List<RecommendedBook> _top(RecommendationShelf shelf, String categoryId) {
+    if (!shelf.categories.any((c) => c.id == categoryId)) {
+      throw StateError('Категория удалена');
+    }
+    return shelf.books
+        .where((b) => b.categories.containsKey(categoryId))
+        .toList()
+      ..sort(
+        (a, b) => compareRecommendations(
+          a,
+          b,
+          sort: RecommendationSort.top,
+          category: categoryId,
+        ),
+      );
+  }
+
+  Future<void> _writeOrder(
+    RecommendationShelf shelf,
+    String categoryId,
+    List<String> ids,
+  ) async {
+    if (ids.length > 99999) throw StateError('В топе слишком много книг');
+    final ranks = {for (var i = 0; i < ids.length; i++) ids[i]: i + 1};
+    await _write(
+      RecommendationShelf(shelf.categories, [
+        for (final b in shelf.books)
+          if (!ranks.containsKey(b.id))
+            b
+          else
+            RecommendedBook(
+              id: b.id,
+              catalog: b.catalog,
+              notes: b.notes,
+              createdAt: b.createdAt,
+              categories: {...b.categories, categoryId: ranks[b.id]},
+            ),
+      ]),
+    );
+  }
+
+  Future<void> moveInTop(String categoryId, String bookId, int delta) =>
+      _change((shelf) async {
+        if (delta != -1 && delta != 1) throw ArgumentError('Шаг: -1 или 1');
+        final ids = _top(shelf, categoryId).map((b) => b.id).toList();
+        final index = ids.indexOf(bookId);
+        if (index < 0) throw StateError('Книги больше нет в подборке');
+        final target = index + delta;
+        if (target < 0 || target >= ids.length) return;
+        ids.insert(target, ids.removeAt(index));
+        await _writeOrder(shelf, categoryId, ids);
+      });
+
+  Future<void> reorderTop(String categoryId, List<String> ids) =>
+      _change((shelf) async {
+        final existing = _top(shelf, categoryId).map((b) => b.id).toSet();
+        if (ids.length != existing.length ||
+            ids.toSet().length != ids.length ||
+            !existing.containsAll(ids)) {
+          throw StateError('Состав подборки изменился. Обновите список.');
+        }
+        await _writeOrder(shelf, categoryId, ids);
+      });
   Future<void> fillMissing(String id, CatalogBook incoming) =>
       _change((shelf) async {
         await _write(
