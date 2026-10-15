@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090a0d">
+  <meta name="description" content="Четыре тёмные веб-концепции PepeHub по референсам Dribbble и Behance.">
+  <title>PepeHub — четыре тёмные концепции</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="library.css">
+  <script src="prototype.js" defer></script>
+  <script src="library.js" defer></script>
+</head>
+<body>
+  <header class="concept-bar">
+    <a class="brand-lockup" href="#" aria-label="PepeHub, начало">
+      <span class="brand-mark">p<span>.</span></span>
+      <span class="brand-name">pepehub<span>/lab</span></span>
+    </a>
+    <div class="concept-nav" role="tablist" aria-label="Концепции дизайна">
+      <button class="concept-tab is-active" role="tab" aria-selected="true" aria-controls="concept-library" data-concept="library"><i>01</i><span>Linkonec</span><small>e-library</small></button>
+      <button class="concept-tab" role="tab" aria-selected="false" aria-controls="concept-terminal" data-concept="terminal"><i>02</i><span>TONNE</span><small>terminal</small></button>
+      <button class="concept-tab" role="tab" aria-selected="false" aria-controls="concept-signal" data-concept="signal"><i>03</i><span>LLM SaaS</span><small>monitoring</small></button>
+      <button class="concept-tab" role="tab" aria-selected="false" aria-controls="concept-flow" data-concept="flow"><i>04</i><span>CentralFlow</span><small>workspace</small></button>
+    </div>
+    <span class="bar-tag"><span class="live-dot"></span>4 DARK CONCEPTS</span>
+  </header>
+
+  <main>
+    <!-- 01 — Linkonec: green-black library, portrait covers, progress ring and book details -->
+    <section class="concept-screen library-screen library-v2 is-visible" id="concept-library" role="tabpanel" aria-label="Библиотека PepeHub">
+      <svg class="library-icons" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <symbol id="li-book" viewBox="0 0 24 24"><path d="M12 5.5C9 3.5 5.5 3.5 3 4.5v14c3-1 6.5-.8 9 1 2.5-1.8 6-2 9-1v-14c-2.5-1-6-1-9 1Zm0 0v14"/></symbol>
+        <symbol id="li-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+        <symbol id="li-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+        <symbol id="li-heart" viewBox="0 0 24 24"><path d="m12 20-7.7-7.5A5 5 0 0 1 12 6a5 5 0 0 1 7.7 6.5Z"/></symbol>
+        <symbol id="li-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+        <symbol id="li-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+        <symbol id="li-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+        <symbol id="li-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+        <symbol id="li-list" viewBox="0 0 24 24"><path d="M9 5h12M9 12h12M9 19h12"/><path d="M3 5h1M3 12h1M3 19h1"/></symbol>
+        <symbol id="li-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+        <symbol id="li-chevron" viewBox="0 0 24 24"><path d="m8 5 7 7-7 7"/></symbol>
+        <symbol id="li-note" viewBox="0 0 24 24"><path d="M5 3h14v13l-5 5H5Z"/><path d="M14 21v-5h5M9 8h6M9 12h6"/></symbol>
+        <symbol id="li-folder" viewBox="0 0 24 24"><path d="M3 7V5h7l2 3h9v12H3Z"/></symbol>
+        <symbol id="li-bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4Z"/></symbol>
+      </svg>
+      <aside class="reading-sidebar">
+        <a class="reading-brand" href="#library-home"><span><svg><use href="#li-book"/></svg></span>pepehub<span class="reading-brand-dot">.</span></a>
+        <div class="library-space"><span class="space-dot"></span>Личная библиотека<small>НА ЭТОМ УСТРОЙСТВЕ</small></div>
+        <p class="reading-nav-label">МОЯ БИБЛИОТЕКА</p>
+        <nav class="reading-nav" aria-label="Просмотр библиотеки">
+          <button class="is-current" data-library-view="all" aria-current="page"><svg><use href="#li-grid"/></svg><span>Все книги</span><b data-view-count="all">8</b></button>
+          <button data-library-view="reading"><svg><use href="#li-clock"/></svg><span>Сейчас читаю</span><b data-view-count="reading">3</b></button>
+          <button data-library-view="favorites"><svg><use href="#li-heart"/></svg><span>Избранное</span><b data-view-count="favorites">3</b></button>
+          <button data-library-view="finished"><svg><use href="#li-check"/></svg><span>Прочитано</span><b data-view-count="finished">2</b></button>
+        </nav>
+        <p class="reading-nav-label collections-caption">ПОДБОРКИ</p>
+        <div class="reading-collections">
+          <button data-library-category="fiction"><span class="collection-pin pin-purple"></span>Истории и миры<small>4</small></button>
+          <button data-library-category="nonfiction"><span class="collection-pin pin-gold"></span>О человеке<small>3</small></button>
+        </div>
+        <div class="reading-sidebar-bottom">
+          <div class="week-goal">
+            <div class="week-goal-heading"><svg><use href="#li-clock"/></svg><span>Твой ритм</span><b>ЭТА НЕДЕЛЯ</b></div>
+            <strong>4 ч 06 мин <small>/ 5 часов</small></strong>
+            <div class="week-goal-progress"><span></span></div>
+            <p>Ещё 54 минуты до цели<span>82%</span></p>
+            <div class="goal-week"><i class="done">П</i><i class="done">В</i><i class="done">С</i><i class="done">Ч</i><i class="today">П</i><i>С</i><i>В</i></div>
+          </div>
+          <div class="reader-profile"><div class="reader-avatar">Е</div><div><strong>Евгений</strong><small>Хорошего чтения</small></div><span class="online-status" aria-label="Локально"></span></div>
+        </div>
+      </aside>
+
+      <div class="reading-main" id="library-home">
+        <header class="reading-topbar">
+          <span class="reading-breadcrumb">МОЁ ПРОСТРАНСТВО <i>/</i> КНИГИ</span>
+          <div class="library-search-wrap"><label class="library-search"><svg><use href="#li-search"/></svg><input id="library-search" type="search" placeholder="Найти книгу или автора" aria-label="Найти книгу или автора" autocomplete="off"><kbd>Ctrl K</kbd></label><button class="search-clear" aria-label="Очистить поиск" hidden><svg><use href="#li-close"/></svg></button></div>
+        </header>
+        <div class="reading-page-heading"><div><p class="reading-eyebrow">ЗДЕСЬ ЖИВУТ ТВОИ ИСТОРИИ</p><h1>Библиотека</h1><p class="reading-description">Одна хорошая книга меняет весь день.</p></div><button class="library-add primary-library-button"><svg><use href="#li-plus"/></svg><span>Добавить книгу</span></button></div>
+
+        <section class="continue-section" aria-labelledby="continue-title">
+          <div class="reading-section-heading"><h2 id="continue-title">Продолжить чтение</h2><button class="reading-text-button" data-library-view="reading">Все в процессе <svg><use href="#li-arrow"/></svg></button></div>
+          <div class="continue-feature" id="library-continue"></div>
+        </section>
+
+        <section class="shelf-section" aria-labelledby="shelf-title">
+          <div class="genre-tabs" aria-label="Категории книг">
+            <button class="is-current" data-library-category="all" aria-pressed="true">Все книги <span>8</span></button>
+            <button data-library-category="fiction" aria-pressed="false">Художественная</button>
+            <button data-library-category="nonfiction" aria-pressed="false">Нон-фикшн</button>
+            <button data-library-category="science" aria-pressed="false">Наука</button>
+          </div>
+          <div class="reading-section-heading shelf-toolbar"><h2 id="shelf-title">На твоей полке <span id="library-result-count">8 книг</span></h2><div class="shelf-controls"><label class="library-sort-label"><span class="sr-only">Сортировка книг</span><select id="library-sort"><option value="recent">Сначала новые</option><option value="title">По названию</option><option value="progress">По прогрессу</option></select></label><div class="library-view-switch" aria-label="Вид библиотеки"><button class="is-current" data-shelf-layout="grid" aria-label="Показать сеткой" aria-pressed="true"><svg><use href="#li-grid"/></svg></button><button data-shelf-layout="list" aria-label="Показать списком" aria-pressed="false"><svg><use href="#li-list"/></svg></button></div></div></div>
+          <div class="library-book-grid" id="library-books"></div>
+          <div class="library-empty" id="library-empty" hidden><span><svg><use href="#li-search"/></svg></span><h3>На этой полке пока пусто</h3><p>Попробуй другую категорию или измени поисковый запрос.</p><button class="reading-text-button" id="library-reset">Показать все книги <svg><use href="#li-arrow"/></svg></button></div>
+          <div class="shelf-bottom"><span><i></i>Твоя библиотека всегда рядом</span><span>EPUB · FB2 · PDF · M4B</span></div>
+        </section>
+      </div>
+
+      <button class="library-detail-backdrop" aria-label="Закрыть сведения о книге" hidden></button>
+      <aside class="book-details" aria-label="Сведения о выбранной книге" id="library-details"></aside>
+      <dialog class="library-dialog library-import-dialog" id="library-import">
+        <form id="library-import-form"><header class="library-dialog-header"><div><span class="reading-eyebrow">НОВАЯ ИСТОРИЯ</span><h2>Добавить книгу</h2></div><button class="library-icon-button" type="button" data-close-dialog="library-import" aria-label="Закрыть"><svg><use href="#li-close"/></svg></button></header><p class="library-form-intro">Создай карточку для своей полки.</p><label>Название<input name="title" required maxlength="80" placeholder="Как называется книга?"></label><label>Автор<input name="author" required maxlength="60" placeholder="Имя автора"></label><div class="library-form-row"><label>Категория<select name="category"><option value="fiction">Художественная</option><option value="nonfiction">Нон-фикшн</option><option value="science">Наука</option></select></label><label>Формат<select name="format"><option>EPUB</option><option>FB2</option><option>PDF</option><option>M4B</option></select></label></div><button class="primary-library-button" type="submit"><svg><use href="#li-plus"/></svg>Добавить на полку</button></form>
+      </dialog>
+      <dialog class="library-dialog library-reader-dialog" id="library-reader" aria-label="Чтение книги">
+        <header class="library-reader-header"><button class="library-icon-button" data-close-dialog="library-reader" aria-label="Закрыть чтение"><svg><use href="#li-close"/></svg></button><div><strong id="reader-book-title"></strong><span>ДЕМОНСТРАЦИОННЫЙ ФРАГМЕНТ</span></div><button class="library-icon-button" id="reader-bookmark" aria-label="Добавить закладку" aria-pressed="false"><svg><use href="#li-bookmark"/></svg></button></header>
+        <div class="reader-type-controls"><span>Размер текста</span><button id="reader-font-down" aria-label="Уменьшить текст">А−</button><button id="reader-font-up" aria-label="Увеличить текст">А+</button></div>
+        <article class="library-reading-page"><span class="reading-eyebrow">ГЛАВА <b id="reader-chapter">17</b></span><h2>Время для одной главы</h2><p>К вечеру дом стал тише. За окном ещё двигался город, но здесь остались только лампа, раскрытая книга и чашка, которую давно пора было отнести на кухню.</p><p>Он вернулся на несколько строк назад. Иногда мысль становилась понятной лишь со второго прочтения — когда перестаёшь торопиться к следующей странице и даёшь ей немного места.</p><p>На полях появилась короткая запись. Не вывод, скорее вопрос, с которым хотелось вернуться к этой истории позже. Дальше текст уже воспринимался иначе: словно разговор наконец обрёл собственный ритм.</p><p>До конца главы оставалось совсем немного. Он поправил закладку и продолжил читать.</p></article>
+        <footer class="library-reader-footer"><span id="reader-page-label"></span><button class="primary-library-button" id="reader-next-page">Следующая страница <svg><use href="#li-arrow"/></svg></button></footer>
+      </dialog>
+      <div class="library-status-message" role="status" aria-live="polite"></div>
+    </section>
+    <!-- 02 — редакционный terminal landing page: крупная типографика, карта активности, оранжевый жар -->
+    <section class="concept-screen terminal-screen" id="concept-terminal" role="tabpanel" aria-label="Концепт PepeHub в стиле TONNE">
+      <div class="terminal-noise"></div>
+      <header class="terminal-nav"><a class="terminal-brand" href="#terminal-top"><span>PH</span> PEPEHUB</a><nav><a href="#terminal-how">Возможности</a><a href="#terminal-view">Статистика</a><a href="#terminal-story">Для читателей</a></nav><button class="terminal-cta">Открыть библиотеку <span>↗</span></button></header>
+      <div class="terminal-hero" id="terminal-top"><div class="terminal-copy"><div class="terminal-kicker"><span></span> ЛОКАЛЬНАЯ БИБЛИОТЕКА · СИСТЕМА ЧТЕНИЯ</div><h1>Читай<br>глубже<span>.</span></h1><p>Каждая книга оставляет след. Собери свою библиотеку, сохраняй мысли и наблюдай, как складывается твой путь.</p><div class="terminal-hero-actions"><button>Исследовать концепт <span>↘</span></button><span class="no-cloud"><i>◉</i> Твои данные остаются у тебя</span></div><div class="terminal-footnote"><span>PEPEHUB READING TERMINAL</span><span>01 — 04</span></div></div>
+        <div class="orbit-stage"><div class="orbit-glow"></div><div class="orbit-ring ring-one"></div><div class="orbit-ring ring-two"></div><div class="orbit-ring ring-three"></div><div class="terminal-window"><div class="window-top"><span class="window-dots"><i></i><i></i><i></i></span><span>PEPEHUB / READING ACTIVITY</span><span class="window-status">● LIVE</span></div><div class="window-body"><div class="chart-head"><div><small>АКТИВНОЕ ЧТЕНИЕ</small><strong>28<span>ч 46м</span></strong></div><div class="chart-range">7 ДНЕЙ <b>⌄</b></div></div><div class="heat-chart"><div class="heat-grid"><i style="--h:.28"></i><i style="--h:.5"></i><i style="--h:.7"></i><i style="--h:.3"></i><i style="--h:.48"></i><i style="--h:.64"></i><i style="--h:.33"></i><i style="--h:.53"></i><i style="--h:.86"></i><i style="--h:.45"></i><i style="--h:.68"></i><i style="--h:.4"></i><i style="--h:.61"></i><i style="--h:.8"></i><i style="--h:.38"></i><i style="--h:.56"></i><i style="--h:.73"></i><i style="--h:.32"></i><i style="--h:.67"></i><i style="--h:.95"></i><i style="--h:.44"></i><i style="--h:.7"></i><i style="--h:.52"></i><i style="--h:.8"></i><i style="--h:.38"></i><i style="--h:.62"></i><i style="--h:.82"></i><i style="--h:.45"></i><i style="--h:.7"></i><i style="--h:1"></i><i style="--h:.58"></i><i style="--h:.73"></i><i style="--h:.34"></i><i style="--h:.68"></i><i style="--h:.9"></i><i style="--h:.5"></i></div><div class="chart-days"><span>ПН</span><span>ВТ</span><span>СР</span><span>ЧТ</span><span>ПТ</span><span>СБ</span><span>ВС</span></div></div><div class="window-divider"></div><div class="window-stats"><div><small>СТРАНИЦЫ</small><strong>1 284</strong><em>↑ 18% к прошлой неделе</em></div><div><small>СЕРИЯ</small><strong>12 <i>дней</i></strong><em>Самая длинная — 21 день</em></div></div></div></div><div class="orbit-note note-top"><b>04</b><span>КНИГИ<br>В РАБОТЕ</span></div><div class="orbit-note note-bottom"><span>ГЛУБИНА ПОГРУЖЕНИЯ</span><b>+18.6%</b></div><div class="terminal-coordinate">48°51'24.0"N &nbsp; 2°21'08.0"E</div></div>
+      </div>
+      <div class="terminal-ribbon" id="terminal-how"><span>СОХРАНЯЙ МЫСЛИ <b>✳</b></span><span>СЛЕДИ ЗА ПРОГРЕССОМ <b>✳</b></span><span>ЧИТАЙ В СВОЁМ РИТМЕ <b>✳</b></span><span>СОХРАНЯЙ МЫСЛИ <b>✳</b></span></div>
+      <section class="terminal-bottom" id="terminal-story"><div><span class="section-index">01 / ТВОЙ РИТМ</span><h2>Цифры помогают<br>увидеть <i>историю.</i></h2></div><p>Не рейтинг и не соревнование. Только твои страницы, главы и заметки — собранные в одну ясную картину.</p><a href="#terminal-view" id="terminal-view">Исследовать статистику <span>↗</span></a></section>
+    </section>
+
+    <!-- 03 — тёмный teal SaaS landing: сияющие градиенты и панель мониторинга -->
+    <section class="concept-screen signal-screen" id="concept-signal" role="tabpanel" aria-label="Концепт PepeHub в стиле LLM monitoring SaaS">
+      <div class="signal-glow signal-glow-a"></div><div class="signal-glow signal-glow-b"></div>
+      <header class="signal-nav"><a class="signal-logo" href="#signal-home"><span class="signal-logo-icon">p</span> pepehub<span class="logo-spark">✳</span></a><nav><a href="#signal-product">Продукт</a><a href="#signal-insights">Аналитика</a><a href="#signal-about">О PepeHub</a></nav><div class="signal-nav-right"><a href="#signal-home">Войти</a><button>Открыть приложение <span>↗</span></button></div></header>
+      <div class="signal-hero" id="signal-home"><div class="signal-intro"><div class="signal-pill"><span class="pulse-dot"></span> ВАША БИБЛИОТЕКА — ПОД ВАШИМ КОНТРОЛЕМ</div><h1>Меньше шума.<br><span>Больше смысла.</span></h1><p>Читай и слушай в одном месте. PepeHub сохраняет прогресс, помогает не терять заметки и показывает, что меняется в твоей читательской жизни.</p><div class="signal-actions"><button>Посмотреть интерфейс <span>↗</span></button><span><i>⌁</i> Работает офлайн</span></div><div class="signal-trust"><span class="trust-avatars"><i>Е</i><i>М</i><i>А</i><i>+</i></span><span><b>Твоя коллекция</b><small>Личные данные не покидают устройство</small></span></div></div>
+        <div class="signal-product" id="signal-product"><div class="signal-panel-top"><div><span class="tiny-label">ПАНЕЛЬ ЧИТАТЕЛЯ</span><strong>Добрый вечер, Евгений <span>✦</span></strong></div><button class="signal-panel-menu">···</button></div><div class="signal-score-row"><div class="score-card"><div class="score-label">Время чтения <span>↗</span></div><div class="score-num">12<span>ч 38м</span></div><div class="score-foot"><span class="tiny-bars"><i style="height:30%"></i><i style="height:46%"></i><i style="height:38%"></i><i style="height:64%"></i><i style="height:48%"></i><i style="height:81%"></i><i style="height:100%"></i></span><small>+2ч 14м за неделю</small></div></div><div class="score-card score-card-dark"><div class="score-label">Книг в движении <span>⌁</span></div><div class="score-num">04</div><div class="score-book-dots"><span>01</span><span>02</span><span>03</span><span>04</span><small>в работе</small></div></div></div><div class="signal-chart-card"><div class="chart-title"><div><small>ТЕМП ЧТЕНИЯ</small><strong>Последние 7 дней</strong></div><span class="chart-positive">↑ 18.4%</span></div><div class="signal-chart"><div class="chart-y"><span>60</span><span>40</span><span>20</span><span>0</span></div><svg viewBox="0 0 440 116" preserveAspectRatio="none" aria-label="График активности чтения"><defs><linearGradient id="tealFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#59e7ca" stop-opacity=".28"/><stop offset="1" stop-color="#59e7ca" stop-opacity="0"/></linearGradient></defs><path class="chart-area" d="M0 91 C23 83 34 80 52 85 S88 78 104 65 S139 74 157 63 S191 70 210 49 S246 56 264 45 S297 54 315 35 S350 49 369 28 S404 39 440 10 V116 H0Z"/><path class="chart-line" d="M0 91 C23 83 34 80 52 85 S88 78 104 65 S139 74 157 63 S191 70 210 49 S246 56 264 45 S297 54 315 35 S350 49 369 28 S404 39 440 10"/></svg><div class="chart-x"><span>ПН</span><span>ВТ</span><span>СР</span><span>ЧТ</span><span>ПТ</span><span>СБ</span><span>ВС</span></div></div></div><div class="signal-panel-foot"><span><i></i> Синхронизировано локально</span><span>ОБНОВЛЕНО ТОЛЬКО ЧТО</span></div></div>
+      </div>
+      <div class="signal-feature-row" id="signal-insights"><article><div class="feature-icon icon-teal">⌁</div><h3>Собранная библиотека</h3><p>Электронные и аудиокниги рядом, с общим прогрессом и понятными подборками.</p><span>01 / КОЛЛЕКЦИЯ</span></article><article><div class="feature-icon icon-green">↗</div><h3>Живой прогресс</h3><p>Активные сессии, цели, серии и статистика без сложных настроек.</p><span>02 / РИТМ</span></article><article><div class="feature-icon icon-violet">✳</div><h3>Заметки на месте</h3><p>Цитаты и мысли привязаны к книге. Найти их можно, когда они снова нужны.</p><span>03 / ИДЕИ</span></article><article class="feature-summary" id="signal-about"><span>PEPEHUB / ПОМОГАЕТ УДЕРЖИВАТЬ КОНТЕКСТ</span><strong>Тихий инструмент<br>для <i>глубокого чтения.</i></strong></article></div>
+    </section>
+
+    <!-- 04 — CRM workspace: плотная модульная сетка, фиолетовый с лимонным акцентом -->
+    <section class="concept-screen flow-screen" id="concept-flow" role="tabpanel" aria-label="Концепт PepeHub в стиле CentralFlow">
+      <aside class="flow-rail"><a class="flow-mark" href="#flow-home">p<span>.</span></a><button class="rail-item rail-selected" aria-label="Рабочий стол">▦</button><button class="rail-item" aria-label="Библиотека">▤</button><button class="rail-item" aria-label="Почта заметок">✉</button><button class="rail-item" aria-label="Статистика">⌁</button><span class="rail-spacer"></span><button class="rail-item" aria-label="Настройки">⚙</button><div class="avatar flow-avatar">Е</div></aside>
+      <aside class="flow-sidebar"><div class="flow-title"><span>PepeHub</span><button>⌄</button></div><div class="workspace-chip"><span class="workspace-symbol">◉</span><div><strong>Личное пространство</strong><small>Локальная библиотека</small></div><b>⌄</b></div><p class="flow-label">РАБОЧИЙ СТОЛ</p><a class="flow-link active" href="#flow-home"><span>◫</span> Обзор <kbd>⌘ 1</kbd></a><a class="flow-link" href="#flow-activity"><span>◷</span> Активность <em>3</em></a><a class="flow-link" href="#flow-notes"><span>▣</span> Заметки <em class="purple-em">7</em></a><p class="flow-label flow-label-spaced">МОЯ БИБЛИОТЕКА <button>＋</button></p><a class="flow-link" href="#flow-books"><span>▤</span> Все книги <em>28</em></a><a class="flow-link" href="#flow-audio"><span>◖</span> Аудиокниги <em>06</em></a><a class="flow-link" href="#flow-collections"><span>▧</span> Подборки <em>04</em></a><div class="flow-sidebar-bottom"><div class="storage-card"><div><span>ХРАНИЛИЩЕ</span><b>64%</b></div><div class="storage-track"><i></i></div><small>4.8 ГБ из 7.5 ГБ</small></div><button class="flow-connect"><span>⌘</span> Подключить Obsidian <b>↗</b></button></div></aside>
+      <div class="flow-main" id="flow-home"><header class="flow-topbar"><div class="flow-breadcrumb">ЛИЧНОЕ ПРОСТРАНСТВО <span>/</span> ОБЗОР</div><div class="flow-tools"><button class="flow-search"><span>⌕</span> Поиск по PepeHub <kbd>⌘ K</kbd></button><button class="flow-top-icon" aria-label="Уведомления">♧<i></i></button><div class="flow-user"><div class="avatar flow-avatar">Е</div><span>Евгений</span><b>⌄</b></div></div></header><div class="flow-content"><div class="flow-page-heading"><div><div class="flow-date"><span></span> ПОНЕДЕЛЬНИК, 5 ОКТЯБРЯ 2026</div><h1>Рабочий стол</h1><p>Коротко о том, что происходит в твоей библиотеке.</p></div><button class="flow-yellow-button">＋ Добавить запись</button></div>
+        <div class="flow-metrics" id="flow-activity"><article class="metric-tile metric-purple"><div class="metric-heading">Время за неделю <span>↗</span></div><strong>08<span>ч 42м</span></strong><div class="metric-bottom"><span class="metric-change">↑ 12.8%</span><span>к прошлой неделе</span></div><div class="metric-spark purple-spark"><i style="height:32%"></i><i style="height:48%"></i><i style="height:40%"></i><i style="height:71%"></i><i style="height:56%"></i><i style="height:85%"></i><i style="height:100%"></i></div></article><article class="metric-tile"><div class="metric-heading">Книги в процессе <span>⌁</span></div><strong>04</strong><div class="metric-bottom"><span class="metric-sub">3 электронные</span><span>+ 1 аудиокнига</span></div><div class="mini-progress-list"><span><i></i></span><span><i></i></span><span><i></i></span></div></article><article class="metric-tile"><div class="metric-heading">Активная серия <span>↗</span></div><strong>12<span>дней</span></strong><div class="metric-bottom"><span class="metric-change lime-change">Цель: 5 дней</span><span>выполнена</span></div><div class="week-dots"><i>ПН</i><i>ВТ</i><i>СР</i><i>ЧТ</i><i class="week-today">ПТ</i><i>СБ</i><i>ВС</i></div></article></div>
+        <div class="flow-columns"><section class="flow-table-card" id="flow-books"><div class="module-heading"><div><h2>Недавние книги</h2><p>Последние открытия в твоей коллекции</p></div><button class="text-button">Вся библиотека <span>↗</span></button></div><div class="book-table"><div class="table-head"><span>НАЗВАНИЕ</span><span>СТАТУС</span><span>ПРОГРЕСС</span><span>ПОСЛЕДНЕЕ ДЕЙСТВИЕ</span><span></span></div><div class="table-row"><div class="table-book"><span class="table-cover t-cover-red">3<br>BODY</span><span><b>Задача трёх тел</b><small>Лю Цысинь · EPUB</small></span></div><span class="status-pill status-reading"><i></i> Читаю</span><div class="table-progress"><span><i style="width:64%"></i></span><small>64%</small></div><span class="table-last">10 минут назад</span><button class="table-more">···</button></div><div class="table-row"><div class="table-book"><span class="table-cover t-cover-green">S</span><span><b>Sapiens</b><small>Юваль Ной Харари · EPUB</small></span></div><span class="status-pill status-reading"><i></i> Читаю</span><div class="table-progress"><span><i style="width:32%"></i></span><small>32%</small></div><span class="table-last">Вчера, 22:14</span><button class="table-more">···</button></div><div class="table-row"><div class="table-book"><span class="table-cover t-cover-blue">ДУМАЙ<br>МЕДЛЕННО</span><span><b>Думай медленно… решай быстро</b><small>Даниэль Канеман · FB2</small></span></div><span class="status-pill status-paused"><i></i> Пауза</span><div class="table-progress"><span><i style="width:18%"></i></span><small>18%</small></div><span class="table-last">2 октября</span><button class="table-more">···</button></div></div><div class="table-footer"><span>Показано 3 из 28 записей</span><button>←</button><button class="page-current">1</button><button>2</button><button>3</button><button>→</button></div></section>
+          <aside class="flow-activity-card" id="flow-notes"><div class="module-heading"><div><h2>Последняя заметка</h2><p>Идея, сохранённая сегодня</p></div><button class="table-more">···</button></div><div class="note-tag"><span>ЗАДАЧА ТРЁХ ТЕЛ</span><span>ГЛАВА 17</span></div><blockquote>«Где нет скорости света, там нет и границ между причинами и следствиями.»</blockquote><p class="note-body">Мысль о том, как сильно наше ощущение будущего зависит от наблюдателя. Вернуться к этой главе и связать с заметкой про Энштейна.</p><div class="note-author"><div class="avatar note-avatar">Е</div><span><b>Евгений</b><small>Сегодня, 18:42</small></span><button>↗</button></div><div class="note-divider"></div><div class="next-session"><span class="next-icon">◷</span><div><strong>Следующий сеанс</strong><small>Цель на сегодня почти достигнута</small></div><b>24 мин</b></div></aside></div>
+      </div></div>
+    </section>
+  </main>
+  <footer class="prototype-footer"><span>PEPEHUB · ДИЗАЙН-КОНЦЕПТЫ</span><span>Выбери вкладку сверху, чтобы сравнить 4 направления</span><span>2026</span></footer>
+</body>
+</html>

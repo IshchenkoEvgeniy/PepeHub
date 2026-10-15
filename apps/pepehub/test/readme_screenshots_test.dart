@@ -400,6 +400,8 @@ void main() {
           Size size = const Size(1440, 1000),
           bool app = false,
         }) async {
+          final filter = Platform.environment['PEPEHUB_SCREENSHOT_FILTER'];
+          if (filter != null && !filter.split(',').contains(name)) return;
           debugPrintSynchronously('Rendering $name');
           await tester.pumpWidget(const SizedBox());
           await tester.runAsync(
