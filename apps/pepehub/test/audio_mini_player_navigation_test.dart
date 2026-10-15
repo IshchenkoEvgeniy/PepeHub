@@ -200,6 +200,24 @@ void main() {
               find.byType(CircularProgressIndicator).evaluate().isEmpty,
         );
         expect(find.byKey(const ValueKey('audio-mini-player')), findsOneWidget);
+        if (find.text('Устройства и общие папки').evaluate().isEmpty) {
+          await tester.scrollUntilVisible(
+            find.text('Устройства и общие папки'),
+            350,
+            scrollable: find.byType(Scrollable).first,
+          );
+        }
+        await Scrollable.ensureVisible(
+          tester.element(find.text('Устройства и общие папки')),
+          alignment: .5,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Устройства и общие папки'));
+        await tester.pumpAndSettle();
+        expect(find.text('Прямой обмен между ПК и телефоном'), findsOneWidget);
+        expect(find.byKey(const ValueKey('audio-mini-player')), findsOneWidget);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('mini-play-pause')));
         await tester.pump();
         expect(audio.plays, 1);

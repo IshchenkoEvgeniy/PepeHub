@@ -9,11 +9,13 @@ class MainActivity : AudioServiceActivity() {
         private val bookChannels = java.util.WeakHashMap<FlutterEngine, BookFileChannel>()
         private val videoChannels = java.util.WeakHashMap<FlutterEngine, VideoFilesChannel>()
         private val videoWindowChannels = java.util.WeakHashMap<FlutterEngine, VideoWindowChannel>()
+        private val peerChannels = java.util.WeakHashMap<FlutterEngine, PeerFilesChannel>()
     }
     private var folders: AudioFolderChannel? = null
     private var books: BookFileChannel? = null
     private var videos: VideoFilesChannel? = null
     private var videoWindow: VideoWindowChannel? = null
+    private var peers: PeerFilesChannel? = null
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState?.getBoolean("bookIntentConsumed") != true) books?.receive(intent)
@@ -60,13 +62,22 @@ class MainActivity : AudioServiceActivity() {
             })
         }
         videoWindow?.attach(this)
+        peers = peerChannels[flutterEngine] ?: PeerFilesChannel(this, flutterEngine.dartExecutor.binaryMessenger).also { channel ->
+            peerChannels[flutterEngine] = channel
+            flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
+                override fun onPreEngineRestart() {}
+                override fun onEngineWillDestroy() { channel.dispose(); peerChannels.remove(flutterEngine) }
+            })
+        }
+        peers?.attach(this)
     }
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) videoWindow?.reapply()
     }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
-        if (videos?.onActivityResult(requestCode, resultCode, data) != true &&
+        if (peers?.onActivityResult(requestCode, resultCode, data) != true &&
+            videos?.onActivityResult(requestCode, resultCode, data) != true &&
             folders?.onActivityResult(requestCode, resultCode, data) != true) {
             super.onActivityResult(requestCode, resultCode, data)
         }
@@ -88,6 +99,7 @@ class MainActivity : AudioServiceActivity() {
         books?.detach(this)
         videos?.detach(this)
         videoWindow?.detach(this)
+        peers?.detach(this)
         super.onDestroy()
     }
 }

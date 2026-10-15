@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../sync/peer/peer_service.dart';
+import '../sync/peer/peer_sync_page.dart';
+
 import '../audio/statistics_export.dart' show ListeningGoals;
 import '../library/library_service.dart';
 import '../recommendations/recommendation_store.dart';
@@ -485,6 +488,18 @@ class _SettingsPageState extends State<SettingsPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _link('Заметки Obsidian', null, Icons.notes, widget.onNotes),
+          if (PeerSyncScope.of(context) case final service?)
+            _link(
+              'Устройства и общие папки',
+              'Прямой обмен файлами между ПК и телефоном',
+              Icons.sync,
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PeerSyncPage(service: service),
+                ),
+              ),
+            ),
           _link(
             'Словарь Anki',
             'Слова, предложения и экспорт карточек',

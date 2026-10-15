@@ -1,6 +1,12 @@
-import 'ui/app_theme.dart';
+import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+
+import 'sync/peer/peer_service.dart';
+import 'sync/peer/peer_store.dart';
+import 'ui/app_theme.dart';
 
 import 'data/database.dart';
 import 'data/repository.dart';
@@ -77,6 +83,12 @@ class PepeHubApp extends StatefulWidget {
 class _PepeHubAppState extends State<PepeHubApp> {
   late final theme = AppTheme(widget.repository);
   final navigator = GlobalKey<NavigatorState>();
+  late final peers = PeerSyncService(
+    PeerStore(widget.repository),
+    workDirectory: widget.assets == null
+        ? null
+        : Directory(p.join(widget.assets!.directory.path, 'peer-sync')),
+  );
   late final videos = VideoPlaybackSession(
     VideoRepository(widget.repository),
     audio: widget.audio,
@@ -85,12 +97,14 @@ class _PepeHubAppState extends State<PepeHubApp> {
   void initState() {
     super.initState();
     theme.load();
+    unawaited(peers.initialize());
   }
 
   @override
   void dispose() {
     theme.dispose();
     videos.dispose();
+    peers.dispose();
     super.dispose();
   }
 
@@ -119,37 +133,41 @@ class _PepeHubAppState extends State<PepeHubApp> {
               ),
               disableAnimations: media.disableAnimations || theme.reduceMotion,
             ),
-            child: AudioPlayerScope(
-              controller: widget.audio,
-              child: VideoSessionScope(
-                session: videos,
-                child: Overlay.wrap(
-                  child: Stack(
-                    children: [
-                      child!,
-                      VideoMiniPlayer(
-                        session: videos,
-                        onOpen: () {
-                          final item = videos.item, player = videos.controller;
-                          if (item == null ||
-                              player == null ||
-                              videos.pageAttached) {
-                            return;
-                          }
-                          navigator.currentState?.push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => VideoPlayerPage(
-                                repository: videos.repository,
-                                item: item,
-                                lessons: player.lessons,
-                                initialIndex: player.index,
-                                session: videos,
+            child: PeerSyncScope(
+              service: peers,
+              child: AudioPlayerScope(
+                controller: widget.audio,
+                child: VideoSessionScope(
+                  session: videos,
+                  child: Overlay.wrap(
+                    child: Stack(
+                      children: [
+                        child!,
+                        VideoMiniPlayer(
+                          session: videos,
+                          onOpen: () {
+                            final item = videos.item,
+                                player = videos.controller;
+                            if (item == null ||
+                                player == null ||
+                                videos.pageAttached) {
+                              return;
+                            }
+                            navigator.currentState?.push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => VideoPlayerPage(
+                                  repository: videos.repository,
+                                  item: item,
+                                  lessons: player.lessons,
+                                  initialIndex: player.index,
+                                  session: videos,
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
