@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/repository.dart';
+import '../sync/peer/app_sync_usage.dart';
 import 'reading_library.dart';
 import 'reading_notes_export.dart';
 import '../ui/pepe_widgets.dart';
@@ -153,6 +154,7 @@ class ReadingNotesPage extends StatefulWidget {
 }
 
 class _ReadingNotesPageState extends State<ReadingNotesPage> {
+  void Function()? _releaseSync;
   late final library = ReadingLibrary(widget.repository);
   List<ReadingNote> notes = [];
   String query = '';
@@ -164,7 +166,16 @@ class _ReadingNotesPageState extends State<ReadingNotesPage> {
   @override
   void initState() {
     super.initState();
+    _releaseSync = AppSyncUsage.hold(widget.repository.db, 'reading-notes');
+    widget.repository.externalChanges.addListener(_reload);
     _reload();
+  }
+
+  @override
+  void dispose() {
+    _releaseSync?.call();
+    widget.repository.externalChanges.removeListener(_reload);
+    super.dispose();
   }
 
   Future<void> _reload() async {
@@ -210,15 +221,14 @@ class _ReadingNotesPageState extends State<ReadingNotesPage> {
         v.split(':').last,
       );
       if (saved && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Заметки экспортированы')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Заметки экспортированы')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Экспорт не выполнен: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Экспорт не выполнен: $e')));
       }
     } finally {
       if (mounted) setState(() => exporting = false);
@@ -279,82 +289,83 @@ class _ReadingNotesPageState extends State<ReadingNotesPage> {
                 child: ColoredBox(color: tint),
               ),
               Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 4, 14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          note.quote.isEmpty ? note.chapterTitle : note.quote,
-                          maxLines: 5,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppFonts.book(
-                            palette.text,
-                            size: 17,
-                          ).copyWith(height: 1.45),
-                        ),
-                        if (note.comment.isNotEmpty) ...[
-                          const SizedBox(height: 8),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 4, 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            note.comment,
-                            maxLines: 3,
+                            note.quote.isEmpty ? note.chapterTitle : note.quote,
+                            maxLines: 5,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              height: 1.4,
-                              color: palette.text.withValues(alpha: .82),
-                            ),
+                            style: AppFonts.book(
+                              palette.text,
+                              size: 17,
+                            ).copyWith(height: 1.45),
                           ),
-                        ],
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
+                          if (note.comment.isNotEmpty) ...[
+                            const SizedBox(height: 8),
                             Text(
-                              '${note.bookTitle} · ${note.chapterTitle}',
+                              note.comment,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 11.5,
-                                color: palette.muted,
+                                fontSize: 13,
+                                height: 1.4,
+                                color: palette.text.withValues(alpha: .82),
                               ),
                             ),
-                            for (final t in note.tags)
+                          ],
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
                               Text(
-                                '#$t',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: palette.accent,
-                                ),
-                              ),
-                            if (note.characters.isNotEmpty)
-                              Text(
-                                'Персонажи: ${note.characters.join(', ')}',
+                                '${note.bookTitle} · ${note.chapterTitle}',
                                 style: TextStyle(
                                   fontSize: 11.5,
                                   color: palette.muted,
                                 ),
                               ),
-                          ],
-                        ),
-                      ],
+                              for (final t in note.tags)
+                                Text(
+                                  '#$t',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: palette.accent,
+                                  ),
+                                ),
+                              if (note.characters.isNotEmpty)
+                                Text(
+                                  'Персонажи: ${note.characters.join(', ')}',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: palette.muted,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                PopupMenuButton<String>(
-                  tooltip: 'Действия с заметкой',
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Изменить')),
-                    PopupMenuItem(value: 'delete', child: Text('Удалить')),
-                  ],
-                  onSelected: (v) => v == 'edit' ? _edit(note) : _delete(note),
-                ),
-              ],
-            ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Действия с заметкой',
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'edit', child: Text('Изменить')),
+                      PopupMenuItem(value: 'delete', child: Text('Удалить')),
+                    ],
+                    onSelected: (v) =>
+                        v == 'edit' ? _edit(note) : _delete(note),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -781,7 +792,10 @@ class _ReadingNotesPageState extends State<ReadingNotesPage> {
           enabled: !exporting && notes.isNotEmpty,
           icon: const Icon(Icons.file_download_outlined),
           itemBuilder: (_) => const [
-            PopupMenuItem(value: 'all:md', child: Text('Все заметки · Markdown')),
+            PopupMenuItem(
+              value: 'all:md',
+              child: Text('Все заметки · Markdown'),
+            ),
             PopupMenuItem(value: 'all:json', child: Text('Все заметки · JSON')),
             PopupMenuItem(
               value: 'filtered:md',

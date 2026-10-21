@@ -237,20 +237,28 @@ void main() {
         entries.keys.toSet(),
       );
     });
-    test('deletion moves a received file to recoverable history', () async {
-      await a.write('lesson.txt', [1]);
-      await a.replica.scan();
-      await b.receive(a);
-      await File(p.join(a.root.path, 'lesson.txt')).delete();
-      await a.replica.scan();
-      await b.receive(a);
-      expect(await File(p.join(b.root.path, 'lesson.txt')).exists(), false);
-      final versions = await Directory(
-        p.join(b.root.path, '.pepehub/p2p/versions'),
-      ).list().toList();
-      expect(await (versions.single as File).readAsBytes(), [1]);
-      expect((await b.store.entries(folderId))['lesson.txt']!.deleted, true);
-    });
+    test(
+      'deletion waits for confirmation and disabled history leaves no backup',
+      () async {
+        await a.write('lesson.txt', [1]);
+        await a.replica.scan();
+        await b.receive(a);
+        await File(p.join(a.root.path, 'lesson.txt')).delete();
+        await a.replica.scan();
+        await b.receive(a);
+        expect(await File(p.join(b.root.path, 'lesson.txt')).exists(), true);
+        await b.replica.resolveDeletion(
+          (await b.store.pendingDeletions()).single,
+          delete: true,
+        );
+        expect(await File(p.join(b.root.path, 'lesson.txt')).exists(), false);
+        final versions = Directory(
+          p.join(b.root.path, '.pepehub/p2p/versions'),
+        );
+        expect(await versions.exists(), false);
+        expect((await b.store.entries(folderId))['lesson.txt']!.deleted, true);
+      },
+    );
     test(
       'concurrent delete and edit preserves the edit on both devices',
       () async {

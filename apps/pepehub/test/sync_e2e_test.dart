@@ -23,6 +23,8 @@ void main() {
       final a = AppDatabase(NativeDatabase.memory()),
           b = AppDatabase(NativeDatabase.memory());
       final ra = Repository(a), rb = Repository(b);
+      await ra.setCloudTracking(true);
+      await rb.setCloudTracking(true);
       final ca = http.Client(), cb = http.Client();
       try {
         final ready = await server.stdout

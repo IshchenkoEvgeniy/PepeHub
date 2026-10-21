@@ -9,6 +9,8 @@ import 'cover_sync.dart';
 import 'automatic_metadata.dart';
 import 'note_store.dart';
 
+class _ResetLibraryIndex implements Exception {}
+
 class ObsidianConfig {
   final String url, token;
   ObsidianConfig(String url, this.token)
@@ -59,6 +61,10 @@ class ObsidianSyncService {
       await client.send(request).timeout(const Duration(seconds: 20)),
     ).timeout(const Duration(seconds: 20));
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      if (path.startsWith('/changes?') &&
+          (response.statusCode == 409 || response.statusCode == 404)) {
+        throw _ResetLibraryIndex();
+      }
       throw StateError(
         response.statusCode == 404
             ? 'На сервере Companion ещё не установлен мост библиотеки PepeHub.'
@@ -66,7 +72,72 @@ class ObsidianSyncService {
       );
     }
     final json = jsonDecode(response.body) as Map<String, dynamic>;
+    final index = response.headers['x-pepehub-index'],
+        cursor = int.tryParse(response.headers['x-pepehub-cursor'] ?? '');
+    if (index != null && cursor != null && cursor >= 0) {
+      json['_indexId'] = index;
+      json['_cursor'] = cursor;
+    }
     return json;
+  }
+
+  Future<({Map<String, dynamic> value, bool changed})>
+  _librarySnapshot() async {
+    final stored = await repository.snapshot();
+    final index = stored?['_indexId'], initial = stored?['_cursor'];
+    if (index is String &&
+        initial is int &&
+        RegExp(r'^[a-f0-9-]{36}$').hasMatch(index)) {
+      var cursor = initial, changed = false;
+      try {
+        while (true) {
+          final page = await _request('/changes?index=$index&after=$cursor');
+          final next = page['cursor'];
+          if (page['version'] != 1 ||
+              page['indexId'] != index ||
+              next is! int ||
+              next < cursor ||
+              page['changes'] is! List ||
+              page['hasMore'] == true && next == cursor) {
+            throw const FormatException(
+              'Некорректный курсор библиотеки Obsidian',
+            );
+          }
+          final schema = page['schema'] as Map?;
+          final schemaChanged =
+              schema == null ||
+              jsonEncode([schema['fields'], schema['collections']]) !=
+                  jsonEncode([stored?['fields'], stored?['collections']]);
+          if ((page['changes'] as List).isNotEmpty ||
+              next != cursor ||
+              schemaChanged) {
+            await repository.receiveChanges(page);
+            changed = true;
+          }
+          cursor = next;
+          if (page['hasMore'] != true) {
+            return (
+              value: changed ? (await repository.snapshot())! : stored!,
+              changed: changed,
+            );
+          }
+        }
+      } on _ResetLibraryIndex {
+        /* An explicit reset requires one full snapshot. */
+      }
+    }
+    final snapshot = await _request('');
+    if (snapshot['version'] != 1) {
+      throw const FormatException('Неподдерживаемая версия моста Obsidian.');
+    }
+    if (snapshot['ready'] != true) {
+      throw StateError(
+        'Ожидается первый снимок библиотеки. Откройте Obsidian с обновлённым плагином.',
+      );
+    }
+    final changed = jsonEncode(snapshot) != jsonEncode(stored);
+    if (changed) await repository.receive(snapshot);
+    return (value: snapshot, changed: changed);
   }
 
   Future<bool> run() async {
@@ -84,16 +155,7 @@ class ObsidianSyncService {
         await repository.receipt(entry.item.id, receipt);
       }
     }
-    final snapshot = await _request('');
-    if (snapshot['version'] != 1) {
-      throw const FormatException('Неподдерживаемая версия моста Obsidian.');
-    }
-    if (snapshot['ready'] != true) {
-      throw StateError(
-        'Ожидается первый снимок библиотеки. Откройте Obsidian с обновлённым плагином.',
-      );
-    }
-    await repository.receive(snapshot);
+    final pulled = await _librarySnapshot(), snapshot = pulled.value;
     if (await repository.repository.meta('obsidian-sync-history') != 'false') {
       final history = ActivityStore(repository.repository, config.namespace);
       await history.capture();

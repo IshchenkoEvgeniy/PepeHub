@@ -8,6 +8,7 @@ import '../audio/audio_import.dart' show naturalAudioOrder;
 import 'video_repository.dart';
 import 'models.dart';
 import 'video_fingerprint.dart';
+import 'media_formats.dart';
 
 const videoFilesChannel = MethodChannel('app.pepehub/video_files');
 const videoExtensions = [
@@ -20,6 +21,7 @@ const videoExtensions = [
   'mpeg',
   'mpg',
 ];
+const mediaExtensions = [...videoExtensions, ...musicExtensions];
 
 class VideoImportSelection {
   final String title;
@@ -34,6 +36,7 @@ VideoSourceDraft videoDraft(
   String source,
   String name, {
   VideoFileIdentity? identity,
+  bool audio = false,
 }) {
   final normalized = name.replaceAll('\\', '/');
   final folder = p.posix.dirname(normalized);
@@ -43,6 +46,7 @@ VideoSourceDraft videoDraft(
     module: folder == '.' ? '' : folder,
     relativeName: normalized,
     identity: identity,
+    audio: audio || isMusicSource(name),
   );
 }
 
@@ -52,7 +56,7 @@ String validateVideoUrl(String input) {
       !['http', 'https'].contains(uri.scheme) ||
       uri.host.isEmpty ||
       uri.userInfo.isNotEmpty) {
-    throw ArgumentError('Введите прямую HTTP(S)-ссылку на видео');
+    throw ArgumentError('Введите прямую HTTP(S)-ссылку на видео или аудио');
   }
   return uri.toString();
 }
@@ -76,6 +80,7 @@ Future<VideoImportSelection?> pickVideoFiles({bool folder = false}) async {
         videoDraft(
           entry['uri'] as String,
           entry['name'] as String,
+          audio: entry['audio'] == true,
           identity: entry['identity'] == null
               ? null
               : VideoFileIdentity.fromJson(
@@ -90,7 +95,10 @@ Future<VideoImportSelection?> pickVideoFiles({bool folder = false}) async {
   }
   final files = await openFiles(
     acceptedTypeGroups: [
-      const XTypeGroup(label: 'Видео', extensions: videoExtensions),
+      const XTypeGroup(
+        label: 'Медиа: видео и музыка',
+        extensions: mediaExtensions,
+      ),
     ],
   );
   if (files.isEmpty) return null;
@@ -98,7 +106,9 @@ Future<VideoImportSelection?> pickVideoFiles({bool folder = false}) async {
   return VideoImportSelection(
     files.length == 1
         ? p.basenameWithoutExtension(files.single.name)
-        : 'Новый курс',
+        : files.every((file) => isMusicSource(file.name))
+        ? 'Новый плейлист'
+        : 'Новая подборка',
     [for (final file in files) videoDraft(file.path, file.name)],
   );
 }
@@ -123,6 +133,7 @@ Future<VideoImportSelection> scanVideoFolder(String path) async {
         videoDraft(
           entry['uri'] as String,
           entry['name'] as String,
+          audio: entry['audio'] == true,
           identity: entry['identity'] == null
               ? null
               : VideoFileIdentity.fromJson(
@@ -145,7 +156,7 @@ Future<VideoImportSelection> scanVideoFolder(String path) async {
           await visit(entry, depth + 1);
         }
       } else if (entry is File &&
-          videoExtensions.contains(
+          mediaExtensions.contains(
             p.extension(entry.path).toLowerCase().replaceFirst('.', ''),
           )) {
         sources.add((
@@ -153,7 +164,7 @@ Future<VideoImportSelection> scanVideoFolder(String path) async {
           name: p.relative(entry.path, from: root.path).replaceAll('\\', '/'),
         ));
         if (sources.length > 10000) {
-          throw StateError('В папке больше 10000 видео');
+          throw StateError('В папке больше 10000 медиафайлов');
         }
       }
     }

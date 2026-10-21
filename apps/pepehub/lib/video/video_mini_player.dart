@@ -135,7 +135,7 @@ class _VideoMiniPlayerState extends State<VideoMiniPlayer> {
                               child: Padding(
                                 padding: const EdgeInsets.only(left: 10),
                                 child: Text(
-                                  player.current?.title ?? 'Видео',
+                                  player.current?.title ?? 'Медиа',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
@@ -166,7 +166,9 @@ class _VideoMiniPlayerState extends State<VideoMiniPlayer> {
                               ),
                             ),
                             IconButton(
-                              tooltip: 'Открыть видеоплеер',
+                              tooltip: player.current?.isAudio == true
+                                  ? 'Открыть музыкальный плеер'
+                                  : 'Открыть видеоплеер',
                               style: IconButton.styleFrom(
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),

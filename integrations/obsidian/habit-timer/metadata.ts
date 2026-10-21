@@ -1,4 +1,4 @@
-import type { CoverAsset } from './covers.ts';
+import {validCoverAsset, type CoverAsset} from './covers.ts';
 /** Metadata contract for the real Habit Timer library. No media bytes or assets. */
 export type JsonValue = null | string | number | boolean | JsonValue[] | { [key: string]: JsonValue };
 export interface MetadataField { key: string; field: string; kind: 'text' | 'number' | 'list' | 'json'; }
@@ -36,6 +36,24 @@ export interface MetadataReceipt {
 export const ID_PROPERTY = 'pepehub_id';
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const validId = (value: unknown): value is string => typeof value === 'string' && uuidPattern.test(value);
+const boundedText=(value:unknown,maximum:number):value is string=>typeof value==='string'&&value.length>0&&value.length<=maximum;
+export function validMetadataFields(value:unknown):value is MetadataField[] {
+  return Array.isArray(value)&&value.every(f=>f&&boundedText(f.key,200)&&boundedText(f.field,100)&&['text','number','list','json'].includes(f.kind));
+}
+export function validMetadataCollections(value:unknown):value is MetadataSnapshot['collections'] {
+  return Array.isArray(value)&&value.every(c=>c&&boundedText(c.id,100)&&boundedText(c.title,1000)&&['book','audiobook'].includes(c.mediaType));
+}
+export function validMetadataItem(value:unknown):value is MetadataItem {
+  if(!value||typeof value!=='object')return false;
+  const item=value as MetadataItem;
+  return validId(item.id)&&boundedText(item.path,4096)&&boundedText(item.collectionId,100)&&Number.isFinite(item.modifiedAt)&&item.modifiedAt>=0
+    &&safeValues(item.values)&&validMetadataFields(item.fields)&&['book','audiobook'].includes(item.mediaType)&&(item.coverAsset==null||validCoverAsset(item.coverAsset));
+}
+export function validMetadataReceipt(value:unknown):value is MetadataReceipt {
+  if(!value||typeof value!=='object')return false;
+  const receipt=value as MetadataReceipt;
+  return validId(receipt.operationId)&&['applied','conflict','error'].includes(receipt.status)&&(receipt.message===undefined||typeof receipt.message==='string'&&receipt.message.length<=4000);
+}
 export function equalValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a == null || b == null) return a == null && b == null;

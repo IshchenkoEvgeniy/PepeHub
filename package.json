@@ -3,14 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.0.0" },
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "test": "node --disable-warning=ExperimentalWarning --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "dev:api": "node --disable-warning=ExperimentalWarning scripts/dev-server.ts"
+    "dev:api": "node --disable-warning=ExperimentalWarning scripts/dev-server.ts",
+    "relay": "node --disable-warning=ExperimentalWarning services/relay/server.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.2",
     "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
   }
 }

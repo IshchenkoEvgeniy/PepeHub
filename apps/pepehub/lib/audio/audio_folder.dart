@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart';
@@ -148,11 +149,13 @@ Uri audioSourceUri(String path) =>
     path.startsWith('content://') ? Uri.parse(path) : Uri.file(path);
 
 Future<bool> audioSourceExists(String path) async {
-  if (!path.startsWith('content://')) return File(path).exists();
+  if (!path.startsWith('content://')) {
+    return File(path).exists().timeout(const Duration(seconds: 3));
+  }
   try {
-    return await audioFolderChannel.invokeMethod<bool>('exists', {
-          'uri': path,
-        }) ??
+    return await audioFolderChannel
+            .invokeMethod<bool>('exists', {'uri': path})
+            .timeout(const Duration(seconds: 3)) ??
         false;
   } on MissingPluginException {
     // The Android activity can be gone while AudioService still plays. In

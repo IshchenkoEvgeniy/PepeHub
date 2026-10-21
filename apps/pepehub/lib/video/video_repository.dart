@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../data/repository.dart';
 import 'models.dart';
+import 'media_formats.dart';
 import 'video_activity.dart' show firstVideoCoverageCompletion;
 import 'video_annotations.dart';
 import 'video_subtitles.dart';
@@ -14,13 +15,16 @@ class VideoSourceDraft {
   final String source, title, module;
   final String? relativeName;
   final VideoFileIdentity? identity;
+  final bool audio;
   const VideoSourceDraft(
     this.source,
     this.title, {
     this.module = '',
     this.relativeName,
     this.identity,
+    this.audio = false,
   });
+  bool get isAudio => audio || isMusicSource(relativeName ?? source);
 }
 
 /// Local-only video records. Never enqueue them in the book sync outbox.
@@ -106,7 +110,7 @@ class VideoRepository {
       throw ArgumentError('Название: от 1 до 300 символов');
     }
     if (sources.isEmpty || sources.length > 10000) {
-      throw ArgumentError('Выберите от 1 до 10000 видео');
+      throw ArgumentError('Выберите от 1 до 10000 медиафайлов');
     }
     for (final source in sources) {
       if (source.source.trim().isEmpty || source.title.trim().isEmpty) {
@@ -163,6 +167,7 @@ class VideoRepository {
           source: source.source,
           mediaVersion: uuid.v4(),
           ordinal: ordinal++,
+          audio: source.isAudio,
         );
         await _put('video_lesson', lesson.id, {
           ...lesson.toJson(),
@@ -179,7 +184,7 @@ class VideoRepository {
       repository.db.transaction(() async {
         final row = await repository.record(item.id);
         if (row == null || row.deleted || row.type != 'video_item') {
-          throw StateError('Видео удалено');
+          throw StateError('Медиафайл удалён');
         }
         await _put('video_item', item.id, {
           ...row.payload!,
@@ -358,6 +363,7 @@ class VideoRepository {
         source: addition.source,
         mediaVersion: uuid.v4(),
         ordinal: ordinal++,
+        audio: addition.isAudio,
       );
       await _put('video_lesson', lesson.id, {
         ...lesson.toJson(),

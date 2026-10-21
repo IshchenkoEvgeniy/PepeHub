@@ -135,7 +135,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Подключить папку'));
       await tester.pumpAndSettle();
-      expect(find.text('Проверить видео и порядок уроков'), findsOneWidget);
+      expect(find.text('Проверить медиа и порядок файлов'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.tap(find.text('Подключить'));
       await tester.pumpAndSettle();
@@ -231,7 +231,7 @@ void main() {
       final repo = Repository(db);
       await tester.pumpWidget(PepeHubApp(repository: repo));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Видео'));
+      await tester.tap(find.byTooltip('Медиа'));
       await tester.pumpAndSettle();
       expect(find.byType(VideoLibraryPage), findsOneWidget);
       await tester.tap(find.text('Добавить ссылку'));
@@ -258,7 +258,7 @@ void main() {
       await tester.tap(find.byTooltip('Книги'));
       await tester.pumpAndSettle();
       expect(find.byType(VideoLibraryPage), findsNothing);
-      await tester.tap(find.byTooltip('Видео'));
+      await tester.tap(find.byTooltip('Медиа'));
       await tester.pumpAndSettle();
       expect(find.text('English lesson'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
@@ -281,7 +281,7 @@ void main() {
     await tester.pumpWidget(PepeHubApp(repository: repo));
     await tester.pumpAndSettle();
     expect(find.byType(VideoLibraryPage), findsOneWidget);
-    expect(find.text('Начните с видео или курса'), findsOneWidget);
+    expect(find.text('Добавьте видео или музыку'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();

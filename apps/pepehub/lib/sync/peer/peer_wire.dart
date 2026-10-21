@@ -6,9 +6,33 @@ import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 
+import 'peer_diagnostics.dart';
+
 const _maxFrame = 8 * 1024 * 1024;
 final _cipher = AesGcm.with256bits();
 final _random = Random.secure();
+
+class PeerRequestCancellation {
+  final Set<Socket> _sockets = {};
+  bool cancelled = false;
+  void attach(Socket socket) {
+    if (cancelled) {
+      socket.destroy();
+      throw StateError('Передача остановлена');
+    }
+    _sockets.add(socket);
+  }
+
+  void detach(Socket socket) => _sockets.remove(socket);
+  void cancel() {
+    cancelled = true;
+    for (final socket in _sockets.toList()) {
+      socket.destroy();
+    }
+    _sockets.clear();
+  }
+}
+
 String peerRandomKey() =>
     base64UrlEncode(List.generate(32, (_) => _random.nextInt(256)));
 
@@ -90,10 +114,13 @@ typedef PeerWireHandler = Future<Map<String, dynamic>> Function(
 class PeerWireServer {
   final Future<String?> Function(String channel) keyFor;
   final PeerWireHandler handle;
+  final void Function(Object failure, String channel, String operation)?
+  onError;
   ServerSocket? _server;
   final Set<Socket> _sockets = {};
+  final Set<Future<void>> _serving = {};
   int get port => _server?.port ?? 0;
-  PeerWireServer({required this.keyFor, required this.handle});
+  PeerWireServer({required this.keyFor, required this.handle, this.onError});
   Future<void> start({InternetAddress? address, int port = 0}) async {
     if (_server != null) return;
     _server = await ServerSocket.bind(address ?? InternetAddress.anyIPv4, port);
@@ -103,7 +130,9 @@ class PeerWireServer {
         return;
       }
       _sockets.add(socket);
-      unawaited(_serve(socket));
+      final task = _serve(socket);
+      _serving.add(task);
+      unawaited(task.whenComplete(() => _serving.remove(task)));
     });
   }
 
@@ -133,10 +162,13 @@ class PeerWireServer {
       Map<String, dynamic> reply;
       try {
         reply = await handle(channel, request, socket.remoteAddress.address);
-      } catch (_) {
-        reply = {
-          'error': 'Операция недоступна или состояние папки изменилось. Обновите соединение.',
-        };
+      } catch (failure) {
+        onError?.call(
+          failure,
+          channel,
+          request['op'] is String ? request['op'] as String : 'unknown',
+        );
+        reply = {'error': peerFailureDescription(failure)};
       }
       reply['requestId'] = request['requestId'];
       await _send(
@@ -160,6 +192,7 @@ class PeerWireServer {
       socket.destroy();
     }
     _sockets.clear();
+    await Future.wait(_serving.toList());
   }
 }
 
@@ -169,7 +202,9 @@ Future<Map<String, dynamic>> peerRequest({
   required String channel,
   required String key,
   required Map<String, dynamic> request,
+  PeerRequestCancellation? cancellation,
 }) async {
+  if (cancellation?.cancelled == true) throw StateError('Передача остановлена');
   final socket = await Socket.connect(
     host,
     port,
@@ -177,6 +212,7 @@ Future<Map<String, dynamic>> peerRequest({
   );
   final frames = _Frames(socket);
   try {
+    cancellation?.attach(socket);
     final hello = jsonDecode(
       utf8.decode(await frames.frame(maximum: 512)),
     ) as Map<String, dynamic>;
@@ -202,9 +238,14 @@ Future<Map<String, dynamic>> peerRequest({
     if (reply['requestId'] != requestId) {
       throw const FormatException('Ответ относится к другому запросу');
     }
-    if (reply['error'] != null) throw StateError(reply['error'] as String);
+    if (reply['error'] != null) {
+      throw StateError(
+        'На втором устройстве: ${peerSafeDiagnostic(reply['error'] as String)}',
+      );
+    }
     return reply;
   } finally {
+    cancellation?.detach(socket);
     await frames.close();
     socket.destroy();
   }

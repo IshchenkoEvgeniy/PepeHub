@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/repository.dart';
+import '../sync/peer/app_sync_usage.dart';
 import '../media/audio_controller.dart';
 import 'audio_mini_player.dart';
 import 'audio_page.dart';
@@ -24,6 +25,7 @@ class AudioNotesPage extends StatefulWidget {
 }
 
 class _AudioNotesPageState extends State<AudioNotesPage> {
+  void Function()? _releaseSync;
   List<LibraryRecord> notes = [];
   String filter = 'all';
   bool busy = false;
@@ -32,7 +34,17 @@ class _AudioNotesPageState extends State<AudioNotesPage> {
   @override
   void initState() {
     super.initState();
+    _releaseSync = AppSyncUsage.hold(
+      widget.controller.assets.repository.db,
+      'audio-notes',
+    );
     _load();
+  }
+
+  @override
+  void dispose() {
+    _releaseSync?.call();
+    super.dispose();
   }
 
   Future<void> _load() async {

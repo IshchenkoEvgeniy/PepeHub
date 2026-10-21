@@ -722,7 +722,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, 'end'),
-              child: const Text('До конца урока'),
+              child: Text(
+                controller?.current?.isAudio == true
+                    ? 'До конца трека'
+                    : 'До конца урока',
+              ),
             ),
             FilledButton(
               onPressed: () {
@@ -780,20 +784,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       ('note', 'Закладка / заметка', Icons.bookmark_add_outlined),
       ('anki', 'Карточка Anki', Icons.style_outlined),
       ('vocabulary', 'Словарь Anki', Icons.collections_bookmark_outlined),
-      (
-        'audio',
-        player.audioOnly ? 'Вернуться к видео' : 'Аудиорежим',
-        Icons.headphones_outlined,
-      ),
+      if (player.current?.isAudio != true)
+        (
+          'audio',
+          player.audioOnly ? 'Вернуться к видео' : 'Аудиорежим',
+          Icons.headphones_outlined,
+        ),
       (
         'mute',
         player.state.volume == 0 ? 'Включить звук' : 'Без звука',
         Icons.volume_off_outlined,
       ),
       ('volume', 'Громкость', Icons.volume_up_outlined),
-      ('fit', 'Размер и поворот', Icons.aspect_ratio),
-      ('zoom', 'Сбросить масштаб', Icons.zoom_out_map),
-      if (player.engine.canCaptureFrame)
+      if (player.current?.isAudio != true)
+        ('fit', 'Размер и поворот', Icons.aspect_ratio),
+      if (player.current?.isAudio != true)
+        ('zoom', 'Сбросить масштаб', Icons.zoom_out_map),
+      if (player.engine.canCaptureFrame && !player.audioOnly)
         (
           'previews',
           _showPreviews ? 'Превью: включены' : 'Превью: выключены',
@@ -1035,7 +1042,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           Row(
             children: [
               const SizedBox(width: 16),
-              const Expanded(child: Text('Материалы урока')),
+              Expanded(
+                child: Text(
+                  controller?.current?.isAudio == true
+                      ? 'Плейлист и заметки'
+                      : 'Материалы урока',
+                ),
+              ),
               IconButton(
                 tooltip: 'Закрыть панель урока',
                 onPressed: _closeStudy,
@@ -1051,7 +1064,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   tabAlignment: TabAlignment.start,
                   isScrollable: true,
                   tabs: [
-                    Tab(text: 'Уроки'),
+                    Tab(
+                      text: controller?.current?.isAudio == true
+                          ? 'Треки'
+                          : 'Уроки',
+                    ),
                     Tab(text: 'Расшифровка'),
                     Tab(text: 'Заметки'),
                     Tab(text: 'Главы'),
@@ -1062,27 +1079,29 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                     animation: _session,
                     builder: (context, _) {
                       final player = controller!;
+                      final order = player.playbackOrder;
                       return TabBarView(
                         controller: _studyTabs,
                         children: [
-                          ListView(
-                            children: [
-                              for (var i = 0; i < player.lessons.length; i++)
-                                ListTile(
-                                  key: ValueKey(
-                                    'video-lesson-${player.lessons[i].id}',
-                                  ),
-                                  selected: player.index == i,
-                                  leading: Text('${i + 1}'),
-                                  title: Text(player.lessons[i].title),
-                                  subtitle: player.lessons[i].module.isEmpty
-                                      ? null
-                                      : Text(player.lessons[i].module),
-                                  onTap: _enabled && player.lessons[i].available
-                                      ? () => _perform(() => player.load(i))
-                                      : null,
+                          ListView.builder(
+                            itemCount: order.length,
+                            itemBuilder: (context, row) {
+                              final i = order[row];
+                              return ListTile(
+                                key: ValueKey(
+                                  'video-lesson-${player.lessons[i].id}',
                                 ),
-                            ],
+                                selected: player.index == i,
+                                leading: Text('${row + 1}'),
+                                title: Text(player.lessons[i].title),
+                                subtitle: player.lessons[i].module.isEmpty
+                                    ? null
+                                    : Text(player.lessons[i].module),
+                                onTap: _enabled && player.lessons[i].available
+                                    ? () => _perform(() => player.load(i))
+                                    : null,
+                              );
+                            },
                           ),
                           ListView(
                             padding: const EdgeInsets.all(12),
@@ -1220,11 +1239,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 rect: noteLayout?.video ?? (Offset.zero & bounds.biggest),
                 child: KeyedSubtree(
                   key: const ValueKey('video-visible-frame'),
-                  child: _surface(player),
+                  child: player.current?.isAudio == true
+                      ? const SizedBox.expand()
+                      : _surface(player),
                 ),
               ),
               if (player.audioOnly)
-                const Positioned.fill(
+                Positioned.fill(
                   child: IgnorePointer(
                     child: ColoredBox(
                       color: Colors.black,
@@ -1233,15 +1254,38 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              Icons.headphones,
+                              player.current?.isAudio == true
+                                  ? Icons.music_note
+                                  : Icons.headphones,
                               size: 64,
                               color: Colors.white70,
                             ),
-                            SizedBox(height: 16),
+                            const SizedBox(height: 16),
                             Text(
-                              'Аудиорежим',
-                              style: TextStyle(color: Colors.white70),
+                              player.current?.isAudio == true
+                                  ? (player.current?.title ?? 'Музыка')
+                                  : 'Аудиорежим',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 20,
+                              ),
                             ),
+                            if (player.current?.isAudio == true) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                '${widget.item.title} · ${player.queueIndex + 1} из ${player.playbackOrder.length}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -1255,6 +1299,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                     enabled: _enabled,
                     fullscreen: _fullscreen,
                     visible:
+                        player.current?.isAudio == true ||
                         _controlsVisible ||
                         !player.state.playing ||
                         player.error != null,

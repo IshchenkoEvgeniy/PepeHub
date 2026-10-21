@@ -187,7 +187,7 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
     return Scaffold(
       bottomNavigationBar: const AudioPlayerFooter(),
       appBar: AppBar(
-        title: Text(widget.item?.title ?? 'Статистика видео'),
+        title: Text(widget.item?.title ?? 'Статистика медиа'),
         actions: [
           IconButton(
             tooltip: 'Цели и порог просмотра',
@@ -258,7 +258,7 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
                 ),
                 if ((result.modeTime[VideoActivityMode.audio] ?? 0) > 0)
                   _metric(
-                    'Прослушивание видео',
+                    'Прослушивание медиа',
                     pepeTime(result.modeTime[VideoActivityMode.audio]!),
                   ),
                 _metric('Воспроизведено материала', pepeTime(result.mediaMs)),
@@ -365,7 +365,9 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
               const SizedBox(height: 8),
             ],
             if (lessons.isEmpty)
-              const Text('Добавьте видео, чтобы появилась история занятий.'),
+              const Text(
+                'Добавьте видео или музыку, чтобы появилась история занятий.',
+              ),
             const SizedBox(height: 20),
             Text('По дням', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
@@ -447,7 +449,7 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Цели всей видеобиблиотеки',
+          'Цели всей медиатеки',
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 8),

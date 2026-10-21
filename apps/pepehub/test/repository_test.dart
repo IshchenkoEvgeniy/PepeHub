@@ -15,9 +15,10 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   late AppDatabase db;
   late Repository repository;
-  setUp(() {
+  setUp(() async {
     db = AppDatabase(NativeDatabase.memory());
     repository = Repository(db);
+    await repository.setCloudTracking(true);
   });
   tearDown(() async {
     await db.close();
@@ -48,6 +49,7 @@ void main() {
     final directory = await Directory.systemTemp.createTemp('pepehub-test-');
     final file = File('${directory.path}/library.sqlite');
     final first = AppDatabase(NativeDatabase(file));
+    await Repository(first).setCloudTracking(true);
     await Repository(first).addBook('Офлайн', 'Автор', 'audio');
     await first.close();
     final second = AppDatabase(NativeDatabase(file));

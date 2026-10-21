@@ -170,7 +170,7 @@ void main() {
         expect((await repo.record(asset.bookId))!.payload!['format'], 'audio');
       }
       expect((await repo.records('book')).length, 9);
-      expect(await repo.pendingCount(), 9);
+      expect(await repo.pendingCount(), 0);
     } finally {
       await db.close();
       await root.delete(recursive: true);

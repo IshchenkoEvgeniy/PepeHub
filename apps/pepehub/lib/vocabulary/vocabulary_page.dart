@@ -29,7 +29,14 @@ class _VocabularyPageState extends State<VocabularyPage> {
   @override
   void initState() {
     super.initState();
+    widget.repository.repository.externalChanges.addListener(_load);
     _load();
+  }
+
+  @override
+  void dispose() {
+    widget.repository.repository.externalChanges.removeListener(_load);
+    super.dispose();
   }
 
   Future<void> _load() async {

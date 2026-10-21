@@ -36,6 +36,96 @@ class LibraryRepository {
     return raw == null ? null : jsonDecode(raw) as Map<String, dynamic>;
   }
 
+  Future<void> receiveChanges(Map<String, dynamic> page) => mutate((
+    entries,
+  ) async {
+    final snapshot = await this.snapshot();
+    if (snapshot == null ||
+        snapshot['_indexId'] != page['indexId'] ||
+        page['cursor'] is! int ||
+        (page['cursor'] as int) < (snapshot['_cursor'] as int? ?? 0) ||
+        page['changes'] is! List ||
+        page['schema'] is! Map) {
+      throw const FormatException('Некорректный индекс библиотеки Obsidian');
+    }
+    final changes = page['changes'] as List;
+    if (changes.length > 128) {
+      throw const FormatException('Слишком большая страница Obsidian');
+    }
+    final decoded = <({String id, ObsidianLibraryItem? item})>[];
+    final ids = <String>{};
+    for (final raw in changes) {
+      if (raw is! Map ||
+          raw['id'] is! String ||
+          !ids.add(raw['id'] as String)) {
+        throw const FormatException('Некорректное изменение карточки Obsidian');
+      }
+      final item = raw['item'] == null
+          ? null
+          : ObsidianLibraryItem.fromJson(
+              Map<String, dynamic>.from(raw['item'] as Map),
+            );
+      if (item != null && item.id != raw['id']) {
+        throw const FormatException('ID карточки Obsidian не совпадает');
+      }
+      decoded.add((id: raw['id'] as String, item: item));
+    }
+    final remote = {
+      for (final item in snapshot['items'] as List)
+        (item as Map)['id'] as String: Map<String, dynamic>.from(item),
+    };
+    for (final change in decoded) {
+      final old = entries[change.id];
+      if (change.item == null) {
+        remote.remove(change.id);
+        if (old != null) {
+          entries[change.id] = old.operation != null
+              ? LibraryEntry(
+                  old.item,
+                  state: old.state,
+                  sourceBookId: old.sourceBookId,
+                  message: old.message,
+                  operation: old.operation,
+                )
+              : LibraryEntry(
+                  old.item,
+                  state: 'removed',
+                  sourceBookId: old.sourceBookId,
+                  message: 'Карточка больше не входит в библиотеку Obsidian.',
+                );
+        }
+      } else {
+        remote[change.id] = change.item!.toJson();
+        entries[change.id] = old?.operation != null
+            ? LibraryEntry(
+                old!.item,
+                state: old.state,
+                sourceBookId: old.sourceBookId,
+                message: old.message,
+                operation: old.operation,
+                remote: change.item,
+              )
+            : LibraryEntry(change.item!, sourceBookId: old?.sourceBookId);
+      }
+    }
+    final schema = Map<String, dynamic>.from(page['schema'] as Map);
+    if (schema['version'] != 1 ||
+        schema['fields'] is! List ||
+        schema['collections'] is! List) {
+      throw const FormatException('Некорректная схема Obsidian');
+    }
+    await repository.setMeta(
+      '$_key:schema',
+      jsonEncode({
+        ...snapshot,
+        ...schema,
+        'items': remote.values.toList(),
+        '_indexId': page['indexId'],
+        '_cursor': page['cursor'],
+      }),
+    );
+  });
+
   Future<void> receive(Map<String, dynamic> snapshot) =>
       mutate((entries) async {
         if (snapshot['version'] != 1 || snapshot['ready'] != true) return;

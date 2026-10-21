@@ -10,12 +10,17 @@ class MainActivity : AudioServiceActivity() {
         private val videoChannels = java.util.WeakHashMap<FlutterEngine, VideoFilesChannel>()
         private val videoWindowChannels = java.util.WeakHashMap<FlutterEngine, VideoWindowChannel>()
         private val peerChannels = java.util.WeakHashMap<FlutterEngine, PeerFilesChannel>()
+        private val peerNetworkChannels = java.util.WeakHashMap<FlutterEngine, PeerNetworkChannel>()
+        private val peerBackgroundChannels = java.util.WeakHashMap<FlutterEngine, PeerBackgroundChannel>()
+        private val updateChannels = java.util.WeakHashMap<FlutterEngine, UpdateChannel>()
     }
     private var folders: AudioFolderChannel? = null
     private var books: BookFileChannel? = null
     private var videos: VideoFilesChannel? = null
     private var videoWindow: VideoWindowChannel? = null
     private var peers: PeerFilesChannel? = null
+    private var peerBackground: PeerBackgroundChannel? = null
+    private var updates: UpdateChannel? = null
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState?.getBoolean("bookIntentConsumed") != true) books?.receive(intent)
@@ -30,6 +35,32 @@ class MainActivity : AudioServiceActivity() {
     }
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        updates = updateChannels[flutterEngine] ?: UpdateChannel(applicationContext, flutterEngine.dartExecutor.binaryMessenger).also { channel ->
+            updateChannels[flutterEngine] = channel
+            flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
+                override fun onPreEngineRestart() {}
+                override fun onEngineWillDestroy() { channel.dispose(); updateChannels.remove(flutterEngine) }
+            })
+        }
+        updates?.attach(this)
+        if (!peerBackgroundChannels.containsKey(flutterEngine)) {
+            val channel = PeerBackgroundChannel(this, flutterEngine.dartExecutor.binaryMessenger)
+            peerBackgroundChannels[flutterEngine] = channel
+            flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
+                override fun onPreEngineRestart() {}
+                override fun onEngineWillDestroy() { channel.dispose(); peerBackgroundChannels.remove(flutterEngine) }
+            })
+        }
+        peerBackground = peerBackgroundChannels[flutterEngine]
+        peerBackground?.attach(this)
+        if (!peerNetworkChannels.containsKey(flutterEngine)) {
+            val channel = PeerNetworkChannel(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
+            peerNetworkChannels[flutterEngine] = channel
+            flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
+                override fun onPreEngineRestart() {}
+                override fun onEngineWillDestroy() { channel.dispose(); peerNetworkChannels.remove(flutterEngine) }
+            })
+        }
         folders = channels[flutterEngine] ?: AudioFolderChannel(this, flutterEngine.dartExecutor.binaryMessenger).also { channel ->
             channels[flutterEngine] = channel
             flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
@@ -75,8 +106,17 @@ class MainActivity : AudioServiceActivity() {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) videoWindow?.reapply()
     }
+    override fun onResume() {
+        super.onResume()
+        updates?.onResume()
+    }
+    override fun onPause() {
+        updates?.onPause()
+        super.onPause()
+    }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
-        if (peers?.onActivityResult(requestCode, resultCode, data) != true &&
+        if (updates?.onActivityResult(requestCode) != true &&
+            peers?.onActivityResult(requestCode, resultCode, data) != true &&
             videos?.onActivityResult(requestCode, resultCode, data) != true &&
             folders?.onActivityResult(requestCode, resultCode, data) != true) {
             super.onActivityResult(requestCode, resultCode, data)
@@ -85,6 +125,9 @@ class MainActivity : AudioServiceActivity() {
     override fun onUserLeaveHint() {
         videoWindow?.onUserLeaveHint()
         super.onUserLeaveHint()
+    }
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        if (peerBackground?.onPermissions(requestCode, grantResults) != true) super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
     override fun onPictureInPictureModeChanged(inPictureInPicture: Boolean, configuration: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(inPictureInPicture, configuration)
@@ -100,6 +143,8 @@ class MainActivity : AudioServiceActivity() {
         videos?.detach(this)
         videoWindow?.detach(this)
         peers?.detach(this)
+        peerBackground?.detach(this)
+        updates?.detach(this)
         super.onDestroy()
     }
 }

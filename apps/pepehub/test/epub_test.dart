@@ -82,7 +82,7 @@ void main() {
       expect((await store.importEpub(XFile(file.path))).id, asset.id);
       expect(await file.readAsBytes(), original);
       expect((await repo.record(asset.bookId))!.payload!['format'], 'epub');
-      expect(await repo.pendingCount(), 1);
+      expect(await repo.pendingCount(), 0);
       await file.writeAsString('not a valid epub file');
       await expectLater(
         store.importEpub(XFile(file.path)),

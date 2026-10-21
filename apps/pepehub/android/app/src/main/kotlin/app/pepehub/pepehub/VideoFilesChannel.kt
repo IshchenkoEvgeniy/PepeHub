@@ -11,7 +11,7 @@ import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
 
-/** Persistent read-only video documents. No staging or whole-file copies. */
+/** Persistent read-only media documents. No staging or whole-file copies. */
 class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
     private val context = activity.applicationContext
     private var owner = java.lang.ref.WeakReference(activity)
@@ -21,7 +21,7 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
     private var pending: MethodChannel.Result? = null
     private var pendingFrame: ByteArray? = null
     @Volatile private var disposed = false
-    private val extensions = setOf("mp4", "mkv", "webm", "mov", "m4v", "avi", "mpeg", "mpg")
+    private val extensions = setOf("mp4", "mkv", "webm", "mov", "m4v", "avi", "mpeg", "mpg", "mp3", "m4a", "m4b", "aac", "flac", "wav", "ogg", "opus", "wma", "aiff", "aif")
 
     fun attach(activity: Activity) { owner = java.lang.ref.WeakReference(activity) }
     fun detach(activity: Activity) { if (owner.get() === activity) owner.clear() }
@@ -59,7 +59,7 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
             if (call.method != "pickFiles" && call.method != "pickFolder" && call.method != "pickSubtitle" && call.method != "saveFrame") {
                 result.notImplemented()
             } else if (pending != null) {
-                result.error("busy", "Выбор видео уже открыт", null)
+                result.error("busy", "Выбор медиа уже открыт", null)
             } else {
                 try {
                     val folder = call.method == "pickFolder"
@@ -75,13 +75,14 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                         if (folder) addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION) else {
                             addCategory(Intent.CATEGORY_OPENABLE)
-                            type = if (saveFrame) "image/png" else if (subtitle) "*/*" else "video/*"
+                            type = if (saveFrame) "image/png" else "*/*"
                             if (saveFrame) {
                                 val name = (call.argument<String>("name") ?: "PepeHub-frame.png").replace(Regex("[\\\\/\\x00]"), "_").take(150)
                                 putExtra(Intent.EXTRA_TITLE, name)
                                 addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                             }
                             if (subtitle) putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("text/plain", "text/vtt", "application/x-subrip", "text/x-ass", "application/octet-stream"))
+                            if (!subtitle && !saveFrame) putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("video/*", "audio/*", "application/ogg", "application/x-flac"))
                             putExtra(Intent.EXTRA_ALLOW_MULTIPLE, !subtitle && !saveFrame)
                         }
                     }
@@ -136,12 +137,12 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
                         for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
                     }
                     if (uris.isEmpty()) data.data?.let { uris.add(it) }
-                    check(uris.size in 1..10000) { "Выберите от 1 до 10000 видео" }
+                    check(uris.size in 1..10000) { "Выберите от 1 до 10000 медиафайлов" }
                     val files = uris.distinct().map { uri ->
                         persist(uri)
-                        mapOf("uri" to uri.toString(), "name" to name(uri), "identity" to identity(uri))
+                        mapOf("uri" to uri.toString(), "name" to name(uri), "audio" to (context.contentResolver.getType(uri)?.startsWith("audio/") == true), "identity" to identity(uri))
                     }
-                    response = mapOf("title" to if (files.size == 1) files[0]["name"].toString().substringBeforeLast('.') else "Новый курс", "files" to files)
+                    response = mapOf("title" to if (files.size == 1) files[0]["name"].toString().substringBeforeLast('.') else "Новая подборка", "files" to files)
                 }
                 main.post {
                     pending = null
@@ -167,7 +168,7 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst() && !cursor.isNull(0)) return cursor.getString(0)
         }
-        return "Видео"
+        return "Медиа"
     }
 
     private fun scan(tree: Uri): Map<String, Any?> {
@@ -181,14 +182,14 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
                 while (cursor.moveToNext()) {
                     check(++entries <= 50000) { "В папке больше 50000 элементов" }
                     val childId = cursor.getString(0)
-                    val title = cursor.getString(1) ?: "Видео"
+                    val title = cursor.getString(1) ?: "Медиа"
                     val path = if (prefix.isEmpty()) title else "$prefix/$title"
                     if (cursor.getString(2) == Docs.Document.MIME_TYPE_DIR) {
                         if (!title.equals(".pepehub", ignoreCase = true)) visit(childId, path, depth + 1)
                     } else if (title.substringAfterLast('.', "").lowercase() in extensions) {
                         val uri = Docs.buildDocumentUriUsingTree(tree, childId)
                         files.add(mapOf("uri" to uri.toString(), "name" to path, "identity" to identity(uri)))
-                        check(files.size <= 10000) { "В папке больше 10000 видео" }
+                        check(files.size <= 10000) { "В папке больше 10000 медиафайлов" }
                     }
                 }
             } ?: error("Папка недоступна")

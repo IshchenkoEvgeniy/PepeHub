@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../sync/peer/app_sync_usage.dart';
+
 import 'reader_routes.dart';
 
 import 'dart:convert';
@@ -73,9 +75,22 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     },
   );
   String get positionKey => 'pdf:${widget.asset.hash}';
+  void Function()? _releaseSync;
   @override
   void initState() {
     super.initState();
+    final releasePosition = AppSyncUsage.hold(
+      widget.repository.db,
+      'p:reader:${widget.asset.hash}',
+    );
+    final releaseNotes = AppSyncUsage.hold(
+      widget.repository.db,
+      'reading-notes',
+    );
+    _releaseSync = () {
+      releasePosition();
+      releaseNotes();
+    };
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -206,7 +221,10 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     if (fullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
-    activity?.close();
+    Future.wait<void>([writes, if (activity != null) activity!.close()]).then(
+      (_) => _releaseSync?.call(),
+      onError: (Object _, StackTrace _) => _releaseSync?.call(),
+    );
     // Wait for text extraction before releasing the native document.
     initial
         .then<void>((_) {}, onError: (Object _, StackTrace _) {})

@@ -188,7 +188,7 @@ void main() {
     await tester.tap(find.text('Сохранить'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
-      find.text('Цели всей видеобиблиотеки'),
+      find.text('Цели всей медиатеки'),
       350,
       scrollable: rootScroll,
     );

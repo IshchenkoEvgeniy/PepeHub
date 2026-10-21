@@ -1,5 +1,6 @@
 import 'audio_journal.dart';
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -142,11 +143,38 @@ class AudioSidecarWriter {
   final AssetStore assets;
   final Map<String, DateTime> _last = {};
   AudioSidecarWriter(this.assets);
-  Future<void> _writes = Future.value();
+  final Map<String, _SidecarRequest> _pending = {};
+  bool _running = false;
   Future<void> update(String bookId, {bool force = false}) {
-    final next = _writes.then((_) => _update(bookId, force: force));
-    _writes = next.catchError((Object _) {});
-    return next;
+    final existing = _pending[bookId];
+    if (existing != null) {
+      existing.force = existing.force || force;
+      return existing.done.future;
+    }
+    final request = _SidecarRequest(force);
+    _pending[bookId] = request;
+    if (!_running) {
+      _running = true;
+      unawaited(Future<void>(_drain));
+    }
+    return request.done.future;
+  }
+
+  Future<void> _drain() async {
+    try {
+      while (_pending.isNotEmpty) {
+        final id = _pending.keys.first;
+        final request = _pending.remove(id)!;
+        try {
+          await _update(id, force: request.force);
+          request.done.complete();
+        } catch (error, stack) {
+          request.done.completeError(error, stack);
+        }
+      }
+    } finally {
+      _running = false;
+    }
   }
 
   Future<void> _update(String bookId, {bool force = false}) async {
@@ -165,6 +193,12 @@ class AudioSidecarWriter {
       _last[root.key] = DateTime.now();
     }
   }
+}
+
+class _SidecarRequest {
+  bool force;
+  final done = Completer<void>();
+  _SidecarRequest(this.force);
 }
 
 Map<String, dynamic> parseAudioSnapshot(String text) {

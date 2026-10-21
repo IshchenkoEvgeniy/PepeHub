@@ -9,6 +9,12 @@ import '../../ui/audio_mini_player.dart';
 import 'peer_files.dart';
 import 'peer_models.dart';
 import 'peer_service.dart';
+import 'peer_diagnostics.dart';
+import 'peer_sync_log_page.dart';
+import 'peer_deletions_page.dart';
+import 'app_sync_review_page.dart';
+import 'peer_folder_files_page.dart';
+import 'peer_history_page.dart';
 
 class PeerSyncPage extends StatefulWidget {
   final PeerSyncService service;
@@ -31,9 +37,10 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
     try {
       await action();
     } catch (e) {
+      service.recordFailure(e);
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+            .showSnackBar(SnackBar(content: Text(peerFailureDescription(e))));
       }
     } finally {
       if (mounted) setState(() => working = false);
@@ -45,6 +52,7 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
     String initial,
     String label, {
     int lines = 1,
+    bool obscure = false,
   }) async {
     final controller = TextEditingController(text: initial);
     final result = await showDialog<String>(
@@ -57,6 +65,7 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
             controller: controller,
             autofocus: true,
             maxLines: lines,
+            obscureText: obscure,
             decoration: InputDecoration(labelText: label),
           ),
         ),
@@ -147,6 +156,38 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
     }
   }
 
+  Future<void> _address(PeerDevice peer) async {
+    final host = await _text(
+      'Адрес устройства',
+      peer.host,
+      'IP-адрес или имя компьютера',
+    );
+    if (host == null || !mounted) return;
+    final port = await _text('Порт устройства', '${peer.port}', 'TCP-порт');
+    if (port == null) return;
+    await service.updateAddress(peer, host, int.tryParse(port.trim()) ?? 0);
+  }
+
+  Future<void> _relay() async {
+    final url = await _text(
+      'Ретранслятор для интернета',
+      service.relayUrl,
+      'wss://сервер/v1/relay; пусто — выключить',
+    );
+    if (url == null || !mounted) return;
+    if (url.trim().isEmpty) {
+      await service.configureRelay('', null);
+      return;
+    }
+    final token = await _text(
+      'Ключ доступа сервера',
+      '',
+      'Пусто — оставить сохранённый ключ',
+      obscure: true,
+    );
+    if (token != null) await service.configureRelay(url, token);
+  }
+
   Future<String?> _pick() async {
     if (Platform.isAndroid) {
       return (await peerFilesChannel.invokeMapMethod<String, dynamic>(
@@ -160,7 +201,7 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
   Future<void> _add({PeerDevice? peer, Map<String, dynamic>? offer}) async {
     if (!await _confirm(
       'Общая папка',
-      'Выберите отдельную папку для обмена. При связывании её содержимое объединится с папкой второго устройства. Изменения и удаления также передаются; предыдущие версии файлов сохраняются.',
+      'Выберите отдельную папку для обмена. Её содержимое объединится с папкой второго устройства. Входящее удаление файла потребует подтверждения на принимающем устройстве.',
     )) {
       return;
     }
@@ -170,11 +211,123 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
         offer?['name'] as String? ??
         await _text('Название папки', '', 'Например: Английский');
     if (label == null) return;
+    final library = await _libraryMode('all');
+    if (library == null) return;
+    final download = await _downloads();
+    if (download == null) return;
     await service.addFolder(
       root,
       label,
       id: offer?['id'] as String?,
       sharedWith: peer == null ? {} : {peer.id},
+      library: library,
+      download: download,
+    );
+    if (download == 'selected' && mounted) await _files(service.folders.last);
+  }
+
+  Future<void> _files(PeerFolder folder) => Navigator.push<void>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => PeerFolderFilesPage(service: service, folder: folder),
+    ),
+  );
+  Future<String?> _downloads() async {
+    var value = 'none';
+    return showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Что скачивать на это устройство?'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Для большого курса можно выбрать отдельные уроки. Существующие локальные файлы остаются на месте.',
+                ),
+                for (final entry in const {
+                  'none': 'Только прогресс, заметки и другие данные',
+                  'selected': 'Выбранные файлы',
+                  'all': 'Всю папку целиком',
+                }.entries)
+                  ListTile(
+                    title: Text(entry.value),
+                    leading: Icon(
+                      value == entry.key
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                    ),
+                    onTap: () => update(() => value = entry.key),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, value),
+              child: const Text('Продолжить'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static const _libraryLabels = {
+    'none': 'Не подключать к библиотеке',
+    'all': 'По содержимому: книги, аудио и видео',
+    'books': 'Книги',
+    'audio': 'Аудиокниги',
+    'video': 'Медиа',
+  };
+  Future<String?> _libraryMode(String initial) async {
+    var selected = initial;
+    return showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Автоподключение к библиотеке'),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Подключать полученные файлы прямо из общей папки и обновлять список после обмена. Дополнительная копия медиа в приложении не создаётся.',
+                  ),
+                  for (final entry in _libraryLabels.entries)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        selected == entry.key
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                      ),
+                      title: Text(entry.value),
+                      onTap: () => update(() => selected = entry.key),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, selected),
+              child: const Text('Готово'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -279,7 +432,21 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
       final disabled = working || service.busy;
       return Scaffold(
         bottomNavigationBar: const AudioPlayerFooter(),
-        appBar: AppBar(title: const Text('Устройства и общие папки')),
+        appBar: AppBar(
+          title: const Text('Устройства и общие папки'),
+          actions: [
+            IconButton(
+              tooltip: 'Журнал синхронизации',
+              icon: const Icon(Icons.receipt_long_outlined),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => PeerSyncLogPage(journal: service.journal),
+                ),
+              ),
+            ),
+          ],
+        ),
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 840),
@@ -292,7 +459,7 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Без обязательного аккаунта и облака. В этой версии передаются файлы выбранных папок по локальной сети, пока оба приложения открыты. Прогресс, статистика и карточки приложения пока не переносятся.',
+                  'Без обязательного аккаунта и облака. Файлы выбранных папок передаются по локальной сети, пока оба приложения открыты. Обмен прогрессом, заметками, статистикой и Anki включается отдельно для каждого устройства.',
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -307,6 +474,52 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
                   Text(
                     'Адреса: ${service.addresses.join(', ')} · порт ${service.port}',
                   ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Автоматически начинать обмен'),
+                  subtitle: const Text(
+                    'Только при изменениях. В ручном режиме входящий обмен с разрешённых устройств остаётся доступен.',
+                  ),
+                  value: service.autoSync,
+                  onChanged: disabled
+                      ? null
+                      : (value) => _run(() => service.setAutoSync(value)),
+                ),
+                if (Platform.isAndroid) ...[
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Фоновый обмен данными приложения'),
+                    subtitle: const Text(
+                      'Android назначает задания примерно от 15 минут. Медиафайлы в этих заданиях не скачиваются. После принудительной остановки откройте приложение.',
+                    ),
+                    value: service.backgroundSync,
+                    onChanged: disabled
+                        ? null
+                        : (value) => _run(
+                            () => service.configureBackground(value: value),
+                          ),
+                  ),
+                  if (service.backgroundSync)
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Фон только в сети без тарификации'),
+                      value: service.backgroundWifiOnly,
+                      onChanged: disabled
+                          ? null
+                          : (value) => _run(
+                              () =>
+                                  service.configureBackground(wifiOnly: value),
+                            ),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        disabled || !service.enabled || service.devices.isEmpty
+                        ? null
+                        : () => _run(service.transferInBackground),
+                    icon: const Icon(Icons.sync),
+                    label: const Text('Передать файлы с уведомлением'),
+                  ),
+                ],
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(
@@ -332,6 +545,35 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
                       service.error!,
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                PeerSyncStatusPanel(journal: service.journal),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.public),
+                  title: const Text('Обмен через интернет'),
+                  subtitle: Text(
+                    service.relayUrl.isEmpty
+                        ? 'Ретранслятор выключен. Можно подключить свой сервер; оба устройства должны быть онлайн.'
+                        : 'Ретранслятор настроен. Укажите тот же сервер и ключ на втором устройстве.',
+                  ),
+                  trailing: const Icon(Icons.settings_outlined),
+                  onTap: disabled ? null : () => _run(_relay),
+                ),
+                if (service.pendingDeletions.isNotEmpty)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.delete_outline),
+                    title: Text(
+                      'Подтвердить удаления (${service.pendingDeletions.length})',
+                    ),
+                    subtitle: const Text('Файлы сохраняются до вашего решения'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => PeerDeletionsPage(service: service),
                       ),
                     ),
                   ),
@@ -385,6 +627,37 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                           Text('${peer.host}:${peer.port}'),
+                          if (service.relayUrl.isNotEmpty)
+                            Text(
+                              service.relayReady(peer.id)
+                                  ? 'Через интернет: доступно'
+                                  : 'Через интернет: ожидание соединения',
+                            ),
+                          const Text(
+                            'Адрес обновляется автоматически в локальной сети; сопряжение сохраняется.',
+                          ),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Данные приложения'),
+                            subtitle: const Text(
+                              'Прогресс связанных медиа, заметки, статистика, Anki, подборки и общие настройки. Включите на обоих устройствах. Пароли и локальные пути не передаются.',
+                            ),
+                            value: peer.applicationData,
+                            onChanged: disabled
+                                ? null
+                                : (value) => _run(() async {
+                                    if (!value ||
+                                        await _confirm(
+                                          'Передавать данные приложения?',
+                                          'Разрешает этому устройству доступ к текстовым данным профиля, включая личные заметки и карточки Anki. Для переноса привязанных данных медиа нужно сопоставить источники. Доступ к файлам определяется общими папками отдельно.',
+                                        )) {
+                                      await service.shareApplication(
+                                        peer,
+                                        value,
+                                      );
+                                    }
+                                  }),
+                          ),
                           Wrap(
                             spacing: 8,
                             children: [
@@ -400,6 +673,12 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
                                     ? null
                                     : () => _run(() => _offers(peer)),
                                 child: const Text('Принять папку'),
+                              ),
+                              TextButton(
+                                onPressed: disabled || !service.enabled
+                                    ? null
+                                    : () => _run(() => _address(peer)),
+                                child: const Text('Изменить адрес'),
                               ),
                               TextButton(
                                 onPressed: working
@@ -425,8 +704,20 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
                   'Общие папки',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
+                TextButton.icon(
+                  onPressed: disabled || !service.loaded
+                      ? null
+                      : () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AppSyncReviewPage(service: service),
+                          ),
+                        ),
+                  icon: const Icon(Icons.merge_type),
+                  label: const Text('Спорные и ожидающие данные'),
+                ),
                 const Text(
-                  'Автоматическая проверка раз в минуту. На устройствах могут быть разные пути к одной общей папке.',
+                  'Windows отслеживает изменения папок; контрольная проверка — раз в час. Android SAF и папки без наблюдения проверяются раз в 5 минут. Неизменившиеся файлы не перечитываются. На устройствах могут быть разные пути к одной общей папке.',
                 ),
                 const SizedBox(height: 8),
                 Align(
@@ -460,9 +751,68 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
                                 ? 'На паузе'
                                 : 'Доступ: ${folder.devices.length} устройств',
                           ),
+                          Text(
+                            'Автоподключение: ${_libraryLabels[folder.library]}',
+                          ),
+                          Text(
+                            folder.history.enabled
+                                ? 'История: ${folder.history.maxDays} дней · ${peerHistorySize(folder.history.maxBytes)}'
+                                : 'История версий: выключена',
+                          ),
+                          Text(
+                            'Загрузка: ${folder.download == 'all'
+                                ? 'вся папка'
+                                : folder.download == 'selected'
+                                ? 'выбранные файлы'
+                                : 'только данные приложения'}',
+                          ),
                           Wrap(
                             spacing: 8,
                             children: [
+                              TextButton(
+                                onPressed: disabled
+                                    ? null
+                                    : () => _files(folder),
+                                child: const Text('Выбрать файлы'),
+                              ),
+                              TextButton(
+                                onPressed: disabled
+                                    ? null
+                                    : () => Navigator.push<void>(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => PeerHistoryPage(
+                                            service: service,
+                                            folder: folder,
+                                          ),
+                                        ),
+                                      ),
+                                child: const Text('История и очистка'),
+                              ),
+                              TextButton(
+                                onPressed: disabled
+                                    ? null
+                                    : () => _run(() async {
+                                        final library = await _libraryMode(
+                                          folder.library,
+                                        );
+                                        if (library != null) {
+                                          await service.configureFolder(
+                                            folder,
+                                            library: library,
+                                          );
+                                        }
+                                      }),
+                                child: const Text('Автоподключение'),
+                              ),
+                              TextButton(
+                                onPressed: disabled
+                                    ? null
+                                    : () => _run(
+                                        () => service.verifyFolder(folder),
+                                      ),
+                                child: const Text('Проверить всё содержимое'),
+                              ),
                               TextButton(
                                 onPressed: disabled
                                     ? null

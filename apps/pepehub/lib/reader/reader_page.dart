@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../sync/peer/app_sync_usage.dart';
+
 import 'reader_routes.dart';
 
 import 'dart:convert';
@@ -169,11 +171,24 @@ class _ReaderPageState extends State<ReaderPage>
   @override
   void initState() {
     super.initState();
+    final releasePosition = AppSyncUsage.hold(
+      widget.repository.db,
+      'p:reader:${widget.asset.hash}',
+    );
+    final releaseNotes = AppSyncUsage.hold(
+      widget.repository.db,
+      'reading-notes',
+    );
+    _releaseSync = () {
+      releasePosition();
+      releaseNotes();
+    };
     WidgetsBinding.instance.addObserver(this);
     _load();
   }
 
   bool routeVisible = true;
+  void Function()? _releaseSync;
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -201,8 +216,10 @@ class _ReaderPageState extends State<ReaderPage>
     }
     WidgetsBinding.instance.removeObserver(this);
     debounce?.cancel();
-    _save();
-    activity?.close();
+    Future.wait<void>([_save(), if (activity != null) activity!.close()]).then(
+      (_) => _releaseSync?.call(),
+      onError: (Object _, StackTrace _) => _releaseSync?.call(),
+    );
     super.dispose();
   }
 

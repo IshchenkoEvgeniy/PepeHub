@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/main.dart';
+import 'package:pepehub/updates/update_page.dart';
 import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/media/audio_controller.dart';
 import 'package:pepehub/media/audio_player_scope.dart';
@@ -200,6 +201,29 @@ void main() {
               find.byType(CircularProgressIndicator).evaluate().isEmpty,
         );
         expect(find.byKey(const ValueKey('audio-mini-player')), findsOneWidget);
+        if (find.text('Обновление приложения').evaluate().isEmpty) {
+          await tester.scrollUntilVisible(
+            find.text('Обновление приложения'),
+            350,
+            scrollable: find.byType(Scrollable).first,
+          );
+        }
+        await Scrollable.ensureVisible(
+          tester.element(find.text('Обновление приложения')),
+          alignment: .5,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Обновление приложения'));
+        await ready(
+          tester,
+          () =>
+              find.byType(UpdatePage).evaluate().isNotEmpty &&
+              find.byType(CircularProgressIndicator).evaluate().isEmpty,
+        );
+        expect(find.byKey(const ValueKey('audio-mini-player')), findsOneWidget);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        expect(find.text('Аккаунт'), findsNothing);
         if (find.text('Устройства и общие папки').evaluate().isEmpty) {
           await tester.scrollUntilVisible(
             find.text('Устройства и общие папки'),

@@ -51,7 +51,7 @@ class ShelfPanel extends StatelessWidget {
 enum PepeSection {
   books('Книги', Icons.menu_book_outlined, Icons.menu_book),
   audio('Аудиокниги', Icons.headphones_outlined, Icons.headphones),
-  video('Видео', Icons.ondemand_video_outlined, Icons.ondemand_video),
+  video('Медиа', Icons.perm_media_outlined, Icons.perm_media),
   library('Библиотека', Icons.local_library_outlined, Icons.local_library),
   recommendations('Рекомендации', Icons.star_outline, Icons.star_rounded),
   statistics('Статистика', Icons.bar_chart_outlined, Icons.bar_chart_rounded);
@@ -517,7 +517,7 @@ class ShelfStatus extends StatelessWidget {
     final palette = ShelfPalette.of(context);
     final color = switch (status) {
       'active' => palette.accent,
-      'finished' => palette.muted,
+      'finished' || 'deleted' => palette.muted,
       _ => palette.accentSoft,
     };
     return Container(
@@ -530,6 +530,7 @@ class ShelfStatus extends StatelessWidget {
         switch (status) {
           'active' => 'В процессе',
           'finished' => 'Завершено',
+          'deleted' => 'Файл удалён',
           _ => 'В планах',
         },
         style: TextStyle(

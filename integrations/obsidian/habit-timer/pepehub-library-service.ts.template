@@ -14,6 +14,12 @@ export class PepeHubLibraryService {
     private activity: PepeHubActivityService;
     private covers: PepeHubCoverService;
     private notes: PepeHubNoteService;
+    private cached = new Map<string,{stamp:string;item:MetadataItem|null}>();
+    private unwatch: (()=>void)|null=null;
+    private schemaKey='';
+    private published:MetadataSnapshot|null=null;
+    private index:{indexId:string;cursor:number}|null=null;
+    private connectionKey='';
     constructor(private plugin: HabitTimerPlugin) {
         this.notes = new PepeHubNoteService(plugin);
         this.activity = new PepeHubActivityService(plugin);
@@ -26,10 +32,17 @@ export class PepeHubLibraryService {
     }
     start(): void {
         this.stop();
+        this.cached.clear();
+        const vault=this.plugin.app.vault;
+        if(typeof vault.on==='function'&&typeof vault.offref==='function') {
+            const invalidate=(file:{path:string})=>{if(file.path.toLowerCase().endsWith('.md'))this.cached.delete(file.path);else this.cached.clear();};
+            const refs=[vault.on('modify',invalidate),vault.on('create',invalidate),vault.on('delete',invalidate),vault.on('rename',(file,old)=>{this.cached.delete(old);invalidate(file);})];
+            this.unwatch=()=>refs.forEach(ref=>vault.offref(ref));
+        }
         void this.sync();
         this.timer = window.setInterval(() => void this.sync(), 30000);
     }
-    stop(): void { if (this.timer !== null) window.clearInterval(this.timer); this.timer = null; }
+    stop(): void { if (this.timer !== null) window.clearInterval(this.timer); this.timer = null; this.unwatch?.(); this.unwatch=null; }
     private async request(path: string, body?: unknown, connection?: {url:string;token:string}): Promise<unknown> {
         const base = (connection?.url ?? this.plugin.settings.cloudflareWorkerUrl ?? '').trim().replace(/\/$/, '');
         const url = new URL(base);
@@ -40,13 +53,15 @@ export class PepeHubLibraryService {
             method: body === undefined ? 'GET' : 'POST',
             headers: { Authorization: `Bearer ${connection?.token ?? this.plugin.settings.cloudflareApiToken}`, 'Content-Type': 'application/json' },
             ...(body === undefined ? {} : { body: JSON.stringify(body) }), throw: false });
-        if (response.status < 200 || response.status >= 300) throw new Error(`PepeHub library API: HTTP ${response.status}`);
+        if (response.status < 200 || response.status >= 300) throw Object.assign(new Error(`PepeHub library API: HTTP ${response.status}`),{status:response.status});
         return response.json as unknown;
     }
     async sync(): Promise<void> {
         if (this.syncing || !this.plugin.settings.cloudflareWorkerUrl?.trim() || !this.plugin.settings.cloudflareApiToken?.trim()) return;
         this.syncing = true;
         const connection={url:this.plugin.settings.cloudflareWorkerUrl || '', token:this.plugin.settings.cloudflareApiToken || ''};
+        const scope=`${connection.url}\n${connection.token}`;
+        if(this.connectionKey!==scope) {this.connectionKey=scope;this.published=null;this.index=null;this.cached.clear();}
         this.covers.configure(connection);
         const request=(path:string,body?:unknown)=>this.request(path,body,connection);
         try {
@@ -63,12 +78,32 @@ export class PepeHubLibraryService {
                 }
             }
             const snapshot = await this.snapshot();
-            await request('/snapshot', { snapshot, receipts });
+            await this.publish(snapshot,receipts,request);
             await this.activity.sync(snapshot, request, `${connection.url.trim().replace(/\/+$/,'')}\n${connection.token}`);
             await this.notes.sync(snapshot, request, `${connection.url.trim().replace(/\/+$/,'')}\n${connection.token}`);
             if (receipts.some(receipt => receipt.status === 'applied')) this.plugin.stateManager.refreshAllMedia();
         } catch (error) { console.error('PepeHub library sync:', error); }
         finally { this.syncing = false; }
+    }
+    private async publish(snapshot:MetadataSnapshot,receipts:MetadataReceipt[],request:(path:string,body?:unknown)=>Promise<unknown>):Promise<void> {
+        const before=new Map(this.published?.items.map(item=>[item.id,item])??[]),after=new Map(snapshot.items.map(item=>[item.id,item]));
+        const changes=[...snapshot.items.filter(item=>JSON.stringify(before.get(item.id))!==JSON.stringify(item)).map(item=>({id:item.id,item:item as MetadataItem|null})),...[...before.keys()].filter(id=>!after.has(id)).map(id=>({id,item:null as MetadataItem|null}))];
+        const schemaChanged=!this.published||JSON.stringify([snapshot.fields,snapshot.collections])!==JSON.stringify([this.published.fields,this.published.collections]);
+        if(this.published&&!changes.length&&!schemaChanged&&!receipts.length)return;
+        const accept=(value:unknown)=>{const v=value as {indexId?:string;cursor?:number};if(validId(v?.indexId)&&Number.isSafeInteger(v.cursor)&&(v.cursor??-1)>=0)this.index={indexId:v.indexId,cursor:v.cursor!};else this.index=null;};
+        if(!this.index||!this.published) {accept(await request('/snapshot',{snapshot,receipts}));this.published=structuredClone(snapshot);return;}
+        try {
+            // Bound both item count and encoded bytes. A failed page never
+            // acknowledges the remaining changes or pending operations.
+            const pages:Array<typeof changes>=[];let page:typeof changes=[],size=0;
+            for(const change of changes) {const bytes=new TextEncoder().encode(JSON.stringify(change)).length;if(bytes>1400000)throw new Error('PepeHub metadata item exceeds publication limit');if(page.length&&(page.length>=128||size+bytes>1400000)){pages.push(page);page=[];size=0;}page.push(change);size+=bytes;}
+            if(page.length||!pages.length)pages.push(page);
+            for(let n=0;n<pages.length;n++) {
+                accept(await request('/delta',{version:1,...this.index,changes:pages[n],fields:snapshot.fields,collections:snapshot.collections,receipts:n===pages.length-1?receipts:[]}));
+                if(!this.index)throw new Error('PepeHub incremental acknowledgement is missing');
+            }
+            this.published=structuredClone(snapshot);
+        }catch(error){this.index=null;throw error;}
     }
     private read(content: string): Record<string, JsonValue> {
         const info = getFrontMatterInfo(content);
@@ -99,10 +134,17 @@ export class PepeHubLibraryService {
     }
     private async snapshot(): Promise<MetadataSnapshot> {
         const items: MetadataItem[] = [], used = new Set<string>();
+        const schemaKey=JSON.stringify([this.plugin.settings.libraryPropertyAliases,this.plugin.settings.mediaCollections]);
+        if(this.schemaKey!==schemaKey){this.cached.clear();this.schemaKey=schemaKey;}
+        const seen=new Set<string>();
         for (const file of this.plugin.app.vault.getMarkdownFiles().sort((a, b) => a.path.localeCompare(b.path))) {
+            seen.add(file.path);
+            const stamp=`${file.stat.mtime}:${file.stat.size}`;
+            const cache=this.unwatch&&Number.isFinite(file.stat.size)?this.cached.get(file.path):null;
+            if(cache?.stamp===stamp&&(!cache.item||!used.has(cache.item.id))){if(cache.item){items.push(cache.item);used.add(cache.item.id);}continue;}
             const fm = this.read(await this.plugin.app.vault.read(file));
             const collectionId = this.collection(file, fm);
-            if (!collectionId) continue;
+            if (!collectionId) {this.cached.set(file.path,{stamp,item:null});continue;}
             let id = fm[ID_PROPERTY];
             if (!validId(id) || used.has(id)) {
                 id = crypto.randomUUID();
@@ -116,10 +158,13 @@ export class PepeHubLibraryService {
             let coverAsset=null;
             try {coverAsset=await this.covers.resolve(fm[this.key(fm,'cover')],file.path);}catch(error){console.warn(`PepeHub cover sync: ${file.path}`,error);}
             const format = String(fm[this.key(fm, 'format')] || '');
-            items.push({ id, path: file.path, collectionId,
+            const item:MetadataItem={ id, path: file.path, collectionId,
                 mediaType: /audio|аудио/i.test(`${collectionId} ${format}`) ? 'audiobook' : 'book',
-                modifiedAt: file.stat.mtime, values, fields, coverAsset });
+                modifiedAt: file.stat.mtime, values, fields, coverAsset };
+            items.push(item);
+            if(stamp===`${file.stat.mtime}:${file.stat.size}`)this.cached.set(file.path,{stamp,item});else this.cached.delete(file.path);
         }
+        for(const path of this.cached.keys())if(!seen.has(path))this.cached.delete(path);
         return { version: 1, ready: true, items, fields: this.fields({}),
             collections: this.plugin.settings.mediaCollections.filter(c => c.enabled && (c.id === 'book' || /audio|аудио/i.test(c.id)))
                 .map(c => ({ id: c.id, title: c.id, mediaType: /audio|аудио/i.test(c.id) ? 'audiobook' : 'book' })) };

@@ -2,6 +2,7 @@ import '../audio/book_timeline.dart';
 import '../audio/audio_journal.dart';
 import '../audio/m4b_chapters.dart';
 import '../audio/audio_sidecar.dart';
+import '../audio/audio_resume.dart';
 
 import 'dart:async';
 import 'dart:collection';
@@ -27,7 +28,20 @@ import 'shared_media_handler.dart';
 
 class AudioController extends BaseAudioHandler with ChangeNotifier {
   final AssetStore assets;
-  final AudioPlayer player;
+  AudioPlayer _player;
+  AudioPlayer get player => _player;
+  final AudioPlayer Function()? playerFactory;
+  final Duration backendTimeout;
+  final AudioSidecarWriter? sidecarWriter;
+  final List<StreamSubscription<dynamic>> _playerSubscriptions = [];
+  bool _backendUnresponsive = false;
+  AudioProgress? _commandCheckpoint, _recoveryProgress, _lastObservedProgress;
+  final DateTime Function() now;
+  final AudioPlayer Function()? probeFactory;
+  final Timer Function(Duration, void Function(Timer)) periodic;
+  final int Function()? elapsedMilliseconds;
+  int get _elapsedMs =>
+      elapsedMilliseconds?.call() ?? monotonic.elapsedMilliseconds;
   late final systemHandler = SharedMediaHandler(this);
   Future<void> Function()? beforeBookPlayback;
   final Stopwatch monotonic = Stopwatch()..start();
@@ -84,11 +98,13 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
           if (_closed || generation != _durationGeneration) return;
           scanningDurations = true;
           durationError = '';
-          notifyListeners();
-          final probe = AudioPlayer(
-            handleInterruptions: false,
-            handleAudioSessionActivation: false,
-          );
+          _notify();
+          final probe =
+              probeFactory?.call() ??
+              AudioPlayer(
+                handleInterruptions: false,
+                handleAudioSessionActivation: false,
+              );
           final failures = <String>[];
           try {
             for (final track in tracks) {
@@ -107,20 +123,23 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
                   await audioLibrary.saveDuration(track.id, length);
                   if (_closed || generation != _durationGeneration) break;
                   _durations[track.id] = length;
-                  notifyListeners();
+                  _notify();
                 }
               } catch (_) {
                 failures.add(track.filename);
               }
             }
           } finally {
-            await probe.dispose();
+            await probe
+                .dispose()
+                .timeout(const Duration(seconds: 1))
+                .catchError((Object _) {});
             if (!_closed && generation == _durationGeneration) {
               scanningDurations = false;
               durationError = failures.isEmpty
                   ? ''
                   : 'Не определена длительность файлов: ${failures.length}. Можно повторить проверку.';
-              notifyListeners();
+              _notify();
             }
           }
         })
@@ -128,7 +147,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
           if (!_closed && generation == _durationGeneration) {
             scanningDurations = false;
             durationError = 'Не удалось проверить длительности: $e';
-            notifyListeners();
+            _notify();
           }
         });
     return _durationWork;
@@ -146,16 +165,30 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   });
 
   Future<void> _commands = Future.value();
-  Future<void> _command(Future<void> Function() action) {
-    final next = _commands.then((_) => action());
+  Future<void> _command(
+    Future<void> Function() action, {
+    bool duringShutdown = false,
+    bool recoverBackend = true,
+  }) {
+    final next = _commands.then((_) async {
+      if (_closed && !duringShutdown) return;
+      if (_backendUnresponsive && !_closed && recoverBackend) {
+        await _recoverBackend();
+      }
+      _commandCheckpoint = _locator == null || current == null
+          ? null
+          : AudioProgress(_currentLocator(), speed);
+      await action();
+    });
     _commands = next.catchError((Object e) {
       error = '$e';
-      notifyListeners();
+      if (!_closed) _notify();
     });
     return _commands;
   }
 
   AudioLocator? _locator;
+  String? get progressEditionId => _locator?.editionId;
   late final AudioLibraryRepository audioLibrary = AudioLibraryRepository(
     assets.repository.db,
   );
@@ -165,7 +198,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       _seeking = false,
       _loadingSource = false,
       _ready = false;
-  late final sidecar = AudioSidecarWriter(assets);
+  late final sidecar = sidecarWriter ?? AudioSidecarWriter(assets);
   String sidecarError = '';
   late final journal = AudioJournal(assets.repository);
   final sampler = ListeningSampler();
@@ -175,13 +208,32 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   String? _chapterTrack;
   String chapterError = '';
   bool _closed = false;
+  Future<void>? _shutdownWork;
+  void _notify() {
+    if (!_closed) notifyListeners();
+  }
+
   String? _loggedState;
   String sleepMode = 'off';
   int? _sleepPosition;
   String? _sleepTrack;
   double? _sleepVolume;
+  (AudioPlayer, double)? _pendingSleepVolume;
+  Future<void> _volumeWrites = Future.value();
+  bool _writingVolume = false;
+  double? _requestedSleepVolume;
   bool _sleepFiring = false, _sleepStopped = false;
   bool sleepFade = true, sleepRewind = true;
+  bool resumeAfterInterruption = false;
+  int sleepRewindSeconds = 10;
+  AudioRewindSettings rewindSettings = const AudioRewindSettings();
+  late final resumeStore = AudioResumeStore(assets.repository);
+  AudioProgress? _parkedProgress;
+  bool _wasPlaying = false;
+  bool _interrupted = false, _resumeAfterInterruption = false;
+  int _interruptionGeneration = 0;
+  int _sleepGeneration = 0;
+  int? _sleepDeadlineMs;
   Timer? _checkpointTimer, _sleepTimer;
   DateTime? sleepUntil;
   ListeningClock? _clock;
@@ -189,16 +241,46 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   String? _sessionId;
   Future<void> _writes = Future.value();
   final List<Future<void> Function()> _pendingWrites = [];
-  AudioController(this.assets, this.player) {
-    _subscriptions.add(player.playerStateStream.listen(_stateChanged));
-    _subscriptions.add(
-      player.positionStream.listen((_) {
-        _sampleTelemetry();
-        notifyListeners();
+  AudioController(
+    this.assets,
+    AudioPlayer player, {
+    this.playerFactory,
+    this.backendTimeout = const Duration(seconds: 3),
+    this.sidecarWriter,
+    DateTime Function()? now,
+    this.probeFactory,
+    this.elapsedMilliseconds,
+    Timer Function(Duration, void Function(Timer))? periodic,
+  }) : _player = player,
+       now = now ?? DateTime.now,
+       periodic = periodic ?? Timer.periodic {
+    _attachPlayer();
+    _checkpointTimer = this.periodic(
+      const Duration(seconds: 10),
+      (_) => unawaited(_persist()),
+    );
+  }
+
+  void _attachPlayer() {
+    final attached = player;
+    bool currentPlayer() =>
+        identical(attached, player) && !_backendUnresponsive && !_closed;
+    _playerSubscriptions.add(
+      player.playerStateStream.listen((state) {
+        if (currentPlayer()) _stateChanged(state);
       }),
     );
-    _subscriptions.add(
+    _playerSubscriptions.add(
+      player.positionStream.listen((_) {
+        if (!currentPlayer()) return;
+        _observePosition();
+        _sampleTelemetry();
+        _notify();
+      }),
+    );
+    _playerSubscriptions.add(
       player.playbackEventStream.listen((event) {
+        if (!currentPlayer()) return;
         if (_loadingSource || !_ready) return;
         final index = event.currentIndex;
         if (index == null || index < 0 || index >= _tracks.length) return;
@@ -222,24 +304,167 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         if (changed || durationChanged) _publishTrack();
         _publishState(player.playerState);
         if (changed && !_seeking) unawaited(_persist());
-        if (changed || durationChanged) notifyListeners();
+        if (changed || durationChanged) _notify();
       }),
     );
-    _subscriptions.add(
+    _playerSubscriptions.add(
       player.errorStream.listen((e) {
+        if (!currentPlayer()) return;
         error = 'Не удалось воспроизвести файл: ${e.message}';
-        _sampleTelemetry(audible: false);
-        _log('error', {'code': e.code.toString()});
-        _clock?.setAudible(false);
-        unawaited(_persist(finish: true));
-        notifyListeners();
+        _retireBackend(_captureRecoveryProgress(), 'error', {
+          'code': e.code.toString(),
+        });
       }),
-    );
-    _checkpointTimer = Timer.periodic(
-      const Duration(seconds: 10),
-      (_) => unawaited(_persist()),
     );
   }
+
+  AudioProgress? _captureRecoveryProgress() {
+    if (_loadingSource || _seeking) return _commandCheckpoint;
+    final observed = _lastObservedProgress;
+    if (player.processingState == ProcessingState.idle &&
+        observed?.locator.trackId == current?.id) {
+      return observed;
+    }
+    return _locator == null || current == null
+        ? null
+        : AudioProgress(_currentLocator(), speed);
+  }
+
+  void _observePosition() {
+    if (_ready &&
+        !_loadingSource &&
+        !_seeking &&
+        !_backendUnresponsive &&
+        _locator != null &&
+        current != null &&
+        (player.processingState == ProcessingState.ready ||
+            player.processingState == ProcessingState.completed)) {
+      _lastObservedProgress = AudioProgress(_currentLocator(), speed);
+    }
+  }
+
+  void _retireBackend(
+    AudioProgress? saved,
+    String kind,
+    Map<String, dynamic> details,
+  ) {
+    if (_backendUnresponsive) return;
+    _sampleTelemetry(audible: false);
+    _clock?.setAudible(false);
+    _recoveryProgress = saved;
+    _backendUnresponsive = true;
+    _log(kind, details);
+    unawaited(_persist(finish: true));
+    final stuck = player;
+    unawaited(
+      stuck
+          .stop()
+          .timeout(const Duration(seconds: 1))
+          .catchError((Object _) {}),
+    );
+    _publishState(player.playerState);
+  }
+
+  Future<T> _native<T>(
+    String operation,
+    Future<T> Function() run, {
+    Duration? timeout,
+  }) async {
+    if (_backendUnresponsive) {
+      throw StateError(
+        'Аудиодвижок не отвечает. Повторите действие для восстановления.',
+      );
+    }
+    try {
+      return await run().timeout(timeout ?? backendTimeout);
+    } on TimeoutException {
+      _retireBackend(_commandCheckpoint, 'backend_timeout', {
+        'operation': operation,
+      });
+      throw TimeoutException(
+        'Аудиодвижок не ответил. Повторите действие: плеер восстановится с сохранённой позиции.',
+      );
+    } catch (e) {
+      // just_audio updates position/speed/playing optimistically before its
+      // native Future completes. A rejected command cannot be saved as success.
+      _retireBackend(_commandCheckpoint, 'backend_error', {
+        'operation': operation,
+        'errorType': e.runtimeType.toString(),
+      });
+      rethrow;
+    }
+  }
+
+  Future<void> _recoverBackend({bool restorePrevious = true}) async {
+    final saved = restorePrevious ? _recoveryProgress : null;
+    await _writes;
+    final old = player;
+    final restoredVolume = _sleepVolume ?? _requestedSleepVolume ?? old.volume;
+    for (final subscription in _playerSubscriptions) {
+      await subscription.cancel();
+    }
+    _playerSubscriptions.clear();
+    // A late answer from the abandoned decoder cannot change the new player.
+    unawaited(
+      old
+          .dispose()
+          .timeout(const Duration(seconds: 1))
+          .catchError((Object _) {}),
+    );
+    _player = playerFactory?.call() ?? AudioPlayer(handleInterruptions: false);
+    _backendUnresponsive = false;
+    if (!restorePrevious) _recoveryProgress = null;
+    _attachPlayer();
+    _ready = false;
+    _loadingSource = true;
+    loading = true;
+    if (!_closed) _notify();
+    try {
+      if (saved != null && _tracks.isNotEmpty) {
+        final index = _tracks.indexWhere(
+          (track) => track.id == saved.locator.trackId,
+        );
+        if (index < 0) throw StateError('Трек для восстановления не найден');
+        _commandCheckpoint = saved;
+        await _native(
+          'reload',
+          () => player.setAudioSources(
+            [
+              for (final track in _tracks)
+                AudioSource.uri(audioSourceUri(track.path)),
+            ],
+            initialIndex: index,
+            initialPosition: Duration(milliseconds: saved.locator.positionMs),
+          ),
+          timeout: const Duration(seconds: 12),
+        );
+        await _native('speed', () => player.setSpeed(saved.speed));
+        await _native('volume', () => player.setVolume(restoredVolume));
+        _activeIndex = index;
+        _locator = saved.locator;
+        _sleepStopped = false;
+        _parkedProgress = null;
+        _ready = true;
+        _recoveryProgress = null;
+        error = '';
+        _publishTrack();
+        _publishState(player.playerState);
+      }
+    } catch (_) {
+      // A failed replacement must not strand the screen with a disabled Play.
+      // Retain the original checkpoint for another explicit retry.
+      _recoveryProgress = saved;
+      _backendUnresponsive = true;
+      _ready = false;
+      _publishState(player.playerState);
+      rethrow;
+    } finally {
+      _loadingSource = false;
+      loading = false;
+      if (!_closed) _notify();
+    }
+  }
+
   static Future<AudioController> create(AssetStore assets) async {
     if (Platform.isWindows) {
       JustAudioMediaKit.ensureInitialized(windows: true, linux: false);
@@ -252,15 +477,11 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       ];
       JustAudioMediaKit.title = 'PepeHub';
     }
-    final controller = AudioController(assets, AudioPlayer());
-    try {
-      final saved = await assets.repository.meta('audio-sleep-settings');
-      if (saved != null) {
-        final settings = jsonDecode(saved);
-        controller.sleepFade = settings['fade'] != false;
-        controller.sleepRewind = settings['rewind'] != false;
-      }
-    } catch (_) {}
+    final controller = AudioController(
+      assets,
+      AudioPlayer(handleInterruptions: false),
+    );
+    await controller.loadPlaybackPreferences();
     if (Platform.isAndroid) {
       await AudioService.init<SharedMediaHandler>(
         builder: () => controller.systemHandler,
@@ -279,8 +500,36 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       );
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration.speech());
+      controller._subscriptions.add(
+        session.interruptionEventStream.listen(
+          (event) => unawaited(controller.handleInterruption(event)),
+        ),
+      );
+      controller._subscriptions.add(
+        session.becomingNoisyEventStream.listen(
+          (_) => unawaited(controller.pause()),
+        ),
+      );
     }
     return controller;
+  }
+
+  Future<void> loadPlaybackPreferences() async {
+    final raw = await assets.repository.meta('audio-sleep-settings');
+    if (raw == null) return;
+    try {
+      final settings = jsonDecode(raw) as Map;
+      sleepFade = settings['fade'] != false;
+      sleepRewind = settings['rewind'] != false;
+      final seconds = settings['rewindSeconds'];
+      sleepRewindSeconds = seconds is int && seconds > 0 && seconds <= 300
+          ? seconds
+          : 10;
+      rewindSettings = AudioRewindSettings.fromJson(settings['resume']);
+      resumeAfterInterruption = settings['resumeAfterInterruption'] == true;
+    } catch (_) {
+      /* Preserve readable defaults if older preferences are damaged. */
+    }
   }
 
   Future<void> chooseArtwork() async {
@@ -291,29 +540,52 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       if (selected != null && current?.bookId == book) {
         artwork = selected;
         _publishTrack();
-        notifyListeners();
+        _notify();
       }
     } catch (e) {
       error = 'Обложка: $e';
-      notifyListeners();
+      _notify();
     }
   }
 
   bool get playing =>
-      player.playing && player.processingState != ProcessingState.completed;
-  bool get canPlay => (_ready || _sleepStopped) && !loading;
-  Duration get position => player.processingState == ProcessingState.completed
+      !_backendUnresponsive &&
+      player.playing &&
+      player.processingState != ProcessingState.completed;
+  bool get canPlay =>
+      !_closed &&
+      (_ready ||
+          _sleepStopped ||
+          _backendUnresponsive && _recoveryProgress != null) &&
+      !loading;
+  Duration get position => _backendUnresponsive && _recoveryProgress != null
+      ? Duration(milliseconds: _recoveryProgress!.locator.positionMs)
+      : _sleepStopped && _parkedProgress != null
+      ? Duration(milliseconds: _parkedProgress!.locator.positionMs)
+      : player.processingState == ProcessingState.completed
       ? (_durations[current?.id] ?? player.duration ?? player.position)
+      : _ready &&
+            !_loadingSource &&
+            player.processingState == ProcessingState.idle &&
+            _lastObservedProgress != null &&
+            _lastObservedProgress!.locator.trackId == current?.id
+      ? Duration(milliseconds: _lastObservedProgress!.locator.positionMs)
       : player.position;
-  Duration get duration => player.duration ?? Duration.zero;
-  double get speed => player.speed;
+  Duration get duration => _sleepStopped || _backendUnresponsive
+      ? _durations[current?.id] ?? Duration.zero
+      : player.duration ?? Duration.zero;
+  double get speed => _backendUnresponsive && _recoveryProgress != null
+      ? _recoveryProgress!.speed
+      : _sleepStopped
+      ? _parkedProgress?.speed ?? player.speed
+      : player.speed;
   void _rememberDuration(String trackId, Duration value) {
     if (value <= Duration.zero || _durations[trackId] == value) return;
     _durations[trackId] = value;
     unawaited(
       audioLibrary.saveDuration(trackId, value).catchError((Object e) {
         error = 'Не удалось сохранить длительность: $e';
-        notifyListeners();
+        _notify();
       }),
     );
   }
@@ -321,6 +593,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   void _publishTrack() {
     final asset = current;
     if (asset == null) return;
+    _observePosition();
     if (_chapterTrack != asset.id) unawaited(_loadChapters(asset));
     mediaItem.add(
       MediaItem(
@@ -343,6 +616,24 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   }
 
   void _stateChanged(PlayerState state) {
+    if (_backendUnresponsive) return;
+    _observePosition();
+    final paused =
+        _wasPlaying &&
+        !state.playing &&
+        state.processingState != ProcessingState.completed &&
+        _ready &&
+        !_seeking &&
+        !_loadingSource &&
+        !_sleepFiring;
+    _wasPlaying =
+        state.playing && state.processingState != ProcessingState.completed;
+    if (state.processingState == ProcessingState.completed &&
+        !_seeking &&
+        !_loadingSource &&
+        sleepMode == 'duration') {
+      setSleepTimer(null);
+    }
     _sampleTelemetry();
     final description = '${state.playing}:${state.processingState.name}';
     if (_ready && !_seeking && !_loadingSource && description != _loggedState) {
@@ -372,7 +663,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     }
     _clock?.setAudible(audible);
     if (!state.playing || state.processingState == ProcessingState.completed) {
-      unawaited(_persist(finish: true));
+      unawaited(_persist(finish: true, resumeReason: paused ? 'pause' : null));
     }
     _publishState(state);
   }
@@ -402,16 +693,22 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         playing: playing,
         updatePosition: position,
         bufferedPosition: player.bufferedPosition,
-        speed: player.speed,
+        speed: speed,
         queueIndex: _activeIndex,
       ),
     );
-    notifyListeners();
+    _notify();
   }
 
   Future<void> open(LocalAsset asset, String bookTitle) async {
+    if (_closed) return;
+    _resumeAfterInterruption = false;
+    _interruptionGeneration++;
     await beforeBookPlayback?.call();
-    await _command(() => _open(asset, bookTitle));
+    await _command(() async {
+      if (_backendUnresponsive) await _recoverBackend(restorePrevious: false);
+      await _open(asset, bookTitle);
+    }, recoverBackend: false);
   }
 
   Future<void> _open(LocalAsset asset, String bookTitle) async {
@@ -420,7 +717,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     scanningDurations = false;
     loading = true;
     error = '';
-    notifyListeners();
+    _notify();
     try {
       await _stop();
       _loadingSource = true;
@@ -445,6 +742,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         );
       }
       _locator = saved.locator;
+      _commandCheckpoint = saved;
       artwork = await ArtworkStore(assets).load(asset.bookId);
       final items = _tracks
           .map(
@@ -459,15 +757,20 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
           )
           .toList();
       queue.add(items);
-      await player.setAudioSources(
-        [
-          for (var i = 0; i < _tracks.length; i++)
-            AudioSource.uri(audioSourceUri(_tracks[i].path), tag: items[i]),
-        ],
-        initialIndex: _activeIndex,
-        initialPosition: Duration(milliseconds: saved.locator.positionMs),
+      await _native(
+        'load',
+        () => player.setAudioSources(
+          [
+            for (var i = 0; i < _tracks.length; i++)
+              AudioSource.uri(audioSourceUri(_tracks[i].path), tag: items[i]),
+          ],
+          initialIndex: _activeIndex,
+          initialPosition: Duration(milliseconds: saved.locator.positionMs),
+        ),
+        timeout: const Duration(seconds: 12),
       );
-      await player.setSpeed(saved.speed);
+      await _native('speed', () => player.setSpeed(saved.speed));
+      _parkedProgress = null;
       _ready = true;
       if (player.duration != null) {
         _rememberDuration(current!.id, player.duration!);
@@ -475,26 +778,45 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       _publishTrack();
       unawaited(scanDurations());
       if (duration > Duration.zero && position > duration) {
-        await player.seek(duration);
+        await _native('seek', () => player.seek(duration));
       }
     } catch (e) {
       error = '$e';
     } finally {
       _loadingSource = false;
       loading = false;
-      notifyListeners();
+      _notify();
     }
   }
 
   @override
   Future<void> play() async {
+    if (_closed) return;
+    // An explicit Play can request focus again after a permanent interruption.
+    if (_interrupted) {
+      _interrupted = false;
+      _resumeAfterInterruption = false;
+      _interruptionGeneration++;
+    }
     await beforeBookPlayback?.call();
     await _command(_play);
   }
 
   Future<void> _play() async {
+    if (_backendUnresponsive) return;
+    if (_interrupted) {
+      _resumeAfterInterruption = true;
+      return;
+    }
     if (current == null || !canPlay) return;
-    if (_sleepStopped) await _open(current!, title);
+    if (_sleepStopped) {
+      await _open(current!, title);
+      if (!_ready) {
+        _sleepStopped = true;
+        _notify();
+        return;
+      }
+    }
     if (!_ready) return;
     error = '';
     try {
@@ -505,49 +827,211 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
           'active',
         );
       }
-      if (player.processingState == ProcessingState.completed) {
+      if (player.processingState == ProcessingState.completed &&
+          await resumeStore.load(_locator!.editionId) == null) {
         await _seekTo(0, Duration.zero);
+      } else {
+        await _applyResumeRewind();
       }
       // play() completes when playback finishes, not when it starts.
+      final startedPlayer = player;
       unawaited(
-        player.play().catchError((Object e) {
+        startedPlayer.play().catchError((Object e) {
+          if (!identical(startedPlayer, player) ||
+              _closed ||
+              _backendUnresponsive) {
+            return;
+          }
           error = '$e';
-          notifyListeners();
+          _retireBackend(_captureRecoveryProgress(), 'backend_error', {
+            'operation': 'play',
+          });
         }),
       );
     } catch (e) {
       error = '$e';
-      notifyListeners();
+      _notify();
+    }
+  }
+
+  AudioLocator _currentLocator({int? positionMs}) => AudioLocator(
+    bookId: _locator!.bookId,
+    editionId: _locator!.editionId,
+    trackId: current!.id,
+    manifestRevision: _locator!.manifestRevision,
+    positionMs: positionMs ?? position.inMilliseconds,
+  );
+
+  Future<void> _applyResumeRewind() async {
+    if (_locator == null || current == null) return;
+    await _writes;
+    final checkpoint = await resumeStore.load(_locator!.editionId);
+    if (checkpoint == null) return;
+    final saved = await audioLibrary.progressForTrack(current!.id);
+    // A decoder may round initialPosition by a millisecond when reopening.
+    // Validate the intent against durable progress, not its playback clock.
+    // Manual navigation clears the intent; newer synced progress invalidates it.
+    if (!sameAudioPosition(checkpoint.locator, saved.locator) ||
+        !sameAudioPosition(
+          checkpoint.locator,
+          _currentLocator(positionMs: checkpoint.locator.positionMs),
+        )) {
+      await resumeStore.clear(_locator!.editionId);
+      return;
+    }
+    final elapsed = now().difference(checkpoint.pausedAt);
+    final seconds = checkpoint.reason == 'sleep'
+        ? (sleepRewind ? sleepRewindSeconds : 0)
+        : rewindSettings.secondsAfter(elapsed);
+    final origin = _activeIndex,
+        from = Duration(milliseconds: checkpoint.locator.positionMs);
+    var index = origin, target = from.inMilliseconds - seconds * 1000;
+    _seeking = true;
+    _sampleTelemetry(audible: false);
+    _clock?.setAudible(false);
+    try {
+      while (target < 0 && index > 0) {
+        index--;
+        target += (await _trackDuration(index)).inMilliseconds;
+      }
+      target = math.max(0, target);
+      if (seconds > 0 && !await audioSourceExists(_tracks[index].path)) {
+        throw StateError(
+          'Источник недоступен: ${_tracks[index].filename}. Подключите папку повторно.',
+        );
+      }
+      if (seconds > 0) {
+        await _backendSeek(index, Duration(milliseconds: target));
+      }
+      _activeIndex = index;
+      final resumed = AudioProgress(
+        _currentLocator(positionMs: target),
+        player.speed,
+      );
+      // Commit the new checkpoint and consumption together. A repeated Play or
+      // restart must not rewind again from the already adjusted position.
+      await assets.repository.db.transaction(() async {
+        if (!await resumeStore.consume(checkpoint)) {
+          throw StateError('Точка продолжения изменилась');
+        }
+        await audioLibrary.saveProgress(resumed);
+      });
+      if (seconds > 0) {
+        _log('seek', {
+          'fromTrackId': _tracks[origin].id,
+          'fromMs': from.inMilliseconds,
+          'reason': checkpoint.reason == 'sleep'
+              ? 'sleep_rewind'
+              : 'resume_rewind',
+          'rewindSeconds': seconds,
+          'pauseMs': math.max(0, elapsed.inMilliseconds),
+        });
+      }
+      _publishTrack();
+    } catch (_) {
+      try {
+        await _backendSeek(origin, from);
+        _activeIndex = origin;
+      } catch (_) {
+        // A failed decoder must reopen from the durable original checkpoint
+        // on retry, rather than treating its half-loaded position as a new one.
+        _activeIndex = origin;
+        _parkedProgress = AudioProgress(checkpoint.locator, player.speed);
+        _ready = false;
+        _sleepStopped = true;
+        try {
+          await _native('stop', () => player.stop());
+        } catch (_) {
+          /* Keep the recoverable checkpoint. */
+        }
+      }
+      rethrow;
+    } finally {
+      _seeking = false;
     }
   }
 
   @override
-  Future<void> pause() => _command(_pause);
+  Future<void> pause() {
+    _resumeAfterInterruption = false;
+    _interruptionGeneration++;
+    return _command(_pause);
+  }
+
+  Future<void> handleInterruption(AudioInterruptionEvent event) async {
+    if (event.begin) {
+      if (_interrupted) return;
+      _interrupted = true;
+      _resumeAfterInterruption = playing;
+      _interruptionGeneration++;
+      if (playing) await _command(_pause);
+    } else {
+      final resume =
+          resumeAfterInterruption &&
+          _interrupted &&
+          _resumeAfterInterruption &&
+          event.type != AudioInterruptionType.unknown;
+      final generation = _interruptionGeneration;
+      _interrupted = false;
+      _resumeAfterInterruption = false;
+      if (resume && !_closed) {
+        await beforeBookPlayback?.call();
+        await _command(() async {
+          if (generation == _interruptionGeneration && !_closed) await _play();
+        });
+      }
+    }
+  }
+
   Future<void> _pause() async {
+    final wasPlaying = playing;
     try {
-      await player.pause();
-      await _persist(finish: true);
+      await _native('pause', () => player.pause());
+      await _persist(finish: true, resumeReason: wasPlaying ? 'pause' : null);
     } catch (e) {
       error = 'Не удалось поставить на паузу: $e';
-      notifyListeners();
+      _notify();
     }
   }
 
   @override
-  Future<void> stop() => _command(_stop);
+  Future<void> stop() => _command(() async {
+    final parked = _locator == null || current == null
+        ? null
+        : AudioProgress(_currentLocator(), speed);
+    await _stop();
+    if (parked != null) {
+      _parkedProgress = parked;
+      _sleepStopped = true;
+      _publishTrack();
+      _publishState(player.playerState);
+    }
+  }, recoverBackend: false);
   Future<void> _stop() async {
+    _resumeAfterInterruption = false;
+    _interruptionGeneration++;
     _sleepStopped = false;
     _sampleTelemetry(audible: false);
     _log('stop');
-    if (_sleepVolume != null) await player.setVolume(_sleepVolume!);
+    final restoredVolume = _sleepVolume;
+    if (restoredVolume != null) _requestedSleepVolume = restoredVolume;
     _sleepVolume = null;
     sleepMode = 'off';
+    _sleepGeneration++;
     _sleepTimer?.cancel();
     sleepUntil = null;
-    await player.pause();
+    _sleepDeadlineMs = null;
+    if (_backendUnresponsive) {
+      await _persist(finish: true);
+      await _writes;
+      _ready = false;
+      return;
+    }
+    await _native('pause', () => player.pause());
+    if (restoredVolume != null) await _setSleepVolume(restoredVolume);
     await _persist(finish: true);
     _ready = false;
-    await player.stop();
+    await _native('stop', () => player.stop());
   }
 
   @override
@@ -564,20 +1048,24 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       final previousLoading = _loadingSource;
       _loadingSource = true;
       try {
-        await player.setAudioSources(
-          [
-            for (final track in _tracks)
-              AudioSource.uri(
-                audioSourceUri(track.path),
-                tag: MediaItem(
-                  id: track.id,
-                  title: track.filename,
-                  album: title,
+        await _native(
+          'load',
+          () => player.setAudioSources(
+            [
+              for (final track in _tracks)
+                AudioSource.uri(
+                  audioSourceUri(track.path),
+                  tag: MediaItem(
+                    id: track.id,
+                    title: track.filename,
+                    album: title,
+                  ),
                 ),
-              ),
-          ],
-          initialIndex: index,
-          initialPosition: target,
+            ],
+            initialIndex: index,
+            initialPosition: target,
+          ),
+          timeout: const Duration(seconds: 12),
         );
         _activeIndex = index;
         if (player.duration != null) {
@@ -588,9 +1076,12 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       }
     } else {
       // An unnecessary index makes the Windows adapter reopen even this file.
-      await player.seek(
-        target,
-        index: index == player.currentIndex ? null : index,
+      await _native(
+        'seek',
+        () => player.seek(
+          target,
+          index: index == player.currentIndex ? null : index,
+        ),
       );
     }
   }
@@ -617,8 +1108,14 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       final ms = limit == null
           ? math.max(0, target.inMilliseconds)
           : target.inMilliseconds.clamp(0, limit);
+      if (reason != 'sleep_boundary' &&
+          (sleepMode == 'chapter' || sleepMode == 'track') &&
+          (index != _activeIndex || ms >= (_sleepPosition ?? 0))) {
+        setSleepTimer(null);
+      }
       await _backendSeek(index, Duration(milliseconds: ms));
       _activeIndex = index;
+      if (_locator != null) await resumeStore.clear(_locator!.editionId);
       _log('seek', {
         'fromTrackId': fromTrack,
         'fromMs': fromMs,
@@ -657,18 +1154,30 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         'Источник недоступен: ${_tracks[index].filename}. Подключите папку повторно.',
       );
     }
-    await _backendSeek(index, Duration.zero);
-    final event = player.playbackEvent;
-    final value = event.currentIndex == index && event.duration != null
-        ? event.duration!
-        : (await player.playbackEventStream
-                  .firstWhere(
-                    (e) => e.currentIndex == index && e.duration != null,
-                  )
-                  .timeout(const Duration(seconds: 10)))
-              .duration!;
-    _rememberDuration(_tracks[index].id, value);
-    return value;
+    // Duration lookup must never pause or seek the playback decoder.
+    final probe =
+        probeFactory?.call() ??
+        AudioPlayer(
+          handleInterruptions: false,
+          handleAudioSessionActivation: false,
+        );
+    try {
+      final value = await probe
+          .setAudioSource(AudioSource.uri(audioSourceUri(_tracks[index].path)))
+          .timeout(backendTimeout);
+      if (value == null || value <= Duration.zero) {
+        throw StateError('Не определена длительность трека');
+      }
+      _rememberDuration(_tracks[index].id, value);
+      return value;
+    } finally {
+      unawaited(
+        probe
+            .dispose()
+            .timeout(const Duration(seconds: 1))
+            .catchError((Object _) {}),
+      );
+    }
   }
 
   Future<void> _skipRelative(int seconds) => _command(() async {
@@ -682,12 +1191,10 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     var reachedEnd = false;
     try {
       error = '';
-      // Cached durations let us seek without interrupting playback. Only the
-      // legacy duration fallback opens files on the main decoder and needs pause.
+      // Even uncached durations use an independent decoder.
       Future<Duration> lengthOf(int index) async {
         final cached = _durations[_tracks[index].id];
         if (cached != null) return cached;
-        await player.pause();
         return _trackDuration(index);
       }
 
@@ -704,6 +1211,10 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         index++;
       }
       final length = await lengthOf(index);
+      if ((sleepMode == 'chapter' || sleepMode == 'track') &&
+          (index != origin || remaining >= (_sleepPosition ?? 0))) {
+        setSleepTimer(null);
+      }
       reachedEnd =
           index == _tracks.length - 1 && remaining >= length.inMilliseconds;
       await _backendSeek(
@@ -711,6 +1222,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         Duration(milliseconds: remaining.clamp(0, length.inMilliseconds)),
       );
       _activeIndex = index;
+      if (_locator != null) await resumeStore.clear(_locator!.editionId);
       _log('seek', {
         'fromTrackId': _tracks[origin].id,
         'fromMs': start.inMilliseconds,
@@ -750,13 +1262,13 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     try {
       _sampleTelemetry(audible: false);
       final before = player.speed;
-      await player.setSpeed(speed);
+      await _native('speed', () => player.setSpeed(speed));
       _log('speed', {'fromSpeed': before, 'speed': speed});
       await _persist();
       _stateChanged(player.playerState);
     } catch (e) {
       error = 'Не удалось изменить скорость: $e';
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -772,6 +1284,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       audible:
           audible ??
           (_ready &&
+              !_backendUnresponsive &&
               !_loadingSource &&
               !_seeking &&
               player.playing &&
@@ -820,7 +1333,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         })
         .catchError((Object e) {
           error = 'Не удалось записать подробный журнал: $e';
-          notifyListeners();
+          _notify();
         });
     return _journalWrites;
   }
@@ -841,7 +1354,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         chapterError = 'Не удалось прочитать главы этого файла';
       }
     }
-    if (!_closed) notifyListeners();
+    if (!_closed) _notify();
   }
 
   Future<void> goToChapter(BookChapter chapter) => _command(
@@ -875,44 +1388,118 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     } catch (e) {
       sidecarError = '$e';
     }
-    notifyListeners();
+    _notify();
   }
 
-  Future<void> updateSleepOptions({bool? fade, bool? rewind}) async {
+  Future<void> updateSleepOptions({
+    bool? fade,
+    bool? rewind,
+    int? rewindSeconds,
+    AudioRewindSettings? resume,
+    bool? resumeAfterInterruption,
+  }) async {
+    if (_closed) return;
+    if (rewindSeconds != null && (rewindSeconds < 1 || rewindSeconds > 300)) {
+      throw ArgumentError('Возврат от 1 до 300 секунд');
+    }
+    if (resume != null &&
+        [
+          resume.shortSeconds,
+          resume.mediumSeconds,
+          resume.longSeconds,
+        ].any((v) => v < 0 || v > 300)) {
+      throw ArgumentError('Возврат от 0 до 300 секунд');
+    }
     sleepFade = fade ?? sleepFade;
     sleepRewind = rewind ?? sleepRewind;
+    sleepRewindSeconds = rewindSeconds ?? sleepRewindSeconds;
+    rewindSettings = resume ?? rewindSettings;
+    this.resumeAfterInterruption =
+        resumeAfterInterruption ?? this.resumeAfterInterruption;
     if (!sleepFade && _sleepVolume != null) {
-      await player.setVolume(_sleepVolume!);
+      await _setSleepVolume(_sleepVolume!);
       _sleepVolume = null;
     }
     try {
       await assets.repository.setMeta(
         'audio-sleep-settings',
-        jsonEncode({'fade': sleepFade, 'rewind': sleepRewind}),
+        jsonEncode({
+          'fade': sleepFade,
+          'rewind': sleepRewind,
+          'rewindSeconds': sleepRewindSeconds,
+          'resume': rewindSettings.toJson(),
+          'resumeAfterInterruption': this.resumeAfterInterruption,
+        }),
       );
     } catch (e) {
       error = 'Настройки таймера: $e';
     }
-    notifyListeners();
+    _notify();
+  }
+
+  /// Keep only the latest fade/restore request. A slow volume write must neither
+  /// flood the native player every 250 ms nor hold the playback command queue.
+  Future<void> _setSleepVolume(double value) {
+    if (_closed) return Future.value();
+    _requestedSleepVolume = value;
+    _pendingSleepVolume = (player, value);
+    if (_writingVolume) return _volumeWrites;
+    _writingVolume = true;
+    return _volumeWrites = _drainSleepVolume();
+  }
+
+  Future<void> _drainSleepVolume() async {
+    try {
+      while (_pendingSleepVolume != null && !_closed) {
+        final (owner, value) = _pendingSleepVolume!;
+        _pendingSleepVolume = null;
+        if (!identical(owner, player) || _backendUnresponsive) continue;
+        final saved = _locator == null || current == null
+            ? null
+            : AudioProgress(_currentLocator(), speed);
+        try {
+          await owner.setVolume(value).timeout(backendTimeout);
+        } catch (e) {
+          if (identical(owner, player) && !_closed && !_backendUnresponsive) {
+            error = 'Не удалось изменить громкость таймера: $e';
+            if (e is TimeoutException) {
+              _retireBackend(saved, 'backend_timeout', {'operation': 'volume'});
+            } else {
+              _notify();
+            }
+          }
+        }
+      }
+    } finally {
+      _writingVolume = false;
+    }
   }
 
   void setSleepTimer(int? minutes, {String mode = 'duration'}) {
+    if (_closed) return;
+    if (!['duration', 'chapter', 'track'].contains(mode) ||
+        minutes != null && minutes < 0) {
+      throw ArgumentError('Некорректный таймер');
+    }
+    _sleepGeneration++;
     _sleepTimer?.cancel();
-    if (_sleepVolume != null) unawaited(player.setVolume(_sleepVolume!));
+    if (_sleepVolume != null) unawaited(_setSleepVolume(_sleepVolume!));
     _sleepVolume = null;
     sleepUntil = null;
+    _sleepDeadlineMs = null;
     _sleepPosition = null;
     _sleepTrack = null;
     sleepMode = 'off';
     if (minutes == null && mode == 'duration') {
       _log('sleep_cancelled');
-      notifyListeners();
+      _notify();
       return;
     }
     if (current == null) return;
     sleepMode = mode;
     if (mode == 'duration') {
-      sleepUntil = DateTime.now().add(Duration(minutes: minutes!));
+      sleepUntil = now().add(Duration(minutes: minutes!));
+      _sleepDeadlineMs = _elapsedMs + Duration(minutes: minutes).inMilliseconds;
     } else {
       _sleepTrack = current!.id;
       _sleepPosition = duration.inMilliseconds;
@@ -927,7 +1514,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       if (_sleepPosition == 0) {
         sleepMode = 'off';
         error = 'Длительность ещё неизвестна';
-        notifyListeners();
+        _notify();
         return;
       }
     }
@@ -936,39 +1523,52 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       'minutes': minutes,
       'targetMs': _sleepPosition,
     });
-    _sleepTimer = Timer.periodic(
+    _sleepTimer = periodic(
       const Duration(milliseconds: 250),
       (_) => _checkSleep(),
     );
-    notifyListeners();
+    _notify();
   }
 
   void extendSleep() {
+    if (_closed) return;
     if (sleepUntil != null) {
       sleepUntil = sleepUntil!.add(const Duration(minutes: 15));
+      _sleepDeadlineMs =
+          (_sleepDeadlineMs ?? _elapsedMs) +
+          const Duration(minutes: 15).inMilliseconds;
       if (_sleepVolume != null) {
-        unawaited(player.setVolume(_sleepVolume!));
+        unawaited(_setSleepVolume(_sleepVolume!));
         _sleepVolume = null;
       }
       _log('sleep_extended', {'minutes': 15});
-      notifyListeners();
+      _notify();
     } else {
       setSleepTimer(15);
     }
   }
 
   void _checkSleep() {
-    if (_sleepFiring || sleepMode == 'off') return;
-    final remaining = sleepUntil != null
-        ? sleepUntil!.difference(DateTime.now()).inMilliseconds
+    if (_sleepFiring ||
+        sleepMode == 'off' ||
+        _seeking ||
+        _loadingSource ||
+        loading) {
+      return;
+    }
+    final remaining = _sleepDeadlineMs != null
+        ? _sleepDeadlineMs! - _elapsedMs
         : current?.id != _sleepTrack
         ? 0
         : ((_sleepPosition! - position.inMilliseconds) / speed).round();
+    if (sleepUntil != null && remaining > 0) {
+      sleepUntil = now().add(Duration(milliseconds: remaining));
+    }
     if (remaining > 0) {
       if (sleepFade && remaining < 15000 && playing) {
         _sleepVolume ??= player.volume;
         unawaited(
-          player.setVolume(_sleepVolume! * (remaining / 15000).clamp(0, 1)),
+          _setSleepVolume(_sleepVolume! * (remaining / 15000).clamp(0, 1)),
         );
       }
       return;
@@ -978,38 +1578,57 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         ? position.inMilliseconds
         : _sleepPosition;
     final mode = sleepMode;
+    final generation = _sleepGeneration, book = current?.bookId;
     _sleepFiring = true;
     _sleepTimer?.cancel();
     sleepUntil = null;
+    _sleepDeadlineMs = null;
     sleepMode = 'off';
     unawaited(
       _command(() async {
         try {
+          if (generation != _sleepGeneration ||
+              current?.bookId != book ||
+              _closed) {
+            return;
+          }
           _log('sleep_fired', {'mode': mode});
           await _pause();
+          if (generation != _sleepGeneration) return;
           final index = _tracks.indexWhere((t) => t.id == targetTrack);
-          if (index >= 0 && targetPosition != null) {
+          if (index >= 0 &&
+              targetPosition != null &&
+              (index != _activeIndex ||
+                  targetPosition != position.inMilliseconds)) {
             await _seekTo(
               index,
-              Duration(
-                milliseconds: targetPosition - (sleepRewind ? 10000 : 0),
-              ),
-              reason: 'sleep_rewind',
+              Duration(milliseconds: targetPosition),
+              reason: 'sleep_boundary',
             );
           }
-          if (_sleepVolume != null) await player.setVolume(_sleepVolume!);
+          final parked = AudioProgress(_currentLocator(), speed);
+          await _persist(finish: true, resumeReason: 'sleep');
+          if (generation != _sleepGeneration) return;
           await _stop();
+          _parkedProgress = parked;
           _sleepStopped = true;
         } finally {
-          _sleepVolume = null;
+          if (_sleepVolume != null &&
+              (generation == _sleepGeneration || sleepMode == 'off')) {
+            try {
+              await _setSleepVolume(_sleepVolume!);
+            } finally {
+              _sleepVolume = null;
+            }
+          }
           _sleepFiring = false;
-          notifyListeners();
+          _notify();
         }
       }),
     );
   }
 
-  Future<void> _persist({bool finish = false}) {
+  Future<void> _persist({bool finish = false, String? resumeReason}) {
     final asset = current;
     final locator = _locator;
     if (asset == null ||
@@ -1030,6 +1649,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     final activeSeconds = (_clock?.milliseconds ?? 0) ~/ 1000,
         id = _sessionId,
         start = _sessionStart;
+    final pausedAt = now();
     final end = DateTime.fromMillisecondsSinceEpoch(
       math.max(
         DateTime.now().millisecondsSinceEpoch,
@@ -1056,6 +1676,22 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
             savedSpeed,
           ),
         );
+        if (resumeReason != null) {
+          await resumeStore.save(
+            AudioPauseCheckpoint(
+              uuid.v4(),
+              AudioLocator(
+                bookId: locator.bookId,
+                editionId: locator.editionId,
+                trackId: asset.id,
+                manifestRevision: locator.manifestRevision,
+                positionMs: positionMs,
+              ),
+              pausedAt,
+              resumeReason,
+            ),
+          );
+        }
         if (id != null && start != null && activeSeconds > 0) {
           await assets.repository.put('session', id, {
             'bookId': asset.bookId,
@@ -1080,17 +1716,24 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
             _pendingWrites.removeAt(0);
           }
           await flushJournal();
-          try {
-            await sidecar.update(asset.bookId, force: finish);
-            sidecarError = '';
-          } catch (e) {
-            sidecarError = '.pepehub: $e. Позиция сохранена в приложении.';
-            notifyListeners();
-          }
+          // Folder snapshots are independent of the durable local checkpoint.
+          // A slow SAF provider must not hold Pause, Play or the command queue.
+          unawaited(
+            sidecar
+                .update(asset.bookId, force: finish)
+                .then((_) {
+                  sidecarError = '';
+                })
+                .catchError((Object e) {
+                  sidecarError =
+                      '.pepehub: $e. Позиция сохранена в приложении.';
+                  if (!_closed) _notify();
+                }),
+          );
         })
         .catchError((Object e) {
           error = 'Не удалось сохранить позицию или сессию: $e';
-          notifyListeners();
+          _notify();
         });
     return _writes;
   }
@@ -1102,18 +1745,29 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     await flushJournal();
   }
 
-  Future<void> shutdown() async {
+  Future<void> shutdown() => _shutdownWork ??= _shutdown();
+
+  Future<void> _shutdown() async {
     _closed = true;
     ++_durationGeneration;
-    await _durationWork;
     _checkpointTimer?.cancel();
     _sleepTimer?.cancel();
-    await pause();
+    // The duration probe may take twelve seconds. Silence playback first.
+    await _command(_pause, duringShutdown: true);
+    await _persist(finish: true);
+    await _writes;
+    await _durationWork;
     for (final subscription in _subscriptions) {
       await subscription.cancel();
     }
+    for (final subscription in _playerSubscriptions) {
+      await subscription.cancel();
+    }
     await flushJournal();
-    await player.dispose();
+    await player
+        .dispose()
+        .timeout(const Duration(seconds: 1))
+        .catchError((Object _) {});
     await systemHandler.close();
     super.dispose();
   }

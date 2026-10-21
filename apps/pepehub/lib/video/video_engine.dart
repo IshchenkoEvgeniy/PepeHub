@@ -124,7 +124,7 @@ class NativeVideoEngine extends VideoPlaybackEngine {
     return NativeVideoEngine(
       Player(
         configuration: const PlayerConfiguration(
-          title: 'PepeHub — Видео',
+          title: 'PepeHub — Медиа',
           libass: true,
         ),
       ),

@@ -1,29 +1,9 @@
 import { InputError, parseOperation } from '../../../contracts/protocol.ts';
 import type { Database } from './database.ts';
 import { applyOperation, getChanges, ReusedOperationError } from './store.ts';
+import { body, hashToken, json } from './http.ts';
+export { hashToken } from './http.ts';
 export interface Env { DB: Database }
-export async function hashToken(token: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
-  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2,'0')).join('');
-}
-function json(body: unknown, status = 200): Response {
-  return Response.json(body,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
-}
-async function body(request: Request): Promise<unknown> {
-  // Enforce a bound even when Content-Length is absent or forged.
-  const reader = request.body?.getReader();
-  if (!reader) throw new InputError('Missing JSON body');
-  let size=0; const chunks: Uint8Array[]=[];
-  while (true) {
-    const next=await reader.read(); if(next.done) break;
-    size+=next.value.length;
-    if(size>32768) { await reader.cancel(); throw new InputError('Body exceeds 32 KiB'); }
-    chunks.push(next.value);
-  }
-  const bytes=new Uint8Array(size); let offset=0;
-  for(const chunk of chunks) { bytes.set(chunk,offset);offset+=chunk.length; }
-  try { return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)); } catch { throw new InputError('Invalid JSON'); }
-}
 function integer(raw: string | null, fallback: number, min: number, max: number): number {
   if(raw===null) return fallback;
   if(!/^\d+$/.test(raw)) throw new InputError('Invalid integer');

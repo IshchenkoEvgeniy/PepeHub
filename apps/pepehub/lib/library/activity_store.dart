@@ -122,11 +122,48 @@ class ActivityStore {
     if (namespace == null || namespace.isEmpty) return [];
     final links = await LibraryRepository(local, namespace).entries();
     final rows = await ActivityStore(local, namespace).entries();
+    // A native session may arrive both directly and through its Obsidian mirror.
+    final native = <String>{
+      for (final row
+          in await local.db
+              .customSelect(
+                "SELECT id,type FROM records WHERE type IN ('session','audio_event')",
+              )
+              .get())
+        '${row.read<String>('type') == 'session' ? 'manual' : 'audio'}:${row.read<String>('id')}',
+      for (final row
+          in await local.db
+              .customSelect(
+                "SELECT key FROM metadata WHERE key LIKE 'reading-session:%'",
+              )
+              .get())
+        'reader:${row.read<String>('key').substring('reading-session:'.length)}',
+    };
+    final replicated = await local.db
+        .customSelect(
+          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='peer_app_projection'",
+        )
+        .getSingleOrNull();
+    if (replicated != null) {
+      for (final row
+          in await local.db
+              .customSelect(
+                "SELECT target FROM peer_app_projection WHERE target LIKE 'm:reading-session:%' AND materialized=1",
+              )
+              .get()) {
+        native.add(
+          'reader:${row.read<String>('target').substring('m:reading-session:'.length)}',
+        );
+      }
+    }
     return [
       for (final slot in rows)
         if ((slot['source'] == null ||
                 slot['source']['bookId'] !=
                     links[slot['value']['itemId']]?.sourceBookId) &&
+            !native.contains(
+              '${slot['source']?['kind']}:${slot['source']?['id']}',
+            ) &&
             slot['value']['deleted'] != true &&
             slot['value']['mediaType'] == mediaType &&
             links[slot['value']['itemId']]?.sourceBookId != null)

@@ -116,7 +116,7 @@ void main() {
     final tracks = await assets.audioTracks(first.bookId);
     expect(tracks.map((t) => t.filename), ['2.mp3', '1.mp3']);
     expect(await repository.records('book'), hasLength(1));
-    expect(await repository.pendingCount(), 1);
+    expect(await repository.pendingCount(), 0);
     expect(
       (await AudioLibraryRepository(db).progressForTrack(tracks.last.id))
           .locator

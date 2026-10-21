@@ -31,6 +31,7 @@ void main() {
   });
 
   test('import copies a selected audio file, deduplicates by content, preserves original and local position', () async {
+    await repository.setCloudTracking(true);
     final original = File('${root.path}/My book.mp3');
     // Header fixture exercises import, not native decoding.
     final bytes = [
@@ -172,6 +173,7 @@ void main() {
     }
   });
   test('checkpoints coalesce until first network attempt and never alter a retry payload', () async {
+    await repository.setCloudTracking(true);
     await repository.addBook('Audio', '', 'audio');
     final book = (await repository.records('book')).single;
     final session = uuid.v4();

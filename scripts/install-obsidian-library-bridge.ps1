@@ -47,7 +47,9 @@ Write-BridgeFile 'tests\pepehub-library.test.ts' ([IO.File]::ReadAllText((Join-P
 Write-BridgeFile 'tests\pepehub-notes.test.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'pepehub-notes.test.ts.template')))
 Write-BridgeFile 'tests\pepehub-activity.test.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'pepehub-activity.test.ts.template')))
 Write-BridgeFile 'cloudflare-companion\src\pepehub-metadata.ts' $metadata
-Write-BridgeFile 'cloudflare-companion\src\pepehub-metadata-api.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'metadata-api.ts')).Replace("'./metadata.ts'", "'./pepehub-metadata'").Replace("'./covers.ts'", "'./pepehub-covers'"))
+Write-BridgeFile 'cloudflare-companion\src\pepehub-metadata-api.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'metadata-api.ts')).Replace("'./metadata.ts'", "'./pepehub-metadata'").Replace("'./covers.ts'", "'./pepehub-covers'").Replace("'./metadata-incremental.ts'", "'./pepehub-metadata-incremental'"))
+Write-BridgeFile 'cloudflare-companion\src\pepehub-metadata-incremental.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'metadata-incremental.ts')).Replace("'./metadata.ts'", "'./pepehub-metadata'").Replace("'./covers.ts'", "'./pepehub-covers'").Replace("'./metadata-api.ts'", "'./pepehub-metadata-api'"))
+Write-BridgeFile 'cloudflare-companion\migrations\0014_pepehub_library_changes.sql' ([IO.File]::ReadAllText((Join-Path $bridgeRoot '004_pepehub_library_changes.sql')))
 Write-BridgeFile 'cloudflare-companion\src\pepehub-activity.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'activity.ts')).Replace("'./metadata.ts'", "'./pepehub-metadata'").Replace("'./covers.ts'", "'./pepehub-covers'"))
 Write-BridgeFile 'cloudflare-companion\src\activity-api.ts' ([IO.File]::ReadAllText((Join-Path $bridgeRoot 'activity-api.ts')).Replace("'./activity.ts'", "'./pepehub-activity'").Replace("'./metadata-api.ts'", "'./pepehub-metadata-api'"))
 Write-BridgeFile 'cloudflare-companion\migrations\0012_pepehub_activity.sql' ([IO.File]::ReadAllText((Join-Path $bridgeRoot '002_pepehub_activity.sql')))

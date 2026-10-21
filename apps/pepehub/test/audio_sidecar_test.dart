@@ -137,7 +137,16 @@ void main() {
       );
       expect(await unrelated.readAsString(), 'keep');
       final writer = AudioSidecarWriter(assets);
-      await writer.update(track.bookId);
+      final snapshots = [
+        for (var i = 0; i < 30; i++)
+          writer.update(track.bookId, force: i == 29),
+      ];
+      expect(
+        snapshots.every((snapshot) => identical(snapshot, snapshots.first)),
+        true,
+        reason: 'Pending saves of one book share a single forced snapshot',
+      );
+      await Future.wait(snapshots);
       final before = support.listSync().map((f) => f.path).toSet();
       await writer.update(track.bookId);
       expect(support.listSync().map((f) => f.path).toSet(), before);

@@ -62,6 +62,9 @@ class SharedMediaHandler extends BaseAudioHandler {
   @override
   Future<void> setSpeed(double speed) => owner.setSpeed(speed);
   @override
+  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) =>
+      owner.setShuffleMode(shuffleMode);
+  @override
   Future<void> onTaskRemoved() => owner.onTaskRemoved();
   Future<void> close() async {
     ++_generation;

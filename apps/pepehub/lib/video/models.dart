@@ -1,3 +1,5 @@
+import 'media_formats.dart';
+
 enum VideoItemKind { video, course }
 
 enum VideoActivityMode { visual, audio, study }
@@ -89,6 +91,7 @@ class VideoLesson {
   final int ordinal;
   final int? durationMs;
   final bool available;
+  final bool audio;
   const VideoLesson({
     required this.id,
     required this.itemId,
@@ -99,7 +102,10 @@ class VideoLesson {
     required this.ordinal,
     this.durationMs,
     this.available = true,
+    this.audio = false,
   });
+
+  bool get isAudio => audio || isMusicSource(source);
 
   bool get isRemote {
     final uri = Uri.tryParse(source);
@@ -117,6 +123,7 @@ class VideoLesson {
         ordinal: data['ordinal'] as int,
         durationMs: data['durationMs'] as int?,
         available: data['available'] != false,
+        audio: data['audio'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -129,6 +136,7 @@ class VideoLesson {
     'ordinal': ordinal,
     'durationMs': durationMs,
     'available': available,
+    'audio': isAudio,
   };
 }
 

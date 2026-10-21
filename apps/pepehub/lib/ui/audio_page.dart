@@ -3,9 +3,12 @@ import 'audio_notes_page.dart';
 
 import 'dart:io';
 
+import 'audio_rewind_options.dart';
+
 import 'package:flutter/material.dart';
 
 import '../data/repository.dart';
+import '../sync/peer/app_sync_usage.dart';
 import '../media/audio_controller.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
@@ -28,6 +31,22 @@ class AudioPage extends StatefulWidget {
 }
 
 class _AudioPageState extends State<AudioPage> {
+  void Function()? _releaseSync;
+  @override
+  void initState() {
+    super.initState();
+    _releaseSync = AppSyncUsage.hold(
+      widget.controller.assets.repository.db,
+      'audio-notes',
+    );
+  }
+
+  @override
+  void dispose() {
+    _releaseSync?.call();
+    super.dispose();
+  }
+
   double? dragPosition, bookDragPosition;
   AudioController get controller => widget.controller;
   Future<void> _anki() async {
@@ -375,7 +394,7 @@ class _AudioPageState extends State<AudioPage> {
                           '${audioTime(Duration(milliseconds: row.payload!['fromMs'] as int))} → ${audioTime(Duration(milliseconds: row.payload!['positionMs'] as int))}',
                         ),
                         subtitle: Text(
-                          '${row.payload!['at']} · ${row.payload!['reason']}',
+                          '${row.payload!['at']} · ${audioSeekReasonLabel(row.payload!['reason'])}',
                         ),
                         onTap: () {
                           Navigator.pop(context);
@@ -578,11 +597,17 @@ class _AudioPageState extends State<AudioPage> {
                 value: controller.sleepFade,
                 onChanged: (v) => controller.updateSleepOptions(fade: v),
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Вернуться на 10 секунд после таймера'),
-                value: controller.sleepRewind,
-                onChanged: (v) => controller.updateSleepOptions(rewind: v),
+              AudioRewindOptions(
+                sleepEnabled: controller.sleepRewind,
+                sleepSeconds: controller.sleepRewindSeconds,
+                settings: controller.rewindSettings,
+                onSleepEnabled: (v) => controller.updateSleepOptions(rewind: v),
+                onSleepSeconds: (v) =>
+                    controller.updateSleepOptions(rewindSeconds: v),
+                onSettings: (v) => controller.updateSleepOptions(resume: v),
+                resumeAfterInterruption: controller.resumeAfterInterruption,
+                onResumeAfterInterruption: (v) =>
+                    controller.updateSleepOptions(resumeAfterInterruption: v),
               ),
               if (controller.sleepMode != 'off')
                 TextButton.icon(
@@ -1117,7 +1142,9 @@ class _AudioPageState extends State<AudioPage> {
                             title: Text(
                               '${audioTime(Duration(milliseconds: row.payload!['fromMs'] as int))} → ${audioTime(Duration(milliseconds: row.payload!['positionMs'] as int))}',
                             ),
-                            subtitle: Text('${row.payload!['reason']}'),
+                            subtitle: Text(
+                              audioSeekReasonLabel(row.payload!['reason']),
+                            ),
                             onTap: () => controller.goToLocation(
                               row.payload!['fromTrackId'] as String,
                               row.payload!['fromMs'] as int,

@@ -1,7 +1,8 @@
-import {handlePrivateCover,validCoverAsset,type PrivateCoverBucket} from './covers.ts';
-import { validId, validOperation, safeValues, type MetadataSnapshot, type MetadataReceipt } from './metadata.ts';
+import {handlePrivateCover,type PrivateCoverBucket} from './covers.ts';
+import { validId, validOperation, validMetadataFields, validMetadataCollections, validMetadataItem, validMetadataReceipt, type MetadataSnapshot, type MetadataReceipt } from './metadata.ts';
 import { handleActivityApi } from './activity-api.ts';
 import { handleNoteApi } from './notes-api.ts';
+import {libraryChanges,librarySnapshotResponse,commitLibrarySnapshot,publishLibraryDelta} from './metadata-incremental.ts';
 
 interface Statement {
   bind(...values: unknown[]): Statement;
@@ -13,7 +14,6 @@ export interface MetadataDatabase { prepare(sql: string): Statement; batch(state
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
   status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
 });
-const empty: MetadataSnapshot = { version: 1, ready: false, items: [], fields: [], collections: [] };
 
 /** The Companion router authenticates every /api/ route before calling this handler. */
 export async function handleMetadataApi(request: Request, db: MetadataDatabase, profile: string, bucket?: PrivateCoverBucket): Promise<Response> {
@@ -22,9 +22,9 @@ export async function handleMetadataApi(request: Request, db: MetadataDatabase, 
   if (route === '/notes' || route.startsWith('/notes/')) return handleNoteApi(request, db, profile);
   if (route === '/activity' || route.startsWith('/activity/')) return handleActivityApi(request, db, profile);
   if (request.method === 'GET' && route === '') {
-    const row = await db.prepare('SELECT snapshot_json FROM pepehub_library_snapshots WHERE profile_id=?').bind(profile).first<{ snapshot_json: string }>();
-    return json(row ? JSON.parse(row.snapshot_json) : empty);
+    return librarySnapshotResponse(db,profile);
   }
+  if(request.method==='GET'&&route==='/changes') return libraryChanges(request,db,profile);
   if (request.method === 'GET' && route === '/pending') {
     const rows = await db.prepare("SELECT operation_json FROM pepehub_library_operations WHERE profile_id=? AND receipt_json IS NULL ORDER BY sequence LIMIT 99")
       .bind(profile).all<{ operation_json: string }>();
@@ -38,7 +38,7 @@ export async function handleMetadataApi(request: Request, db: MetadataDatabase, 
     return row ? json(row.receipt_json ? JSON.parse(row.receipt_json) : { operationId: id, status: 'pending' }) : json({ error: 'not_found' }, 404);
   }
   if (request.method !== 'POST') return json({ error: 'not_found' }, 404);
-  const limit = route === '/snapshot' ? 1500000 : 128000;
+  const limit = route === '/snapshot'||route==='/delta' ? 1500000 : 128000;
   const declared = Number(request.headers.get('Content-Length'));
   if (declared > limit) return json({ error: 'payload_too_large' }, 413);
   const reader = request.body?.getReader();
@@ -54,6 +54,7 @@ export async function handleMetadataApi(request: Request, db: MetadataDatabase, 
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
   let body: unknown;
   try { body = JSON.parse(new TextDecoder().decode(bytes)); } catch { return json({ error: 'invalid_json' }, 400); }
+  if(route==='/delta') return publishLibraryDelta(body,db,profile);
   if (route === '/operations') {
     if (!validOperation(body)) return json({ error: 'invalid_operation' }, 400);
     const operation = JSON.stringify(body);
@@ -68,20 +69,13 @@ export async function handleMetadataApi(request: Request, db: MetadataDatabase, 
     const payload = body as { snapshot?: MetadataSnapshot; receipts?: MetadataReceipt[] };
     const snapshot = payload?.snapshot, receipts = payload?.receipts;
     if (!snapshot || snapshot.version !== 1 || snapshot.ready !== true || !Array.isArray(snapshot.items)
-      || !Array.isArray(snapshot.fields) || !Array.isArray(snapshot.collections) || !Array.isArray(receipts)
-      || receipts.length > 99 || snapshot.items.some(item => (item.coverAsset != null && !validCoverAsset(item.coverAsset)) || !validId(item.id) || !safeValues(item.values)
-        || !Array.isArray(item.fields) || !['book', 'audiobook'].includes(item.mediaType))
+      || !validMetadataFields(snapshot.fields) || !validMetadataCollections(snapshot.collections) || !Array.isArray(receipts)
+      || receipts.length > 99 || snapshot.items.some(item => !validMetadataItem(item))
       || new Set(snapshot.items.map(item => item.id)).size !== snapshot.items.length
-      || receipts.some(receipt => !validId(receipt.operationId) || !['applied', 'conflict', 'error'].includes(receipt.status))) {
+      || receipts.some(receipt => !validMetadataReceipt(receipt))) {
       return json({ error: 'invalid_snapshot' }, 400);
     }
-    await db.batch([
-      db.prepare('INSERT INTO pepehub_library_snapshots(profile_id,snapshot_json) VALUES(?,?) ON CONFLICT(profile_id) DO UPDATE SET snapshot_json=excluded.snapshot_json')
-        .bind(profile, JSON.stringify(snapshot)),
-      ...receipts.map(receipt => db.prepare('UPDATE pepehub_library_operations SET receipt_json=? WHERE profile_id=? AND operation_id=? AND receipt_json IS NULL')
-        .bind(JSON.stringify(receipt), profile, receipt.operationId))
-    ]);
-    return json({ ok: true });
+    return commitLibrarySnapshot(db,profile,snapshot,receipts);
   }
   return json({ error: 'not_found' }, 404);
 }

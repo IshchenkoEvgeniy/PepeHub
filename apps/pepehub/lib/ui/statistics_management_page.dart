@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../sync/peer/app_sync_usage.dart';
+
 import 'audio_mini_player.dart';
 
 import 'package:flutter/services.dart';
@@ -32,6 +34,7 @@ class StatisticsManagementPage extends StatefulWidget {
 
 class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     with SingleTickerProviderStateMixin {
+  void Function()? _releaseSync;
   late final TabController tabs;
   bool loading = true;
   List<_ReadingEntry> reading = [];
@@ -50,6 +53,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
   @override
   void initState() {
     super.initState();
+    _releaseSync = AppSyncUsage.hold(widget.repository.db, 'statistics-edit');
     tabs = TabController(
       length: 2,
       vsync: this,
@@ -71,6 +75,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
 
   @override
   void dispose() {
+    _releaseSync?.call();
     search.dispose();
     tabs.dispose();
     super.dispose();

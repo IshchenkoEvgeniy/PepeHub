@@ -37,6 +37,7 @@ class VideoPlaybackSession extends BaseAudioHandler
   Timer? _backgroundTimer;
   bool _foreground = true;
   String? _publishedLesson, _pipState;
+  List<int>? _publishedOrder;
   VideoPlaybackSession(
     this.repository, {
     this.audio,
@@ -136,7 +137,6 @@ class VideoPlaybackSession extends BaseAudioHandler
     if (Platform.isAndroid || Platform.isIOS) {
       if (_audioSession == null) {
         final session = _audioSession = await AudioSession.instance;
-        await session.configure(const AudioSessionConfiguration.speech());
         _subscriptions.add(
           session.interruptionEventStream.listen((event) {
             if (event.begin) unawaited(pause().catchError((Object _) {}));
@@ -148,6 +148,11 @@ class VideoPlaybackSession extends BaseAudioHandler
           ),
         );
       }
+      await _audioSession!.configure(
+        controller?.current?.isAudio == true
+            ? const AudioSessionConfiguration.music()
+            : const AudioSessionConfiguration.speech(),
+      );
       if (await _audioSession!.setActive(true) != true) {
         throw StateError('Другое приложение удерживает аудиофокус');
       }
@@ -157,6 +162,9 @@ class VideoPlaybackSession extends BaseAudioHandler
 
   Future<void> _bookTakesSound() async {
     await pause();
+    // audio_session is shared by all players in the app. Restore the speech
+    // profile before the audiobook takes focus after listening to music.
+    await _audioSession?.configure(const AudioSessionConfiguration.speech());
     audio?.systemHandler.release(this);
   }
 
@@ -221,23 +229,36 @@ class VideoPlaybackSession extends BaseAudioHandler
                       : null,
                 ),
         );
+      }
+      if (!identical(_publishedOrder, player.playbackOrder)) {
+        _publishedOrder = player.playbackOrder;
         queue.add([
-          for (final entry in player.lessons)
-            MediaItem(id: 'video:${entry.id}', title: entry.title),
+          for (final i in player.playbackOrder)
+            MediaItem(
+              id: 'video:${player.lessons[i].id}',
+              title: player.lessons[i].title,
+            ),
         ]);
       }
       playbackState.add(
         PlaybackState(
           controls: [
-            MediaControl.rewind,
+            player.current?.isAudio == true
+                ? MediaControl.skipToPrevious
+                : MediaControl.rewind,
             player.state.playing ? MediaControl.pause : MediaControl.play,
-            MediaControl.fastForward,
+            player.current?.isAudio == true
+                ? MediaControl.skipToNext
+                : MediaControl.fastForward,
             MediaControl.stop,
           ],
           systemActions: const {
             MediaAction.seek,
             MediaAction.seekForward,
             MediaAction.seekBackward,
+            MediaAction.skipToPrevious,
+            MediaAction.skipToNext,
+            MediaAction.setShuffleMode,
           },
           androidCompactActionIndices: const [0, 1, 2],
           processingState: player.loading
@@ -250,7 +271,10 @@ class VideoPlaybackSession extends BaseAudioHandler
           playing: player.state.playing,
           updatePosition: Duration(milliseconds: player.positionMs),
           speed: player.state.speed,
-          queueIndex: player.index,
+          queueIndex: player.queueIndex,
+          shuffleMode: player.shuffleEnabled
+              ? AudioServiceShuffleMode.all
+              : AudioServiceShuffleMode.none,
         ),
       );
       final nativePlaying =
@@ -346,7 +370,15 @@ class VideoPlaybackSession extends BaseAudioHandler
 
   @override
   Future<void> skipToQueueItem(int index) async {
-    await controller?.load(index);
+    final player = controller;
+    if (player != null && index >= 0 && index < player.playbackOrder.length) {
+      await player.load(player.playbackOrder[index]);
+    }
+  }
+
+  @override
+  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
+    await controller?.setShuffle(shuffleMode != AudioServiceShuffleMode.none);
   }
 
   @override
@@ -370,6 +402,7 @@ class VideoPlaybackSession extends BaseAudioHandler
     chapters = [];
     inMini = false;
     _publishedLesson = _pipState = null;
+    _publishedOrder = null;
     audio?.systemHandler.release(this);
     if (_audioSession != null) await _audioSession!.setActive(false);
     if (miniWindow) {

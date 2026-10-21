@@ -74,3 +74,41 @@ test('field merge preserves unrelated changes, detects concurrent edits, and acc
   assert.deepEqual(conflictingKeys({ Rating: '9', 'End Date': '2026-10-03' }, op), []);
   assert.equal(equalValue({ b: [1, null], a: 2 }, { a: 2, b: [1, null] }), true);
 });
+
+test('incremental index has stable idle cursor, transfers only edits and deletions, rejects stale writers and isolates profiles', async()=>{
+  const {db,call}=setup();
+  try {
+    const data=snapshot();
+    const first=await (await call('/snapshot',{snapshot:data,receipts:[]})).json() as {indexId:string;cursor:number};
+    const second=await (await call('/snapshot',{snapshot:data,receipts:[]})).json() as typeof first;
+    assert.deepEqual(second,first);
+    const root=await call(); assert.equal(root.headers.get('X-PepeHub-Index'),first.indexId);
+    const idle=await (await call(`/changes?index=${first.indexId}&after=${first.cursor}`)).json();
+    assert.deepEqual(idle.changes,[]);assert.equal(idle.cursor,first.cursor);
+    const edited={...data.items[0]!,values:{...data.items[0]!.values,Title:'Edited'}};
+    const delta={version:1,...first,changes:[{id:edited.id,item:edited},{id:data.items[1]!.id,item:null}],receipts:[]};
+    const accepted=await call('/delta',delta);assert.equal(accepted.status,200);
+    const ack=await accepted.json();assert.ok(ack.cursor>first.cursor);
+    const changes=await (await call(`/changes?index=${first.indexId}&after=${first.cursor}`)).json();
+    assert.equal(changes.changes.length,2);assert.deepEqual(changes.changes[0],{id:edited.id,item:edited});
+    assert.deepEqual(changes.changes[1],{id:data.items[1]!.id,item:null});
+    assert.equal((await call('/delta',delta)).status,409);
+    assert.equal((await call(`/changes?index=${first.indexId}&after=${first.cursor}`,undefined,'two')).status,409);
+    const updated=await (await call()).json();assert.equal(updated.items.length,119);assert.equal(updated.items[0].values.Title,'Edited');
+    const malformed={...delta,indexId:first.indexId,cursor:ack.cursor,changes:[{id:edited.id,item:{...edited,id:randomUUID()}}]};
+    assert.equal((await call('/delta',malformed)).status,400);
+  } finally {db.close();}
+});
+
+test('incremental pages retain all 260 initial items and atomically acknowledge operations',async()=>{
+  const {db,call}=setup();
+  try {
+    const data=snapshot();data.items=[...data.items,...snapshot().items,...snapshot().items.slice(0,20)];
+    const op=operation();await call('/operations',op);
+    const ack=await (await call('/snapshot',{snapshot:data,receipts:[{operationId:op.operationId,status:'applied'}]})).json();
+    let cursor=0;const ids:string[]=[];
+    while(true){const page=await (await call(`/changes?index=${ack.indexId}&after=${cursor}`)).json();assert.ok(page.changes.length<=128);ids.push(...page.changes.map((c:{id:string})=>c.id));cursor=page.cursor;if(!page.hasMore)break;}
+    assert.equal(ids.length,260);assert.equal(new Set(ids).size,260);assert.equal(cursor,ack.cursor);
+    assert.deepEqual((await (await call('/pending')).json()).operations,[]);
+  } finally {db.close();}
+});

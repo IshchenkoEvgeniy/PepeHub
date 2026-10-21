@@ -26,6 +26,24 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  update_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "pepehub/updates",
+      &flutter::StandardMethodCodec::GetInstance());
+  update_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() == "getInfo") {
+          std::string version = FLUTTER_VERSION;
+          version = version.substr(0, version.find('+'));
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("version"), flutter::EncodableValue(version)},
+              {flutter::EncodableValue("versionCode"), flutter::EncodableValue(static_cast<int>(FLUTTER_VERSION_BUILD))},
+              {flutter::EncodableValue("platform"), flutter::EncodableValue("windows-x64")}}));
+        } else if (call.method_name() == "exitForUpdate") {
+          result->Success();
+          PostMessage(GetHandle(), WM_CLOSE, 0, 0);
+        } else { result->NotImplemented(); }
+      });
   video_window_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
       flutter_controller_->engine()->messenger(), "pepehub/video-window",
       &flutter::StandardMethodCodec::GetInstance());
@@ -86,6 +104,7 @@ bool FlutterWindow::OnCreate() {
 void FlutterWindow::OnDestroy() {
   SetThreadExecutionState(ES_CONTINUOUS);
   video_window_channel_.reset();
+  update_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

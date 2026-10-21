@@ -10,11 +10,20 @@ import '../media/library_folder_preference.dart';
 import '../media/library_recovery.dart';
 import '../data/repository.dart';
 import 'book_formats.dart';
+import 'reading_book_visibility.dart';
 
 class ReadingRoot {
   final String key, path, title;
   final List<String> bookIds;
-  ReadingRoot(this.key, this.path, this.title, this.bookIds);
+  final List<String>? presentBookIds;
+  List<String> get availableIds => presentBookIds ?? bookIds;
+  ReadingRoot(
+    this.key,
+    this.path,
+    this.title,
+    this.bookIds, {
+    this.presentBookIds,
+  });
 }
 
 class ReadingRoots {
@@ -40,6 +49,7 @@ class ReadingRoots {
     value['path'] as String,
     value['title'] as String,
     (value['bookIds'] as List).cast<String>(),
+    presentBookIds: (value['presentBookIds'] as List?)?.cast<String>(),
   );
   Future<void> disconnect(ReadingRoot root) async {
     await assets.repository.db.transaction(() async {
@@ -51,7 +61,7 @@ class ReadingRoots {
         'DELETE FROM metadata WHERE key=?',
         [root.key],
       );
-      final remaining = (await list()).expand((r) => r.bookIds).toSet();
+      final remaining = (await list()).expand((r) => r.availableIds).toSet();
       for (final id in root.bookIds) {
         if (!remaining.contains(id)) {
           final managed = await assets.restoreManagedBookCopy(id);
@@ -59,11 +69,18 @@ class ReadingRoots {
               managed ||
               await assets.repository.meta('reading-imported:$id') == '1';
           if (managed) {
+            await ReadingBookVisibility(assets.repository).available(id);
+          }
+          if (managed) {
             await assets.repository.setMeta('reading-imported:$id', '1');
           }
           await assets.repository.setMeta(
             'reading-library-hidden:$id',
-            imported ? '0' : '1',
+            imported &&
+                    await assets.repository.meta('reading-user-hidden:$id') !=
+                        '1'
+                ? '0'
+                : '1',
           );
           if (imported) {
             await assets.repository.db.customStatement(
@@ -76,10 +93,14 @@ class ReadingRoots {
     });
   }
 
-  Future<ReadingRoot> connect(AudioFolder folder) async {
+  Future<ReadingRoot> connect(
+    AudioFolder folder, {
+    Map<String, ({String hash, int bytes})> verified = const {},
+  }) async {
     final path = folder.root!;
     final key = 'reading-library-root:${sha256.convert(utf8.encode(path))}';
     final ids = <String>[];
+    final present = <String>{};
     final candidates =
         <({String name, String path, String format, String hash, int size})>[];
     for (final file in folder.files) {
@@ -90,20 +111,28 @@ class ReadingRoots {
         throw StateError('Недопустимый размер: ${file.name}');
       }
       var actualBytes = 0;
-      final hash =
-          (await sha256
-                  .bind(
-                    file.openRead().map((chunk) {
-                      actualBytes += chunk.length;
-                      if (actualBytes > maxSize ||
-                          declaredSize > 0 && actualBytes > declaredSize) {
-                        throw StateError('Файл изменился: ${file.name}');
-                      }
-                      return chunk;
-                    }),
-                  )
-                  .first)
-              .toString();
+      final known = verified[file.name];
+      if (known != null &&
+          (known.bytes != declaredSize ||
+              !RegExp(r'^[a-f0-9]{64}$').hasMatch(known.hash))) {
+        throw StateError('Файл изменился: ${file.name}');
+      }
+      final hash = known != null
+          ? known.hash
+          : (await sha256
+                    .bind(
+                      file.openRead().map((chunk) {
+                        actualBytes += chunk.length;
+                        if (actualBytes > maxSize ||
+                            declaredSize > 0 && actualBytes > declaredSize) {
+                          throw StateError('Файл изменился: ${file.name}');
+                        }
+                        return chunk;
+                      }),
+                    )
+                    .first)
+                .toString();
+      if (known != null) actualBytes = known.bytes;
       if (actualBytes == 0 || declaredSize > 0 && actualBytes != declaredSize) {
         throw StateError('Файл изменился: ${file.name}');
       }
@@ -156,7 +185,8 @@ class ReadingRoots {
             ],
           );
         }
-        await assets.repository.setMeta('reading-library-hidden:$id', '0');
+        present.add(id);
+        await ReadingBookVisibility(assets.repository).available(id);
         await assets.repository.setMeta(
           'reading-source-path:$id',
           jsonEncode({
@@ -166,13 +196,39 @@ class ReadingRoots {
         );
         if (!ids.contains(id)) ids.add(id);
       }
+      // Keep historical IDs for reconnects, while removing absent sources from
+      // the shelf. Independently imported copies and other roots remain usable.
+      final other = (await list())
+          .where((r) => r.key != key)
+          .expand((r) => r.availableIds)
+          .toSet();
+      for (final id in ids.where(
+        (id) => !present.contains(id) && !other.contains(id),
+      )) {
+        if (await assets.restoreManagedBookCopy(id)) {
+          await ReadingBookVisibility(assets.repository).available(id);
+        } else {
+          await ReadingBookVisibility(assets.repository).deleted(id);
+        }
+      }
       await assets.repository.setMeta(
         key,
-        jsonEncode({'path': path, 'title': folder.title, 'bookIds': ids}),
+        jsonEncode({
+          'path': path,
+          'title': folder.title,
+          'bookIds': ids,
+          'presentBookIds': present.toList(),
+        }),
       );
     });
     await recoverReadingRoot(assets, path, ids);
-    return ReadingRoot(key, path, folder.title, ids);
+    return ReadingRoot(
+      key,
+      path,
+      folder.title,
+      ids,
+      presentBookIds: present.toList(),
+    );
   }
 
   Future<LocalAsset> forReading(LocalAsset asset) async {

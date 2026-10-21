@@ -107,7 +107,7 @@ class VideoCompactControls extends StatelessWidget {
                         ),
                         Expanded(
                           child: Text(
-                            player.current?.title ?? 'Видео',
+                            player.current?.title ?? 'Медиа',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -116,19 +116,39 @@ class VideoCompactControls extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (player.current?.isAudio == true)
+                          IconButton(
+                            key: const ValueKey('music-shuffle'),
+                            tooltip: player.shuffleEnabled
+                                ? 'Выключить перемешивание'
+                                : 'Перемешать треки',
+                            isSelected: player.shuffleEnabled,
+                            selectedIcon: const Icon(Icons.shuffle_on),
+                            icon: const Icon(Icons.shuffle),
+                            onPressed: enabled && player.canShuffle
+                                ? () => perform(
+                                    () => player.setShuffle(
+                                      !player.shuffleEnabled,
+                                    ),
+                                  )
+                                : null,
+                          ),
                         if (!miniWindow) ...[
                           button(
                             'Быстрая заметка',
                             Icons.edit_note,
                             enabled ? onNote : null,
                           ),
+                          if (player.current?.isAudio != true)
+                            button(
+                              'Дорожки и субтитры',
+                              Icons.closed_caption_outlined,
+                              enabled ? onCaptions : null,
+                            ),
                           button(
-                            'Дорожки и субтитры',
-                            Icons.closed_caption_outlined,
-                            enabled ? onCaptions : null,
-                          ),
-                          button(
-                            'Уроки, расшифровка и заметки',
+                            player.current?.isAudio == true
+                                ? 'Плейлист и заметки'
+                                : 'Уроки, расшифровка и заметки',
                             Icons.playlist_play,
                             enabled ? onStudy : null,
                           ),
@@ -248,11 +268,15 @@ class VideoCompactControls extends StatelessWidget {
                                 Icons.lock_outline,
                                 onLock,
                               ),
-                            if (bounds.maxWidth >= 420 && !miniWindow)
+                            if ((player.current?.isAudio == true ||
+                                    bounds.maxWidth >= 420) &&
+                                !miniWindow)
                               button(
-                                'Предыдущий урок',
+                                player.current?.isAudio == true
+                                    ? 'Предыдущий трек'
+                                    : 'Предыдущий урок',
                                 Icons.skip_previous,
-                                enabled && player.index > 0
+                                enabled && player.canGoPrevious
                                     ? () => perform(player.previous)
                                     : null,
                               ),
@@ -267,6 +291,8 @@ class VideoCompactControls extends StatelessWidget {
                               key: const ValueKey('video-play-pause'),
                               tooltip: player.state.playing
                                   ? 'Пауза'
+                                  : player.current?.isAudio == true
+                                  ? 'Слушать'
                                   : 'Смотреть',
                               onPressed: enabled
                                   ? () => perform(player.toggle)
@@ -292,46 +318,54 @@ class VideoCompactControls extends StatelessWidget {
                                   ? () => perform(() => player.skip(10000))
                                   : null,
                             ),
-                            if (bounds.maxWidth >= 420 && !miniWindow)
+                            if ((player.current?.isAudio == true ||
+                                    bounds.maxWidth >= 420) &&
+                                !miniWindow)
                               button(
-                                'Следующий урок',
+                                player.current?.isAudio == true
+                                    ? 'Следующий трек'
+                                    : 'Следующий урок',
                                 Icons.skip_next,
-                                enabled &&
-                                        player.index + 1 < player.lessons.length
+                                enabled && player.canGoNext
                                     ? () => perform(player.next)
                                     : null,
                               ),
-                            PopupMenuButton<double>(
-                              tooltip: 'Скорость воспроизведения',
-                              enabled: enabled,
-                              onSelected: (speed) =>
-                                  perform(() => player.setSpeed(speed)),
-                              itemBuilder: (_) => [
-                                for (final speed in [
-                                  .5,
-                                  .75,
-                                  1.0,
-                                  1.25,
-                                  1.5,
-                                  1.75,
-                                  2.0,
-                                  2.5,
-                                  3.0,
-                                ])
-                                  CheckedPopupMenuItem(
-                                    value: speed,
-                                    checked: player.state.speed == speed,
-                                    child: Text('$speed×'),
+                            Flexible(
+                              child: PopupMenuButton<double>(
+                                tooltip: 'Скорость воспроизведения',
+                                enabled: enabled,
+                                onSelected: (speed) =>
+                                    perform(() => player.setSpeed(speed)),
+                                itemBuilder: (_) => [
+                                  for (final speed in [
+                                    .5,
+                                    .75,
+                                    1.0,
+                                    1.25,
+                                    1.5,
+                                    1.75,
+                                    2.0,
+                                    2.5,
+                                    3.0,
+                                  ])
+                                    CheckedPopupMenuItem(
+                                      value: speed,
+                                      checked: player.state.speed == speed,
+                                      child: Text('$speed×'),
+                                    ),
+                                ],
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 12,
                                   ),
-                              ],
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 12,
-                                ),
-                                child: Text(
-                                  '${player.state.speed}×',
-                                  style: const TextStyle(fontSize: 13),
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      '${player.state.speed}×',
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),

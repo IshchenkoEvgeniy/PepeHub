@@ -85,6 +85,7 @@ class SyncClient {
         throw StateError('Ключ принадлежит другому ID устройства');
       }
       await repository.configureIdentity(config.deviceId, endpoint);
+      await repository.prepareCloudChanges();
       // Refresh after each receipt: a conflict must block later operations for that entity.
       final attempted = <String>{};
       while (true) {

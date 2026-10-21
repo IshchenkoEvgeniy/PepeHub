@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import 'peer_history.dart';
+
 const peerChunkSize = 256 * 1024;
 const peerPort = 42589;
 const peerMaxFiles = 10000;
@@ -115,19 +117,43 @@ class PeerFolder {
   final String id, name, root;
   final Set<String> devices;
   final bool paused;
+  final String library;
+  final String download;
+  final Set<String> selectedPaths;
+  final PeerHistorySettings history;
   PeerFolder({
     required this.id,
     required this.name,
     required this.root,
     Set<String> devices = const {},
     this.paused = false,
-  }) : devices = Set.unmodifiable(devices);
-  PeerFolder copyWith({Set<String>? devices, bool? paused}) => PeerFolder(
+    this.library = 'none',
+    this.download = 'all',
+    Set<String> selectedPaths = const {},
+    this.history = const PeerHistorySettings(),
+  }) : devices = Set.unmodifiable(devices),
+       selectedPaths = Set.unmodifiable(selectedPaths.map(peerPath));
+  bool receives(String path) =>
+      download == 'all' ||
+      download == 'selected' &&
+          selectedPaths.any((p) => path == p || path.startsWith('$p/'));
+  PeerFolder copyWith({
+    Set<String>? devices,
+    bool? paused,
+    String? library,
+    String? download,
+    Set<String>? selectedPaths,
+    PeerHistorySettings? history,
+  }) => PeerFolder(
     id: id,
     name: name,
     root: root,
     devices: devices ?? this.devices,
     paused: paused ?? this.paused,
+    library: library ?? this.library,
+    download: download ?? this.download,
+    selectedPaths: selectedPaths ?? this.selectedPaths,
+    history: history ?? this.history,
   );
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -135,6 +161,10 @@ class PeerFolder {
     'root': root,
     'devices': devices.toList(),
     'paused': paused,
+    'library': library,
+    'download': download,
+    'selectedPaths': selectedPaths.toList()..sort(),
+    'history': history.toJson(),
   };
   factory PeerFolder.fromJson(Map<String, dynamic> json) => PeerFolder(
     id: json['id'] as String,
@@ -142,18 +172,63 @@ class PeerFolder {
     root: json['root'] as String,
     devices: (json['devices'] as List).cast<String>().toSet(),
     paused: json['paused'] == true,
+    library: const ['all', 'books', 'audio', 'video'].contains(json['library'])
+        ? json['library'] as String
+        : 'none',
+    download: const ['all', 'none', 'selected'].contains(json['download'])
+        ? json['download'] as String
+        : 'all',
+    selectedPaths: (json['selectedPaths'] as List? ?? const [])
+        .cast<String>()
+        .toSet(),
+    history: PeerHistorySettings.fromJson(json['history']),
   );
+}
+
+class PeerPendingDeletion {
+  final String folder, device;
+  final PeerFileEntry local, remote;
+  final DateTime time;
+  PeerPendingDeletion({
+    required this.folder,
+    required this.device,
+    required this.local,
+    required this.remote,
+    required this.time,
+  });
+  String get path => remote.path;
+  Map<String, dynamic> toJson() => {
+    'folder': folder,
+    'device': device,
+    'local': local.toJson(),
+    'remote': remote.toJson(),
+    'time': time.toUtc().toIso8601String(),
+  };
+  factory PeerPendingDeletion.fromJson(Map<String, dynamic> value) =>
+      PeerPendingDeletion(
+        folder: value['folder'] as String,
+        device: value['device'] as String,
+        local: PeerFileEntry.fromJson(
+          Map<String, dynamic>.from(value['local'] as Map),
+        ),
+        remote: PeerFileEntry.fromJson(
+          Map<String, dynamic>.from(value['remote'] as Map),
+        ),
+        time: DateTime.parse(value['time'] as String),
+      );
 }
 
 class PeerDevice {
   final String id, name, host, channel;
   final int port;
+  final bool applicationData;
   const PeerDevice({
     required this.id,
     required this.name,
     required this.host,
     required this.port,
     required this.channel,
+    this.applicationData = false,
   });
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -161,6 +236,7 @@ class PeerDevice {
     'host': host,
     'port': port,
     'channel': channel,
+    'applicationData': applicationData,
   };
   factory PeerDevice.fromJson(Map<String, dynamic> json) => PeerDevice(
     id: json['id'] as String,
@@ -168,6 +244,23 @@ class PeerDevice {
     host: json['host'] as String,
     port: json['port'] as int,
     channel: json['channel'] as String,
+    applicationData: json['applicationData'] == true,
+  );
+  PeerDevice withApplicationData(bool value) => PeerDevice(
+    id: id,
+    name: name,
+    host: host,
+    port: port,
+    channel: channel,
+    applicationData: value,
+  );
+  PeerDevice withAddress(String address, int nextPort) => PeerDevice(
+    id: id,
+    name: name,
+    host: address,
+    port: nextPort,
+    channel: channel,
+    applicationData: applicationData,
   );
 }
 

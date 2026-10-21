@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../data/repository.dart';
+import '../sync/peer/app_sync_usage.dart';
 import '../recommendations/book_catalog.dart';
 import '../recommendations/recommendation_store.dart';
 import 'pepe_widgets.dart';
@@ -24,6 +25,7 @@ class RecommendationsPage extends StatefulWidget {
 }
 
 class _RecommendationsPageState extends State<RecommendationsPage> {
+  void Function()? _releaseSync;
   RecommendationShelf? shelf;
   String? category, error;
   final queryController = TextEditingController();
@@ -44,6 +46,8 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
 
   @override
   void dispose() {
+    _releaseSync?.call();
+    widget.store.repository.externalChanges.removeListener(_load);
     queryController.dispose();
     super.dispose();
   }
@@ -53,6 +57,11 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
   @override
   void initState() {
     super.initState();
+    _releaseSync = AppSyncUsage.hold(
+      widget.store.repository.db,
+      'recommendations',
+    );
+    widget.store.repository.externalChanges.addListener(_load);
     _load();
   }
 

@@ -13,6 +13,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:pepehub/audio/audio_journal.dart';
+import 'package:pepehub/audio/audio_resume.dart';
 import 'package:pepehub/audio/m4b_chapters.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
@@ -57,6 +58,12 @@ class DocumentationPlayer extends ChangeNotifier implements AudioController {
       scanningDurations = false,
       sleepFade = true,
       sleepRewind = true;
+  @override
+  int sleepRewindSeconds = 10;
+  @override
+  bool resumeAfterInterruption = false;
+  @override
+  AudioRewindSettings rewindSettings = const AudioRewindSettings();
   @override
   List<BookChapter> chapters = [];
   @override
@@ -219,9 +226,9 @@ void main() {
           debugPrintSynchronously('Loaded ${family.key}');
         }
         await (FontLoader('MaterialIcons')..addFont(
-              File(
-                    'build/unit_test_assets/fonts/MaterialIcons-Regular.otf',
-              ).readAsBytes().then(ByteData.sublistView),
+              File('build/unit_test_assets/fonts/MaterialIcons-Regular.otf')
+                  .readAsBytes()
+                  .then(ByteData.sublistView),
             ))
             .load();
       });

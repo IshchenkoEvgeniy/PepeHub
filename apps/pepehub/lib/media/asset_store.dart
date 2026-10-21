@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import '../reader/reading_book_visibility.dart';
+
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
 import 'package:file_selector/file_selector.dart';
@@ -298,6 +300,11 @@ class AssetStore {
               'reading-library-hidden:${existing.bookId}',
               '0',
             );
+            await repository.setMeta(
+              'reading-user-hidden:${existing.bookId}',
+              '0',
+            );
+            await ReadingBookVisibility(repository).available(existing.bookId);
           });
           return LocalAsset(
             id: existing.id,

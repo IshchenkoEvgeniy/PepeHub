@@ -13,27 +13,45 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import org.json.JSONObject
 
-/** Persistent read-only SAF sources; the player opens document URIs directly. */
-class AudioFolderChannel(activity: Activity, messenger: BinaryMessenger) {
-    private val context = activity.applicationContext
-    private var owner = java.lang.ref.WeakReference(activity)
+/** Persistent SAF sources; the player opens document URIs directly. */
+class AudioFolderChannel(contextSource: android.content.Context, messenger: BinaryMessenger) {
+    private val context = contextSource.applicationContext
+    private var owner = java.lang.ref.WeakReference(contextSource as? Activity)
     fun attach(activity: Activity) { owner = java.lang.ref.WeakReference(activity) }
     fun detach(activity: Activity) { if (owner.get() === activity) owner.clear() }
 
     private val channel = MethodChannel(messenger, "app.pepehub/audio_folder")
     private val worker = Executors.newSingleThreadExecutor()
+    // Availability checks used by playback must not queue behind SAF exports.
+    private val playbackChecks = Executors.newFixedThreadPool(2)
     private val main = Handler(Looper.getMainLooper())
     private val allowed = mutableSetOf<String>()
     private val streams = mutableMapOf<String, InputStream>()
     private var pending: MethodChannel.Result? = null
     private var pendingBooks = false
+    private var pendingWriteRoot: Uri? = null
+    private val bookAccess = BookFileAccess(context)
     private var exportText: String? = null
     @Volatile private var disposed = false
     private val extensions = setOf("mp3", "m4a", "m4b", "aac", "ogg", "opus", "flac", "wav")
 
     init {
         channel.setMethodCallHandler { call, result ->
-            if (call.method == "exportStatistics") {
+            if (call.method == "requestBookWriteAccess") {
+                requestBookWriteAccess(call.argument<String>("root") ?: "", result)
+            } else if (call.method == "revealBookFile") {
+                try {
+                    val uri = Uri.parse(call.argument<String>("root") ?: call.argument<String>("uri") ?: error("Нет пути"))
+                    val initial = if (Docs.isTreeUri(uri)) Docs.buildDocumentUriUsingTree(uri, Docs.getTreeDocumentId(uri)) else uri
+                    val activity = owner.get() ?: error("Откройте приложение")
+                    val view = Intent(Intent.ACTION_VIEW).setDataAndType(initial, Docs.Document.MIME_TYPE_DIR).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    try { activity.startActivity(view) }
+                    catch (_: android.content.ActivityNotFoundException) {
+                        activity.startActivity(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).putExtra(Docs.EXTRA_INITIAL_URI, initial))
+                    }
+                    result.success(null)
+                } catch (e: Exception) { result.error("reveal", "Не удалось открыть папку в файловом менеджере", null) }
+            } else if (call.method == "exportStatistics") {
                 if (pending != null) result.error("busy", "Закройте текущий выбор файла", null)
                 else try {
                     val text = call.argument<String>("text") ?: error("Нет данных")
@@ -71,9 +89,14 @@ class AudioFolderChannel(activity: Activity, messenger: BinaryMessenger) {
                     pending = result
                     onActivityResult(4712, Activity.RESULT_OK, Intent().setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or (if (permission.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)))
                 }
-            } else if (call.method in listOf("supportFiles", "open", "read", "close", "exists", "snapshot", "cover", "artwork", "metadata", "readRange", "journal", "readingJournal", "report", "relocate")) {
-                work(result) {
+            } else if (call.method in listOf("deleteBookFile", "supportFiles", "open", "read", "close", "exists", "snapshot", "cover", "artwork", "metadata", "readRange", "journal", "readingJournal", "report", "relocate")) {
+                work(result, if (call.method == "exists") playbackChecks else worker) {
                     when (call.method) {
+                        "deleteBookFile" -> {
+                            bookAccess.delete(call.argument<String>("uri") ?: error("Нет URI"),
+                                call.argument<String>("hash") ?: error("Нет контрольной суммы"), call.argument<Boolean>("checkOnly") == true)
+                            null
+                        }
                         "supportFiles" -> {
                             val tree = Uri.parse(call.argument<String>("root") ?: error("Нет корня"))
                             check(context.contentResolver.persistedUriPermissions.any { it.uri == tree && it.isReadPermission }) { "Подключите папку заново" }
@@ -380,8 +403,26 @@ class AudioFolderChannel(activity: Activity, messenger: BinaryMessenger) {
         }
     }
 
-    private fun work(result: MethodChannel.Result, operation: () -> Any?) {
-        worker.execute {
+    fun requestBookWriteAccess(root: String, result: MethodChannel.Result) {
+        if (pending != null) { result.error("busy", "Закройте текущий выбор файла или папки", null); return }
+        try {
+            val expected = bookAccess.root(root)
+            val activity = owner.get() ?: error("Откройте приложение")
+            pending = result
+            pendingWriteRoot = expected
+            activity.startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+                putExtra(Docs.EXTRA_INITIAL_URI, Docs.buildDocumentUriUsingTree(expected, Docs.getTreeDocumentId(expected)))
+            }, 4714)
+        } catch (e: Exception) {
+            pending = null; pendingWriteRoot = null
+            result.error("book_file", e.message, null)
+        }
+    }
+
+    private fun work(result: MethodChannel.Result, executor: java.util.concurrent.ExecutorService = worker, operation: () -> Any?) {
+        executor.execute {
             try {
                 check(!disposed) { "Импорт закрыт" }
                 val value = operation()
@@ -390,12 +431,23 @@ class AudioFolderChannel(activity: Activity, messenger: BinaryMessenger) {
                     else result.success(value)
                 }
             } catch (e: Exception) {
-                main.post { result.error("folder", e.message, null) }
+                main.post {
+                    if (e is BookFileAccessFailure) result.error(e.code, e.message, e.root?.let { mapOf("root" to it.toString()) })
+                    else result.error("folder", e.message, null)
+                }
             }
         }
     }
 
     fun onActivityResult(request: Int, code: Int, data: Intent?): Boolean {
+        if (request == 4714) {
+            val result = pending ?: return true
+            val expected = pendingWriteRoot ?: return true
+            pending = null; pendingWriteRoot = null
+            if (code != Activity.RESULT_OK || data?.data == null) result.success(false)
+            else work(result) { bookAccess.grant(expected, data.data, data.flags) }
+            return true
+        }
         if (request == 4713) {
             val result = pending ?: return true
             val text = exportText
@@ -427,9 +479,19 @@ class AudioFolderChannel(activity: Activity, messenger: BinaryMessenger) {
             var count = 0
             val rootId = Docs.getTreeDocumentId(tree)
             val root = Docs.buildDocumentUriUsingTree(tree, rootId)
-            val title = context.contentResolver.query(root, arrayOf(Docs.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use {
-                if (it.moveToFirst()) it.getString(0) else "Аудиокнига"
-            } ?: "Аудиокнига"
+            fun completeFolder(cursor: android.database.Cursor) {
+                if (cursor.extras.getBoolean(Docs.EXTRA_LOADING, false) || !cursor.extras.getString(Docs.EXTRA_ERROR).isNullOrEmpty())
+                    throw BookFileAccessFailure("folder_unavailable", "Папка недоступна или список файлов ещё загружается. Обновите папку позже. Книги сохранены в библиотеке.")
+            }
+            val title = try {
+                (context.contentResolver.query(root, arrayOf(Docs.Document.COLUMN_DISPLAY_NAME, Docs.Document.COLUMN_MIME_TYPE), null, null, null)
+                    ?: error("Нет доступа к корню")).use {
+                    completeFolder(it)
+                    check(it.moveToFirst() && it.getString(1) == Docs.Document.MIME_TYPE_DIR) { "Корень недоступен" }
+                    it.getString(0) ?: "Папка"
+                }
+            } catch (e: BookFileAccessFailure) { throw e }
+            catch (e: Exception) { throw BookFileAccessFailure("folder_unavailable", "Не удалось открыть папку. Проверьте доступ и подключение накопителя. Книги сохранены в библиотеке.") }
             // Query one directory at a time. Some document providers cannot
             // serve a child query while the parent cursor is still open.
             val folders = java.util.ArrayDeque<Triple<String, String, Int>>()
@@ -444,6 +506,7 @@ class AudioFolderChannel(activity: Activity, messenger: BinaryMessenger) {
                     Docs.Document.COLUMN_MIME_TYPE, Docs.Document.COLUMN_SIZE)
                 val cursor = context.contentResolver.query(children, columns, null, null, null) ?: error("Папка недоступна: $prefix")
                 cursor.use {
+                    completeFolder(it)
                     while (it.moveToNext()) {
                         check(!disposed) { "Импорт закрыт" }
                         check(++count <= 50000) { "Слишком большая папка (максимум 50000 элементов)" }
@@ -473,6 +536,7 @@ class AudioFolderChannel(activity: Activity, messenger: BinaryMessenger) {
 
     fun dispose() {
         disposed = true
+        playbackChecks.shutdownNow()
         channel.setMethodCallHandler(null)
         pending?.error("closed", "Выбор папки закрыт", null)
         pending = null

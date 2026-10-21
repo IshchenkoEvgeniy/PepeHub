@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../sync/peer/peer_service.dart';
 import '../sync/peer/peer_sync_page.dart';
+import '../updates/update_service.dart';
+import '../updates/update_page.dart';
 
 import '../audio/statistics_export.dart' show ListeningGoals;
 import '../library/library_service.dart';
@@ -488,6 +490,16 @@ class _SettingsPageState extends State<SettingsPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _link('Заметки Obsidian', null, Icons.notes, widget.onNotes),
+          if (UpdateScope.of(context) case final updates?)
+            _link(
+              'Обновление приложения',
+              'Новые версии для Windows и Android',
+              Icons.system_update_outlined,
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => UpdatePage(service: updates)),
+              ),
+            ),
           if (PeerSyncScope.of(context) case final service?)
             _link(
               'Устройства и общие папки',

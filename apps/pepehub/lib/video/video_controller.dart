@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -20,6 +21,27 @@ class VideoPlaybackController extends ChangeNotifier {
   final int Function() nowMonotonic;
   final DateTime Function() now;
   final Timer Function(Duration, void Function()) createSleepTimer;
+  final Random _random;
+  late final List<int> _originalOrder = List.unmodifiable(
+    List.generate(lessons.length, (i) => i),
+  );
+  late final List<int> _musicOrder = [
+    for (var i = 0; i < lessons.length; i++)
+      if (lessons[i].isAudio && lessons[i].available) i,
+  ];
+  List<int> _shuffledOrder = const [];
+  bool _shuffleEnabled = false;
+  int _shuffleCursor = 0;
+  bool get shuffleEnabled => _shuffleEnabled;
+  bool get canShuffle => _musicOrder.length > 1;
+  List<int> get playbackOrder =>
+      _shuffleEnabled ? _shuffledOrder : _originalOrder;
+  int get queueIndex => _shuffleEnabled ? _shuffleCursor : index;
+  bool get canGoNext => queueIndex + 1 < playbackOrder.length;
+  bool get canGoPrevious => queueIndex > 0;
+  int? get _nextIndex => canGoNext ? playbackOrder[queueIndex + 1] : null;
+  int? get _previousIndex =>
+      canGoPrevious ? playbackOrder[queueIndex - 1] : null;
   final VideoActivitySampler sampler = VideoActivitySampler();
   final Map<String, VideoInterval> _unwritten = {};
   String sessionId = uuid.v4();
@@ -47,6 +69,7 @@ class VideoPlaybackController extends ChangeNotifier {
   List<VideoSeekEntry> get seekHistory => List.unmodifiable(_seekHistory);
   double _unmutedVolume = 100;
   bool audioOnly = false, pipVisible = false;
+  bool _requestedAudioOnly = false;
   bool get _playAllowed => _foreground || pipVisible || audioOnly;
   Timer? _sleepTimer;
   int? _sleepDeadline;
@@ -67,9 +90,11 @@ class VideoPlaybackController extends ChangeNotifier {
     this.validateSource,
     int Function()? nowMonotonic,
     DateTime Function()? now,
+    Random? random,
     Timer Function(Duration, void Function())? createSleepTimer,
     Duration? checkpointPeriod = const Duration(seconds: 10),
-  }) : nowMonotonic =
+  }) : _random = random ?? Random(),
+       nowMonotonic =
            nowMonotonic ?? (Stopwatch()..start()).elapsedMillisecondsNow,
        now = now ?? DateTime.now,
        createSleepTimer = createSleepTimer ?? Timer.new {
@@ -207,8 +232,11 @@ class VideoPlaybackController extends ChangeNotifier {
           session = sessionId;
       unawaited(
         _command(() async {
+          if (current?.id != lesson.id) return;
           await _persist();
-          if (_sleepEndLesson == '${lesson.id}:${lesson.mediaVersion}') {
+          final sleepAtEnd =
+              _sleepEndLesson == '${lesson.id}:${lesson.mediaVersion}';
+          if (sleepAtEnd) {
             _cancelSleep();
             await _pause();
           }
@@ -219,6 +247,17 @@ class VideoPlaybackController extends ChangeNotifier {
             at: at,
             extra: {'sessionId': session},
           );
+          // Music playlists advance; courses retain their existing lesson behavior.
+          final nextIndex = _nextIndex;
+          if (!sleepAtEnd &&
+              lesson.isAudio &&
+              _playAllowed &&
+              current?.id == lesson.id &&
+              nextIndex != null &&
+              lessons[nextIndex].isAudio &&
+              lessons[nextIndex].available) {
+            await _load(nextIndex);
+          }
         }).catchError((Object _) {}),
       );
     }
@@ -237,7 +276,7 @@ class VideoPlaybackController extends ChangeNotifier {
       (_) {},
       onError: (Object error, StackTrace stack) {
         storageError =
-            'Не удалось выполнить действие или сохранить видео: $error';
+            'Не удалось выполнить действие или сохранить медиа: $error';
         _notify();
       },
     );
@@ -246,8 +285,26 @@ class VideoPlaybackController extends ChangeNotifier {
 
   Future<void> load(int nextIndex, {bool play = true}) =>
       _command(() => _load(nextIndex, play: play));
-  Future<void> next() => _command(() => _load(index + 1));
-  Future<void> previous() => _command(() => _load(index - 1));
+  Future<void> next() => _command(() async {
+    final target = _nextIndex;
+    if (target != null) await _load(target);
+  });
+  Future<void> previous() => _command(() async {
+    final target = _previousIndex;
+    if (target != null) await _load(target);
+  });
+  Future<void> setShuffle(bool enabled) => _command(() async {
+    if (_shuffleEnabled == enabled) return;
+    if (enabled) {
+      if (!canShuffle || current?.isAudio != true) return;
+      final remaining = _musicOrder.where((i) => i != index).toList()
+        ..shuffle(_random);
+      _shuffledOrder = List.unmodifiable([index, ...remaining]);
+      _shuffleCursor = 0;
+    }
+    _shuffleEnabled = enabled;
+    _notify();
+  });
   Future<void> _load(int nextIndex, {bool play = true}) async {
     if (nextIndex < 0 || nextIndex >= lessons.length) return;
     if (!lessons[nextIndex].available) {
@@ -268,18 +325,28 @@ class VideoPlaybackController extends ChangeNotifier {
       }
       final lesson = lessons[nextIndex];
       final saved = await repository.progress(lesson);
+      final restartTrack = lesson.isAudio && current != null;
       // Clear the old lesson before opening, so a failed open cannot save the
       // new engine's position as progress for the previous lesson.
       current = null;
       index = nextIndex;
+      if (_shuffleEnabled) {
+        if (lesson.isAudio) {
+          _shuffleCursor = _shuffledOrder.indexOf(nextIndex);
+        } else {
+          _shuffleEnabled = false;
+        }
+      }
       await validateSource?.call(lesson);
       await engine.open(
         lesson,
-        positionMs: saved?.positionMs ?? 0,
+        positionMs: restartTrack ? 0 : saved?.positionMs ?? 0,
         speed: saved?.speed ?? 1,
       );
       current = lesson;
-      if (audioOnly) await engine.setAudioOnly(true);
+      final nextAudioOnly = lesson.isAudio || _requestedAudioOnly;
+      await engine.setAudioOnly(nextAudioOnly);
+      audioOnly = nextAudioOnly;
       if (_sleepEndLesson != null &&
           _sleepEndLesson != '${lesson.id}:${lesson.mediaVersion}') {
         _cancelSleep();
@@ -583,6 +650,8 @@ class VideoPlaybackController extends ChangeNotifier {
   }
 
   Future<void> setAudioOnly(bool enabled) => _command(() async {
+    if (current?.isAudio == true && !enabled) return;
+    _requestedAudioOnly = enabled;
     if (audioOnly == enabled) return;
     _boundary();
     await _persist();

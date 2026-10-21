@@ -40,13 +40,20 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
   List<VideoLesson> lessons = [];
   Map<String, VideoProgress> progress = {};
   bool loading = true, busy = false, favorites = false;
-  String query = '';
+  String query = '', mediaFilter = 'all';
   String? error;
   int _request = 0;
   @override
   void initState() {
     super.initState();
+    widget.repository.repository.externalChanges.addListener(_load);
     _load();
+  }
+
+  @override
+  void dispose() {
+    widget.repository.repository.externalChanges.removeListener(_load);
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -67,7 +74,7 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
       if (mounted && request == _request) {
         setState(() {
           loading = false;
-          error = 'Не удалось открыть видеобиблиотеку: $e';
+          error = 'Не удалось открыть медиатеку: $e';
         });
       }
     }
@@ -116,7 +123,7 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
       return;
     }
     if (selection.sources.isEmpty) {
-      throw StateError('В выбранной папке нет поддерживаемых видео');
+      throw StateError('В выбранной папке нет поддерживаемых видео или аудио');
     }
     final confirmed = await showDialog<VideoImportSelection>(
       context: context,
@@ -157,7 +164,8 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
   Future<void> _open(VideoItem item) => _run(() async {
     final own = lessons.where((l) => l.itemId == item.id).toList();
     if (own.isEmpty) return;
-    if (item.kind == VideoItemKind.course) {
+    if (item.kind == VideoItemKind.course &&
+        !own.every((lesson) => lesson.isAudio)) {
       await Navigator.push<void>(
         context,
         MaterialPageRoute(
@@ -176,6 +184,9 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
             repository: widget.repository,
             item: item,
             lessons: own,
+            initialIndex: own
+                .indexWhere((lesson) => lesson.id == _recent(item)?.lessonId)
+                .clamp(0, own.length - 1),
             beforePlaying: widget.audio?.pause,
           ),
         ),
@@ -192,6 +203,12 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
             .where(
               (item) =>
                   (!favorites || item.favorite) &&
+                  (mediaFilter == 'all' ||
+                      lessons.any(
+                        (lesson) =>
+                            lesson.itemId == item.id &&
+                            lesson.isAudio == (mediaFilter == 'music'),
+                      )) &&
                   (query.isEmpty ||
                       item.title.toLowerCase().contains(query.toLowerCase()) ||
                       lessons.any(
@@ -211,7 +228,7 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
             return a.title.compareTo(b.title);
           });
     return ShelfShell(
-      title: 'Видео',
+      title: 'Медиа',
       navigation: widget.navigation,
       actions: [
         IconButton(
@@ -227,7 +244,7 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
           ),
         ),
         IconButton(
-          tooltip: 'Статистика видео',
+          tooltip: 'Статистика медиа',
           onPressed: () => Navigator.push<void>(
             context,
             MaterialPageRoute(
@@ -242,8 +259,8 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
         padding: const EdgeInsets.all(20),
         children: [
           const ShelfIntro(
-            title: 'Видео',
-            subtitle: 'Свои видео и курсы. Позиция сохраняется, просмотренные участки учитываются отдельно от перемоток.',
+            title: 'Медиа',
+            subtitle: 'Видео, курсы и музыка из ваших файлов. Сохраняйте позицию, слушайте плейлисты и продолжайте в мини-плеере.',
           ),
           const SizedBox(height: 16),
           Wrap(
@@ -252,7 +269,7 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
             children: [
               FilledButton.icon(
                 onPressed: busy ? null : () => _pick(false),
-                icon: const Icon(Icons.video_file_outlined),
+                icon: const Icon(Icons.library_music_outlined),
                 label: const Text('Добавить файлы'),
               ),
               OutlinedButton.icon(
@@ -271,7 +288,7 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
           TextField(
             decoration: const InputDecoration(
               prefixIcon: Icon(Icons.search),
-              hintText: 'Поиск видео и уроков',
+              hintText: 'Поиск видео, музыки и уроков',
             ),
             onChanged: (value) => setState(() => query = value.trim()),
           ),
@@ -279,6 +296,16 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
           Wrap(
             spacing: 8,
             children: [
+              for (final entry in const {
+                'all': 'Все',
+                'video': 'Видео',
+                'music': 'Музыка',
+              }.entries)
+                ChoiceChip(
+                  label: Text(entry.value),
+                  selected: mediaFilter == entry.key,
+                  onSelected: (_) => setState(() => mediaFilter = entry.key),
+                ),
               FilterChip(
                 label: const Text('Избранное'),
                 selected: favorites,
@@ -312,16 +339,16 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   children: [
-                    Icon(Icons.ondemand_video, size: 48, color: palette.accent),
+                    Icon(Icons.perm_media, size: 48, color: palette.accent),
                     const SizedBox(height: 16),
                     Text(
-                      'Начните с видео или курса',
+                      'Добавьте видео или музыку',
                       style: Theme.of(context).textTheme.titleLarge,
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Подключите папку с уроками или добавьте прямую ссылку. Локальные видео читаются из исходных файлов.',
+                      'Добавьте файлы, подключите папку с уроками или музыкой либо укажите прямую ссылку. Медиа читаются из исходных файлов.',
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -342,7 +369,11 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                   vertical: 10,
                 ),
                 leading: Icon(
-                  item.kind == VideoItemKind.course
+                  lessons
+                          .where((l) => l.itemId == item.id)
+                          .every((l) => l.isAudio)
+                      ? Icons.music_note_outlined
+                      : item.kind == VideoItemKind.course
                       ? Icons.school_outlined
                       : Icons.ondemand_video,
                   color: palette.accent,
@@ -354,7 +385,13 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                 ),
                 subtitle: Text(
                   [
-                    item.kind == VideoItemKind.course
+                    lessons
+                            .where((l) => l.itemId == item.id)
+                            .every((l) => l.isAudio)
+                        ? (item.kind == VideoItemKind.course
+                              ? 'Плейлист · треков: ${lessons.where((l) => l.itemId == item.id).length}'
+                              : 'Музыка')
+                        : item.kind == VideoItemKind.course
                         ? 'Курс · ${lessons.where((l) => l.itemId == item.id).length} уроков'
                         : 'Видео',
                     if (_recent(item) != null)
@@ -702,6 +739,7 @@ class _VideoLinkDialog extends StatefulWidget {
 class _VideoLinkDialogState extends State<_VideoLinkDialog> {
   final form = GlobalKey<FormState>();
   final title = TextEditingController(), url = TextEditingController();
+  bool audio = false;
   @override
   void dispose() {
     title.dispose();
@@ -711,7 +749,7 @@ class _VideoLinkDialogState extends State<_VideoLinkDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Добавить ссылку на видео'),
+    title: const Text('Добавить ссылку на медиа'),
     content: SizedBox(
       width: 480,
       child: Form(
@@ -720,6 +758,15 @@ class _VideoLinkDialogState extends State<_VideoLinkDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Музыка / аудио'),
+                subtitle: const Text(
+                  'Включите для аудиоссылок без расширения файла',
+                ),
+                value: audio,
+                onChanged: (value) => setState(() => audio = value),
+              ),
               TextFormField(
                 controller: title,
                 autofocus: true,
@@ -733,7 +780,7 @@ class _VideoLinkDialogState extends State<_VideoLinkDialog> {
                 keyboardType: TextInputType.url,
                 decoration: const InputDecoration(
                   labelText: 'Прямая HTTP(S)-ссылка',
-                  hintText: 'https://…/lesson.mp4',
+                  hintText: 'https://…/track.mp3 или lesson.mp4',
                 ),
                 validator: (value) {
                   try {
@@ -759,7 +806,11 @@ class _VideoLinkDialogState extends State<_VideoLinkDialog> {
           if (form.currentState!.validate()) {
             Navigator.pop(
               context,
-              VideoSourceDraft(validateVideoUrl(url.text), title.text.trim()),
+              VideoSourceDraft(
+                validateVideoUrl(url.text),
+                title.text.trim(),
+                audio: audio,
+              ),
             );
           }
         },
@@ -788,7 +839,11 @@ class _VideoImportDialogState extends State<_VideoImportDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Проверить видео и порядок уроков'),
+    title: Text(
+      sources.every((source) => source.isAudio)
+          ? 'Проверить музыку и порядок треков'
+          : 'Проверить медиа и порядок файлов',
+    ),
     content: SizedBox(
       width: 600,
       height: 400,
@@ -798,9 +853,13 @@ class _VideoImportDialogState extends State<_VideoImportDialog> {
             controller: title,
             maxLength: 300,
             decoration: InputDecoration(
-              labelText: sources.length > 1 || widget.selection.root != null
-                  ? 'Название курса'
-                  : 'Название видео',
+              labelText: sources.every((source) => source.isAudio)
+                  ? (sources.length > 1 || widget.selection.root != null
+                        ? 'Название плейлиста'
+                        : 'Название трека')
+                  : (sources.length > 1 || widget.selection.root != null
+                        ? 'Название курса / подборки'
+                        : 'Название видео'),
               errorText: error,
             ),
           ),

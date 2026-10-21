@@ -45,7 +45,14 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
   @override
   void initState() {
     super.initState();
+    widget.repository.externalChanges.addListener(_load);
     _load();
+  }
+
+  @override
+  void dispose() {
+    widget.repository.externalChanges.removeListener(_load);
+    super.dispose();
   }
 
   Future<void> _load() async {

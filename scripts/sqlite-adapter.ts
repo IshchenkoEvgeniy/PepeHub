@@ -14,7 +14,7 @@ export class SqliteDatabase implements Database {
   constructor(path=':memory:') {
     this.sqlite=new DatabaseSync(path);
     this.sqlite.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;');
-    const version=this.sqlite.prepare('PRAGMA user_version').get()?.user_version;
+    const version=Number(this.sqlite.prepare('PRAGMA user_version').get()?.user_version ?? 0);
     if(version===0) {
       this.sqlite.exec('BEGIN');
       try {

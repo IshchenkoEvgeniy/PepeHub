@@ -2,8 +2,10 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
+import 'package:flutter/foundation.dart';
 
 import 'database.dart';
+import 'cloud_transport_state.dart';
 
 const uuid = Uuid();
 
@@ -37,8 +39,95 @@ class LibraryRecord {
 }
 
 class Repository {
+  static final _externalChanges = Expando<ValueNotifier<int>>();
+  ValueListenable<int> get externalChanges =>
+      _externalChanges[db] ??= ValueNotifier(0);
+  void notifyExternalChange() {
+    final notifier = _externalChanges[db] ??= ValueNotifier(0);
+    notifier.value++;
+  }
+
   final AppDatabase db;
   Repository(this.db);
+  late final cloud = CloudTransportState(db);
+  Future<void> initializeTransports() => db.transaction(cloud.initialize);
+  Future<void> setCloudTracking(bool value) async {
+    await db.transaction(() async {
+      await setMeta('cloud-transport-enabled', value ? '1' : '0');
+      await cloud.initialize();
+    });
+  }
+
+  String _digest(LibraryRecord record) =>
+      cloud.digest(record.type, record.deleted, record.payload);
+  Future<void> _rememberCloud(LibraryRecord record) =>
+      cloud.remember(record.id, _digest(record));
+  Future<void> _applyCloudRecord(LibraryRecord remote) async {
+    final local = await record(remote.id);
+    final next = LibraryRecord(
+      remote.id,
+      remote.type,
+      local == null
+          ? 1
+          : local.revision + (_digest(local) == _digest(remote) ? 0 : 1),
+      remote.deleted,
+      remote.payload,
+    );
+    await _write('records', next);
+    await _rememberCloud(next);
+  }
+
+  Future<bool> _cloudClean(String id) async {
+    final local = await record(id);
+    return local == null || await cloud.known(id) == _digest(local);
+  }
+
+  Future<void> _queueCloudCurrent(LibraryRecord local) async {
+    final operation = {
+      'schemaVersion': 1,
+      'operationId': uuid.v4(),
+      'deviceId': await deviceId(),
+      'entityType': local.type,
+      'entityId': local.id,
+      'baseRevision': await cloud.nextBase(local.id),
+      'action': local.deleted ? 'delete' : 'put',
+      'payload': local.deleted ? null : local.payload,
+    };
+    await db.customStatement(
+      'INSERT INTO outbox(operation_id,entity_id,operation) VALUES(?,?,?)',
+      [operation['operationId'], local.id, jsonEncode(operation)],
+    );
+    await _rememberCloud(local);
+  }
+
+  /// Capture changes made through the peer/local paths only when the cloud
+  /// transport is explicitly enabled, using its own confirmed server baseline.
+  Future<void> prepareCloudChanges() async {
+    await cloud.initialize();
+    if (!await cloud.enabled) throw StateError('Облачный транспорт не включён');
+    await db.transaction(() async {
+      for (final row
+          in await db
+              .customSelect(
+                "SELECT * FROM records WHERE type IN ('book','session') ORDER BY id",
+              )
+              .get()) {
+        final local = LibraryRecord.fromRow(row);
+        if (await cloud.known(local.id) == _digest(local)) continue;
+        if (await db
+                .customSelect(
+                  "SELECT 1 FROM outbox WHERE entity_id=? AND state='conflict' LIMIT 1",
+                  variables: [Variable(local.id)],
+                )
+                .getSingleOrNull() !=
+            null) {
+          continue;
+        }
+        await _queueCloudCurrent(local);
+      }
+    });
+  }
+
   Future<String?> meta(String key) async =>
       (await db
               .customSelect(
@@ -101,9 +190,23 @@ class Repository {
       throw ArgumentError('Введите название');
     }
     await db.transaction(() async {
+      await cloud.initialize();
       final device = await deviceId();
       final existing = await record(id);
       if (existing?.deleted == true) throw StateError('Книга удалена');
+      if (!await cloud.enabled || type != 'book' && type != 'session') {
+        await _write(
+          'records',
+          LibraryRecord(
+            id,
+            type,
+            (existing?.revision ?? 0) + 1,
+            false,
+            payload,
+          ),
+        );
+        return;
+      }
       final blocked = await db
           .customSelect(
             "SELECT 1 FROM outbox WHERE entity_id=? AND state='conflict'",
@@ -135,6 +238,7 @@ class Repository {
             'records',
             LibraryRecord(id, type, existing.revision, false, payload),
           );
+          await _rememberCloud((await record(id))!);
           return;
         }
       }
@@ -144,7 +248,7 @@ class Repository {
         'deviceId': device,
         'entityType': type,
         'entityId': id,
-        'baseRevision': existing?.revision ?? 0,
+        'baseRevision': await cloud.nextBase(id),
         'action': 'put',
         'payload': payload,
       };
@@ -156,6 +260,7 @@ class Repository {
         'INSERT INTO outbox(operation_id,entity_id,operation) VALUES(?,?,?)',
         [operation['operationId'], id, jsonEncode(operation)],
       );
+      await _rememberCloud((await record(id))!);
     });
   }
 
@@ -165,9 +270,17 @@ class Repository {
       throw ArgumentError('Удалять через синхронизацию можно книгу или сессию');
     }
     await db.transaction(() async {
+      await cloud.initialize();
       final existing = await record(id);
       if (existing == null || existing.deleted) return;
       if (existing.type != type) throw StateError('Тип записи изменился');
+      if (!await cloud.enabled) {
+        await _write(
+          'records',
+          LibraryRecord(id, type, existing.revision + 1, true, null),
+        );
+        return;
+      }
       final blocked = await db
           .customSelect(
             "SELECT 1 FROM outbox WHERE entity_id=? AND state='conflict'",
@@ -183,7 +296,7 @@ class Repository {
         'deviceId': await deviceId(),
         'entityType': type,
         'entityId': id,
-        'baseRevision': existing.revision,
+        'baseRevision': await cloud.nextBase(id),
         'action': 'delete',
         'payload': null,
       };
@@ -195,6 +308,7 @@ class Repository {
         'INSERT INTO outbox(operation_id,entity_id,operation) VALUES(?,?,?)',
         [operation['operationId'], id, jsonEncode(operation)],
       );
+      await _rememberCloud((await record(id))!);
     });
   }
 
@@ -281,6 +395,7 @@ class Repository {
 
   Future<void> applyReceipt(Map<String, dynamic> receipt) =>
       db.transaction(() async {
+        await cloud.initialize();
         final row = await db
             .customSelect(
               'SELECT entity_id FROM outbox WHERE operation_id=?',
@@ -299,22 +414,34 @@ class Repository {
         await db.customStatement('DELETE FROM outbox WHERE operation_id=?', [
           receipt['operationId'],
         ]);
-        final remote = LibraryRecord.fromJson(
+        var remote = LibraryRecord.fromJson(
           receipt['current'] as Map<String, dynamic>,
         );
-        await _write('remote_records', remote);
+        final known = await db
+            .customSelect(
+              'SELECT * FROM remote_records WHERE id=?',
+              variables: [Variable(id)],
+            )
+            .getSingleOrNull();
+        if (known != null && known.read<int>('revision') > remote.revision) {
+          remote = LibraryRecord.fromRow(known);
+        } else {
+          await _write('remote_records', remote);
+        }
         if ((await db
-                    .customSelect(
-                      'SELECT COUNT(*) AS n FROM outbox WHERE entity_id=?',
-                      variables: [Variable(id)],
-                    )
-                    .getSingle())
-                .read<int>('n') ==
-            0) {
-          await _write('records', remote);
+                        .customSelect(
+                          'SELECT COUNT(*) AS n FROM outbox WHERE entity_id=?',
+                          variables: [Variable(id)],
+                        )
+                        .getSingle())
+                    .read<int>('n') ==
+                0 &&
+            await _cloudClean(id)) {
+          await _applyCloudRecord(remote);
         }
       });
   Future<void> applyPage(Map<String, dynamic> page) => db.transaction(() async {
+    await cloud.initialize();
     for (final item in page['changes'] as List) {
       final incoming = LibraryRecord.fromJson(item as Map<String, dynamic>);
       final known = await db
@@ -326,7 +453,7 @@ class Repository {
       if (known != null && known.read<int>('revision') >= incoming.revision) {
         continue;
       }
-      await _write('remote_records', incoming);
+      final clean = await _cloudClean(incoming.id);
       final count =
           (await db
                   .customSelect(
@@ -335,11 +462,22 @@ class Repository {
                   )
                   .getSingle())
               .read<int>('n');
-      if (count == 0) await _write('records', incoming);
+      if (count == 0 && !clean && await cloud.enabled) {
+        final local = await record(incoming.id);
+        if (local != null &&
+            (local.type == 'book' || local.type == 'session')) {
+          await _queueCloudCurrent(local);
+        }
+      }
+      await _write('remote_records', incoming);
+      if (count == 0 && clean) {
+        await _applyCloudRecord(incoming);
+      }
     }
     await setMeta('cursor', '${page['cursor']}');
   });
   Future<void> useServerVersion(String operationId) => db.transaction(() async {
+    await cloud.initialize();
     final row = await db
         .customSelect(
           "SELECT * FROM outbox WHERE operation_id=? AND state='conflict'",
@@ -366,7 +504,7 @@ class Repository {
     if (remote == null) {
       await db.customStatement('DELETE FROM records WHERE id=?', [id]);
     } else {
-      await _write('records', remote);
+      await _applyCloudRecord(remote);
     }
   });
 }
