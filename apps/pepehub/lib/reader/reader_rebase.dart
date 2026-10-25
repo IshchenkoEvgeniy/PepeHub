@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../data/repository.dart' show uuid;
 import 'reader_layout.dart';
 import 'reading_library.dart';
 import 'text_book.dart' show currentBookLayout;
@@ -91,12 +92,8 @@ class ReaderParagraphRebase implements ReaderAnchorMap {
   late final List<int> _beforeFirst = _firsts(before),
       _afterFirst = _firsts(after);
   ReaderParagraphRebase(this.before, this.after) {
-    final a = [
-      for (final c in before.book.chapters) ...c.paragraphs,
-    ];
-    final b = [
-      for (final c in after.book.chapters) ...c.paragraphs,
-    ];
+    final a = [for (final c in before.book.chapters) ...c.paragraphs];
+    final b = [for (final c in after.book.chapters) ...c.paragraphs];
     var same = a.length == b.length;
     for (var i = 0; same && i < a.length; i++) {
       same = a[i] == b[i];
@@ -134,13 +131,44 @@ class ReaderParagraphRebase implements ReaderAnchorMap {
     if (local >= after.book.chapters[target].paragraphs.length) {
       return (chapter: target, offset: after.texts[target].length);
     }
-    return (
-      chapter: target,
-      offset: after.offset(target, local, place.within),
-    );
+    return (chapter: target, offset: after.offset(target, local, place.within));
   }
 
   int absolute(int offset) => _absolute(this, offset);
+}
+
+/// Exact concatenated source, different chapter boundaries (TXT headings).
+class ReaderLinearRebase implements ReaderAnchorMap {
+  @override
+  final ReaderDocument before, after;
+  ReaderLinearRebase(this.before, this.after) {
+    if (before.texts.join() != after.texts.join()) {
+      throw StateError('Текст книги изменился');
+    }
+  }
+  @override
+  ({int chapter, int offset}) at(int chapter, int offset) {
+    chapter = chapter.clamp(0, before.texts.length - 1);
+    final absolute =
+        before.starts[chapter] + offset.clamp(0, before.texts[chapter].length);
+    var low = 0, high = after.starts.length;
+    while (low < high) {
+      final middle = (low + high) >> 1;
+      if (after.starts[middle] <= absolute) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    final next = (low - 1).clamp(0, after.texts.length - 1);
+    return (
+      chapter: next,
+      offset: (absolute - after.starts[next]).clamp(
+        0,
+        after.texts[next].length,
+      ),
+    );
+  }
 }
 
 class _ChainedRebase implements ReaderAnchorMap {
@@ -160,13 +188,16 @@ class _ChainedRebase implements ReaderAnchorMap {
 /// Brings saved anchors of one book to [currentBookLayout] once per device.
 ///
 /// [legacy] parses the original (layout 1) projection; [previous] parses
-/// layout 2 when its chapter boundaries differ from [next] (FB2 only).
+/// layout 2 when its chapter boundaries differ from [next]. [prior] parses
+/// layout 3 for TXT heading migration.
 Future<void> migrateReaderLayout(
   ReadingLibrary library,
   String hash,
   ReaderDocument next,
   Future<ReaderDocument> Function() legacy, {
   Future<ReaderDocument> Function()? previous,
+  Future<ReaderDocument> Function()? prior,
+  Future<ReaderDocument> Function(int layout)? sourceLayout,
 }) async {
   final repo = library.repository;
   final version = await repo.meta('reader-layout-version:$hash');
@@ -183,15 +214,24 @@ Future<void> migrateReaderLayout(
       notes.isNotEmpty ||
       coverage.isNotEmpty ||
       bookmarks.isNotEmpty;
-  // Layout of the stored anchors: 1 before the first migration, otherwise 2.
-  final from = version == '2' || saved['layoutVersion'] == 2 ? 2 : 1;
+  // Missing version predates the per-device migration marker.
+  final from =
+      int.tryParse(version ?? '') ?? (saved['layoutVersion'] == 2 ? 2 : 1);
   ReaderAnchorMap? mapping;
-  ReaderParagraphRebase? split;
+  ReaderAnchorMap? split;
   if (hasData) {
-    final layout2 = previous == null ? next : await previous();
+    final layout2 = from >= 3
+        ? (sourceLayout != null
+              ? await sourceLayout(from)
+              : prior == null
+              ? next
+              : await prior())
+        : (previous == null ? next : await previous());
     if (!identical(layout2, next)) {
       try {
-        split = ReaderParagraphRebase(layout2, next);
+        split = layout2.texts.join() == next.texts.join()
+            ? ReaderLinearRebase(layout2, next)
+            : ReaderParagraphRebase(layout2, next);
       } on StateError {
         // Unexpected text difference: keep anchors as they are rather than
         // blocking the book. Notes verify their quote before jumping.
@@ -260,7 +300,10 @@ Future<void> migrateReaderLayout(
             for (final h in history) {'chapter': h.chapter, 'offset': h.offset},
           ],
           if (pinned != null)
-            'pinnedChapter': {'chapter': pinned.chapter, 'offset': pinned.offset},
+            'pinnedChapter': {
+              'chapter': pinned.chapter,
+              'offset': pinned.offset,
+            },
         });
       }
       for (final note in notes) {
@@ -271,6 +314,44 @@ Future<void> migrateReaderLayout(
         final a = map.at(chapter, start);
         var b = map.at(chapter, end);
         if (b.chapter != a.chapter) {
+          final pieces = [
+            for (var c = a.chapter; c <= b.chapter; c++)
+              (
+                chapter: c,
+                start: c == a.chapter ? a.offset : 0,
+                end: c == b.chapter ? b.offset : next.texts[c].length,
+              ),
+          ].where((piece) => piece.end > piece.start).toList();
+          final text = pieces
+              .map(
+                (piece) =>
+                    next.texts[piece.chapter].substring(piece.start, piece.end),
+              )
+              .join();
+          // TXT boundaries preserve the exact source. A pre-existing quote
+          // spanning a newly recognized heading must retain all of its text.
+          if (pieces.isNotEmpty && text == note.value['quote']) {
+            for (var i = 0; i < pieces.length; i++) {
+              final piece = pieces[i];
+              final id = i == 0 ? note.key : uuid.v4();
+              await repo.setMeta(
+                'reading-note:$id',
+                jsonEncode({
+                  ...note.value,
+                  'id': id,
+                  'chapter': piece.chapter,
+                  'chapterTitle': next.book.chapters[piece.chapter].title,
+                  'start': piece.start,
+                  'end': piece.end,
+                  'quote': next.texts[piece.chapter].substring(
+                    piece.start,
+                    piece.end,
+                  ),
+                }),
+              );
+            }
+            continue;
+          }
           // A quote that now crosses a chapter boundary keeps its first part.
           b = (chapter: a.chapter, offset: map.after.texts[a.chapter].length);
         }
@@ -279,7 +360,8 @@ Future<void> migrateReaderLayout(
           jsonEncode({
             ...note.value,
             'chapter': a.chapter,
-            if (split != null) 'chapterTitle': next.book.chapters[a.chapter].title,
+            if (split != null)
+              'chapterTitle': next.book.chapters[a.chapter].title,
             'start': a.offset,
             'end': b.offset,
           }),

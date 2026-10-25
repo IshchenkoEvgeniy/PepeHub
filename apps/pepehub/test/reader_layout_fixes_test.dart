@@ -29,12 +29,9 @@ Uint8List _epub({String nav = '', Map<String, String> extra = const {}}) =>
     fixture(
       overrides: {
         'OPS/book.opf': _opf.replaceFirst('%NAV%', nav),
-        'OPS/text/a.xhtml':
-            '<html><head><title>Книга</title></head><body><p>Альфа</p></body></html>',
-        'OPS/text/b.xhtml':
-            '<html><head><title>Книга</title></head><body><h2>Вторая  \n глава</h2><p>Бета</p></body></html>',
-        'OPS/text/c.xhtml':
-            '<html><head><title>Своё имя</title></head><body><p>Гамма</p></body></html>',
+        'OPS/text/a.xhtml': '<html><head><title>Книга</title></head><body><p>Альфа</p></body></html>',
+        'OPS/text/b.xhtml': '<html><head><title>Книга</title></head><body><h2>Вторая  \n глава</h2><p>Бета</p></body></html>',
+        'OPS/text/c.xhtml': '<html><head><title>Своё имя</title></head><body><p>Гамма</p></body></html>',
         ...extra,
       },
     );
@@ -97,16 +94,19 @@ void main() {
       ]);
     });
 
-    test('fall back to the first heading, never to the repeated book title', () {
-      final book = parseEpub(_epub());
-      expect(book.chapters.map((c) => c.title), [
-        'Глава 1',
-        'Вторая глава',
-        'Своё имя',
-      ]);
-      // The original fixture: <title>Начало</title> before <h1>Первая глава</h1>.
-      expect(parseEpub(fixture()).chapters.first.title, 'Первая глава');
-    });
+    test(
+      'fall back to the first heading, never to the repeated book title',
+      () {
+        final book = parseEpub(_epub());
+        expect(book.chapters.map((c) => c.title), [
+          'Глава 1',
+          'Вторая глава',
+          'Своё имя',
+        ]);
+        // The original fixture: <title>Начало</title> before <h1>Первая глава</h1>.
+        expect(parseEpub(fixture()).chapters.first.title, 'Первая глава');
+      },
+    );
 
     test('a broken navigation document does not prevent reading', () {
       final book = parseEpub(
@@ -230,12 +230,18 @@ void main() {
       final first = book.chapters[2];
       expect(first.footnotes.single.text, contains('Первая сноска'));
       final text = first.paragraphs.join('\n\n');
-      expect(text.substring(first.footnotes.single.start), startsWith('1 текст'));
+      expect(
+        text.substring(first.footnotes.single.start),
+        startsWith('1 текст'),
+      );
     });
 
     test('layout 2 keeps the old chapters for rebasing saved anchors', () {
       final old = parseTextBook(_bytes(_fb2), 'book.fb2', layout: 2);
-      expect(old.chapters, hasLength(7)); // intro, 2 parts, 3 note sections, title
+      expect(
+        old.chapters,
+        hasLength(7),
+      ); // intro, 2 parts, 3 note sections, title
       final current = parseTextBook(_bytes(_fb2), 'book.fb2');
       expect(
         [for (final c in old.chapters) ...c.paragraphs],
@@ -243,106 +249,116 @@ void main() {
       );
     });
 
-    test('saved position, notes, coverage and bookmarks move with the text', () async {
-      final before = ReaderDocument(
-        parseTextBook(_bytes(_fb2), 'book.fb2', layout: 2),
-      );
-      final after = ReaderDocument(parseTextBook(_bytes(_fb2), 'book.fb2'));
-      final db = AppDatabase(NativeDatabase.memory());
-      addTearDown(db.close);
-      final repo = Repository(db);
-      final library = ReadingLibrary(repo);
-      // Old chapter 1 is "Часть первая" with both nested chapters inside.
-      final oldText = before.texts[1];
-      final at = oldText.indexOf('Четыре');
-      final quoteStart = oldText.indexOf('Три');
-      await repo.setMeta('reader-layout-version:book', '2');
-      await repo.setMeta(
-        'reader:book',
-        jsonEncode({
-          'layoutVersion': 2,
-          'chapter': 1,
-          'textOffset': at,
-          'returnTo': [
-            {'chapter': 1, 'offset': quoteStart},
-          ],
-          'pinnedChapter': {'chapter': 1, 'offset': at},
-        }),
-      );
-      await repo.setMeta(
-        'reading-note:n',
-        jsonEncode({
-          'hash': 'book',
-          'chapter': 1,
-          'chapterTitle': 'Часть первая',
-          'quote': 'Три.',
-          'start': quoteStart,
-          'end': quoteStart + 4,
-        }),
-      );
-      await repo.setMeta(
-        'reading-coverage:book',
-        jsonEncode({
-          'ranges': [
-            [0, before.starts[1] + at],
-          ],
-        }),
-      );
-      final bookmark = await ReaderBookmarkStore(
-        repo,
-        'book',
-      ).add(title: 'Здесь', chapter: 1, offset: at);
+    test(
+      'saved position, notes, coverage and bookmarks move with the text',
+      () async {
+        final before = ReaderDocument(
+          parseTextBook(_bytes(_fb2), 'book.fb2', layout: 2),
+        );
+        final after = ReaderDocument(parseTextBook(_bytes(_fb2), 'book.fb2'));
+        final db = AppDatabase(NativeDatabase.memory());
+        addTearDown(db.close);
+        final repo = Repository(db);
+        final library = ReadingLibrary(repo);
+        // Old chapter 1 is "Часть первая" with both nested chapters inside.
+        final oldText = before.texts[1];
+        final at = oldText.indexOf('Четыре');
+        final quoteStart = oldText.indexOf('Три');
+        await repo.setMeta('reader-layout-version:book', '2');
+        await repo.setMeta(
+          'reader:book',
+          jsonEncode({
+            'layoutVersion': 2,
+            'chapter': 1,
+            'textOffset': at,
+            'returnTo': [
+              {'chapter': 1, 'offset': quoteStart},
+            ],
+            'pinnedChapter': {'chapter': 1, 'offset': at},
+          }),
+        );
+        await repo.setMeta(
+          'reading-note:n',
+          jsonEncode({
+            'hash': 'book',
+            'chapter': 1,
+            'chapterTitle': 'Часть первая',
+            'quote': 'Три.',
+            'start': quoteStart,
+            'end': quoteStart + 4,
+          }),
+        );
+        await repo.setMeta(
+          'reading-coverage:book',
+          jsonEncode({
+            'ranges': [
+              [0, before.starts[1] + at],
+            ],
+          }),
+        );
+        final bookmark = await ReaderBookmarkStore(
+          repo,
+          'book',
+        ).add(title: 'Здесь', chapter: 1, offset: at);
 
-      await migrateReaderLayout(
-        library,
-        'book',
-        after,
-        () async => throw StateError('Layout 1 is not involved'),
-        previous: () async => before,
-      );
+        await migrateReaderLayout(
+          library,
+          'book',
+          after,
+          () async => throw StateError('Layout 1 is not involved'),
+          previous: () async => before,
+        );
 
-      final chapter = after.book.chapters.indexWhere(
-        (c) => c.title == 'Глава 2',
-      );
-      final position = await library.value('reader:book');
-      expect(position['chapter'], chapter);
-      expect(
-        after.texts[chapter].substring(position['textOffset'] as int),
-        startsWith('Четыре'),
-      );
-      expect((position['returnTo'] as List).single['chapter'], chapter);
-      expect((position['pinnedChapter'] as Map)['chapter'], chapter);
-      final note = await library.value('reading-note:n');
-      expect(note['chapter'], chapter);
-      expect(note['chapterTitle'], 'Глава 2');
-      expect(
-        after.texts[chapter].substring(
-          note['start'] as int,
-          note['end'] as int,
-        ),
-        'Три.',
-      );
-      final covered =
-          ((await library.value('reading-coverage:book'))['ranges'] as List)
-              .single as List;
-      expect(covered[1], after.starts[chapter] + after.texts[chapter].indexOf('Четыре'));
-      final moved = (await ReaderBookmarkStore(repo, 'book').list()).single;
-      expect(moved.id, bookmark.id);
-      expect(moved.chapter, chapter);
-      expect(after.texts[chapter].substring(moved.offset), startsWith('Четыре'));
-      expect(await repo.meta('reader-layout-backup-3:book'), isNotNull);
-      expect(await repo.meta('reader-layout-version:book'), '3');
+        final chapter = after.book.chapters.indexWhere(
+          (c) => c.title == 'Глава 2',
+        );
+        final position = await library.value('reader:book');
+        expect(position['chapter'], chapter);
+        expect(
+          after.texts[chapter].substring(position['textOffset'] as int),
+          startsWith('Четыре'),
+        );
+        expect((position['returnTo'] as List).single['chapter'], chapter);
+        expect((position['pinnedChapter'] as Map)['chapter'], chapter);
+        final note = await library.value('reading-note:n');
+        expect(note['chapter'], chapter);
+        expect(note['chapterTitle'], 'Глава 2');
+        expect(
+          after.texts[chapter].substring(
+            note['start'] as int,
+            note['end'] as int,
+          ),
+          'Три.',
+        );
+        final covered =
+            ((await library.value('reading-coverage:book'))['ranges'] as List)
+                    .single
+                as List;
+        expect(
+          covered[1],
+          after.starts[chapter] + after.texts[chapter].indexOf('Четыре'),
+        );
+        final moved = (await ReaderBookmarkStore(repo, 'book').list()).single;
+        expect(moved.id, bookmark.id);
+        expect(moved.chapter, chapter);
+        expect(
+          after.texts[chapter].substring(moved.offset),
+          startsWith('Четыре'),
+        );
+        expect(await repo.meta('reader-layout-backup-5:book'), isNotNull);
+        expect(await repo.meta('reader-layout-version:book'), '5');
 
-      // Runs once.
-      await migrateReaderLayout(
-        library,
-        'book',
-        after,
-        () async => throw StateError('Already migrated'),
-        previous: () async => throw StateError('Already migrated'),
-      );
-      expect((await library.value('reader:book'))['chapter'], chapter);
-    });
+        // Runs once.
+        await migrateReaderLayout(
+          library,
+          'book',
+          after,
+          () async => throw StateError('Already migrated'),
+          previous: () async => throw StateError('Already migrated'),
+        );
+        expect((await library.value('reader:book'))['chapter'], chapter);
+      },
+    );
   });
 
   test('scroll updates inside one gesture count as one reading move', () async {
@@ -363,7 +379,9 @@ void main() {
     );
     // Read the first screen for 20 s, then one flick reports three updates.
     for (final position in [300, 900, 1500]) {
-      now = now.add(Duration(seconds: position == 300 ? 20 : 0, milliseconds: 250));
+      now = now.add(
+        Duration(seconds: position == 300 ? 20 : 0, milliseconds: 250),
+      );
       moves.add(position);
     }
     await Future<void>.delayed(const Duration(milliseconds: 60));

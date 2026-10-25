@@ -230,8 +230,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
   @override
   Widget build(BuildContext context) {
     final palette = ShelfPalette.of(context);
-    final now = DateTime.now(),
-        today = DateTime(now.year, now.month, now.day);
+    final now = DateTime.now(), today = DateTime(now.year, now.month, now.day);
     final start = period < 0
             ? range?.start
             : period == 0
@@ -249,7 +248,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
     final streak = readingStreak(all.days, now);
     final todayMs = global.days[readingDay(today)] ?? 0;
     final shown =
-        sessions
+        groupReadingSessionsForDisplay(sessions)
             .where((s) => widget.bookId == null || s['bookId'] == widget.bookId)
             .where(
               (s) => readingTotals([s], start: start, end: end).sessions > 0,
@@ -293,8 +292,15 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
         all.days[readingDay(DateTime(now.year, now.month, now.day - i))] ?? 0,
     ];
 
-    final hero = _hero(palette, total.milliseconds, total.sessions, activeDays,
-        average, week, previous);
+    final hero = _hero(
+      palette,
+      total.milliseconds,
+      total.sessions,
+      activeDays,
+      average,
+      week,
+      previous,
+    );
     final goalPanel = PepePanel(
       title: 'Цель на сегодня · вся библиотека',
       trailing: IconButton(
@@ -481,7 +487,9 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                     value: statTime(total.books[book.id]!),
                     note:
                         '${(total.books[book.id]! * 100 / total.milliseconds.clamp(1, 1 << 62)).round()}%',
-                    share: total.books[book.id]! / total.milliseconds.clamp(1, 1 << 62),
+                    share:
+                        total.books[book.id]! /
+                        total.milliseconds.clamp(1, 1 << 62),
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -511,8 +519,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           : titles[widget.bookId] ?? 'Статистика книги',
       back: widget.bookId == null ? 'Статистика' : 'Чтение',
       section: PepeSection.statistics,
-      subtitle:
-          'Учёт приостанавливается в фоне, в поиске/настройках и после 2 минут без действий.',
+      subtitle: 'Учёт приостанавливается в фоне, в поиске/настройках и после 2 минут без действий.',
       onRefresh: _load,
       actions: [
         IconButton(
@@ -650,10 +657,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
-              child: Text(
-                statTime(ms),
-                style: AppFonts.title(ink, size: 58),
-              ),
+              child: Text(statTime(ms), style: AppFonts.title(ink, size: 58)),
             ),
             Text(
               'Активное чтение · аудио не учитывается',
@@ -782,8 +786,11 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                 width: 76,
                 child: Text(
                   statTime(
-                    readingTotals([session], start: start, end: end)
-                        .milliseconds,
+                    readingTotals(
+                      [session],
+                      start: start,
+                      end: end,
+                    ).milliseconds,
                   ),
                   textAlign: TextAlign.right,
                   style: const TextStyle(

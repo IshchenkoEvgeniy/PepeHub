@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:drift/native.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -15,7 +16,9 @@ import 'package:pepehub/audio/audio_folder.dart';
 import 'package:pepehub/reader/pdf_support.dart';
 import 'package:pepehub/reader/pdf_reader_page.dart';
 import 'package:pepehub/reader/reader_viewport.dart';
+import 'package:pepehub/reader/reader_progress_panel.dart';
 import 'package:pepehub/reader/reading_library.dart';
+import 'package:pepehub/vocabulary/vocabulary_editor.dart';
 
 import 'support/pdf_fixture.dart';
 
@@ -316,6 +319,50 @@ void main() {
   testWidgets(
     'PDF restores position, searches, returns, saves a page note and opens reflow',
     (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final screen = GlobalKey();
+      await tester.runAsync(() async {
+        for (final font in {
+          'Onest': 'assets/fonts/Onest.ttf',
+          'Roboto': 'C:/Windows/Fonts/segoeui.ttf',
+          'MaterialIcons': '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+        }.entries) {
+          final file = File(font.value);
+          if (await file.exists()) {
+            await (FontLoader(
+              font.key,
+            )..addFont(file.readAsBytes().then(ByteData.sublistView))).load();
+          }
+        }
+      });
+      Future<void> screenshot(String name) => tester.runAsync(() async {
+        final image =
+            await (screen.currentContext!.findRenderObject()!
+                    as RenderRepaintBoundary)
+                .toImage();
+        final data = await image.toByteData(format: ui.ImageByteFormat.png);
+        image.dispose();
+        await File('build/$name.png').writeAsBytes(data!.buffer.asUint8List());
+      });
+      String? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied = (call.arguments as Map)['text'] as String;
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
       void trace(String step) {
         if (Platform.environment['PEPEHUB_TRACE_PDF_TEST'] == '1') {
           debugPrint('PDF acceptance: $step');
@@ -414,7 +461,10 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             theme: ThemeData.dark(),
-            home: PdfReaderPage(repository: repo, asset: asset),
+            home: RepaintBoundary(
+              key: screen,
+              child: PdfReaderPage(repository: repo, asset: asset),
+            ),
           ),
         );
         await waitForViewer();
@@ -423,7 +473,38 @@ void main() {
         await tester.tap(find.byTooltip('Предыдущая страница'));
         await settle();
         expect(find.textContaining('Страница 1 / 2'), findsOneWidget);
+        expect(find.byType(ReaderProgressBar), findsOneWidget);
+        expect(find.byType(Slider), findsNothing);
+        await screenshot('pdf-reader-controls');
+        await tester.drag(
+          find.textContaining('Страница 1 / 2'),
+          const Offset(0, 60),
+        );
+        await settle();
+        expect(find.byType(ReaderProgressBar), findsNothing);
+        await tester.drag(
+          find.byTooltip('Показать нижнюю панель'),
+          const Offset(0, -60),
+        );
+        await settle();
+        expect(find.byType(ReaderProgressBar), findsOneWidget);
         trace('navigation works');
+        // Exercise the real viewer's focused key handler, not only callbacks.
+        await tester.sendKeyEvent(LogicalKeyboardKey.end);
+        await settle();
+        expect(find.textContaining('Страница 2 / 2'), findsOneWidget);
+        await tester.sendKeyEvent(LogicalKeyboardKey.home);
+        await settle();
+        expect(find.textContaining('Страница 1 / 2'), findsOneWidget);
+        await tester.sendKeyEvent(LogicalKeyboardKey.space);
+        await settle();
+        expect(find.textContaining('Страница 2 / 2'), findsOneWidget);
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.space);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await settle();
+        expect(find.textContaining('Страница 1 / 2'), findsOneWidget);
+        trace('keyboard navigation works');
         await tester.tap(find.byTooltip('Поиск по книге'));
         await settle();
         await tester.enterText(find.byType(TextField), 'page two');
@@ -456,33 +537,38 @@ void main() {
         );
         expect(viewer.params.textSelectionParams!.magnifier!.enabled, false);
         expect(viewer.params.buildContextMenu, isNotNull);
+        final native = viewer.controller!.document;
+        final nativeText = (await tester.runAsync(
+          () => native.pages[0].loadStructuredText(),
+        ))!;
+        final docPoint = nativeText.charRects[2].center.toOffsetInDocument(
+          page: native.pages[0],
+          pageRect: viewer.controller!.layout.pageLayouts[0],
+        );
+        final localPoint = viewer.controller!.textSelectionDelegate.doc2local
+            .offsetToLocal(tester.element(find.byType(PdfViewer)), docPoint)!;
+        await tester.longPressAt(
+          tester.getTopLeft(find.byType(PdfViewer)) + localPoint,
+        );
+        await settle();
+        expect(find.text('Заметка').hitTestable(), findsOneWidget);
+        await screenshot('pdf-reader-selection');
+        final expectedCopy = await tester.runAsync(
+          () => viewer.controller!.textSelectionDelegate.getSelectedText(),
+        );
+        await tester.tap(find.widgetWithText(TextButton, 'Copy').hitTestable());
+        await settle();
+        expect(copied, expectedCopy);
+        expect(copied, isNotEmpty);
+        trace('touch selection and copy work');
         await tester.runAsync(() async {
-          final native = viewer.controller!.document;
-          final a = await native.pages[0].loadStructuredText();
-          final b = await native.pages[1].loadStructuredText();
-          await viewer.controller!.textSelectionDelegate
-              .setTextSelectionPointRange(
-                PdfTextSelectionRange.fromPoints(
-                  PdfTextSelectionPoint(a, 0),
-                  PdfTextSelectionPoint(b, 6),
-                ),
-              );
+          await viewer.controller!.textSelectionDelegate.selectAllText();
         });
         await settle();
-        final actions = <ContextMenuButtonItem>[];
         trace('native text selected');
-        viewer.params.customizeContextMenuItems!(
-          PdfViewerContextMenuBuilderParams(
-            isTextSelectionEnabled: true,
-            anchorA: Offset.zero,
-            textSelectionDelegate: viewer.controller!.textSelectionDelegate,
-            dismissContextMenu: () {},
-            contextMenuFor: PdfViewerPart.selectedText,
-          ),
-          actions,
-        );
-        expect(actions.single.label, 'Цитата / заметка');
-        actions.single.onPressed!();
+        expect(find.text('Выделить').hitTestable(), findsOneWidget);
+        expect(find.text('Заметка').hitTestable(), findsOneWidget);
+        await tester.tap(find.text('Заметка'));
         await settle();
         await tester.enterText(find.byType(TextField).first, 'Общая цитата');
         await tester.tap(find.text('Сохранить'));
@@ -495,6 +581,62 @@ void main() {
           expect(quotes.map((n) => n.chapter).toSet(), {0, 1});
           expect(quotes.every((n) => n.comment == 'Общая цитата'), isTrue);
         });
+        await tester.runAsync(
+          () => viewer.controller!.textSelectionDelegate.selectAllText(),
+        );
+        await settle();
+        await tester.tap(find.byTooltip('Выделить: зелёный'));
+        await settle();
+        await readDatabase(() async {
+          final green = (await ReadingLibrary(repo).notes(hash: asset.hash))
+              .where((n) => n.color == 'green')
+              .toList();
+          expect(green, hasLength(2));
+          expect(
+            (await ReadingLibrary(repo)
+                .value('reader:appearance'))['highlightColor'],
+            'green',
+          );
+          expect(
+            green.every((n) => n.end > n.start && n.comment.isEmpty),
+            isTrue,
+          );
+        });
+        await tester.runAsync(
+          () => viewer.controller!.textSelectionDelegate.selectAllText(),
+        );
+        await settle();
+        await tester.tap(find.text('Выделить'));
+        await settle();
+        await readDatabase(() async {
+          expect(
+            (await ReadingLibrary(repo).notes(hash: asset.hash))
+                .where((n) => n.color == 'green'),
+            hasLength(4),
+          );
+        });
+        await tester.runAsync(
+          () => viewer.controller!.textSelectionDelegate.selectAllText(),
+        );
+        await settle();
+        await tester.tap(find.text('Ещё'));
+        await settle();
+        await tester.tap(find.text('Карточка Anki'));
+        await settle();
+        expect(find.byType(VocabularyEditor), findsOneWidget);
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const ValueKey('vocabulary-front')),
+              )
+              .controller!
+              .text,
+          contains('PepeHub page one'),
+        );
+        await tester.binding.handlePopRoute();
+        await settle();
+        expect(find.byType(PdfViewer), findsOneWidget);
+        trace('color highlight and Anki work');
         await menu('Полный экран');
         trace('cross-page quotes saved');
         expect(find.byTooltip('Выйти из полного экрана'), findsOneWidget);

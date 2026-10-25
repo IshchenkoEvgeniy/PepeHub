@@ -131,6 +131,9 @@ void main() {
         repo = Repository(db);
         final file = File('${dir.path}/book.txt');
         await file.writeAsString('Повтор. Повтор. Остров и море.');
+        // This test exercises EditableText selection in paged mode. Scrolling
+        // selection across paragraphs has its own mouse/offset acceptance test.
+        await repo.setMeta('reader:appearance', '{"mode":"pages"}');
         asset = await AssetStore(
           repo,
           Directory('${dir.path}/assets'),

@@ -18,7 +18,9 @@ import 'rtf.dart';
 /// Chapter layout produced by [parseTextBook]. Saved positions, notes and
 /// bookmarks are rebased when this changes (see `migrateReaderLayout`).
 /// 3: FB2 nested sections become chapters; FB2 note bodies form one chapter.
-const currentBookLayout = 3;
+/// 4: TXT headings form chapters without changing a single source code unit.
+/// 5: TXT headings require paragraph boundaries; restore paragraphs and styling.
+const currentBookLayout = 5;
 
 Future<EpubBook> loadTextBook(
   String path,
@@ -943,16 +945,80 @@ EpubBook parseTextBook(
             },
           )
         : decodeBookText(bytes);
-    chapter(
-      title,
-      source
-          .replaceAll('\r\n', '\n')
-          .replaceAll('\r', '\n')
-          .split(RegExp(r'\n\s*\n'))
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList(),
-    );
+    final paragraphs = source
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .split(RegExp(r'\n\s*\n'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (format == 'txt' && layout >= 4) {
+      final text = paragraphs.join('\n\n');
+      final headings = <({int start, String title})>[];
+      final heading = RegExp(
+        r'^(?:глава|часть|chapter|part)\s+(?:[0-9]+|[ivxlcdm]+|'
+        r'первая|вторая|третья|четв[её]ртая|пятая|шестая|седьмая|восьмая|девятая|десятая|'
+        r'one|two|three|four|five|six|seven|eight|nine|ten)(?:[.:\s].{0,160})?$',
+        caseSensitive: false,
+        unicode: true,
+      );
+      final strictHeading = RegExp(
+        r'^(?:глава|часть|chapter|part)\s+(?:[0-9]+|[ivxlcdm]+|'
+        r'первая|вторая|третья|четв[её]ртая|пятая|шестая|седьмая|восьмая|девятая|десятая|'
+        r'one|two|three|four|five|six|seven|eight|nine|ten)(?:\s*[.:—–-]\s*.{0,80})?$',
+        caseSensitive: false,
+        unicode: true,
+      );
+      for (final line in RegExp(r'^[^\n]+', multiLine: true).allMatches(text)) {
+        final label = line.group(0)!.trim();
+        final boundary =
+            line.start == 0 ||
+            line.start >= 2 &&
+                text.substring(line.start - 2, line.start) == '\n\n';
+        final recognized = layout == 4
+            ? label.length <= 180 && heading.hasMatch(label)
+            : boundary &&
+                  label.length <= 100 &&
+                  label.isNotEmpty &&
+                  label[0] == label[0].toUpperCase() &&
+                  strictHeading.hasMatch(label);
+        if (recognized) {
+          headings.add((start: line.start, title: label));
+          if (headings.length == 2000) break;
+        }
+      }
+      if (headings.isEmpty) {
+        chapter(title, paragraphs);
+      } else {
+        if (headings.first.start > 0) {
+          final intro = text.substring(0, headings.first.start);
+          chapter('Вступление', layout == 4 ? [intro] : intro.split('\n\n'));
+        }
+        for (var i = 0; i < headings.length; i++) {
+          final chunk = text.substring(
+            headings[i].start,
+            i + 1 < headings.length ? headings[i + 1].start : text.length,
+          );
+          chapter(
+            headings[i].title,
+            layout == 4 ? [chunk] : chunk.split('\n\n'),
+          );
+          if (layout >= 5) {
+            final old = chapters.removeLast();
+            chapters.add(
+              EpubChapter(
+                old.path,
+                old.title,
+                old.paragraphs,
+                markup: [BookMarkup(0, headings[i].title.length, heading: 1)],
+              ),
+            );
+          }
+        }
+      }
+    } else {
+      chapter(title, paragraphs);
+    }
     if (styles.isNotEmpty && chapters.isNotEmpty) {
       final previous = chapters.removeLast();
       var sourceOffset = 0, targetOffset = 0;

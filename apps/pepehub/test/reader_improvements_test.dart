@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:pepehub/reader/reader_selectable_paragraph.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pepehub/data/database.dart';
@@ -268,8 +269,17 @@ void main() {
         );
         await settle(tester);
         final shown = tester
-            .widgetList<SelectableText>(find.byType(SelectableText))
-            .map((text) => text.textSpan?.toPlainText() ?? text.data ?? '')
+            .widgetList<ReaderSelectableParagraph>(
+              find.byType(ReaderSelectableParagraph),
+            )
+            .map((text) => text.span.toPlainText())
+            .followedBy(
+              tester
+                  .widgetList<SelectableText>(find.byType(SelectableText))
+                  .map(
+                    (text) => text.textSpan?.toPlainText() ?? text.data ?? '',
+                  ),
+            )
             .join();
         expect(shown, contains('Paragraph 3600.'));
         final start = readerWindowStart(text, original);

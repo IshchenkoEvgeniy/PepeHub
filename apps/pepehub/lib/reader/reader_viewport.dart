@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +10,8 @@ import 'reading_library.dart';
 import 'reading_notes_page.dart';
 import 'epub.dart';
 import 'reader_ranges.dart';
+import 'reader_shortcuts.dart';
+import 'reader_selectable_paragraph.dart';
 
 /// Allows deliberate navigation inside the already measured source window.
 /// A false result asks the owner to open a new window near the target instead.
@@ -45,6 +46,7 @@ class ReaderViewport extends StatefulWidget {
   final bool scrolling, compactFlow, firstChapter, lastChapter;
   final ValueChanged<int> onPosition, onChapter;
   final ValueChanged<int>? onSeek;
+  final ValueChanged<bool>? onBookBoundary;
   final List<ReadingNote> notes;
   final void Function(int start, int end, bool comment)? onAnnotate;
   final void Function(int start, int end)? onAnki;
@@ -84,6 +86,7 @@ class ReaderViewport extends StatefulWidget {
     required this.onPosition,
     required this.onChapter,
     this.onSeek,
+    this.onBookBoundary,
     this.notes = const [],
     this.onAnnotate,
     this.onAnki,
@@ -117,11 +120,26 @@ class _ReaderViewportState extends State<ReaderViewport> {
   Offset? down;
   DateTime? downAt;
   bool hasSelection = false;
+  final selectionArea = GlobalKey<SelectionAreaState>();
+  final selectedRanges = <int, TextSelection>{};
+  TextSelection get sourceSelection {
+    if (selectedRanges.isEmpty) {
+      return const TextSelection.collapsed(offset: -1);
+    }
+    return TextSelection(
+      baseOffset: selectedRanges.values
+          .map((s) => s.start)
+          .reduce((a, b) => a < b ? a : b),
+      extentOffset: selectedRanges.values
+          .map((s) => s.end)
+          .reduce((a, b) => a > b ? a : b),
+    );
+  }
+
   final recognizers = <BookFootnote, TapGestureRecognizer>{};
   final linkRecognizers = <String, TapGestureRecognizer>{};
   final images = <ReaderSlice, BookIllustration>{};
   bool crossingChapter = false;
-  double? draggingPage;
   DateTime lastPositionUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? positionUpdateTimer;
   final starts = <double>[], heights = <double>[];
@@ -130,9 +148,6 @@ class _ReaderViewportState extends State<ReaderViewport> {
   late List<int> markupPrefixMaxEnd;
   late ReaderRangeIndex<BookFootnote> footnoteIndex;
   late ReaderRangeIndex<ReadingNote> noteIndex;
-  List<ReaderSlice>? _tickPages;
-  List<int>? _tickBreaks;
-  List<double> _ticks = const [];
   double contentHeight = 0;
   bool layoutComplete = false;
   late final int layoutStart = widget.onSeek == null
@@ -147,11 +162,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
 
   // The scroll viewport and a reading page can have different heights.
   double get viewportExtent =>
-      widget.height -
-      (widget.scrolling && !widget.compactFlow ||
-              !widget.scrolling && !widget.hideControls
-          ? 48
-          : 0);
+      widget.height - (!widget.scrolling && !widget.hideControls ? 48 : 0);
   double get extent => widget.scrolling && !widget.compactFlow
       ? viewportExtent * widget.pageHeightFactor
       : viewportExtent;
@@ -270,6 +281,8 @@ class _ReaderViewportState extends State<ReaderViewport> {
     positionUpdateTimer?.cancel();
     positionUpdateTimer = null;
     interacted = false;
+    selectionArea.currentState?.selectableRegion.clearSelection();
+    selectedRanges.clear();
     hasSelection = false;
     if (widget.scrolling) {
       var pixels = starts[target];
@@ -838,6 +851,32 @@ class _ReaderViewportState extends State<ReaderViewport> {
     }
   }
 
+  void _keyStep(int direction, {bool line = false}) {
+    if (!readerShortcutsAllowed(context) || hasSelection) return;
+    if (line && widget.scrolling && scroll?.hasClients == true) {
+      interacted = true;
+      final target =
+          (scroll!.offset + direction * (widget.style.fontSize ?? 22) * 1.5)
+              .clamp(0.0, scroll!.position.maxScrollExtent);
+      scroll!.animateTo(
+        target,
+        duration: const Duration(milliseconds: 80),
+        curve: Curves.linear,
+      );
+    } else {
+      _step(direction);
+    }
+  }
+
+  void _keyBoundary(bool end) {
+    if (!readerShortcutsAllowed(context) || hasSelection) return;
+    if (widget.onBookBoundary != null) {
+      widget.onBookBoundary!(end);
+    } else {
+      widget.onSeek?.call(end ? widget.text.length : 0);
+    }
+  }
+
   void _tapAt(double fraction) {
     if (hasSelection) return;
     final action = widget.preferences?.tapAt(fraction);
@@ -866,111 +905,6 @@ class _ReaderViewportState extends State<ReaderViewport> {
     } else if (!widget.firstChapter) {
       widget.onChapter(-1);
     }
-  }
-
-  String _pageLabel(int shown, int count) =>
-      '${layoutStart > 0 ? 'Участок: ' : ''}$shown из $count${layoutComplete ? '' : '+'}';
-
-  Widget _pageSlider(int pageCount) {
-    final lastPage = pageCount - 1;
-    final value = (draggingPage ?? index.toDouble())
-        .clamp(0, lastPage)
-        .toDouble();
-    final shownPage = value.round() + 1;
-    return SizedBox(
-      height: 48,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          children: [
-            const Icon(Icons.menu_book_outlined, size: 18),
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  IgnorePointer(
-                    child: CustomPaint(
-                      painter: ReaderChapterTicksPainter(
-                        _chapterPositions(pageCount),
-                        Theme.of(context).colorScheme.onSurface
-                            .withValues(alpha: .3),
-                      ),
-                    ),
-                  ),
-                  Slider(
-                    value: value,
-                    min: 0,
-                    max: lastPage > 0 ? lastPage.toDouble() : 1,
-                    label: _pageLabel(shownPage, pageCount),
-                    semanticFormatterCallback: (v) =>
-                        _pageLabel(v.round() + 1, pageCount),
-                    onChanged: pageCount > 1
-                        ? (v) => setState(() => draggingPage = v)
-                        : null,
-                    onChangeEnd: pageCount > 1
-                        ? (v) {
-                            final target = v.round().clamp(0, lastPage);
-                            setState(() => draggingPage = null);
-                            interacted = true;
-                            scroll?.animateTo(
-                              starts[target],
-                              duration: const Duration(milliseconds: 180),
-                              curve: Curves.easeOut,
-                            );
-                          }
-                        : null,
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(
-              width: layoutStart > 0 ? 124 : 72,
-              child: Tooltip(
-                message: layoutStart > 0
-                    ? 'Страницы загруженного участка. Общая позиция — на нижней шкале книги.'
-                    : 'Страницы рассчитанного текста',
-                child: Text(
-                  _pageLabel(shownPage, pageCount),
-                  textAlign: TextAlign.end,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  List<double> _chapterPositions(int itemCount) {
-    if (itemCount <= 1) return const [0];
-    if (identical(_tickPages, pages) &&
-        listEquals(_tickBreaks, widget.chapterBreaks)) {
-      return _ticks;
-    }
-    _tickPages = pages;
-    _tickBreaks = widget.chapterBreaks;
-    final lastItem = itemCount - 1;
-    _ticks = {
-      0.0,
-      for (final start in widget.chapterBreaks)
-        if (start >= layoutStart)
-          (() {
-            var low = 0, high = pages!.length;
-            while (low < high) {
-              final middle = (low + high) >> 1;
-              if (pages![middle].start >= start) {
-                high = middle;
-              } else {
-                low = middle + 1;
-              }
-            }
-            return low == pages!.length ? 1.0 : low / lastItem;
-          })(),
-    }.toList()..sort();
-    return _ticks;
   }
 
   @override
@@ -1086,6 +1020,106 @@ class _ReaderViewportState extends State<ReaderViewport> {
       return TextSpan(children: spans);
     }
 
+    Widget selectionToolbar(
+      BuildContext context,
+      TextSelection savedSelection,
+      int base,
+      TextSelectionToolbarAnchors anchors,
+      VoidCallback hideToolbar,
+      List<ContextMenuButtonItem> items,
+    ) {
+      return readerSelectionToolbar(
+        onMore: hideToolbar,
+        context: context,
+        width: widget.width,
+        anchors: anchors,
+        palette: widget.onHighlight == null || savedSelection.isCollapsed
+            ? null
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final color in noteColors.entries)
+                    IconButton(
+                      tooltip:
+                          'Выделить: ${switch (color.key) {
+                            'green' => 'зелёный',
+                            'blue' => 'синий',
+                            'pink' => 'розовый',
+                            _ => 'жёлтый',
+                          }}',
+                      onPressed: () {
+                        hideToolbar();
+                        widget.onHighlight!(
+                          base + savedSelection.start,
+                          base + savedSelection.end,
+                          color.key,
+                        );
+                      },
+                      icon: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: color.value,
+                          shape: BoxShape.circle,
+                        ),
+                        child: SizedBox.square(
+                          dimension: 26,
+                          child: widget.preferences?.highlightColor == color.key
+                              ? const Icon(
+                                  Icons.check,
+                                  size: 18,
+                                  color: Colors.black87,
+                                )
+                              : null,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+        buttonItems: [
+          if (widget.onBoundary != null && !savedSelection.isCollapsed)
+            ContextMenuButtonItem(
+              label: widget.selectingRange
+                  ? 'Закончить здесь'
+                  : 'Начать длинную цитату',
+              onPressed: () {
+                final selection = savedSelection;
+                hideToolbar();
+                widget.onBoundary!(
+                  base +
+                      (widget.selectingRange ? selection.end : selection.start),
+                  widget.selectingRange,
+                );
+              },
+            ),
+          if (widget.onAnnotate != null && !savedSelection.isCollapsed)
+            for (final comment in [false, true])
+              ContextMenuButtonItem(
+                label: comment ? 'Заметка' : 'Выделить',
+                onPressed: () {
+                  final selection = savedSelection;
+                  hideToolbar();
+                  widget.onAnnotate!(
+                    base + selection.start,
+                    base + selection.end,
+                    comment,
+                  );
+                },
+              ),
+          if (widget.onAnki != null && !savedSelection.isCollapsed)
+            ContextMenuButtonItem(
+              label: 'Карточка Anki',
+              onPressed: () {
+                hideToolbar();
+                widget.onAnki!(
+                  base + savedSelection.start,
+                  base + savedSelection.end,
+                );
+              },
+            ),
+          ...items,
+        ],
+      );
+    }
+
     Widget pageContent(ReaderSlice segment) {
       if (images.containsKey(segment)) {
         return GestureDetector(
@@ -1129,126 +1163,57 @@ class _ReaderViewportState extends State<ReaderViewport> {
                 down = e.localPosition;
                 downAt = DateTime.now();
               },
-              child: SelectableText.rich(
-                span(segment) as TextSpan,
-                key: ValueKey((segment.start, segment.end)),
-                style: widget.style,
-                textScaler: widget.scaler,
-                // The chapter flow owns scrolling. SelectableText must
-                // never create a nested scrollable viewport of its own.
-                scrollPhysics: const NeverScrollableScrollPhysics(),
-                textAlign: _alignment(segment.start),
-                onSelectionChanged: (s, cause) => hasSelection = !s.isCollapsed,
-                onTap: () {
-                  if (hasSelection ||
-                      down == null ||
-                      downAt == null ||
-                      DateTime.now().difference(downAt!).inMilliseconds > 350) {
-                    return;
-                  }
-                  _tapAt((down!.dx + widget.margin) / widget.width);
-                },
-                contextMenuBuilder: (context, state) {
-                  final savedSelection = state.textEditingValue.selection;
-                  return readerSelectionToolbar(
-                    onMore: state.hideToolbar,
-                    context: context,
-                    width: widget.width,
-                    anchors: state.contextMenuAnchors,
-                    palette:
-                        widget.onHighlight == null || savedSelection.isCollapsed
-                        ? null
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              for (final color in noteColors.entries)
-                                IconButton(
-                                  tooltip:
-                                      'Выделить: ${switch (color.key) {
-                                        'green' => 'зелёный',
-                                        'blue' => 'синий',
-                                        'pink' => 'розовый',
-                                        _ => 'жёлтый',
-                                      }}',
-                                  onPressed: () {
-                                    state.hideToolbar();
-                                    widget.onHighlight!(
-                                      segment.start + savedSelection.start,
-                                      segment.start + savedSelection.end,
-                                      color.key,
-                                    );
-                                  },
-                                  icon: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      color: color.value,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: SizedBox.square(
-                                      dimension: 26,
-                                      child:
-                                          widget.preferences?.highlightColor ==
-                                              color.key
-                                          ? const Icon(
-                                              Icons.check,
-                                              size: 18,
-                                              color: Colors.black87,
-                                            )
-                                          : null,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                    buttonItems: [
-                      if (widget.onBoundary != null &&
-                          !state.textEditingValue.selection.isCollapsed)
-                        ContextMenuButtonItem(
-                          label: widget.selectingRange
-                              ? 'Закончить здесь'
-                              : 'Начать длинную цитату',
-                          onPressed: () {
-                            final selection = savedSelection;
-                            state.hideToolbar();
-                            widget.onBoundary!(
-                              segment.start +
-                                  (widget.selectingRange
-                                      ? selection.end
-                                      : selection.start),
-                              widget.selectingRange,
-                            );
-                          },
-                        ),
-                      if (widget.onAnnotate != null &&
-                          !state.textEditingValue.selection.isCollapsed)
-                        for (final comment in [false, true])
-                          ContextMenuButtonItem(
-                            label: comment ? 'Заметка' : 'Выделить',
-                            onPressed: () {
-                              final selection = savedSelection;
-                              state.hideToolbar();
-                              widget.onAnnotate!(
-                                segment.start + selection.start,
-                                segment.start + selection.end,
-                                comment,
-                              );
-                            },
-                          ),
-                      if (widget.onAnki != null && !savedSelection.isCollapsed)
-                        ContextMenuButtonItem(
-                          label: 'Карточка Anki',
-                          onPressed: () {
-                            state.hideToolbar();
-                            widget.onAnki!(
-                              segment.start + savedSelection.start,
-                              segment.start + savedSelection.end,
-                            );
-                          },
-                        ),
-                      ...state.contextMenuButtonItems,
-                    ],
-                  );
-                },
-              ),
+              child: widget.scrolling
+                  ? ReaderSelectableParagraph(
+                      key: ValueKey((segment.start, segment.end)),
+                      span: span(segment) as TextSpan,
+                      style: widget.style,
+                      scaler: widget.scaler,
+                      alignment: _alignment(segment.start),
+                      onSelection: (range) {
+                        if (range == null || range.isCollapsed) {
+                          selectedRanges.remove(segment.start);
+                        } else {
+                          selectedRanges[segment.start] = TextSelection(
+                            baseOffset: segment.start + range.start,
+                            extentOffset: segment.start + range.end,
+                          );
+                        }
+                        hasSelection = selectedRanges.isNotEmpty;
+                      },
+                    )
+                  : SelectableText.rich(
+                      span(segment) as TextSpan,
+                      key: ValueKey((segment.start, segment.end)),
+                      style: widget.style,
+                      textScaler: widget.scaler,
+                      // The chapter flow owns scrolling. SelectableText must
+                      // never create a nested scrollable viewport of its own.
+                      scrollPhysics: const NeverScrollableScrollPhysics(),
+                      textAlign: _alignment(segment.start),
+                      onSelectionChanged: (s, cause) =>
+                          hasSelection = !s.isCollapsed,
+                      onTap: () {
+                        if (hasSelection ||
+                            down == null ||
+                            downAt == null ||
+                            DateTime.now().difference(downAt!).inMilliseconds >
+                                350) {
+                          return;
+                        }
+                        _tapAt((down!.dx + widget.margin) / widget.width);
+                      },
+                      contextMenuBuilder: (context, state) {
+                        return selectionToolbar(
+                          context,
+                          state.textEditingValue.selection,
+                          segment.start,
+                          state.contextMenuAnchors,
+                          state.hideToolbar,
+                          state.contextMenuButtonItems,
+                        );
+                      },
+                    ),
             ),
           ),
         ),
@@ -1359,10 +1324,20 @@ class _ReaderViewportState extends State<ReaderViewport> {
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.arrowRight): () => _step(1),
-        const SingleActivator(LogicalKeyboardKey.pageDown): () => _step(1),
-        const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _step(-1),
-        const SingleActivator(LogicalKeyboardKey.pageUp): () => _step(-1),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () => _keyStep(1),
+        const SingleActivator(LogicalKeyboardKey.pageDown): () => _keyStep(1),
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _keyStep(-1),
+        const SingleActivator(LogicalKeyboardKey.pageUp): () => _keyStep(-1),
+        const SingleActivator(LogicalKeyboardKey.space): () => _keyStep(1),
+        const SingleActivator(LogicalKeyboardKey.space, shift: true): () =>
+            _keyStep(-1),
+        const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+            _keyStep(1, line: true),
+        const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+            _keyStep(-1, line: true),
+        const SingleActivator(LogicalKeyboardKey.home): () =>
+            _keyBoundary(false),
+        const SingleActivator(LogicalKeyboardKey.end): () => _keyBoundary(true),
       },
       child: Listener(
         onPointerSignal: (event) {
@@ -1383,32 +1358,102 @@ class _ReaderViewportState extends State<ReaderViewport> {
             children: [
               Expanded(
                 child: widget.scrolling
-                    ? NotificationListener<ScrollNotification>(
-                        onNotification: (n) {
-                          if (n.depth != 0) return false;
-                          if (n is ScrollStartNotification &&
-                                  n.dragDetails != null ||
-                              n is UserScrollNotification &&
-                                  n.direction != ScrollDirection.idle) {
-                            interacted = true;
-                          }
-                          if (n is ScrollUpdateNotification) _scrolled();
-                          if (n is ScrollEndNotification) {
-                            _updateScrolledPosition();
-                          }
-                          if (n is OverscrollNotification) _cross(n.overscroll);
-                          return false;
+                    ? Actions(
+                        actions: {
+                          CopySelectionTextIntent:
+                              CallbackAction<CopySelectionTextIntent>(
+                                onInvoke: (_) {
+                                  final selection = sourceSelection;
+                                  if (!selection.isCollapsed) {
+                                    Clipboard.setData(
+                                      ClipboardData(
+                                        text: widget.text.substring(
+                                          selection.start,
+                                          selection.end,
+                                        ),
+                                      ),
+                                    );
+                                    selectionArea.currentState?.selectableRegion
+                                        .hideToolbar();
+                                  }
+                                  return null;
+                                },
+                              ),
                         },
-                        child: ScrollConfiguration(
-                          behavior: ScrollConfiguration.of(context)
-                              .copyWith(scrollbars: false),
-                          child: widget.showScrollbar
-                              ? Scrollbar(
-                                  controller: scroll,
-                                  thumbVisibility: true,
-                                  child: _scrollingList(list, decoratedPage),
-                                )
-                              : _scrollingList(list, decoratedPage),
+                        child: SelectionArea(
+                          key: selectionArea,
+                          onSelectionChanged: (content) {
+                            if (content == null) {
+                              selectedRanges.clear();
+                              hasSelection = false;
+                            }
+                          },
+                          contextMenuBuilder: (context, state) {
+                            final selection = sourceSelection;
+                            final items = state.contextMenuButtonItems.map((
+                              item,
+                            ) {
+                              if (item.type != ContextMenuButtonType.copy ||
+                                  selection.isCollapsed) {
+                                return item;
+                              }
+                              return ContextMenuButtonItem(
+                                type: ContextMenuButtonType.copy,
+                                onPressed: () {
+                                  Clipboard.setData(
+                                    ClipboardData(
+                                      text: widget.text.substring(
+                                        selection.start,
+                                        selection.end,
+                                      ),
+                                    ),
+                                  );
+                                  state.hideToolbar();
+                                },
+                              );
+                            }).toList();
+                            return selectionToolbar(
+                              context,
+                              selection,
+                              0,
+                              state.contextMenuAnchors,
+                              state.hideToolbar,
+                              items,
+                            );
+                          },
+                          child: NotificationListener<ScrollNotification>(
+                            onNotification: (n) {
+                              if (n.depth != 0) return false;
+                              if (n is ScrollStartNotification &&
+                                      n.dragDetails != null ||
+                                  n is UserScrollNotification &&
+                                      n.direction != ScrollDirection.idle) {
+                                interacted = true;
+                              }
+                              if (n is ScrollUpdateNotification) _scrolled();
+                              if (n is ScrollEndNotification) {
+                                _updateScrolledPosition();
+                              }
+                              if (n is OverscrollNotification) {
+                                _cross(n.overscroll);
+                              }
+                              return false;
+                            },
+                            child: ScrollConfiguration(
+                              behavior: ScrollConfiguration.of(context)
+                                  .copyWith(scrollbars: false),
+                              child: widget.showScrollbar
+                                  ? Scrollbar(
+                                      controller: scroll,
+                                      thumbVisibility: true,
+                                      child: _scrollingList(
+                                        list,
+                                        decoratedPage,
+                                      ),
+                                    )
+                                  : _scrollingList(list, decoratedPage),
+                            ),
+                          ),
                         ),
                       )
                     : NotificationListener<ScrollNotification>(
@@ -1438,9 +1483,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
                         ),
                       ),
               ),
-              if (widget.scrolling && !widget.compactFlow)
-                _pageSlider(list.length)
-              else if (!widget.scrolling && !widget.hideControls)
+              if (!widget.scrolling && !widget.hideControls)
                 SizedBox(
                   height: 48,
                   child: Row(
@@ -1501,34 +1544,6 @@ class _ReaderViewportState extends State<ReaderViewport> {
       if (mounted) widget.onChapter(delta);
     });
   }
-}
-
-class ReaderChapterTicksPainter extends CustomPainter {
-  final List<double> positions;
-  final Color color;
-  const ReaderChapterTicksPainter(this.positions, this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final start = 12.0;
-    final end = (size.width - 12).clamp(start, size.width).toDouble();
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1;
-    for (final position in positions) {
-      final x = start + (end - start) * position.clamp(0, 1);
-      canvas.drawLine(
-        Offset(x, size.height / 2 - 4),
-        Offset(x, size.height / 2 + 4),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant ReaderChapterTicksPainter oldDelegate) =>
-      !listEquals(positions, oldDelegate.positions) ||
-      color != oldDelegate.color;
 }
 
 Widget readerSelectionToolbar({

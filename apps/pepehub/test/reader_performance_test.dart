@@ -13,6 +13,7 @@ import 'package:pepehub/reader/reader_layout_frame.dart';
 import 'package:pepehub/reader/reader_page.dart';
 import 'package:pepehub/reader/reader_ranges.dart';
 import 'package:pepehub/reader/reader_viewport.dart';
+import 'package:pepehub/reader/reader_progress_panel.dart';
 import 'package:pepehub/reader/reading_activity.dart';
 import 'package:pepehub/reader/reading_daily_totals.dart';
 
@@ -70,16 +71,16 @@ void main() {
   test(
     'identical chapter ticks do not repaint when only the slider changes',
     () {
-      final painter = ReaderChapterTicksPainter([0, .2, .7], Colors.blue);
+      final painter = ReaderBookTicksPainter([0, .2, .7], Colors.blue);
       expect(
         painter.shouldRepaint(
-          ReaderChapterTicksPainter([0, .2, .7], Colors.blue),
+          ReaderBookTicksPainter([0, .2, .7], Colors.blue),
         ),
         isFalse,
       );
       expect(
         painter.shouldRepaint(
-          ReaderChapterTicksPainter([0, .3, .7], Colors.blue),
+          ReaderBookTicksPainter([0, .3, .7], Colors.blue),
         ),
         isTrue,
       );

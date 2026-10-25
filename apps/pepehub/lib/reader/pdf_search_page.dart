@@ -1,8 +1,9 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
+
+import 'reader_layout.dart';
 
 /// No whole-document text/glyph cache. A new query cancels the preceding scan.
 class PdfSearchPage extends StatefulWidget {
@@ -52,7 +53,7 @@ class _PdfSearchPageState extends State<PdfSearchPage> {
       if (widget.document.permissions?.allowsCopying == false) {
         throw const FormatException('Автор PDF запретил извлечение текста');
       }
-      final pattern = RegExp(RegExp.escape(needle), caseSensitive: false);
+      final pattern = readerSearchPattern(needle);
       for (final page in widget.document.pages) {
         if (cancelled()) return;
         final text = (await page.loadStructuredText()).fullText;
@@ -62,10 +63,7 @@ class _PdfSearchPageState extends State<PdfSearchPage> {
             'chapter': page.pageNumber - 1,
             'offset': match.start,
             'end': match.end,
-            'excerpt': text.substring(
-              math.max(0, match.start - 45),
-              math.min(text.length, match.end + 80),
-            ),
+            'excerpt': readerExcerpt(text, match.start, match.end, after: 80),
           });
           if (results.length >= 200) break;
         }

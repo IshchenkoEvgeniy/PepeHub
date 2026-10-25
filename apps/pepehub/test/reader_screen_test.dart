@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:drift/native.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:pepehub/reader/reader_selectable_paragraph.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -124,7 +125,7 @@ void main() {
         await tester.ensureVisible(find.text('Применить'));
         await tester.tap(find.text('Применить'));
         await settle();
-        expect(find.byType(SelectableText), findsWidgets);
+        expect(find.byType(ReaderSelectableParagraph), findsWidgets);
         expect(tester.takeException(), isNull);
         await tester.tap(find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();

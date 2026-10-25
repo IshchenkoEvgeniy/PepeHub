@@ -12,7 +12,16 @@ class ReadingActivity {
   final DateTime Function() clock;
   final void Function(Object)? onError;
   final Future<void> Function(Map<String, dynamic>)? export;
-  final String id = uuid.v4();
+  final String sessionGroup = uuid.v4();
+  late String id = sessionGroup;
+  late DateTime segmentStarted;
+  int segmentNumber = 0;
+  int _freshBase = 0,
+      _repeatBase = 0,
+      _speedCharsBase = 0,
+      _speedMsBase = 0,
+      _speedMovesBase = 0;
+  static const maxSegmentEvents = 256, maxSegmentSpans = 128;
   final List<Map<String, dynamic>> spans = [], events = [];
   List<List<int>> coverage = [];
   Map<String, dynamic>? span;
@@ -27,6 +36,7 @@ class ReadingActivity {
   Timer? timer;
   Timer? jumpCheckpoint;
   Future<void> writes = Future.value();
+  final _failedParts = <String, Map<String, dynamic>>{};
   static const idleLimit = Duration(minutes: 2);
   ReadingActivity(
     this.repository, {
@@ -46,6 +56,7 @@ class ReadingActivity {
         [(r[0] as num).toInt(), (r[1] as num).toInt()],
     ];
     started = lastTouch = accounted = positionAt = clock();
+    segmentStarted = started;
     position = offset;
     _event('start', started);
     _begin(started);
@@ -64,6 +75,10 @@ class ReadingActivity {
   }
 
   void _begin(DateTime at) {
+    if (spans.length >= maxSegmentSpans) {
+      _rollover(at);
+      if (span != null) return;
+    }
     span = {
       'start': at.toUtc().toIso8601String(),
       'end': at.toUtc().toIso8601String(),
@@ -81,12 +96,36 @@ class ReadingActivity {
     DateTime at, [
     Map<String, dynamic> data = const {},
   ]) {
+    if (events.length >= maxSegmentEvents) _rollover(at);
     events.add({
       'kind': kind,
       'at': at.toUtc().toIso8601String(),
       'position': position,
       ...data,
     });
+  }
+
+  // Finalized parts use the existing session storage/export/sync protocol.
+  // Only the current bounded part is rewritten; exact events remain available.
+  void _rollover(DateTime at) {
+    final running = span != null && !suspended && !idle && !closed;
+    _persist(
+      {...snapshot(), 'closed': true, 'endedAt': at.toUtc().toIso8601String()},
+      significant: true,
+      finalized: true,
+    );
+    id = uuid.v4();
+    segmentNumber++;
+    segmentStarted = at;
+    _freshBase = fresh;
+    _repeatBase = repeated;
+    _speedCharsBase = speedChars;
+    _speedMsBase = speedActiveMs;
+    _speedMovesBase = speedMoves;
+    events.clear();
+    spans.clear();
+    span = null;
+    if (running) _begin(at);
   }
 
   void tick() {
@@ -234,17 +273,19 @@ class ReadingActivity {
     'id': id,
     'bookId': bookId,
     'hash': hash,
-    'startedAt': started.toUtc().toIso8601String(),
+    'sessionGroup': sessionGroup,
+    'segmentNumber': segmentNumber,
+    'startedAt': segmentStarted.toUtc().toIso8601String(),
     'endedAt': accounted.toUtc().toIso8601String(),
     'closed': closed,
     'position': position,
     'length': length,
-    'newChars': fresh,
-    'repeatChars': repeated,
+    'newChars': fresh - _freshBase,
+    'repeatChars': repeated - _repeatBase,
     'speedVersion': 1,
-    'speedActiveMs': speedActiveMs,
-    'speedChars': speedChars,
-    'speedMoves': speedMoves,
+    'speedActiveMs': speedActiveMs - _speedMsBase,
+    'speedChars': speedChars - _speedCharsBase,
+    'speedMoves': speedMoves - _speedMovesBase,
     'spans': spans,
     'events': events,
   };
@@ -252,8 +293,19 @@ class ReadingActivity {
     jumpCheckpoint?.cancel();
     jumpCheckpoint = null;
     lastCheckpoint = clock();
-    final json = jsonEncode(snapshot()),
-        ranges = jsonEncode({'ranges': coverage});
+    for (final part in List.of(_failedParts.values)) {
+      _persist(part, significant: true, finalized: true);
+    }
+    return _persist(snapshot(), significant: significant);
+  }
+
+  Future<void> _persist(
+    Map<String, dynamic> data, {
+    required bool significant,
+    bool finalized = false,
+  }) {
+    final sessionId = data['id'] as String;
+    final json = jsonEncode(data), ranges = jsonEncode({'ranges': coverage});
     final activityStart = spans
         .where(
           (s) =>
@@ -265,7 +317,7 @@ class ReadingActivity {
     final finishedAt = accounted.toUtc().toIso8601String();
     final next = writes.then((_) async {
       await repository.db.transaction(() async {
-        await repository.setMeta('reading-session:$id', json);
+        await repository.setMeta('reading-session:$sessionId', json);
         await repository.setMeta('reading-coverage:$hash', ranges);
         final library = ReadingLibrary(repository);
         final dates = await library.value('reading-dates:$bookId');
@@ -282,8 +334,12 @@ class ReadingActivity {
         await export!(jsonDecode(json) as Map<String, dynamic>);
         lastExport = clock();
       }
+      if (finalized) _failedParts.remove(sessionId);
     });
     writes = next.catchError((Object e) {
+      if (finalized) {
+        _failedParts[sessionId] = jsonDecode(json) as Map<String, dynamic>;
+      }
       onError?.call(e);
     });
     return writes;
@@ -370,6 +426,7 @@ ReadingTotals readingTotals(
   String? bookId,
 }) {
   final totals = ReadingTotals();
+  final includedGroups = <String>{};
   for (final session in sessions) {
     final id = session['bookId'] as String;
     if (bookId != null && id != bookId) continue;
@@ -398,9 +455,59 @@ ReadingTotals readingTotals(
           .round();
       included = true;
     }
-    if (included) totals.sessions++;
+    if (included) {
+      final group = session['sessionGroup'];
+      if (group is! String || includedGroups.add('$id:$group')) {
+        totals.sessions++;
+      }
+    }
   }
   return totals;
+}
+
+/// Read-only grouping for the session list; original parts stay independent
+/// for synchronization, recovery and journal export. Event payloads aren't
+/// needed to render the list and are never concatenated here.
+List<Map<String, dynamic>> groupReadingSessionsForDisplay(
+  List<Map<String, dynamic>> sessions,
+) {
+  final groups = <String, Map<String, dynamic>>{};
+  final result = <Map<String, dynamic>>[];
+  for (final session in sessions) {
+    final group = session['sessionGroup'];
+    if (group is! String) {
+      result.add(session);
+      continue;
+    }
+    final key = '${session['bookId']}:$group';
+    final existing = groups[key];
+    if (existing == null) {
+      final row = {
+        ...session,
+        'events': const [],
+        'spans': [...session['spans'] as List? ?? []],
+      };
+      groups[key] = row;
+      result.add(row);
+    } else {
+      (existing['spans'] as List).addAll(session['spans'] as List? ?? []);
+      existing['closed'] =
+          existing['closed'] == true && session['closed'] == true;
+      if ((session['startedAt'] as String).compareTo(
+            existing['startedAt'] as String,
+          ) <
+          0) {
+        existing['startedAt'] = session['startedAt'];
+      }
+      if ((session['endedAt'] as String).compareTo(
+            existing['endedAt'] as String,
+          ) >
+          0) {
+        existing['endedAt'] = session['endedAt'];
+      }
+    }
+  }
+  return result;
 }
 
 ({int current, int best}) readingStreak(Map<String, int> days, DateTime now) {

@@ -17,6 +17,14 @@ class ReaderContentsSearch extends StatefulWidget {
 class _ReaderContentsSearchState extends State<ReaderContentsSearch> {
   final controller = TextEditingController();
   String query = '';
+  String? _cachedQuery;
+  List<int> _indexes = const [];
+
+  @override
+  void didUpdateWidget(covariant ReaderContentsSearch oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.titles, widget.titles)) _cachedQuery = null;
+  }
 
   @override
   void dispose() {
@@ -27,13 +35,17 @@ class _ReaderContentsSearchState extends State<ReaderContentsSearch> {
   @override
   Widget build(BuildContext context) {
     final normalized = query.trim().toLowerCase();
-    final indexes = [
-      for (var i = 0; i < widget.titles.length; i++)
-        if (normalized.isEmpty ||
-            widget.titles[i].toLowerCase().contains(normalized) ||
-            '${i + 1}' == normalized)
-          i,
-    ];
+    if (_cachedQuery != normalized) {
+      _cachedQuery = normalized;
+      _indexes = [
+        for (var i = 0; i < widget.titles.length; i++)
+          if (normalized.isEmpty ||
+              widget.titles[i].toLowerCase().contains(normalized) ||
+              '${i + 1}' == normalized)
+            i,
+      ];
+    }
+    final indexes = _indexes;
     return Column(
       children: [
         Padding(

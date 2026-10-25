@@ -24,6 +24,11 @@ import 'reading_library.dart';
 import 'reading_log.dart';
 import '../ui/reading_statistics_page.dart';
 import 'reading_notes_page.dart';
+import 'reader_shortcuts.dart';
+import 'reader_progress_panel.dart';
+import '../ui/app_theme.dart';
+import '../vocabulary/vocabulary_editor.dart';
+import '../vocabulary/vocabulary_repository.dart';
 
 class PdfReaderPage extends StatefulWidget {
   final Repository repository;
@@ -398,7 +403,11 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     }
   }
 
-  Future<void> _annotate([PdfTextSelectionDelegate? selection]) async {
+  Future<void> _annotate([
+    PdfTextSelectionDelegate? selection,
+    bool comment = true,
+    String? color,
+  ]) async {
     try {
       if (selection != null && !selection.isCopyAllowed) return;
       final ranges =
@@ -420,13 +429,15 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         chapterTitle: 'Страница ${first?.pageNumber ?? page}',
         quote: quote,
         comment: '',
-        color: 'yellow',
+        color: color ?? preferences.highlightColor,
         updated: DateTime.now().toUtc().toIso8601String(),
         chapter: (first?.pageNumber ?? page) - 1,
         start: first?.start ?? 0,
         end: first?.end ?? 0,
       );
-      final edited = await _panel(() => editReadingNote(context, note));
+      final edited = comment
+          ? await _panel(() => editReadingNote(context, note))
+          : note;
       if (edited == null) return;
       await widget.repository.db.transaction(() async {
         if (ranges.isEmpty) {
@@ -450,10 +461,21 @@ class _PdfReaderPageState extends State<PdfReaderPage>
             );
           }
         }
+        final raw = await widget.repository.meta('reader:appearance');
+        final stored = raw == null
+            ? const <String, dynamic>{}
+            : jsonDecode(raw) as Map<String, dynamic>;
+        await widget.repository.setMeta(
+          'reader:appearance',
+          jsonEncode({...stored, 'highlightColor': edited.color}),
+        );
       });
       final fresh = await library.notes(hash: widget.asset.hash);
       if (!mounted) return;
-      setState(() => notes = fresh);
+      setState(() {
+        notes = fresh;
+        preferences = preferences.copy(highlightColor: edited.color);
+      });
       controller.invalidate();
       _message(
         ranges.length > 1
@@ -463,6 +485,221 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     } catch (e) {
       _message('Не удалось сохранить заметку: $e');
     }
+  }
+
+  Future<void> _anki(PdfTextSelectionDelegate selection) async {
+    try {
+      if (!selection.isCopyAllowed || !selection.hasSelectedText) return;
+      final ranges = await selection.getSelectedTextRanges();
+      final quote = ranges
+          .map((r) => r.pageText.fullText.substring(r.start, r.end))
+          .join('\n');
+      if (quote.isEmpty) return;
+      if (quote.length > 5000) {
+        _message('Для карточки выберите до 5000 знаков.');
+        return;
+      }
+      final source = VocabularySource(
+        kind: 'book',
+        title: displayTitle ?? widget.asset.filename,
+        detail: 'Страница ${ranges.first.pageNumber}',
+        mediaId: widget.asset.bookId,
+        mediaVersion: widget.asset.hash,
+      );
+      await selection.clearTextSelection();
+      if (!mounted) return;
+      await _panel(
+        () => Navigator.push<VocabularyCard>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => VocabularyEditorPage(
+              repository: VocabularyRepository(widget.repository),
+              source: source,
+              initialFront: quote,
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      _message('Не удалось создать карточку: $e');
+    }
+  }
+
+  Widget? _selectionMenu(
+    BuildContext context,
+    PdfViewerContextMenuBuilderParams params,
+    double width,
+  ) {
+    final selection = params.textSelectionDelegate;
+    if (!selection.hasSelectedText || !selection.isCopyAllowed) return null;
+    // pdfrx otherwise wraps non-positioned builders in an unbounded Positioned.
+    // The shared toolbar needs the bounded viewport to lay out and hit-test.
+    return Positioned.fill(
+      child: readerSelectionToolbar(
+        context: context,
+        width: width,
+        anchors: TextSelectionToolbarAnchors(
+          primaryAnchor: params.anchorA,
+          secondaryAnchor: params.anchorB,
+        ),
+        onMore: params.dismissContextMenu,
+        palette: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final color in noteColors.entries)
+              IconButton(
+                tooltip:
+                    'Выделить: ${switch (color.key) {
+                      'green' => 'зелёный',
+                      'blue' => 'синий',
+                      'pink' => 'розовый',
+                      _ => 'жёлтый',
+                    }}',
+                onPressed: () {
+                  params.dismissContextMenu();
+                  _annotate(selection, false, color.key);
+                },
+                icon: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: color.value,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const SizedBox.square(dimension: 24),
+                ),
+              ),
+          ],
+        ),
+        buttonItems: [
+          ContextMenuButtonItem(
+            type: ContextMenuButtonType.copy,
+            onPressed: () {
+              selection.copyTextSelection();
+              params.dismissContextMenu();
+            },
+          ),
+          ContextMenuButtonItem(
+            label: 'Выделить',
+            onPressed: () {
+              params.dismissContextMenu();
+              _annotate(selection, false);
+            },
+          ),
+          ContextMenuButtonItem(
+            label: 'Заметка',
+            onPressed: () {
+              params.dismissContextMenu();
+              _annotate(selection);
+            },
+          ),
+          ContextMenuButtonItem(
+            label: 'Карточка Anki',
+            onPressed: () {
+              params.dismissContextMenu();
+              _anki(selection);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _pageAtFraction(double value) {
+    final starts = textIndex['starts'] as List? ?? [];
+    final length = (textIndex['length'] as num?)?.toInt() ?? 0;
+    if (starts.length == count && length > 0) {
+      final target = value * length;
+      var low = 0, high = starts.length;
+      while (low < high) {
+        final mid = (low + high) >> 1;
+        if ((starts[mid] as num) <= target) {
+          low = mid + 1;
+        } else {
+          high = mid;
+        }
+      }
+      return low.clamp(1, count);
+    }
+    return ((value * count).floor().clamp(0, count > 0 ? count - 1 : 0) + 1)
+        .toInt();
+  }
+
+  Widget _footer() {
+    final dark = preferences.isDark(MediaQuery.platformBrightnessOf(context));
+    final pepe = PepeColors.of(context);
+    final ink = dark
+        ? Color.lerp(pepe.text, pepe.muted, .15)!
+        : const Color(0xff302b24);
+    final value = (dragging ?? progress).clamp(0.0, 1.0);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (saveError != null)
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(saveError!, style: const TextStyle(color: Colors.red)),
+          ),
+        ReaderBottomPanel(
+          child: ReaderProgressFooter(
+            value: value,
+            ink: ink,
+            accent: pepe.accent,
+            onChanged: !ready ? null : (v) => setState(() => dragging = v),
+            onChangeCancel: () => setState(() => dragging = null),
+            step: 1 / math.max(1, count),
+            onChangeEnd: !ready
+                ? null
+                : (v) {
+                    setState(() => dragging = null);
+                    _go(_pageAtFraction(v));
+                  },
+            details: [
+              Text(
+                'Страница ${dragging == null ? page : _pageAtFraction(value)} / $count · ${(value * 100).floor()}%',
+              ),
+            ],
+            actions: [
+              IconButton(
+                tooltip: 'Вернуться на прежнее место',
+                visualDensity: VisualDensity.compact,
+                onPressed: !ready || history.isEmpty
+                    ? null
+                    : () {
+                        final target = history.removeLast();
+                        _go(target, remember: false);
+                      },
+                icon: const Icon(Icons.undo),
+              ),
+              IconButton(
+                tooltip: 'Предыдущая страница',
+                visualDensity: VisualDensity.compact,
+                onPressed: !ready || page <= 1
+                    ? null
+                    : () => _go(page - 1, reading: true),
+                icon: const Icon(Icons.chevron_left),
+              ),
+              IconButton(
+                tooltip: page == count
+                    ? 'Завершить последнюю страницу'
+                    : 'Следующая страница',
+                visualDensity: VisualDensity.compact,
+                onPressed: !ready || finished
+                    ? null
+                    : () => page == count
+                          ? _finish()
+                          : _go(page + 1, reading: true),
+                icon: Icon(page == count ? Icons.done : Icons.chevron_right),
+              ),
+              IconButton(
+                tooltip: 'Цитаты и заметки',
+                visualDensity: VisualDensity.compact,
+                onPressed: ready ? _notes : null,
+                icon: const Icon(Icons.bookmarks_outlined),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   void _paint(Canvas canvas, Rect rect, PdfPage pdfPage) {
@@ -569,13 +806,14 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   }
 
   Future<void> _appearance() async {
-    final next = await _panel(
+    var value = preferences;
+    var cancelled = false;
+    final result = await _panel(
       () => showModalBottomSheet<ReaderPreferences>(
         context: context,
         showDragHandle: true,
         isScrollControlled: true,
         builder: (context) {
-          var value = preferences;
           return StatefulBuilder(
             builder: (context, update) => SafeArea(
               child: SingleChildScrollView(
@@ -589,6 +827,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       initialValue: value.palette,
                       decoration: const InputDecoration(labelText: 'Тема'),
                       items: [
@@ -598,22 +837,38 @@ class _PdfReaderPageState extends State<PdfReaderPage>
                           'sepia': 'Сепия',
                           'system': 'Системная',
                         }.entries)
-                          DropdownMenuItem(value: e.key, child: Text(e.value)),
+                          DropdownMenuItem(
+                            value: e.key,
+                            child: Text(
+                              e.value,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                       ],
                       onChanged: (v) =>
                           update(() => value = value.copy(palette: v)),
                     ),
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       initialValue: value.mode,
                       decoration: const InputDecoration(labelText: 'Навигация'),
                       items: const [
                         DropdownMenuItem(
                           value: 'pages',
-                          child: Text('Горизонтальные страницы'),
+                          child: Text(
+                            'Горизонтальные страницы',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                         DropdownMenuItem(
                           value: 'scroll',
-                          child: Text('Вертикальная прокрутка'),
+                          child: Text(
+                            'Вертикальная прокрутка',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                       onChanged: (v) =>
@@ -631,6 +886,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
                     ),
                     for (final zone in ['left', 'center', 'right'])
                       DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue: switch (zone) {
                           'left' => value.leftTap,
                           'right' => value.rightTap,
@@ -652,7 +908,11 @@ class _PdfReaderPageState extends State<PdfReaderPage>
                           }.entries)
                             DropdownMenuItem(
                               value: e.key,
-                              child: Text(e.value),
+                              child: Text(
+                                e.value,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                         ],
                         onChanged: (v) => update(
@@ -673,6 +933,14 @@ class _PdfReaderPageState extends State<PdfReaderPage>
                       onPressed: () => Navigator.pop(context, value),
                       child: const Text('Применить'),
                     ),
+                    TextButton(
+                      onPressed: () {
+                        cancelled = true;
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Отмена'),
+                    ),
+                    const Text('Изменения сохранятся при закрытии шторки.'),
                   ],
                 ),
               ),
@@ -681,7 +949,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         },
       ),
     );
-    if (next == null || !mounted) return;
+    if (cancelled || !mounted) return;
+    final next = result ?? value;
     setState(() => preferences = axisLocked ? next.copy(mode: 'scroll') : next);
     try {
       // Theme, highlights and tap zones are shared with the text reader, but
@@ -997,416 +1266,457 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     });
   }
 
-  @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: allowPop,
-    onPopInvokedWithResult: (didPop, _) {
-      if (!didPop) {
-        if (fullscreen) {
-          _fullscreen(false);
-        } else {
-          _close();
-        }
+  void _keyZoom(bool increase) {
+    if (!ready || !readerShortcutsAllowed(context)) return;
+    if (axisLocked) {
+      _message('Сначала снимите блокировку');
+    } else if (increase) {
+      controller.zoomUp();
+    } else {
+      controller.zoomDown();
+    }
+  }
+
+  bool? _viewerKey(LogicalKeyboardKey key) {
+    if (!ready || !readerShortcutsAllowed(context)) return null;
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isControlPressed || keyboard.isMetaPressed) {
+      if (key == LogicalKeyboardKey.equal ||
+          key == LogicalKeyboardKey.numpadAdd) {
+        _keyZoom(true);
+        return true;
       }
-    },
-    child: Scaffold(
-      resizeToAvoidBottomInset: false,
-      appBar: fullscreen
-          ? null
-          : AppBar(
-              title: Text(displayTitle ?? widget.asset.filename),
-              actions: [
-                IconButton(
-                  tooltip: 'Статистика чтения и журнал',
-                  icon: const Icon(Icons.bar_chart_outlined),
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => ReadingStatisticsPage(
-                        repository: widget.repository,
-                        bookId: widget.asset.bookId,
-                      ),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Поиск по книге',
-                  onPressed: ready ? _search : null,
-                  icon: const Icon(Icons.search),
-                ),
-                IconButton(
-                  tooltip: axisLocked
-                      ? 'Разблокировать масштаб и движение'
-                      : 'Зафиксировать масштаб и горизонталь',
-                  onPressed: ready ? _toggleAxisLock : null,
-                  icon: Icon(axisLocked ? Icons.lock : Icons.lock_open),
-                ),
-                PopupMenuButton<String>(
-                  enabled: ready,
-                  onSelected: (v) {
-                    switch (v) {
-                      case 'contents':
-                        _contents();
-                      case 'notes':
-                        _notes();
-                      case 'bookmark':
-                        _annotate();
-                      case 'appearance':
-                        _appearance();
-                      case 'text':
-                        _textMode();
-                      case 'fullscreen':
-                        _fullscreen(true);
-                      case 'zoomIn':
-                        if (axisLocked) {
-                          _message('Сначала снимите блокировку');
-                        } else {
-                          controller.zoomUp();
-                        }
-                      case 'zoomOut':
-                        if (axisLocked) {
-                          _message('Сначала снимите блокировку');
-                        } else {
-                          controller.zoomDown();
-                        }
-                    }
-                  },
-                  itemBuilder: (_) => [
-                    for (final e in {
-                      'contents': 'Оглавление и страницы',
-                      'notes': 'Цитаты и заметки',
-                      'bookmark': 'Заметка к странице',
-                      'appearance': 'Оформление',
-                      'text': 'Текстовый режим',
-                      'fullscreen': 'Полный экран',
-                      'zoomIn': 'Увеличить масштаб',
-                      'zoomOut': 'Уменьшить масштаб',
-                    }.entries)
-                      PopupMenuItem(value: e.key, child: Text(e.value)),
-                  ],
-                ),
-              ],
-            ),
-      body: Listener(
-        onPointerDown: (_) => activity?.touch(),
-        onPointerSignal: (_) => activity?.touch(),
-        child: FutureBuilder<PdfDocumentRefDirect>(
-          future: initial,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return Center(
-                child: Text('Не удалось открыть PDF: ${snapshot.error}'),
-              );
+      if (key == LogicalKeyboardKey.minus ||
+          key == LogicalKeyboardKey.numpadSubtract) {
+        _keyZoom(false);
+        return true;
+      }
+      return null; // Keep PDFium's copy and select-all bindings.
+    }
+    if (key == LogicalKeyboardKey.home || key == LogicalKeyboardKey.end) {
+      _go(key == LogicalKeyboardKey.home ? 1 : count);
+      return true;
+    }
+    if (key == LogicalKeyboardKey.pageDown ||
+        key == LogicalKeyboardKey.pageUp ||
+        key == LogicalKeyboardKey.space) {
+      final backwards =
+          key == LogicalKeyboardKey.pageUp ||
+          key == LogicalKeyboardKey.space && keyboard.isShiftPressed;
+      _go(page + (backwards ? -1 : 1), reading: true);
+      return true;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = preferences.isDark(MediaQuery.platformBrightnessOf(context));
+    final pepe = PepeColors.of(context);
+    final background = dark
+        ? pepe.background
+        : preferences.palette == 'sepia'
+        ? const Color(0xfff3e8d0)
+        : const Color(0xfffafafa);
+    final ink = dark
+        ? Color.lerp(pepe.text, pepe.muted, .15)!
+        : const Color(0xff302b24);
+    final theme = ThemeData(
+      useMaterial3: true,
+      brightness: dark ? Brightness.dark : Brightness.light,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: dark ? pepe.accent : const Color(0xff557b70),
+        brightness: dark ? Brightness.dark : Brightness.light,
+        surface: background,
+      ),
+      scaffoldBackgroundColor: background,
+      fontFamily: AppFonts.body,
+      extensions: [pepe],
+      appBarTheme: AppBarTheme(
+        backgroundColor: background,
+        foregroundColor: ink,
+      ),
+    );
+    return Theme(
+      data: theme,
+      child: PopScope(
+        canPop: allowPop,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) {
+            if (fullscreen) {
+              _fullscreen(false);
+            } else {
+              _close();
             }
-            if (!snapshot.hasData) {
-              return Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CircularProgressIndicator(),
-                    const SizedBox(height: 16),
-                    const Text('Открытие PDF…'),
-                  ],
-                ),
-              );
-            }
-            final dark = preferences.isDark(
-              MediaQuery.platformBrightnessOf(context),
-            );
-            final filter = dark
-                ? const ColorFilter.matrix([
-                    -.82,
-                    0,
-                    0,
-                    0,
-                    235,
-                    0,
-                    -.82,
-                    0,
-                    0,
-                    232,
-                    0,
-                    0,
-                    -.82,
-                    0,
-                    225,
-                    0,
-                    0,
-                    0,
-                    1,
-                    0,
-                  ])
-                : preferences.palette == 'sepia'
-                ? const ColorFilter.matrix([
-                    .94,
-                    0,
-                    0,
-                    0,
-                    5,
-                    0,
-                    .89,
-                    0,
-                    0,
-                    4,
-                    0,
-                    0,
-                    .77,
-                    0,
-                    8,
-                    0,
-                    0,
-                    0,
-                    1,
-                    0,
-                  ])
-                : const ColorFilter.mode(Colors.transparent, BlendMode.srcOver);
-            return LayoutBuilder(
-              builder: (context, constraints) => Stack(
-                children: [
-                  ColorFiltered(
-                    colorFilter: filter,
-                    child: PdfViewer(
-                      snapshot.data!,
-                      controller: controller,
-                      initialPageNumber: page,
-                      params: PdfViewerParams(
-                        textSelectionParams: const PdfTextSelectionParams(
-                          showContextMenuAutomatically: true,
-                          magnifier: PdfViewerSelectionMagnifierParams(
-                            enabled: false,
-                          ),
-                        ),
-                        maxImageBytesCachedOnMemory: 24 * 1024 * 1024,
-                        horizontalCacheExtent: 0,
-                        verticalCacheExtent: .25,
-                        getPageRenderingScale: (_, p, _, scale) =>
-                            pdfRenderScale(p.width, p.height, scale),
-                        scaleEnabled: !axisLocked,
-                        panAxis: axisLocked ? PanAxis.vertical : PanAxis.free,
-                        normalizeMatrix:
-                            axisLocked && lockedX != null && lockedZoom != null
-                            ? (matrix, view, layout, _) => lockedPdfMatrix(
-                                matrix,
-                                view,
-                                layout.documentSize,
-                                x: lockedX!,
-                                zoom: lockedZoom!,
-                              )
-                            : null,
-                        calculateInitialPageNumber: (_, _) => page,
-                        onViewerReady: (_, _) {
-                          if (!mounted) return;
-                          setState(() => ready = true);
-                          _prepareIndex();
-                          if (foreground && routeVisible && panels == 0) {
-                            activity?.resume();
-                          }
-                          _save();
-                          final note = widget.initialNote;
-                          if (note != null) _reveal(page, note.start, note.end);
-                        },
-                        onPageChanged: _changed,
-                        pagePaintCallbacks: [_paint],
-                        layoutPages: axisLocked || preferences.mode == 'scroll'
-                            ? null
-                            : (pages, params) {
-                                final height =
-                                    pages.fold(
-                                      0.0,
-                                      (h, p) => math.max(h, p.height),
-                                    ) +
-                                    params.margin * 2;
-                                var x = params.margin;
-                                final layouts = <Rect>[];
-                                for (final p in pages) {
-                                  layouts.add(
-                                    Rect.fromLTWH(
-                                      x,
-                                      (height - p.height) / 2,
-                                      p.width,
-                                      p.height,
-                                    ),
-                                  );
-                                  x += p.width + params.margin;
-                                }
-                                return PdfPageLayout(
-                                  pageLayouts: layouts,
-                                  documentSize: Size(x, height),
-                                );
-                              },
-                        onGeneralTap: (context, controller, details) {
-                          if (details.type != PdfViewerGeneralTapType.tap ||
-                              controller
-                                  .textSelectionDelegate
-                                  .hasSelectedText ||
-                              details.tapOn == PdfViewerPart.selectedText) {
-                            return false;
-                          }
-                          switch (preferences.tapAt(
-                            details.localPosition.dx / constraints.maxWidth,
-                          )) {
-                            case 'previous':
-                              _go(page - 1, reading: true);
-                            case 'next':
-                              _go(page + 1, reading: true);
-                            case 'controls':
-                              _fullscreen(!fullscreen);
-                            default:
-                              return false;
-                          }
-                          return true;
-                        },
-                        customizeContextMenuItems: (params, items) {
-                          if (params.textSelectionDelegate.isCopyAllowed &&
-                              params.textSelectionDelegate.hasSelectedText) {
-                            items.add(
-                              ContextMenuButtonItem(
-                                label: 'Цитата / заметка',
-                                onPressed: () {
-                                  params.dismissContextMenu();
-                                  _annotate(params.textSelectionDelegate);
-                                },
-                              ),
-                            );
-                          }
-                        },
-                        buildContextMenu: (context, params) {
-                          final selection = params.textSelectionDelegate;
-                          if (!selection.hasSelectedText ||
-                              !selection.isCopyAllowed) {
-                            return null;
-                          }
-                          return readerSelectionToolbar(
-                            context: context,
-                            width: constraints.maxWidth,
-                            anchors: TextSelectionToolbarAnchors(
-                              primaryAnchor: Offset(
-                                constraints.maxWidth / 2,
-                                80,
+          }
+        },
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
+              if (ready && readerShortcutsAllowed(context)) _search();
+            },
+            const SingleActivator(LogicalKeyboardKey.keyD, control: true): () {
+              if (ready && readerShortcutsAllowed(context)) _annotate();
+            },
+            const SingleActivator(LogicalKeyboardKey.pageDown): () =>
+                _viewerKey(LogicalKeyboardKey.pageDown),
+            const SingleActivator(LogicalKeyboardKey.pageUp): () =>
+                _viewerKey(LogicalKeyboardKey.pageUp),
+            const SingleActivator(LogicalKeyboardKey.space): () =>
+                _viewerKey(LogicalKeyboardKey.space),
+            const SingleActivator(LogicalKeyboardKey.space, shift: true): () =>
+                _viewerKey(LogicalKeyboardKey.space),
+            const SingleActivator(LogicalKeyboardKey.home): () =>
+                _viewerKey(LogicalKeyboardKey.home),
+            const SingleActivator(LogicalKeyboardKey.end): () =>
+                _viewerKey(LogicalKeyboardKey.end),
+            const SingleActivator(
+              LogicalKeyboardKey.equal,
+              control: true,
+            ): () =>
+                _keyZoom(true),
+            const SingleActivator(
+              LogicalKeyboardKey.equal,
+              control: true,
+              shift: true,
+            ): () =>
+                _keyZoom(true),
+            const SingleActivator(
+              LogicalKeyboardKey.minus,
+              control: true,
+            ): () =>
+                _keyZoom(false),
+            const SingleActivator(LogicalKeyboardKey.f11): () {
+              if (readerShortcutsAllowed(context)) _fullscreen(!fullscreen);
+            },
+            const SingleActivator(LogicalKeyboardKey.escape): () {
+              if (fullscreen && readerShortcutsAllowed(context)) {
+                _fullscreen(false);
+              }
+            },
+          },
+          child: Focus(
+            autofocus: true,
+            child: Scaffold(
+              resizeToAvoidBottomInset: false,
+              appBar: fullscreen
+                  ? null
+                  : AppBar(
+                      title: Text(displayTitle ?? widget.asset.filename),
+                      actions: [
+                        IconButton(
+                          tooltip: 'Статистика чтения и журнал',
+                          icon: const Icon(Icons.bar_chart_outlined),
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => ReadingStatisticsPage(
+                                repository: widget.repository,
+                                bookId: widget.asset.bookId,
                               ),
                             ),
-                            buttonItems: [
-                              ContextMenuButtonItem(
-                                type: ContextMenuButtonType.copy,
-                                onPressed: () {
-                                  selection.copyTextSelection();
-                                  params.dismissContextMenu();
-                                },
-                              ),
-                              ContextMenuButtonItem(
-                                label: 'Цитата / заметка',
-                                onPressed: () {
-                                  params.dismissContextMenu();
-                                  _annotate(selection);
-                                },
-                              ),
-                            ],
-                          );
-                        },
-                        linkHandlerParams: PdfLinkHandlerParams(
-                          enableAutoLinkDetection: false,
-                          onLinkTap: (link) {
-                            if (link.dest != null) _go(link.dest!.pageNumber);
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Поиск по книге',
+                          onPressed: ready ? _search : null,
+                          icon: const Icon(Icons.search),
+                        ),
+                        IconButton(
+                          tooltip: axisLocked
+                              ? 'Разблокировать масштаб и движение'
+                              : 'Зафиксировать масштаб и горизонталь',
+                          onPressed: ready ? _toggleAxisLock : null,
+                          icon: Icon(axisLocked ? Icons.lock : Icons.lock_open),
+                        ),
+                        PopupMenuButton<String>(
+                          enabled: ready,
+                          onSelected: (v) {
+                            switch (v) {
+                              case 'contents':
+                                _contents();
+                              case 'notes':
+                                _notes();
+                              case 'bookmark':
+                                _annotate();
+                              case 'appearance':
+                                _appearance();
+                              case 'text':
+                                _textMode();
+                              case 'fullscreen':
+                                _fullscreen(true);
+                              case 'zoomIn':
+                                if (axisLocked) {
+                                  _message('Сначала снимите блокировку');
+                                } else {
+                                  controller.zoomUp();
+                                }
+                              case 'zoomOut':
+                                if (axisLocked) {
+                                  _message('Сначала снимите блокировку');
+                                } else {
+                                  controller.zoomDown();
+                                }
+                              case 'keyboard':
+                                showReaderShortcuts(context, pdf: true);
+                            }
                           },
+                          itemBuilder: (_) => [
+                            for (final e in {
+                              'contents': 'Оглавление и страницы',
+                              'notes': 'Цитаты и заметки',
+                              'bookmark': 'Заметка к странице',
+                              'appearance': 'Оформление',
+                              'text': 'Текстовый режим',
+                              'fullscreen': 'Полный экран',
+                              'zoomIn': 'Увеличить масштаб',
+                              'zoomOut': 'Уменьшить масштаб',
+                              'keyboard': 'Горячие клавиши',
+                            }.entries)
+                              PopupMenuItem(
+                                value: e.key,
+                                child: Text(
+                                  e.value,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
                         ),
-                      ),
+                      ],
                     ),
-                  ),
-                  if (fullscreen)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: SafeArea(
-                        child: IconButton.filledTonal(
-                          tooltip: 'Выйти из полного экрана',
-                          onPressed: () => _fullscreen(false),
-                          icon: const Icon(Icons.fullscreen_exit),
+              body: Listener(
+                onPointerDown: (_) => activity?.touch(),
+                onPointerSignal: (_) => activity?.touch(),
+                child: FutureBuilder<PdfDocumentRefDirect>(
+                  future: initial,
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text(
+                          'Не удалось открыть PDF: ${snapshot.error}',
                         ),
+                      );
+                    }
+                    if (!snapshot.hasData) {
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 16),
+                            const Text('Открытие PDF…'),
+                          ],
+                        ),
+                      );
+                    }
+                    final dark = preferences.isDark(
+                      MediaQuery.platformBrightnessOf(context),
+                    );
+                    final filter = dark
+                        ? const ColorFilter.matrix([
+                            -.82,
+                            0,
+                            0,
+                            0,
+                            235,
+                            0,
+                            -.82,
+                            0,
+                            0,
+                            232,
+                            0,
+                            0,
+                            -.82,
+                            0,
+                            225,
+                            0,
+                            0,
+                            0,
+                            1,
+                            0,
+                          ])
+                        : preferences.palette == 'sepia'
+                        ? const ColorFilter.matrix([
+                            .94,
+                            0,
+                            0,
+                            0,
+                            5,
+                            0,
+                            .89,
+                            0,
+                            0,
+                            4,
+                            0,
+                            0,
+                            .77,
+                            0,
+                            8,
+                            0,
+                            0,
+                            0,
+                            1,
+                            0,
+                          ])
+                        : const ColorFilter.mode(
+                            Colors.transparent,
+                            BlendMode.srcOver,
+                          );
+                    return LayoutBuilder(
+                      builder: (context, constraints) => Stack(
+                        children: [
+                          ColorFiltered(
+                            colorFilter: filter,
+                            child: PdfViewer(
+                              snapshot.data!,
+                              controller: controller,
+                              initialPageNumber: page,
+                              params: PdfViewerParams(
+                                onKey: (_, key, _) => _viewerKey(key),
+                                textSelectionParams:
+                                    const PdfTextSelectionParams(
+                                      showContextMenuAutomatically: true,
+                                      magnifier:
+                                          PdfViewerSelectionMagnifierParams(
+                                            enabled: false,
+                                          ),
+                                    ),
+                                maxImageBytesCachedOnMemory: 24 * 1024 * 1024,
+                                horizontalCacheExtent: 0,
+                                verticalCacheExtent: .25,
+                                getPageRenderingScale: (_, p, _, scale) =>
+                                    pdfRenderScale(p.width, p.height, scale),
+                                scaleEnabled: !axisLocked,
+                                panAxis: axisLocked
+                                    ? PanAxis.vertical
+                                    : PanAxis.free,
+                                normalizeMatrix:
+                                    axisLocked &&
+                                        lockedX != null &&
+                                        lockedZoom != null
+                                    ? (matrix, view, layout, _) =>
+                                          lockedPdfMatrix(
+                                            matrix,
+                                            view,
+                                            layout.documentSize,
+                                            x: lockedX!,
+                                            zoom: lockedZoom!,
+                                          )
+                                    : null,
+                                calculateInitialPageNumber: (_, _) => page,
+                                onViewerReady: (_, _) {
+                                  if (!mounted) return;
+                                  setState(() => ready = true);
+                                  _prepareIndex();
+                                  if (foreground &&
+                                      routeVisible &&
+                                      panels == 0) {
+                                    activity?.resume();
+                                  }
+                                  _save();
+                                  final note = widget.initialNote;
+                                  if (note != null) {
+                                    _reveal(page, note.start, note.end);
+                                  }
+                                },
+                                onPageChanged: _changed,
+                                pagePaintCallbacks: [_paint],
+                                layoutPages:
+                                    axisLocked || preferences.mode == 'scroll'
+                                    ? null
+                                    : (pages, params) {
+                                        final height =
+                                            pages.fold(
+                                              0.0,
+                                              (h, p) => math.max(h, p.height),
+                                            ) +
+                                            params.margin * 2;
+                                        var x = params.margin;
+                                        final layouts = <Rect>[];
+                                        for (final p in pages) {
+                                          layouts.add(
+                                            Rect.fromLTWH(
+                                              x,
+                                              (height - p.height) / 2,
+                                              p.width,
+                                              p.height,
+                                            ),
+                                          );
+                                          x += p.width + params.margin;
+                                        }
+                                        return PdfPageLayout(
+                                          pageLayouts: layouts,
+                                          documentSize: Size(x, height),
+                                        );
+                                      },
+                                onGeneralTap: (context, controller, details) {
+                                  if (details.type !=
+                                          PdfViewerGeneralTapType.tap ||
+                                      controller
+                                          .textSelectionDelegate
+                                          .hasSelectedText ||
+                                      details.tapOn ==
+                                          PdfViewerPart.selectedText) {
+                                    return false;
+                                  }
+                                  switch (preferences.tapAt(
+                                    details.localPosition.dx /
+                                        constraints.maxWidth,
+                                  )) {
+                                    case 'previous':
+                                      _go(page - 1, reading: true);
+                                    case 'next':
+                                      _go(page + 1, reading: true);
+                                    case 'controls':
+                                      _fullscreen(!fullscreen);
+                                    default:
+                                      return false;
+                                  }
+                                  return true;
+                                },
+                                buildContextMenu: (context, params) =>
+                                    _selectionMenu(
+                                      context,
+                                      params,
+                                      constraints.maxWidth,
+                                    ),
+                                linkHandlerParams: PdfLinkHandlerParams(
+                                  enableAutoLinkDetection: false,
+                                  onLinkTap: (link) {
+                                    if (link.dest != null) {
+                                      _go(link.dest!.pageNumber);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (fullscreen)
+                            Positioned(
+                              top: 8,
+                              right: 8,
+                              child: SafeArea(
+                                child: IconButton.filledTonal(
+                                  tooltip: 'Выйти из полного экрана',
+                                  onPressed: () => _fullscreen(false),
+                                  icon: const Icon(Icons.fullscreen_exit),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                    ),
-                ],
+                    );
+                  },
+                ),
               ),
-            );
-          },
+              bottomNavigationBar: fullscreen
+                  ? null
+                  : SafeArea(child: _footer()),
+            ),
+          ),
         ),
       ),
-      bottomNavigationBar: fullscreen
-          ? null
-          : SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (saveError != null)
-                    Text(
-                      saveError!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  if (ready)
-                    Slider(
-                      value: dragging ?? page.toDouble(),
-                      min: 1,
-                      max: math.max(2, count).toDouble(),
-                      label: 'Страница $page',
-                      onChanged: count <= 1
-                          ? null
-                          : (v) => setState(() => dragging = v),
-                      onChangeEnd: count <= 1
-                          ? null
-                          : (v) {
-                              setState(() => dragging = null);
-                              _go(v.round());
-                            },
-                    ),
-                  Row(
-                    children: [
-                      IconButton(
-                        tooltip: 'Вернуться на прежнее место',
-                        onPressed: !ready || history.isEmpty
-                            ? null
-                            : () {
-                                final target = history.removeLast();
-                                _go(target, remember: false);
-                              },
-                        icon: const Icon(Icons.undo),
-                      ),
-                      IconButton(
-                        tooltip: 'Предыдущая страница',
-                        onPressed: !ready || page <= 1
-                            ? null
-                            : () => _go(page - 1, reading: true),
-                        icon: const Icon(Icons.chevron_left),
-                      ),
-                      Expanded(
-                        child: Text(
-                          'Страница $page / $count · ${(progress * 100).floor()}%',
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: page == count
-                            ? 'Завершить последнюю страницу'
-                            : 'Следующая страница',
-                        onPressed: !ready || finished
-                            ? null
-                            : () => page == count
-                                  ? _finish()
-                                  : _go(page + 1, reading: true),
-                        icon: Icon(
-                          page == count ? Icons.done : Icons.chevron_right,
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Цитаты и заметки',
-                        onPressed: ready ? _notes : null,
-                        icon: const Icon(Icons.bookmarks_outlined),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-    ),
-  );
+    );
+  }
 }

@@ -367,6 +367,7 @@ void main() {
       final db = AppDatabase(NativeDatabase.memory());
       addTearDown(db.close);
       final repo = Repository(db);
+      await repo.setMeta('reader:appearance', '{"mode":"pages"}');
       await tester.pumpWidget(book.reader(repo));
       await settle(tester);
       await book.select(tester, 0, 4);

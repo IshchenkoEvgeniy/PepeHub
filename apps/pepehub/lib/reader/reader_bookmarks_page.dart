@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
 
 import 'reader_bookmarks.dart';
+import 'reader_layout.dart';
 
 class ReaderBookmarksPage extends StatefulWidget {
   final ReaderBookmarkStore store;
   final List<String> chapterTitles;
   final int chapter, offset;
+  final ReaderDocument? document;
   const ReaderBookmarksPage({
     super.key,
     required this.store,
     required this.chapterTitles,
     required this.chapter,
     required this.offset,
+    this.document,
   });
 
   @override
@@ -22,6 +25,7 @@ class _ReaderBookmarksPageState extends State<ReaderBookmarksPage> {
   List<ReaderBookmark>? bookmarks;
   String? error;
   bool busy = false;
+  int loadGeneration = 0;
 
   @override
   void initState() {
@@ -30,21 +34,24 @@ class _ReaderBookmarksPageState extends State<ReaderBookmarksPage> {
   }
 
   Future<void> _load() async {
+    final generation = ++loadGeneration;
     try {
       final result = await widget.store.list();
-      if (mounted) {
+      if (mounted && generation == loadGeneration) {
         setState(() {
           bookmarks = result;
           error = null;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = 'Не удалось загрузить закладки: $e');
+      if (mounted && generation == loadGeneration) {
+        setState(() => error = 'Не удалось загрузить закладки: $e');
+      }
     }
   }
 
   Future<void> _write(Future<void> Function() action) async {
-    if (busy) return;
+    if (busy || !mounted) return;
     setState(() => busy = true);
     try {
       await action();
@@ -83,16 +90,29 @@ class _ReaderBookmarksPageState extends State<ReaderBookmarksPage> {
   }
 
   Future<void> _delete(ReaderBookmark bookmark) => _write(() async {
-    final removed = await widget.store.delete(bookmark.id);
+    final store = widget.store;
+    final removed = await store.delete(bookmark.id);
     if (!mounted || removed == null) return;
-    ScaffoldMessenger.of(context)
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
           content: const Text('Закладка удалена'),
           action: SnackBarAction(
             label: 'Отменить',
-            onPressed: () => _write(() => widget.store.restore(removed)),
+            onPressed: () async {
+              try {
+                await store.restore(removed);
+                if (mounted) await _load();
+              } catch (e) {
+                if (messenger.mounted) {
+                  messenger.showSnackBar(
+                    SnackBar(content: Text('Не удалось вернуть закладку: $e')),
+                  );
+                }
+              }
+            },
           ),
         ),
       );
@@ -145,13 +165,52 @@ class _ReaderBookmarksPageState extends State<ReaderBookmarksPage> {
                       final bookmark = bookmarks![index];
                       final valid =
                           bookmark.chapter < widget.chapterTitles.length;
+                      final document = widget.document;
+                      final place =
+                          valid &&
+                              document != null &&
+                              bookmark.chapter < document.texts.length
+                          ? (document.starts[bookmark.chapter] +
+                                    bookmark.offset.clamp(
+                                      0,
+                                      document.texts[bookmark.chapter].length,
+                                    ))
+                                .clamp(0, document.length)
+                          : null;
+                      final excerpt = place == null
+                          ? null
+                          : readerExcerpt(
+                              document!.texts[bookmark.chapter],
+                              bookmark.offset.clamp(
+                                0,
+                                document.texts[bookmark.chapter].length,
+                              ),
+                              bookmark.offset.clamp(
+                                0,
+                                document.texts[bookmark.chapter].length,
+                              ),
+                              before: 20,
+                              after: 100,
+                            );
                       return ListTile(
                         leading: const Icon(Icons.bookmark_outline),
                         title: Text(bookmark.title),
-                        subtitle: Text(
-                          valid
-                              ? '${bookmark.chapter + 1}. ${widget.chapterTitles[bookmark.chapter]}'
-                              : 'Глава недоступна',
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              valid
+                                  ? '${bookmark.chapter + 1}. ${widget.chapterTitles[bookmark.chapter]}'
+                                        '${place == null || document!.length == 0 ? '' : ' · ${(place * 100 / document.length).toStringAsFixed(1)}%'}'
+                                  : 'Глава недоступна',
+                            ),
+                            if (excerpt?.isNotEmpty == true)
+                              Text(
+                                excerpt!,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                          ],
                         ),
                         onTap: busy || !valid
                             ? null

@@ -7,7 +7,6 @@ import 'reader_routes.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart';
 
 import '../data/repository.dart';
@@ -34,6 +33,8 @@ import 'reader_rebase.dart';
 import 'book_formats.dart';
 import 'reader_layout_frame.dart';
 import 'reading_daily_totals.dart';
+import 'reader_shortcuts.dart';
+import 'reader_progress_panel.dart';
 
 class _SeamlessBook {
   final String text;
@@ -143,10 +144,12 @@ class _ReaderPageState extends State<ReaderPage>
   ReaderPreferences preferences = const ReaderPreferences();
   String? error, saveError;
   int chapter = 0, offset = 0, navigation = 0;
-  int? highlightStart, highlightEnd;
+  int? highlightStart, highlightEnd, highlightChapter;
   final searchSession = ReaderSearchSession();
   int? searchIndex;
-  bool searchOpen = false;
+  bool searchOpen = false, loadingMoreHits = false;
+  final moreSearchWorker = ReaderSearchWorker();
+  bool savingBookmark = false;
   final history = <({int chapter, int offset})>[];
   ({int chapter, int offset})? linkReturn;
   ({int chapter, int offset})? pinnedChapter;
@@ -157,6 +160,28 @@ class _ReaderPageState extends State<ReaderPage>
   Timer? todayTimer;
   Future<void>? todayWork;
   final positionChanges = ValueNotifier(0);
+  final panelPosition = ValueNotifier((chapter: 0, percent: 0));
+  final noteChapter = ValueNotifier(0);
+  ReaderDocument? _titlesDocument;
+  List<String> _chapterTitles = const [];
+  List<String> _titlesFor(ReaderDocument d) {
+    if (!identical(d, _titlesDocument)) {
+      _titlesDocument = d;
+      _chapterTitles = List.unmodifiable(d.book.chapters.map((c) => c.title));
+    }
+    return _chapterTitles;
+  }
+
+  void _notifyPosition() {
+    positionChanges.value++;
+    noteChapter.value = chapter;
+    final length = document!.texts[chapter].length;
+    panelPosition.value = (
+      chapter: chapter,
+      percent: length == 0 ? 0 : (offset * 100 / length).round(),
+    );
+  }
+
   final dragProgress = ValueNotifier<double?>(null);
   final viewportController = ReaderViewportController();
   List<ReadingNote>? _cachedSourceNotes;
@@ -235,6 +260,9 @@ class _ReaderPageState extends State<ReaderPage>
     todayTimer?.cancel();
     todayReading.dispose();
     positionChanges.dispose();
+    panelPosition.dispose();
+    noteChapter.dispose();
+    moreSearchWorker.cancel();
     dragProgress.dispose();
     readerRoutes.unsubscribe(this);
     if (fullscreen) {
@@ -285,13 +313,31 @@ class _ReaderPageState extends State<ReaderPage>
               layout: 2,
             ),
           ),
-          // Only FB2 changed chapter boundaries in layout 3.
-          previous: bookFormat(widget.asset.filename) == 'fb2'
+          previous:
+              const ['fb2', 'txt'].contains(bookFormat(widget.asset.filename))
               ? () async => ReaderDocument(
                   await loadTextBook(
                     widget.asset.path,
                     widget.asset.filename,
                     layout: 2,
+                  ),
+                )
+              : null,
+          prior: bookFormat(widget.asset.filename) == 'txt'
+              ? () async => ReaderDocument(
+                  await loadTextBook(
+                    widget.asset.path,
+                    widget.asset.filename,
+                    layout: 3,
+                  ),
+                )
+              : null,
+          sourceLayout: bookFormat(widget.asset.filename) == 'txt'
+              ? (layout) async => ReaderDocument(
+                  await loadTextBook(
+                    widget.asset.path,
+                    widget.asset.filename,
+                    layout: layout,
                   ),
                 )
               : null,
@@ -465,7 +511,7 @@ class _ReaderPageState extends State<ReaderPage>
         pinnedChapter?.chapter == chapter && pinnedChapter?.offset == offset;
     settledMoves.add(document!.starts[chapter] + value);
     offset = value;
-    positionChanges.value++;
+    _notifyPosition();
     if (atPin !=
         (pinnedChapter?.chapter == chapter &&
             pinnedChapter?.offset == offset)) {
@@ -484,7 +530,7 @@ class _ReaderPageState extends State<ReaderPage>
     settledMoves.add(document!.starts[place.chapter] + local);
     chapter = place.chapter;
     offset = local;
-    positionChanges.value++;
+    _notifyPosition();
     if (atPin !=
         (pinnedChapter?.chapter == chapter &&
             pinnedChapter?.offset == offset)) {
@@ -597,6 +643,7 @@ class _ReaderPageState extends State<ReaderPage>
     }
     _go(note.chapter, note.start);
     setState(() {
+      highlightChapter = note.chapter;
       highlightStart = note.start;
       highlightEnd = note.end;
     });
@@ -938,6 +985,7 @@ class _ReaderPageState extends State<ReaderPage>
           builder: (_) => Theme(
             data: Theme.of(context),
             child: ReaderBookmarksPage(
+              document: document,
               store: ReaderBookmarkStore(widget.repository, widget.asset.hash),
               chapterTitles: [for (final c in document!.book.chapters) c.title],
               chapter: chapter,
@@ -953,6 +1001,41 @@ class _ReaderPageState extends State<ReaderPage>
       }
     } finally {
       _resumePanel();
+    }
+  }
+
+  Future<void> _quickBookmark() async {
+    if (savingBookmark || document == null) return;
+    viewportController.flushPosition();
+    final savedChapter = chapter, savedOffset = offset;
+    final title = document!.book.chapters[savedChapter].title.trim();
+    setState(() => savingBookmark = true);
+    try {
+      await ReaderBookmarkStore(widget.repository, widget.asset.hash).add(
+        title: (title.isEmpty ? 'Глава ${savedChapter + 1}' : title).characters
+            .take(120)
+            .toString(),
+        chapter: savedChapter,
+        offset: savedOffset,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Закладка сохранена'),
+          action: SnackBarAction(
+            label: 'Открыть',
+            onPressed: () => _bookmarks(context),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось сохранить закладку: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => savingBookmark = false);
     }
   }
 
@@ -978,13 +1061,29 @@ class _ReaderPageState extends State<ReaderPage>
   Future<void> _settings(BuildContext context) async {
     await _pausePanel();
     if (!context.mounted) return;
-    final next = await showReaderSettings(context, preferences);
+    final original = preferences;
+    final next = await showReaderSettings(
+      context,
+      original,
+      onPreview: (value) {
+        if (mounted) setState(() => preferences = value);
+      },
+    );
     _resumePanel();
-    if (next == null || !mounted) return;
+    if (!mounted) return;
     setState(() {
-      preferences = next;
+      preferences = next ?? original;
     });
     await _save(appearance: true);
+  }
+
+  void _fontStep(double change) {
+    if (!readerShortcutsAllowed(context)) return;
+    viewportController.flushPosition();
+    final size = (preferences.size + change).clamp(12.0, 56.0);
+    if (size == preferences.size) return;
+    setState(() => preferences = preferences.copy(size: size));
+    _save(appearance: true);
   }
 
   Future<void> _contents(BuildContext context) async {
@@ -1039,6 +1138,7 @@ class _ReaderPageState extends State<ReaderPage>
   }
 
   Future<void> _search(BuildContext context, {ThemeData? appearance}) async {
+    moreSearchWorker.cancel();
     if (searchOpen) return;
     searchOpen = true;
     try {
@@ -1073,12 +1173,55 @@ class _ReaderPageState extends State<ReaderPage>
     }
   }
 
+  Future<void> _nextSearchHit() async {
+    final index = searchIndex;
+    if (index == null || loadingMoreHits || searchOpen) return;
+    if (index + 1 < searchSession.hits.length) {
+      _revealSearchHit(index + 1);
+      return;
+    }
+    if (!searchSession.hasMore || searchSession.hits.isEmpty) return;
+    final hits = searchSession.hits;
+    final query = searchSession.query;
+    setState(() => loadingMoreHits = true);
+    try {
+      final batch = await moreSearchWorker.search(
+        texts: document!.texts,
+        query: query,
+        chapter: searchSession.scannedChapter,
+        after: hits.last,
+      );
+      if (!mounted ||
+          batch == null ||
+          searchSession.query != query ||
+          !identical(searchSession.hits, hits)) {
+        return;
+      }
+      setState(() {
+        searchSession.hits = List.unmodifiable([...hits, ...batch.hits]);
+        searchSession.hasMore = batch.hasMore;
+      });
+      if (!searchOpen && searchIndex == index && batch.hits.isNotEmpty) {
+        _revealSearchHit(hits.length);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось продолжить поиск: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => loadingMoreHits = false);
+    }
+  }
+
   void _revealSearchHit(int index) {
     if (index < 0 || index >= searchSession.hits.length) return;
     final hit = searchSession.hits[index];
     _go(hit['chapter'] as int, hit['offset'] as int);
     setState(() {
       searchIndex = index;
+      highlightChapter = hit['chapter'] as int;
       highlightStart = hit['offset'] as int;
       highlightEnd = hit['end'] as int;
     });
@@ -1103,11 +1246,12 @@ class _ReaderPageState extends State<ReaderPage>
       IconButton(
         tooltip: 'Следующее совпадение',
         icon: const Icon(Icons.keyboard_arrow_down),
-        onPressed: searchIndex! + 1 < searchSession.hits.length
-            ? () => _revealSearchHit(searchIndex! + 1)
-            : searchSession.hasMore
-            ? () => _search(context)
-            : null,
+        onPressed:
+            loadingMoreHits ||
+                !(searchIndex! + 1 < searchSession.hits.length ||
+                    searchSession.hasMore)
+            ? null
+            : _nextSearchHit,
       ),
       IconButton(
         tooltip: 'Закрыть результаты поиска',
@@ -1166,12 +1310,52 @@ class _ReaderPageState extends State<ReaderPage>
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
-            _search(context, appearance: theme),
+            readerShortcutsAllowed(context)
+            ? _search(context, appearance: theme)
+            : null,
+        const SingleActivator(LogicalKeyboardKey.keyD, control: true): () {
+          if (readerShortcutsAllowed(context)) _quickBookmark();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyB, control: true): () {
+          if (readerShortcutsAllowed(context)) _bookmarks(context);
+        },
+        const SingleActivator(LogicalKeyboardKey.equal, control: true): () =>
+            _fontStep(2),
+        const SingleActivator(
+          LogicalKeyboardKey.equal,
+          control: true,
+          shift: true,
+        ): () =>
+            _fontStep(2),
+        const SingleActivator(
+          LogicalKeyboardKey.numpadAdd,
+          control: true,
+        ): () =>
+            _fontStep(2),
+        const SingleActivator(LogicalKeyboardKey.minus, control: true): () =>
+            _fontStep(-2),
+        const SingleActivator(
+          LogicalKeyboardKey.numpadSubtract,
+          control: true,
+        ): () =>
+            _fontStep(-2),
+        const SingleActivator(LogicalKeyboardKey.f11): () {
+          if (readerShortcutsAllowed(context)) _toggleFullscreen();
+        },
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (fullscreen && readerShortcutsAllowed(context)) {
+            _toggleFullscreen();
+          }
+        },
         const SingleActivator(LogicalKeyboardKey.f3): () {
-          if (searchIndex != null) _revealSearchHit(searchIndex! + 1);
+          if (readerShortcutsAllowed(context) && searchIndex != null) {
+            _nextSearchHit();
+          }
         },
         const SingleActivator(LogicalKeyboardKey.f3, shift: true): () {
-          if (searchIndex != null) _revealSearchHit(searchIndex! - 1);
+          if (readerShortcutsAllowed(context) && searchIndex != null) {
+            _revealSearchHit(searchIndex! - 1);
+          }
         },
       },
       child: Theme(
@@ -1211,6 +1395,12 @@ class _ReaderPageState extends State<ReaderPage>
                   ? Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        FloatingActionButton.small(
+                          heroTag: 'quick-reader-bookmark',
+                          tooltip: 'Сохранить закладку',
+                          onPressed: savingBookmark ? null : _quickBookmark,
+                          child: const Icon(Icons.bookmark_add_outlined),
+                        ),
                         if (linkReturn != null)
                           FloatingActionButton.small(
                             heroTag: 'return-from-link',
@@ -1321,13 +1511,23 @@ class _ReaderPageState extends State<ReaderPage>
                                         d.book.chapters[chapter].footnotes,
                                     onFootnote: (note) =>
                                         _footnote(context, note),
-                                    highlightStart: highlightStart == null
+                                    highlightStart:
+                                        highlightStart == null ||
+                                            highlightChapter == null ||
+                                            flow == null &&
+                                                highlightChapter != chapter
                                         ? null
-                                        : (flow?.starts[chapter] ?? 0) +
+                                        : (flow?.starts[highlightChapter!] ??
+                                                  0) +
                                               highlightStart!,
-                                    highlightEnd: highlightEnd == null
+                                    highlightEnd:
+                                        highlightEnd == null ||
+                                            highlightChapter == null ||
+                                            flow == null &&
+                                                highlightChapter != chapter
                                         ? null
-                                        : (flow?.starts[chapter] ?? 0) +
+                                        : (flow?.starts[highlightChapter!] ??
+                                                  0) +
                                               highlightEnd!,
                                     notes: flow == null
                                         ? notes
@@ -1403,6 +1603,10 @@ class _ReaderPageState extends State<ReaderPage>
                                         remember: false,
                                         reading: true,
                                       );
+                                    },
+                                    onBookBoundary: (end) {
+                                      final c = end ? d.texts.length - 1 : 0;
+                                      _go(c, end ? d.texts[c].length : 0);
                                     },
                                     onChapter: (delta) {
                                       final c = chapter + delta;
@@ -1534,7 +1738,7 @@ class _ReaderPageState extends State<ReaderPage>
                                   SizedBox(
                                     width: 280,
                                     child: ValueListenableBuilder(
-                                      valueListenable: positionChanges,
+                                      valueListenable: panelPosition,
                                       builder: (context, _, _) =>
                                           _contentsPanel(
                                             d,
@@ -1547,10 +1751,13 @@ class _ReaderPageState extends State<ReaderPage>
                                 if (showNotes)
                                   SizedBox(
                                     width: 300,
-                                    child: _notesPanel(
-                                      d,
-                                      foreground,
-                                      background,
+                                    child: ValueListenableBuilder(
+                                      valueListenable: noteChapter,
+                                      builder: (context, _, _) => _notesPanel(
+                                        d,
+                                        foreground,
+                                        background,
+                                      ),
                                     ),
                                   ),
                               ],
@@ -1671,9 +1878,12 @@ class _ReaderPageState extends State<ReaderPage>
             _resources(context);
           case 'statistics':
             _statistics(context);
+          case 'keyboard':
+            showReaderShortcuts(context);
         }
       },
       itemBuilder: (_) => [
+        const PopupMenuItem(value: 'keyboard', child: Text('Горячие клавиши')),
         const PopupMenuItem(value: 'bookmarks', child: Text('Закладки')),
         PopupMenuItem(
           value: 'highlights',
@@ -1825,55 +2035,38 @@ class _ReaderPageState extends State<ReaderPage>
         ? tracker.speedChars / (tracker.speedActiveMs / 60000)
         : null;
     final minutesLeft = perMinute == null ? null : (left / perMinute).ceil();
-    final muted = TextStyle(
-      fontFamily: AppFonts.body,
-      fontSize: 12,
-      color: ink.withValues(alpha: .58),
-    );
-    return Container(
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 10),
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: ink.withValues(alpha: .12))),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _ReaderProgressBar(
-            value: value,
-            ticks: _bookTicks,
-            ink: ink,
-            accent: PepeColors.of(context).accent,
-            onChanged: (v) => dragProgress.value = v,
-            onChangeEnd: (v) {
-              dragProgress.value = null;
-              final target = d.locate(v);
-              _go(target.chapter, target.offset);
-            },
+    return ReaderBottomPanel(
+      child: ReaderProgressFooter(
+        value: value,
+        ticks: _bookTicks,
+        ink: ink,
+        accent: PepeColors.of(context).accent,
+        onChanged: (v) => dragProgress.value = v,
+        onChangeCancel: () => dragProgress.value = null,
+        onChangeEnd: (v) {
+          dragProgress.value = null;
+          final target = d.locate(v);
+          _go(target.chapter, target.offset);
+        },
+        details: [
+          Text(
+            '${(value * 100).toStringAsFixed(dragProgress.value == null ? 0 : 1)}% книги · глава ${chapter + 1} из ${d.texts.length}',
           ),
-          const SizedBox(height: 4),
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            spacing: 12,
-            runSpacing: 2,
-            children: [
-              Text(
-                '${(value * 100).toStringAsFixed(dragProgress.value == null ? 0 : 1)}% книги · глава ${chapter + 1} из ${d.texts.length}',
-                style: muted,
-              ),
-              if (minutesLeft != null)
-                Text(
-                  minutesLeft <= 1
-                      ? 'до конца главы меньше минуты'
-                      : 'до конца главы около $minutesLeft мин',
-                  style: muted,
-                ),
-              if (todayReading.value != null)
-                Text(
-                  'сегодня ${todayReading.value! ~/ 60000} мин чтения',
-                  style: muted,
-                ),
-            ],
+          if (minutesLeft != null)
+            Text(
+              minutesLeft <= 1
+                  ? 'до конца главы меньше минуты'
+                  : 'до конца главы около $minutesLeft мин',
+            ),
+          if (todayReading.value != null)
+            Text('сегодня ${todayReading.value! ~/ 60000} мин чтения'),
+        ],
+        actions: [
+          IconButton(
+            tooltip: 'Сохранить закладку',
+            visualDensity: VisualDensity.compact,
+            onPressed: savingBookmark ? null : _quickBookmark,
+            icon: const Icon(Icons.bookmark_add_outlined),
           ),
         ],
       ),
@@ -1920,7 +2113,7 @@ class _ReaderPageState extends State<ReaderPage>
           ),
           Expanded(
             child: ReaderContentsSearch(
-              titles: [for (final c in d.book.chapters) c.title],
+              titles: _titlesFor(d),
               builder: (context, indexes) => ListView.builder(
                 padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
                 itemCount: indexes.length,
@@ -2163,113 +2356,4 @@ class _ReaderPageState extends State<ReaderPage>
       activity?.resume();
     }
   }
-}
-
-/// Thin book progress bar with chapter ticks, as in the reader footer.
-class _ReaderProgressBar extends StatelessWidget {
-  final double value;
-  final List<double> ticks;
-  final Color ink, accent;
-  final ValueChanged<double> onChanged, onChangeEnd;
-  const _ReaderProgressBar({
-    required this.value,
-    required this.ticks,
-    required this.ink,
-    required this.accent,
-    required this.onChanged,
-    required this.onChangeEnd,
-  });
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, box) {
-      final width = box.maxWidth;
-      double at(Offset p) => (p.dx / width).clamp(0.0, 1.0);
-      return Semantics(
-        slider: true,
-        value: '${(value * 100).round()} процентов книги',
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapUp: (d) => onChangeEnd(at(d.localPosition)),
-          onHorizontalDragUpdate: (d) => onChanged(at(d.localPosition)),
-          onHorizontalDragEnd: (_) => onChangeEnd(value),
-          child: SizedBox(
-            height: 22,
-            child: CustomPaint(
-              painter: _BookProgressPainter(value, ink, accent),
-              foregroundPainter: _BookProgressPainter(
-                value,
-                ink,
-                accent,
-                thumb: true,
-              ),
-              child: RepaintBoundary(
-                child: CustomPaint(painter: _BookTicksPainter(ticks, ink)),
-              ),
-            ),
-          ),
-        ),
-      );
-    },
-  );
-}
-
-class _BookProgressPainter extends CustomPainter {
-  final double value;
-  final Color ink, accent;
-  final bool thumb;
-  const _BookProgressPainter(
-    this.value,
-    this.ink,
-    this.accent, {
-    this.thumb = false,
-  });
-  @override
-  void paint(Canvas canvas, Size size) {
-    final x = size.width * value.clamp(0, 1);
-    if (thumb) {
-      canvas.drawCircle(Offset(x, 11), 8, Paint()..color = ink);
-      return;
-    }
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 9, size.width, 4),
-        const Radius.circular(2),
-      ),
-      Paint()..color = ink.withValues(alpha: .14),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 9, x, 4),
-        const Radius.circular(2),
-      ),
-      Paint()..color = accent,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _BookProgressPainter old) =>
-      value != old.value ||
-      ink != old.ink ||
-      accent != old.accent ||
-      thumb != old.thumb;
-}
-
-class _BookTicksPainter extends CustomPainter {
-  final List<double> ticks;
-  final Color ink;
-  const _BookTicksPainter(this.ticks, this.ink);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = ink.withValues(alpha: .28)
-      ..strokeWidth = 2;
-    for (final tick in ticks) {
-      final x = size.width * tick;
-      canvas.drawLine(Offset(x, 6), Offset(x, 16), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _BookTicksPainter old) =>
-      ink != old.ink || !listEquals(ticks, old.ticks);
 }

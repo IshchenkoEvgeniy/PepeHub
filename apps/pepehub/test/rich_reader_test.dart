@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 
 import 'package:flutter/material.dart';
+import 'package:pepehub/reader/reader_selectable_paragraph.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pepehub/reader/text_book.dart';
 import 'package:pepehub/reader/reader_layout.dart';
@@ -103,8 +104,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 20));
     }
     final visibleText = tester
-        .widgetList<SelectableText>(find.byType(SelectableText))
-        .map((widget) => widget.textSpan?.toPlainText() ?? widget.data ?? '')
+        .widgetList<ReaderSelectableParagraph>(
+          find.byType(ReaderSelectableParagraph),
+        )
+        .map((widget) => widget.span.toPlainText())
         .join();
     expect(visibleText, contains('Paragraph 170.'));
     expect(tester.takeException(), isNull);
@@ -203,7 +206,13 @@ void main() {
       for (var i = 0; i < 40; i++) {
         await tester.pump(const Duration(milliseconds: 20));
       }
-      expect(find.byType(SelectableText), findsWidgets, reason: mode);
+      expect(
+        find.byType(
+          mode == 'pages' ? SelectableText : ReaderSelectableParagraph,
+        ),
+        findsWidgets,
+        reason: mode,
+      );
       expect(tester.takeException(), isNull, reason: mode);
     }
   });
@@ -276,10 +285,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final selectable = tester.widget<SelectableText>(
-      find.byType(SelectableText).first,
+    final selectable = tester.widget<ReaderSelectableParagraph>(
+      find.byType(ReaderSelectableParagraph).first,
     );
-    final runs = selectable.textSpan!.children!.cast<TextSpan>();
+    final runs = selectable.span.children!.cast<TextSpan>();
     final linked = runs.firstWhere((run) => run.text == 'Ссылка');
     final regular = runs.firstWhere((run) => run.text!.contains('обычный'));
     expect(linked.style?.decoration, TextDecoration.underline);
@@ -329,12 +338,7 @@ void main() {
 
       await render(compact: false);
       expect(find.byType(Divider), findsWidgets);
-      final ticks = tester
-          .widgetList<CustomPaint>(find.byType(CustomPaint))
-          .map((paint) => paint.painter)
-          .whereType<ReaderChapterTicksPainter>()
-          .single;
-      expect(ticks.positions.length, 2);
+      expect(find.byType(Slider), findsNothing);
       expect(tester.takeException(), isNull);
 
       await render(compact: true);

@@ -17,7 +17,7 @@ class ReaderPreferences {
     this.pageHeightFactor = 1,
     this.columnWidth = 900,
     this.font = 'serif',
-    this.palette = 'dark',
+    this.palette = 'system',
     this.mode = 'seamless',
     this.showScrollbar = false,
     this.showHighlights = true,
@@ -43,7 +43,7 @@ class ReaderPreferences {
     palette:
         const ['light', 'dark', 'sepia', 'system'].contains(data['palette'])
         ? data['palette'] as String
-        : 'dark',
+        : 'system',
     mode:
         const ['pages', 'scroll', 'seamless', 'compact'].contains(data['mode'])
         ? data['mode'] as String
@@ -337,14 +337,40 @@ Future<List<ReaderSlice>> paginateReader(
   }
 }
 
+/// Search the original source so match offsets remain valid for highlights,
+/// notes and PDF glyphs, even when query whitespace differs from the book.
+RegExp readerSearchPattern(String query) => RegExp(
+  query
+      .trim()
+      .split(RegExp(r'\s+'))
+      .map((word) => RegExp.escape(word).replaceAll(RegExp('[еёЕЁ]'), '[её]'))
+      .join(r'\s+'),
+  caseSensitive: false,
+  unicode: true,
+);
+
+String readerExcerpt(
+  String text,
+  int start,
+  int end, {
+  int before = 45,
+  int after = 90,
+}) {
+  var left = (start - before).clamp(0, text.length);
+  var right = (end + after).clamp(0, text.length);
+  bool lowSurrogate(int at) =>
+      at < text.length &&
+      text.codeUnitAt(at) >= 0xDC00 &&
+      text.codeUnitAt(at) <= 0xDFFF;
+  if (left > 0 && lowSurrogate(left)) left--;
+  if (right > 0 && lowSurrogate(right)) right++;
+  return text.substring(left, right).replaceAll(RegExp(r'\s+'), ' ');
+}
+
 List<Map<String, dynamic>> searchReader(Map<String, dynamic> request) {
   final query = (request['query'] as String).trim();
   if (query.isEmpty) return [];
-  final pattern = RegExp(
-    RegExp.escape(query),
-    caseSensitive: false,
-    unicode: true,
-  );
+  final pattern = readerSearchPattern(query);
   final texts = (request['texts'] as List).cast<String>();
   final scope = request['scopeChapter'] as int?;
   final afterChapter = request['afterChapter'] as int? ?? -1;
@@ -359,12 +385,7 @@ List<Map<String, dynamic>> searchReader(Map<String, dynamic> request) {
         'chapter': c,
         'offset': match.start,
         'end': match.end,
-        'excerpt': texts[c]
-            .substring(
-              (match.start - 45).clamp(0, texts[c].length),
-              (match.end + 90).clamp(0, texts[c].length),
-            )
-            .replaceAll('\n', ' '),
+        'excerpt': readerExcerpt(texts[c], match.start, match.end),
       });
       if (results.length == limit) return results;
     }
