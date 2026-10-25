@@ -15,10 +15,16 @@ import 'book_formats.dart';
 import 'epub.dart';
 import 'rtf.dart';
 
+/// Chapter layout produced by [parseTextBook]. Saved positions, notes and
+/// bookmarks are rebased when this changes (see `migrateReaderLayout`).
+/// 3: FB2 nested sections become chapters; FB2 note bodies form one chapter.
+const currentBookLayout = 3;
+
 Future<EpubBook> loadTextBook(
   String path,
   String filename, {
   bool legacyProjection = false,
+  int layout = currentBookLayout,
 }) => Isolate.run(() {
   final file = File(path);
   if (file.lengthSync() > 64 * 1024 * 1024) {
@@ -52,6 +58,7 @@ Future<EpubBook> loadTextBook(
     filename,
     localImages: localImages,
     legacyProjection: legacyProjection,
+    layout: layout,
   );
 });
 
@@ -211,6 +218,7 @@ EpubBook parseTextBook(
   String filename, {
   Map<String, Uint8List> localImages = const {},
   bool legacyProjection = false,
+  int layout = currentBookLayout,
 }) {
   if (bytes.isEmpty || bytes.length > 64 * 1024 * 1024) {
     throw const FormatException('Недопустимый размер книги');
@@ -382,7 +390,7 @@ EpubBook parseTextBook(
     };
     final images = <String, Uint8List>{};
     var imageBytes = 0;
-    void attachResources(XmlElement section, int before) {
+    void attachResources(List<XmlElement> nodes, String source, int before) {
       if (chapters.length == before) return;
       final previous = chapters.last;
       final text = previous.paragraphs.join('\n\n');
@@ -433,8 +441,15 @@ EpubBook parseTextBook(
         }
       }
 
-      indexParagraphs(section);
-      for (final e in section.descendants.whereType<XmlElement>()) {
+      for (final node in nodes) {
+        indexParagraphs(node);
+      }
+      for (final e in [
+        for (final node in nodes) ...[
+          node,
+          ...node.descendants.whereType<XmlElement>(),
+        ],
+      ]) {
         final href = e.attributes
             .where((a) => a.name.local == 'href')
             .firstOrNull
@@ -508,8 +523,7 @@ EpubBook parseTextBook(
         illustrations: illustrations,
         markup: htmlMarkup(
           html.parse(
-            section
-                .toXmlString()
+            source
                 .replaceAll('<title>', '<h2>')
                 .replaceAll('</title>', '</h2>')
                 .replaceAll('<emphasis>', '<em>')
@@ -522,36 +536,107 @@ EpubBook parseTextBook(
       );
     }
 
-    for (final body in doc.rootElement.childElements.where(
-      (e) => e.name.local == 'body',
-    )) {
-      final sections = body.childElements
-          .where((e) => e.name.local == 'section')
-          .toList();
-      // Top-level body text is kept, nested sections remain in their original order.
-      var loose = <String>[];
-      for (final node in body.childElements) {
-        if (node.name.local == 'section') {
-          chapter('Вступление', loose);
-          loose = [];
-          final heading = node.childElements
-              .where((e) => e.name.local == 'title')
-              .firstOrNull
-              ?.innerText
-              .trim();
-          final before = chapters.length;
-          chapter(
-            heading == null || heading.isEmpty
-                ? 'Раздел ${chapters.length + 1}'
-                : heading,
-            _fbParagraphs(node),
-          );
-          attachResources(node, before);
-        } else {
-          loose.addAll(_fbParagraphs(node));
+    final bodies = doc.rootElement.childElements
+        .where((e) => e.name.local == 'body')
+        .toList();
+    if (layout < 3) {
+      for (final body in bodies) {
+        final sections = body.childElements
+            .where((e) => e.name.local == 'section')
+            .toList();
+        // Top-level body text is kept, nested sections remain in their original order.
+        var loose = <String>[];
+        for (final node in body.childElements) {
+          if (node.name.local == 'section') {
+            chapter('Вступление', loose);
+            loose = [];
+            final heading = node.childElements
+                .where((e) => e.name.local == 'title')
+                .firstOrNull
+                ?.innerText
+                .trim();
+            final before = chapters.length;
+            chapter(
+              heading == null || heading.isEmpty
+                  ? 'Раздел ${chapters.length + 1}'
+                  : heading,
+              _fbParagraphs(node),
+            );
+            attachResources(
+              node.childElements.toList(),
+              node.toXmlString(),
+              before,
+            );
+          } else {
+            loose.addAll(_fbParagraphs(node));
+          }
         }
+        chapter(sections.isEmpty ? title : 'Примечания', loose);
       }
-      chapter(sections.isEmpty ? title : 'Примечания', loose);
+    } else {
+      // Paragraphs keep their document order; only chapter boundaries differ
+      // from layout 2, so saved anchors can be rebased paragraph by paragraph.
+      void emit(String label, List<XmlElement> nodes) {
+        final paragraphs = [for (final node in nodes) ..._fbParagraphs(node)];
+        if (paragraphs.isEmpty) return;
+        final before = chapters.length;
+        chapter(label, paragraphs);
+        attachResources(
+          nodes,
+          '<section>${nodes.map((n) => n.toXmlString()).join()}</section>',
+          before,
+        );
+      }
+
+      void section(XmlElement node, int depth) {
+        final heading = _fbTitle(node);
+        final own = <XmlElement>[];
+        var part = 0;
+        void flush() {
+          if (own.isEmpty) return;
+          final label = heading ?? 'Раздел ${chapters.length + 1}';
+          emit(part++ == 0 ? label : '$label (продолжение)', [...own]);
+          own.clear();
+        }
+
+        for (final child in node.childElements) {
+          if (child.name.local == 'section' &&
+              depth < 8 &&
+              _fbTitle(child) != null) {
+            // Untitled subsections are scene breaks; they stay in place.
+            flush();
+            section(child, depth + 1);
+          } else {
+            own.add(child);
+          }
+        }
+        flush();
+      }
+
+      for (final body in bodies) {
+        if (RegExp(
+          r'^(notes?|footnotes?|comments?)$',
+          caseSensitive: false,
+        ).hasMatch(body.getAttribute('name') ?? '')) {
+          // Hundreds of note sections are one chapter, not hundreds.
+          emit(_fbTitle(body) ?? 'Примечания', body.childElements.toList());
+          continue;
+        }
+        final hasSections = body.childElements.any(
+          (e) => e.name.local == 'section',
+        );
+        final loose = <XmlElement>[];
+        for (final node in body.childElements) {
+          if (node.name.local == 'section') {
+            emit('Вступление', [...loose]);
+            loose.clear();
+            section(node, 0);
+          } else {
+            loose.add(node);
+          }
+        }
+        emit(hasSections ? 'Примечания' : title, loose);
+      }
     }
   } else if (format == 'docx') {
     final zip = BookArchive(bytes);
@@ -917,6 +1002,21 @@ EpubBook parseTextBook(
     cover: cover,
     metadata: extra,
   );
+}
+
+String? _fbTitle(XmlElement node) {
+  final element = node.childElements
+      .where((e) => e.name.local == 'title')
+      .firstOrNull;
+  if (element == null) return null;
+  final parts = _fbParagraphs(element);
+  final text = (parts.isEmpty ? [element.innerText] : parts)
+      .join('. ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .replaceAllMapped(RegExp(r'([.!?…:])\. '), (m) => '${m[1]} ')
+      .trim();
+  if (text.isEmpty) return null;
+  return text.length > 200 ? '${text.substring(0, 199)}…' : text;
 }
 
 List<String> _fbParagraphs(XmlElement root) {

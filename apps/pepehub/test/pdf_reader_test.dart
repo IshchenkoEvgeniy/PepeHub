@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -149,6 +150,81 @@ void main() {
     }
   }, skip: pdfium == null);
 
+  testWidgets(
+    'compact text preferences open in PDF as scrolling and stay intact',
+    (tester) async {
+      late Directory root;
+      late AppDatabase db;
+      late Repository repo;
+      late LocalAsset asset;
+      await tester.runAsync(() async {
+        root = await Directory.systemTemp.createTemp('pepehub-pdf-compact-');
+        db = AppDatabase(NativeDatabase.memory());
+        repo = Repository(db);
+        final file = File('${root.path}/story.pdf');
+        await file.writeAsBytes(twoPagePdf());
+        asset = await AssetStore(
+          repo,
+          Directory('${root.path}/assets'),
+        ).importBook(XFile(file.path));
+        await repo.setMeta('reader:appearance', '{"mode":"compact"}');
+      });
+      Future<void> pumpIo() async {
+        for (var i = 0; i < 12; i++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 25)),
+          );
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+      }
+
+      try {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: PdfReaderPage(repository: repo, asset: asset),
+          ),
+        );
+        for (var i = 0; i < 20; i++) {
+          await pumpIo();
+          final viewer = find.byType(PdfViewer);
+          if (viewer.evaluate().isNotEmpty &&
+              tester.widget<PdfViewer>(viewer).controller!.isReady) {
+            break;
+          }
+        }
+        expect(find.byType(PdfViewer), findsOneWidget);
+        await tester.tap(find.byType(PopupMenuButton<String>));
+        await pumpIo();
+        await tester.tap(find.text('Оформление'));
+        await pumpIo();
+        // Compact is a text-reader mode; PDF shows it as vertical scrolling
+        // and saving PDF appearance keeps the text reader's own mode.
+        expect(tester.takeException(), isNull);
+        expect(find.text('Вертикальная прокрутка'), findsWidgets);
+        await tester.ensureVisible(find.text('Применить'));
+        await pumpIo();
+        await tester.tap(find.text('Применить'));
+        await pumpIo();
+        final stored = await tester.runAsync(
+          () => repo.meta('reader:appearance'),
+        );
+        expect(jsonDecode(stored!)['mode'], 'compact');
+        expect(
+          await tester.runAsync(() => repo.meta('reader:pdf-mode')),
+          'scroll',
+        );
+      } finally {
+        await tester.pumpWidget(const SizedBox());
+        await pumpIo();
+        await tester.runAsync(() async {
+          await db.close();
+          await root.delete(recursive: true);
+        });
+      }
+    },
+    skip: pdfium == null,
+  );
+
   testWidgets('1500-page PDF is interactive before full statistics indexing', (
     tester,
   ) async {
@@ -240,6 +316,12 @@ void main() {
   testWidgets(
     'PDF restores position, searches, returns, saves a page note and opens reflow',
     (tester) async {
+      void trace(String step) {
+        if (Platform.environment['PEPEHUB_TRACE_PDF_TEST'] == '1') {
+          debugPrint('PDF acceptance: $step');
+        }
+      }
+
       late Directory root;
       late AppDatabase db;
       late Repository repo;
@@ -281,6 +363,31 @@ void main() {
         fail('PDF viewer did not become interactive');
       }
 
+      Future<T> readDatabase<T>(Future<T> Function() read) async {
+        // UI transactions may still own a queued continuation in the fake
+        // clock. Keep pumping it while observing the database, rather than
+        // waiting in runAsync with the UI's clock stopped.
+        late T result;
+        Object? error;
+        var complete = false;
+        read().then(
+          (value) {
+            result = value;
+            complete = true;
+          },
+          onError: (Object failure) {
+            error = failure;
+            complete = true;
+          },
+        );
+        for (var i = 0; i < 30 && !complete; i++) {
+          await settle();
+        }
+        expect(complete, isTrue, reason: 'PDF database read did not complete');
+        if (error != null) throw error!;
+        return result;
+      }
+
       Future<void> menu(String title) async {
         await tester.tap(find.byType(PopupMenuButton<String>));
         await settle();
@@ -311,15 +418,18 @@ void main() {
           ),
         );
         await waitForViewer();
+        trace('viewer ready');
         expect(find.textContaining('Страница 2 / 2'), findsOneWidget);
         await tester.tap(find.byTooltip('Предыдущая страница'));
         await settle();
         expect(find.textContaining('Страница 1 / 2'), findsOneWidget);
+        trace('navigation works');
         await tester.tap(find.byTooltip('Поиск по книге'));
         await settle();
         await tester.enterText(find.byType(TextField), 'page two');
         await settle();
         expect(find.text('Совпадений: 1'), findsOneWidget);
+        trace('search works');
         await tester.tap(find.text('Страница 2'));
         await settle();
         expect(find.textContaining('Страница 2 / 2'), findsOneWidget);
@@ -339,6 +449,7 @@ void main() {
           expect(notes.single.chapter, 0);
         });
         final viewer = tester.widget<PdfViewer>(find.byType(PdfViewer));
+        trace('page note saved');
         expect(
           viewer.params.textSelectionParams!.showContextMenuAutomatically,
           true,
@@ -359,6 +470,7 @@ void main() {
         });
         await settle();
         final actions = <ContextMenuButtonItem>[];
+        trace('native text selected');
         viewer.params.customizeContextMenuItems!(
           PdfViewerContextMenuBuilderParams(
             isTextSelectionEnabled: true,
@@ -384,10 +496,12 @@ void main() {
           expect(quotes.every((n) => n.comment == 'Общая цитата'), isTrue);
         });
         await menu('Полный экран');
+        trace('cross-page quotes saved');
         expect(find.byTooltip('Выйти из полного экрана'), findsOneWidget);
         await tester.tap(find.byTooltip('Выйти из полного экрана'));
         await settle();
         await palette('Системная');
+        trace('fullscreen works');
         final filtered = find
             .ancestor(
               of: find.byType(PdfViewer),
@@ -407,10 +521,12 @@ void main() {
         );
         await palette('Сепия');
         await palette('Тёмная (инверсия страниц)');
-        await tester.runAsync(() async {
+        trace('palettes work');
+        await readDatabase(() async {
           expect(await repo.meta('reader:appearance'), contains('dark'));
         });
-        final beforeHiding = await tester.runAsync(
+        trace('appearance persisted');
+        final beforeHiding = await readDatabase(
           () async => [
             for (final note in await ReadingLibrary(
               repo,
@@ -418,14 +534,17 @@ void main() {
               note.toJson(),
           ],
         );
+        trace('notes read before hiding');
         await menu('Оформление');
+        trace('highlight settings opened');
         await tester.tap(find.byType(SwitchListTile));
         await settle();
         await tester.ensureVisible(find.text('Применить'));
         await settle();
         await tester.tap(find.text('Применить'));
         await settle();
-        await tester.runAsync(() async {
+        trace('highlights hidden');
+        await readDatabase(() async {
           expect(
             (await ReadingLibrary(repo)
                 .value('reader:appearance'))['showHighlights'],
@@ -439,6 +558,7 @@ void main() {
           ], beforeHiding);
         });
         await menu('Текстовый режим');
+        trace('reflow opened');
         expect(
           tester
               .widget<ReaderViewport>(find.byType(ReaderViewport))
@@ -450,7 +570,7 @@ void main() {
         await tester.binding.handlePopRoute();
         await settle();
         expect(find.textContaining('Страница 1 / 2'), findsOneWidget);
-        await tester.runAsync(() async {
+        await readDatabase(() async {
           final sessions = await ReadingLibrary(repo)
               .entries('reading-session:');
           expect(sessions.values.where((s) => s['closed'] == false).length, 1);
@@ -462,7 +582,9 @@ void main() {
           );
         });
         expect(tester.takeException(), isNull);
+        trace('all assertions passed');
       } finally {
+        trace('cleanup');
         await tester.pumpWidget(const SizedBox());
         await settle();
         await tester.runAsync(() async {

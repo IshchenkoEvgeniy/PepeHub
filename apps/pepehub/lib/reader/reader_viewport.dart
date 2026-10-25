@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -9,8 +10,32 @@ import 'reader_layout.dart';
 import 'reading_library.dart';
 import 'reading_notes_page.dart';
 import 'epub.dart';
+import 'reader_ranges.dart';
+
+/// Allows deliberate navigation inside the already measured source window.
+/// A false result asks the owner to open a new window near the target instead.
+class ReaderViewportController {
+  Object? _owner;
+  bool Function(int)? _seek;
+  VoidCallback? _flush;
+  bool seek(int offset) => _seek?.call(offset) ?? false;
+  void flushPosition() => _flush?.call();
+  void _attach(Object owner, bool Function(int) seek, VoidCallback flush) {
+    _owner = owner;
+    _seek = seek;
+    _flush = flush;
+  }
+
+  void _detach(Object owner) {
+    if (!identical(_owner, owner)) return;
+    _owner = null;
+    _seek = null;
+    _flush = null;
+  }
+}
 
 class ReaderViewport extends StatefulWidget {
+  final ReaderViewportController? controller;
   final String text;
   final TextStyle style;
   final TextScaler scaler;
@@ -35,9 +60,13 @@ class ReaderViewport extends StatefulWidget {
   final List<BookIllustration> illustrations;
   final List<int> chapterBreaks;
   final bool showScrollbar;
-  final ValueChanged<String>? onLink;
+
+  /// [at] is where the link starts in [text], so whole-book flows can resolve
+  /// relative links against the chapter that contains them.
+  final void Function(String href, int at)? onLink;
   const ReaderViewport({
     super.key,
+    this.controller,
     required this.text,
     required this.style,
     required this.scaler,
@@ -99,6 +128,11 @@ class _ReaderViewportState extends State<ReaderViewport> {
   final chapterSeparators = <bool>[];
   late List<BookMarkup> markupByStart;
   late List<int> markupPrefixMaxEnd;
+  late ReaderRangeIndex<BookFootnote> footnoteIndex;
+  late ReaderRangeIndex<ReadingNote> noteIndex;
+  List<ReaderSlice>? _tickPages;
+  List<int>? _tickBreaks;
+  List<double> _ticks = const [];
   double contentHeight = 0;
   bool layoutComplete = false;
   late final int layoutStart = widget.onSeek == null
@@ -183,6 +217,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
   void initState() {
     super.initState();
     _indexMarkup();
+    _indexFootnotes();
+    _indexNotes();
+    widget.controller?._attach(this, _seekCached, _updateScrolledPosition);
     widget.onLoading?.call();
     _layout();
   }
@@ -191,6 +228,87 @@ class _ReaderViewportState extends State<ReaderViewport> {
   void didUpdateWidget(covariant ReaderViewport oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.markup, widget.markup)) _indexMarkup();
+    if (!identical(oldWidget.footnotes, widget.footnotes)) _indexFootnotes();
+    if (!identical(oldWidget.notes, widget.notes)) _indexNotes();
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller?._detach(this);
+      widget.controller?._attach(this, _seekCached, _updateScrolledPosition);
+    }
+  }
+
+  void _indexNotes() {
+    noteIndex = ReaderRangeIndex(
+      widget.notes,
+      start: (note) => note.start,
+      end: (note) => note.end,
+    );
+  }
+
+  bool _seekCached(int anchor) {
+    final list = pages;
+    if (!mounted ||
+        list == null ||
+        list.isEmpty ||
+        anchor < layoutStart ||
+        anchor > list.last.end) {
+      return false;
+    }
+    var low = 0, high = list.length;
+    while (low < high) {
+      final middle = (low + high) >> 1;
+      if (list[middle].start <= anchor) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    final target = (low - 1).clamp(0, list.length - 1);
+    if (widget.scrolling && scroll?.hasClients != true ||
+        !widget.scrolling && pager?.hasClients != true) {
+      return false;
+    }
+    positionUpdateTimer?.cancel();
+    positionUpdateTimer = null;
+    interacted = false;
+    hasSelection = false;
+    if (widget.scrolling) {
+      var pixels = starts[target];
+      for (final segment in list[target].segments ?? [list[target]]) {
+        if (images.containsKey(segment)) {
+          if (anchor <= segment.start) break;
+        } else if (anchor <= segment.end) {
+          final text = _text(segment);
+          final painter = _painter(text, start: segment.start);
+          pixels +=
+              5 +
+              painter
+                  .getOffsetForCaret(
+                    TextPosition(
+                      offset: (anchor - segment.start).clamp(0, text.length),
+                    ),
+                    Rect.zero,
+                  )
+                  .dy;
+          painter.dispose();
+          break;
+        }
+        pixels += _segmentExtent(segment);
+      }
+      scroll!.jumpTo(pixels.clamp(0, scroll!.position.maxScrollExtent));
+    } else {
+      pager!.jumpToPage(target);
+    }
+    setState(() => index = target);
+    if (!layoutComplete && list.length - target <= 8) _requestMorePages();
+    return true;
+  }
+
+  void _indexFootnotes() {
+    footnoteIndex = ReaderRangeIndex(
+      widget.footnotes,
+      start: (note) => note.start,
+      end: (note) => note.end,
+    );
   }
 
   void _indexMarkup() {
@@ -228,6 +346,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
 
   @override
   void dispose() {
+    widget.controller?._detach(this);
     for (final r in recognizers.values) {
       r.dispose();
     }
@@ -275,7 +394,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
     return style;
   }
 
-  BookFootnote? _footnoteAt(int offset) => widget.footnotes
+  BookFootnote? _footnoteAt(int offset, List<BookFootnote> local) => local
       .where((note) => note.start <= offset && note.end > offset)
       .firstOrNull;
 
@@ -291,6 +410,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
 
   TextSpan _richText(int start, int end) {
     final matching = _markupOverlapping(start, end).toList();
+    final footnotes = footnoteIndex.overlapping(start, end);
     final points = <int>{
       start,
       end,
@@ -298,7 +418,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
         r.start.clamp(start, end),
         r.end.clamp(start, end),
       ],
-      for (final note in widget.footnotes) ...[
+      for (final note in footnotes) ...[
         note.start.clamp(start, end),
         note.end.clamp(start, end),
       ],
@@ -308,10 +428,10 @@ class _ReaderViewportState extends State<ReaderViewport> {
       children: [
         for (var i = 0; i < points.length - 1; i++)
           TextSpan(
-            text: _footnoteAt(points[i]) == null
+            text: _footnoteAt(points[i], footnotes) == null
                 ? widget.text.substring(points[i], points[i + 1])
                 : _noteMarker(widget.text.substring(points[i], points[i + 1])),
-            style: _footnoteAt(points[i]) == null
+            style: _footnoteAt(points[i], footnotes) == null
                 ? _styleAt(points[i], matching)
                 : _noteMarkerStyle(_styleAt(points[i], matching)),
           ),
@@ -634,10 +754,10 @@ class _ReaderViewportState extends State<ReaderViewport> {
         position = segment.end;
         continue;
       }
-      final text = _text(segment);
-      final painter = _painter(text, start: segment.start);
       final itemExtent = _segmentExtent(segment);
       if (withinPage <= itemExtent) {
+        final text = _text(segment);
+        final painter = _painter(text, start: segment.start);
         final within = painter
             .getPositionForOffset(
               Offset(0, (withinPage - 5).clamp(0, segment.height ?? 0)),
@@ -647,7 +767,6 @@ class _ReaderViewportState extends State<ReaderViewport> {
         painter.dispose();
         break;
       }
-      painter.dispose();
       withinPage -= itemExtent;
       position = segment.end;
     }
@@ -827,17 +946,31 @@ class _ReaderViewportState extends State<ReaderViewport> {
 
   List<double> _chapterPositions(int itemCount) {
     if (itemCount <= 1) return const [0];
+    if (identical(_tickPages, pages) &&
+        listEquals(_tickBreaks, widget.chapterBreaks)) {
+      return _ticks;
+    }
+    _tickPages = pages;
+    _tickBreaks = widget.chapterBreaks;
     final lastItem = itemCount - 1;
-    return {
+    _ticks = {
       0.0,
       for (final start in widget.chapterBreaks)
         if (start >= layoutStart)
           (() {
-            final page = pages!.indexWhere((item) => item.start >= start);
-            if (page < 0) return 1.0;
-            return page / lastItem;
+            var low = 0, high = pages!.length;
+            while (low < high) {
+              final middle = (low + high) >> 1;
+              if (pages![middle].start >= start) {
+                high = middle;
+              } else {
+                low = middle + 1;
+              }
+            }
+            return low == pages!.length ? 1.0 : low / lastItem;
           })(),
     }.toList()..sort();
+    return _ticks;
   }
 
   @override
@@ -854,10 +987,11 @@ class _ReaderViewportState extends State<ReaderViewport> {
       final raw = _text(segment);
       final base = segment.start;
       final markupRanges = _markupOverlapping(base, base + raw.length).toList();
+      final footnotes = footnoteIndex.overlapping(base, base + raw.length);
       final ranges = <({int start, int end, Color color})>[
         for (final note
             in (widget.preferences?.showHighlights ?? true)
-                ? widget.notes
+                ? noteIndex.overlapping(base, base + raw.length)
                 : const <ReadingNote>[])
           (
             start: note.start,
@@ -878,7 +1012,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
           (r.start - base).clamp(0, raw.length),
           (r.end - base).clamp(0, raw.length),
         ],
-        for (final note in widget.footnotes) ...[
+        for (final note in footnotes) ...[
           (note.start - base).clamp(0, raw.length),
           (note.end - base).clamp(0, raw.length),
         ],
@@ -896,9 +1030,8 @@ class _ReaderViewportState extends State<ReaderViewport> {
                   r.start <= base + points[j] &&
                   r.end > base + points[j],
             )
-            .firstOrNull
-            ?.href;
-        final footnote = widget.footnotes
+            .firstOrNull;
+        final footnote = footnotes
             .where(
               (n) => n.start <= base + points[j] && n.end > base + points[j],
             )
@@ -917,10 +1050,11 @@ class _ReaderViewportState extends State<ReaderViewport> {
                 ? (link == null
                       ? null
                       : linkRecognizers.putIfAbsent(
-                          link,
+                          '${link.start}:${link.href}',
                           () =>
                               TapGestureRecognizer()
-                                ..onTap = () => widget.onLink?.call(link),
+                                ..onTap = () =>
+                                    widget.onLink?.call(link.href!, link.start),
                         ))
                 : recognizers.putIfAbsent(
                     footnote,
@@ -1393,7 +1527,8 @@ class ReaderChapterTicksPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant ReaderChapterTicksPainter oldDelegate) =>
-      positions != oldDelegate.positions || color != oldDelegate.color;
+      !listEquals(positions, oldDelegate.positions) ||
+      color != oldDelegate.color;
 }
 
 Widget readerSelectionToolbar({

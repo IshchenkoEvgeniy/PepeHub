@@ -42,10 +42,19 @@ void main() {
           repo,
           Directory('${temp.path}/managed'),
         ).importBook(XFile(source.path));
-        final font = File('assets/fonts/Lora.ttf');
-        await (FontLoader(
-          'ReaderLora',
-        )..addFont(font.readAsBytes().then(ByteData.sublistView))).load();
+        for (final font in {
+          'ReaderLora': 'Lora',
+          'Onest': 'Onest',
+          'Oswald': 'Oswald',
+          'CormorantGaramond': 'CormorantGaramond',
+        }.entries) {
+          await (FontLoader(font.key)..addFont(
+                File('assets/fonts/${font.value}.ttf')
+                    .readAsBytes()
+                    .then(ByteData.sublistView),
+              ))
+              .load();
+        }
         final uiFont = File('C:/Windows/Fonts/segoeui.ttf');
         if (await uiFont.exists()) {
           for (final family in ['Roboto', 'Segoe UI']) {

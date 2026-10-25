@@ -7,6 +7,7 @@ import 'reader_routes.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart';
 
 import '../data/repository.dart';
@@ -30,6 +31,9 @@ import '../ui/reading_statistics_page.dart';
 import 'epub.dart';
 import 'reader_resources.dart';
 import 'reader_rebase.dart';
+import 'book_formats.dart';
+import 'reader_layout_frame.dart';
+import 'reading_daily_totals.dart';
 
 class _SeamlessBook {
   final String text;
@@ -37,6 +41,7 @@ class _SeamlessBook {
   final List<BookMarkup> markup;
   final List<BookIllustration> illustrations;
   final List<BookFootnote> footnotes;
+  late final List<int> chapterBreaks = List.unmodifiable(starts.skip(1));
 
   _SeamlessBook(ReaderDocument document)
     : starts = _starts(document.texts),
@@ -148,8 +153,17 @@ class _ReaderPageState extends State<ReaderPage>
   Future<void> writes = Future.value();
   Timer? debounce;
   bool allowPop = false, closing = false, tocOpen = true;
-  double? dragging;
-  int? todayMs;
+  final todayReading = ValueNotifier<int?>(null);
+  Timer? todayTimer;
+  Future<void>? todayWork;
+  final positionChanges = ValueNotifier(0);
+  final dragProgress = ValueNotifier<double?>(null);
+  final viewportController = ReaderViewportController();
+  List<ReadingNote>? _cachedSourceNotes;
+  _SeamlessBook? _cachedNotesFlow;
+  List<ReadingNote> _cachedFlowNotes = const [];
+  ReaderDocument? _tickDocument;
+  List<double> _bookTicks = const [];
   List<ReadingNote> notes = [];
   ReadingActivity? activity;
   String? activityError, displayTitle;
@@ -158,6 +172,9 @@ class _ReaderPageState extends State<ReaderPage>
   bool fullscreen = false;
   int? rangeStart;
   late final library = ReadingLibrary(widget.repository);
+  // Scrolling reports positions every 250 ms; reading statistics only need
+  // the place where the text came to rest.
+  late final settledMoves = SettledReadingMoves((at) => activity?.move(at));
   String get positionKey => 'reader:${widget.asset.hash}';
 
   _SeamlessBook _flowFor(ReaderDocument source) {
@@ -171,6 +188,10 @@ class _ReaderPageState extends State<ReaderPage>
   @override
   void initState() {
     super.initState();
+    todayTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _loadToday(),
+    );
     final releasePosition = AppSyncUsage.hold(
       widget.repository.db,
       'p:reader:${widget.asset.hash}',
@@ -198,6 +219,7 @@ class _ReaderPageState extends State<ReaderPage>
 
   @override
   void didPushNext() {
+    settledMoves.flush();
     routeVisible = false;
     activity?.pause('another_screen');
   }
@@ -210,12 +232,17 @@ class _ReaderPageState extends State<ReaderPage>
 
   @override
   void dispose() {
+    todayTimer?.cancel();
+    todayReading.dispose();
+    positionChanges.dispose();
+    dragProgress.dispose();
     readerRoutes.unsubscribe(this);
     if (fullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
     WidgetsBinding.instance.removeObserver(this);
     debounce?.cancel();
+    settledMoves.flush();
     Future.wait<void>([_save(), if (activity != null) activity!.close()]).then(
       (_) => _releaseSync?.call(),
       onError: (Object _, StackTrace _) => _releaseSync?.call(),
@@ -227,6 +254,7 @@ class _ReaderPageState extends State<ReaderPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     foreground = state == AppLifecycleState.resumed;
     if (!foreground) {
+      settledMoves.flush();
       activity?.pause('background');
     } else if (routeVisible && panels == 0 && viewportReady) {
       activity?.resume();
@@ -254,8 +282,19 @@ class _ReaderPageState extends State<ReaderPage>
               widget.asset.path,
               widget.asset.filename,
               legacyProjection: true,
+              layout: 2,
             ),
           ),
+          // Only FB2 changed chapter boundaries in layout 3.
+          previous: bookFormat(widget.asset.filename) == 'fb2'
+              ? () async => ReaderDocument(
+                  await loadTextBook(
+                    widget.asset.path,
+                    widget.asset.filename,
+                    layout: 2,
+                  ),
+                )
+              : null,
         );
       }
       final raw = await widget.repository.meta(positionKey);
@@ -422,8 +461,16 @@ class _ReaderPageState extends State<ReaderPage>
 
   void _position(int value) {
     if (value == offset) return;
-    activity?.move(document!.starts[chapter] + value);
-    setState(() => offset = value);
+    final atPin =
+        pinnedChapter?.chapter == chapter && pinnedChapter?.offset == offset;
+    settledMoves.add(document!.starts[chapter] + value);
+    offset = value;
+    positionChanges.value++;
+    if (atPin !=
+        (pinnedChapter?.chapter == chapter &&
+            pinnedChapter?.offset == offset)) {
+      setState(() {});
+    }
     debounce?.cancel();
     debounce = Timer(const Duration(milliseconds: 300), _save);
   }
@@ -432,11 +479,17 @@ class _ReaderPageState extends State<ReaderPage>
     final place = flow.locate(absolute);
     final local = place.offset.clamp(0, document!.texts[place.chapter].length);
     if (place.chapter == chapter && local == offset) return;
-    activity?.move(document!.starts[place.chapter] + local);
-    setState(() {
-      chapter = place.chapter;
-      offset = local;
-    });
+    final atPin =
+        pinnedChapter?.chapter == chapter && pinnedChapter?.offset == offset;
+    settledMoves.add(document!.starts[place.chapter] + local);
+    chapter = place.chapter;
+    offset = local;
+    positionChanges.value++;
+    if (atPin !=
+        (pinnedChapter?.chapter == chapter &&
+            pinnedChapter?.offset == offset)) {
+      setState(() {});
+    }
     debounce?.cancel();
     debounce = Timer(const Duration(milliseconds: 300), _save);
   }
@@ -628,13 +681,20 @@ class _ReaderPageState extends State<ReaderPage>
 
   void _go(int c, int at, {bool remember = true, bool reading = false}) {
     if (chapter == c && offset == at) return;
-    if (c != chapter) _loadToday();
+    settledMoves.flush();
     activity?.move(
       document!.starts[c] + at,
       jump: !reading,
+      deferCheckpoint: !reading,
       chapterEnded: reading && c == chapter + 1,
     );
     debounce?.cancel();
+    final wholeFlow = preferences.mode != 'scroll';
+    final reuse =
+        (wholeFlow || c == chapter) &&
+        viewportController.seek(
+          wholeFlow ? _flowFor(document!).starts[c] + at : at,
+        );
     setState(() {
       if (remember) {
         history.add((chapter: chapter, offset: offset));
@@ -644,7 +704,7 @@ class _ReaderPageState extends State<ReaderPage>
       chapter = c;
       highlightStart = highlightEnd = null;
       offset = at.clamp(0, document!.texts[c].length);
-      navigation++;
+      if (!reuse) navigation++;
     });
     _save();
   }
@@ -653,11 +713,40 @@ class _ReaderPageState extends State<ReaderPage>
     if (closing) return;
     closing = true;
     debounce?.cancel();
+    settledMoves.flush();
     await _save();
     if (!mounted) return;
     if (saveError != null) {
+      // Never trap the reader in a book when the database refuses writes.
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Позиция не сохранена'),
+          content: Text(
+            '$saveError\n\nЕсли выйти сейчас, книга откроется на последнем '
+            'сохранённом месте.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Остаться'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'retry'),
+              child: const Text('Повторить'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, 'leave'),
+              child: const Text('Выйти без сохранения'),
+            ),
+          ],
+        ),
+      );
       closing = false;
-      return;
+      if (!mounted) return;
+      if (choice == 'retry') return _close();
+      if (choice != 'leave') return;
+      closing = true;
     }
     await activity?.close();
     if (!mounted) return;
@@ -723,26 +812,34 @@ class _ReaderPageState extends State<ReaderPage>
     );
   }
 
-  List<ReadingNote> _seamlessNotes(_SeamlessBook flow) => [
-    for (final note in notes)
-      if (note.chapter >= 0 && note.chapter < flow.starts.length)
-        ReadingNote(
-          id: note.id,
-          bookId: note.bookId,
-          hash: note.hash,
-          bookTitle: note.bookTitle,
-          chapterTitle: note.chapterTitle,
-          quote: note.quote,
-          comment: note.comment,
-          color: note.color,
-          updated: note.updated,
-          chapter: note.chapter,
-          start: flow.starts[note.chapter] + note.start,
-          end: flow.starts[note.chapter] + note.end,
-          tags: note.tags,
-          characters: note.characters,
-        ),
-  ];
+  List<ReadingNote> _seamlessNotes(_SeamlessBook flow) {
+    if (identical(_cachedSourceNotes, notes) &&
+        identical(_cachedNotesFlow, flow)) {
+      return _cachedFlowNotes;
+    }
+    _cachedSourceNotes = notes;
+    _cachedNotesFlow = flow;
+    return _cachedFlowNotes = [
+      for (final note in notes)
+        if (note.chapter >= 0 && note.chapter < flow.starts.length)
+          ReadingNote(
+            id: note.id,
+            bookId: note.bookId,
+            hash: note.hash,
+            bookTitle: note.bookTitle,
+            chapterTitle: note.chapterTitle,
+            quote: note.quote,
+            comment: note.comment,
+            color: note.color,
+            updated: note.updated,
+            chapter: note.chapter,
+            start: flow.starts[note.chapter] + note.start,
+            end: flow.starts[note.chapter] + note.end,
+            tags: note.tags,
+            characters: note.characters,
+          ),
+    ];
+  }
 
   Future<void> _resources(BuildContext context) async {
     await _pausePanel();
@@ -754,15 +851,23 @@ class _ReaderPageState extends State<ReaderPage>
     }
   }
 
-  Future<void> _openBookLink(String href) async {
+  /// [source] is the chapter that contains the link. In whole-book modes it
+  /// can differ from [chapter], which follows the top of the screen.
+  Future<void> _openBookLink(String href, int source) async {
     final book = document?.book;
     if (book == null) return;
-    final target = bookResourcePath(book.chapters[chapter].path, href);
+    source = source.clamp(0, book.chapters.length - 1);
+    final target = bookResourcePath(book.chapters[source].path, href);
     final uri = Uri.tryParse(href);
     if (target != null) {
       final c = book.chapters.indexWhere((item) => item.path == target);
       if (c >= 0) {
-        final id = uri == null ? '' : Uri.decodeComponent(uri.fragment);
+        var id = uri?.fragment ?? '';
+        try {
+          id = Uri.decodeComponent(id);
+        } catch (_) {
+          /* Malformed escape: match the anchor literally. */
+        }
         final anchor = book.chapters[c].markup
             .where((r) => r.anchor == id)
             .firstOrNull;
@@ -1049,9 +1154,6 @@ class _ReaderPageState extends State<ReaderPage>
       scaffoldBackgroundColor: background,
       extensions: [pepe],
     );
-    final progress = d.length == 0
-        ? 0.0
-        : (d.starts[chapter] + offset) / d.length;
     final wholeBookFlow = const [
       'seamless',
       'pages',
@@ -1090,7 +1192,21 @@ class _ReaderPageState extends State<ReaderPage>
               resizeToAvoidBottomInset: false,
               appBar: fullscreen
                   ? null
-                  : _header(context, d, background, foreground, progress),
+                  : PreferredSize(
+                      preferredSize: const Size.fromHeight(62),
+                      child: ValueListenableBuilder(
+                        valueListenable: positionChanges,
+                        builder: (context, _, _) => _header(
+                          context,
+                          d,
+                          background,
+                          foreground,
+                          d.length == 0
+                              ? 0
+                              : (d.starts[chapter] + offset) / d.length,
+                        ),
+                      ),
+                    ),
               floatingActionButton: fullscreen
                   ? Column(
                       mainAxisSize: MainAxisSize.min,
@@ -1132,250 +1248,277 @@ class _ReaderPageState extends State<ReaderPage>
                           constraints: BoxConstraints(
                             maxWidth: preferences.columnWidth,
                           ),
-                          child: Column(
+                          child: Stack(
+                            fit: StackFit.expand,
                             children: [
-                              if (searchIndex != null &&
-                                  searchSession.hits.isNotEmpty)
-                                _searchBar(context),
-                              if (!fullscreen &&
-                                  (linkReturn != null || pinnedAway))
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                  ),
-                                  child: Wrap(
-                                    spacing: 8,
-                                    children: [
-                                      if (linkReturn != null)
-                                        ActionChip(
-                                          avatar: const Icon(
-                                            Icons.undo,
-                                            size: 18,
-                                          ),
-                                          label: const Text(
-                                            'Вернуться после ссылки',
-                                          ),
-                                          onPressed: _returnFromLink,
-                                        ),
-                                      if (pinnedAway)
-                                        ActionChip(
-                                          avatar: const Icon(
-                                            Icons.push_pin,
-                                            size: 18,
-                                          ),
-                                          label: Text(
-                                            'К главе ${pinnedChapter!.chapter + 1}',
-                                          ),
-                                          onPressed: _returnToPinnedChapter,
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              if (rangeStart != null)
-                                Container(
-                                  padding: const EdgeInsets.only(left: 16),
-                                  color: theme.colorScheme.secondaryContainer,
-                                  child: Row(
-                                    children: [
-                                      const Expanded(
-                                        child: Text(
-                                          'Начало цитаты сохранено. Перелистните и выделите конец → «Закончить здесь».',
-                                        ),
-                                      ),
-                                      IconButton(
-                                        tooltip: 'Отменить длинную цитату',
-                                        onPressed: () =>
-                                            setState(() => rangeStart = null),
-                                        icon: const Icon(Icons.close),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              if (saveError != null)
-                                Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: Text(
-                                    saveError!,
-                                    style: TextStyle(
-                                      color: theme.colorScheme.error,
+                              ReaderLayoutFrame(
+                                onResize: viewportController.flushPosition,
+                                builder: (context, box) {
+                                  final scaler = MediaQuery.textScalerOf(
+                                    context,
+                                  );
+                                  final bold = MediaQuery.boldTextOf(context);
+                                  return ReaderViewport(
+                                    controller: viewportController,
+                                    key: ValueKey((
+                                      wholeBookFlow ? -1 : chapter,
+                                      navigation,
+                                      preferences.mode,
+                                      preferences.pageHeightFactor,
+                                      preferences.font,
+                                      preferences.size,
+                                      preferences.spacing,
+                                      preferences.margin,
+                                      box.maxWidth,
+                                      box.maxHeight,
+                                      scaler,
+                                      bold,
+                                    )),
+                                    text: flow?.text ?? d.texts[chapter],
+                                    markup:
+                                        flow?.markup ??
+                                        d.book.chapters[chapter].markup,
+                                    illustrations:
+                                        flow?.illustrations ??
+                                        d.book.chapters[chapter].illustrations,
+                                    chapterBreaks:
+                                        flow?.chapterBreaks ?? const [],
+                                    showScrollbar: preferences.showScrollbar,
+                                    onLink: (href, at) => _openBookLink(
+                                      href,
+                                      flow?.locate(at).chapter ?? chapter,
                                     ),
-                                  ),
-                                ),
-                              if (activityError != null)
-                                Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: Text(
-                                    activityError!,
-                                    style: TextStyle(
-                                      color: theme.colorScheme.error,
-                                    ),
-                                  ),
-                                ),
-                              Expanded(
-                                child: LayoutBuilder(
-                                  builder: (context, box) {
-                                    final scaler = MediaQuery.textScalerOf(
-                                      context,
-                                    );
-                                    final bold = MediaQuery.boldTextOf(context);
-                                    return ReaderViewport(
-                                      key: ValueKey((
-                                        wholeBookFlow ? -1 : chapter,
-                                        navigation,
-                                        preferences.mode,
+                                    style: preferences
+                                        .style(foreground)
+                                        .copyWith(
+                                          fontWeight: bold
+                                              ? FontWeight.w700
+                                              : FontWeight.w400,
+                                        ),
+                                    scaler: scaler,
+                                    width: box.maxWidth,
+                                    height: box.maxHeight,
+                                    margin: preferences.margin,
+                                    pageHeightFactor:
                                         preferences.pageHeightFactor,
-                                        preferences.font,
-                                        preferences.size,
-                                        preferences.spacing,
-                                        preferences.margin,
-                                        box.maxWidth,
-                                        box.maxHeight,
-                                        scaler,
-                                        bold,
-                                      )),
-                                      text: flow?.text ?? d.texts[chapter],
-                                      markup:
-                                          flow?.markup ??
-                                          d.book.chapters[chapter].markup,
-                                      illustrations:
-                                          flow?.illustrations ??
-                                          d
-                                              .book
-                                              .chapters[chapter]
-                                              .illustrations,
-                                      chapterBreaks:
-                                          flow?.starts.skip(1).toList() ??
-                                          const [],
-                                      showScrollbar: preferences.showScrollbar,
-                                      onLink: _openBookLink,
-                                      style: preferences
-                                          .style(foreground)
-                                          .copyWith(
-                                            fontWeight: bold
-                                                ? FontWeight.w700
-                                                : FontWeight.w400,
+                                    anchor: flow == null
+                                        ? offset
+                                        : flow.starts[chapter] + offset,
+                                    preferences: preferences,
+                                    hideControls: fullscreen,
+                                    onToggleControls: _toggleFullscreen,
+                                    selectingRange: rangeStart != null,
+                                    onBoundary: (at, end) => flow == null
+                                        ? _boundary(context, at, end)
+                                        : _seamlessBoundary(
+                                            context,
+                                            flow,
+                                            at,
+                                            end,
                                           ),
-                                      scaler: scaler,
-                                      width: box.maxWidth,
-                                      height: box.maxHeight,
-                                      margin: preferences.margin,
-                                      pageHeightFactor:
-                                          preferences.pageHeightFactor,
-                                      anchor: flow == null
-                                          ? offset
-                                          : flow.starts[chapter] + offset,
-                                      preferences: preferences,
-                                      hideControls: fullscreen,
-                                      onToggleControls: _toggleFullscreen,
-                                      selectingRange: rangeStart != null,
-                                      onBoundary: (at, end) => flow == null
-                                          ? _boundary(context, at, end)
-                                          : _seamlessBoundary(
-                                              context,
-                                              flow,
-                                              at,
-                                              end,
+                                    footnotes:
+                                        flow?.footnotes ??
+                                        d.book.chapters[chapter].footnotes,
+                                    onFootnote: (note) =>
+                                        _footnote(context, note),
+                                    highlightStart: highlightStart == null
+                                        ? null
+                                        : (flow?.starts[chapter] ?? 0) +
+                                              highlightStart!,
+                                    highlightEnd: highlightEnd == null
+                                        ? null
+                                        : (flow?.starts[chapter] ?? 0) +
+                                              highlightEnd!,
+                                    notes: flow == null
+                                        ? notes
+                                              .where(
+                                                (n) => n.chapter == chapter,
+                                              )
+                                              .toList()
+                                        : _seamlessNotes(flow),
+                                    onAnki: (start, end) =>
+                                        _anki(context, start, end, flow),
+                                    onAnnotate: (start, end, comment) =>
+                                        flow == null
+                                        ? _annotate(
+                                            context,
+                                            start,
+                                            end,
+                                            comment,
+                                          )
+                                        : _seamlessAnnotate(
+                                            context,
+                                            flow,
+                                            start,
+                                            end,
+                                            comment,
+                                          ),
+                                    onHighlight: (start, end, color) =>
+                                        flow == null
+                                        ? _annotate(
+                                            context,
+                                            start,
+                                            end,
+                                            false,
+                                            color: color,
+                                          )
+                                        : _seamlessAnnotate(
+                                            context,
+                                            flow,
+                                            start,
+                                            end,
+                                            false,
+                                            color: color,
+                                          ),
+                                    onLoading: () {
+                                      settledMoves.flush();
+                                      viewportReady = false;
+                                      activity?.pause('layout');
+                                    },
+                                    onReady: () {
+                                      viewportReady = true;
+                                      if (this.foreground &&
+                                          routeVisible &&
+                                          panels == 0) {
+                                        activity?.resume();
+                                      }
+                                    },
+                                    scrolling: preferences.mode != 'pages',
+                                    compactFlow: preferences.mode == 'compact',
+                                    firstChapter: wholeBookFlow || chapter == 0,
+                                    lastChapter:
+                                        wholeBookFlow ||
+                                        chapter == d.texts.length - 1,
+                                    onPosition: flow == null
+                                        ? _position
+                                        : (value) =>
+                                              _seamlessPosition(flow, value),
+                                    onSeek: (value) {
+                                      final target =
+                                          flow?.locate(value) ??
+                                          (chapter: chapter, offset: value);
+                                      _go(
+                                        target.chapter,
+                                        target.offset,
+                                        remember: false,
+                                        reading: true,
+                                      );
+                                    },
+                                    onChapter: (delta) {
+                                      final c = chapter + delta;
+                                      _go(
+                                        c,
+                                        delta < 0 ? d.texts[c].length : 0,
+                                        remember: false,
+                                        reading: true,
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                              Positioned(
+                                left: 8,
+                                right: 8,
+                                // Keep page arrows/slider available while the
+                                // reader is completing a long quotation.
+                                bottom:
+                                    preferences.mode != 'compact' &&
+                                        (preferences.mode != 'pages' ||
+                                            !fullscreen)
+                                    ? 56
+                                    : 8,
+                                child: Material(
+                                  color: background,
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (searchIndex != null &&
+                                          searchSession.hits.isNotEmpty)
+                                        _searchBar(context),
+                                      if (!fullscreen &&
+                                          (linkReturn != null || pinnedAway))
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                          ),
+                                          child: Wrap(
+                                            spacing: 8,
+                                            children: [
+                                              if (linkReturn != null)
+                                                ActionChip(
+                                                  avatar: const Icon(
+                                                    Icons.undo,
+                                                    size: 18,
+                                                  ),
+                                                  label: const Text(
+                                                    'Вернуться после ссылки',
+                                                  ),
+                                                  onPressed: _returnFromLink,
+                                                ),
+                                              if (pinnedAway)
+                                                ActionChip(
+                                                  avatar: const Icon(
+                                                    Icons.push_pin,
+                                                    size: 18,
+                                                  ),
+                                                  label: Text(
+                                                    'К главе ${pinnedChapter!.chapter + 1}',
+                                                  ),
+                                                  onPressed:
+                                                      _returnToPinnedChapter,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      if (rangeStart != null)
+                                        Container(
+                                          padding: const EdgeInsets.only(
+                                            left: 16,
+                                          ),
+                                          color: theme
+                                              .colorScheme
+                                              .secondaryContainer,
+                                          child: Row(
+                                            children: [
+                                              const Expanded(
+                                                child: Text(
+                                                  'Начало цитаты сохранено. Перелистните и выделите конец → «Закончить здесь».',
+                                                ),
+                                              ),
+                                              IconButton(
+                                                tooltip:
+                                                    'Отменить длинную цитату',
+                                                onPressed: () => setState(
+                                                  () => rangeStart = null,
+                                                ),
+                                                icon: const Icon(Icons.close),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      if (saveError != null)
+                                        Padding(
+                                          padding: const EdgeInsets.all(8),
+                                          child: Text(
+                                            saveError!,
+                                            style: TextStyle(
+                                              color: theme.colorScheme.error,
                                             ),
-                                      footnotes:
-                                          flow?.footnotes ??
-                                          d.book.chapters[chapter].footnotes,
-                                      onFootnote: (note) =>
-                                          _footnote(context, note),
-                                      highlightStart: highlightStart == null
-                                          ? null
-                                          : (flow?.starts[chapter] ?? 0) +
-                                                highlightStart!,
-                                      highlightEnd: highlightEnd == null
-                                          ? null
-                                          : (flow?.starts[chapter] ?? 0) +
-                                                highlightEnd!,
-                                      notes: flow == null
-                                          ? notes
-                                                .where(
-                                                  (n) => n.chapter == chapter,
-                                                )
-                                                .toList()
-                                          : _seamlessNotes(flow),
-                                      onAnki: (start, end) =>
-                                          _anki(context, start, end, flow),
-                                      onAnnotate: (start, end, comment) =>
-                                          flow == null
-                                          ? _annotate(
-                                              context,
-                                              start,
-                                              end,
-                                              comment,
-                                            )
-                                          : _seamlessAnnotate(
-                                              context,
-                                              flow,
-                                              start,
-                                              end,
-                                              comment,
+                                          ),
+                                        ),
+                                      if (activityError != null)
+                                        Padding(
+                                          padding: const EdgeInsets.all(8),
+                                          child: Text(
+                                            activityError!,
+                                            style: TextStyle(
+                                              color: theme.colorScheme.error,
                                             ),
-                                      onHighlight: (start, end, color) =>
-                                          flow == null
-                                          ? _annotate(
-                                              context,
-                                              start,
-                                              end,
-                                              false,
-                                              color: color,
-                                            )
-                                          : _seamlessAnnotate(
-                                              context,
-                                              flow,
-                                              start,
-                                              end,
-                                              false,
-                                              color: color,
-                                            ),
-                                      onLoading: () {
-                                        viewportReady = false;
-                                        activity?.pause('layout');
-                                      },
-                                      onReady: () {
-                                        viewportReady = true;
-                                        if (this.foreground &&
-                                            routeVisible &&
-                                            panels == 0) {
-                                          activity?.resume();
-                                        }
-                                      },
-                                      scrolling: preferences.mode != 'pages',
-                                      compactFlow:
-                                          preferences.mode == 'compact',
-                                      firstChapter:
-                                          wholeBookFlow || chapter == 0,
-                                      lastChapter:
-                                          wholeBookFlow ||
-                                          chapter == d.texts.length - 1,
-                                      onPosition: flow == null
-                                          ? _position
-                                          : (value) =>
-                                                _seamlessPosition(flow, value),
-                                      onSeek: (value) {
-                                        final target =
-                                            flow?.locate(value) ??
-                                            (chapter: chapter, offset: value);
-                                        _go(
-                                          target.chapter,
-                                          target.offset,
-                                          remember: false,
-                                          reading: true,
-                                        );
-                                      },
-                                      onChapter: (delta) {
-                                        final c = chapter + delta;
-                                        _go(
-                                          c,
-                                          delta < 0 ? d.texts[c].length : 0,
-                                          remember: false,
-                                          reading: true,
-                                        );
-                                      },
-                                    );
-                                  },
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
@@ -1390,10 +1533,14 @@ class _ReaderPageState extends State<ReaderPage>
                                 if (showToc)
                                   SizedBox(
                                     width: 280,
-                                    child: _contentsPanel(
-                                      d,
-                                      foreground,
-                                      background,
+                                    child: ValueListenableBuilder(
+                                      valueListenable: positionChanges,
+                                      builder: (context, _, _) =>
+                                          _contentsPanel(
+                                            d,
+                                            foreground,
+                                            background,
+                                          ),
                                     ),
                                   ),
                                 Expanded(child: reader),
@@ -1413,7 +1560,20 @@ class _ReaderPageState extends State<ReaderPage>
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Expanded(child: body),
-                          _footer(d, progress, foreground),
+                          ListenableBuilder(
+                            listenable: Listenable.merge([
+                              positionChanges,
+                              dragProgress,
+                              todayReading,
+                            ]),
+                            builder: (context, _) => _footer(
+                              d,
+                              d.length == 0
+                                  ? 0
+                                  : (d.starts[chapter] + offset) / d.length,
+                              foreground,
+                            ),
+                          ),
                         ],
                       );
                     },
@@ -1427,17 +1587,14 @@ class _ReaderPageState extends State<ReaderPage>
     );
   }
 
-  Future<void> _loadToday() async {
+  Future<void> _loadToday() =>
+      todayWork ??= _readToday().whenComplete(() => todayWork = null);
+
+  Future<void> _readToday() async {
     try {
-      final rows = (await ReadingLibrary(
-        widget.repository,
-      ).entries('reading-session:')).values.toList();
-      final now = DateTime.now();
-      final totals = readingTotals(
-        rows,
-        start: DateTime(now.year, now.month, now.day),
-      );
-      if (mounted) setState(() => todayMs = totals.milliseconds);
+      final total = await ReadingDailyTotals(widget.repository)
+          .day(DateTime.now());
+      if (mounted) todayReading.value = total;
     } catch (_) {}
   }
 
@@ -1651,11 +1808,14 @@ class _ReaderPageState extends State<ReaderPage>
   );
 
   Widget _footer(ReaderDocument d, double progress, Color ink) {
-    final value = (dragging ?? progress).clamp(0.0, 1.0);
-    final ticks = <double>[
-      if (d.length > 0)
-        for (var i = 1; i < d.texts.length; i++) d.starts[i] / d.length,
-    ];
+    final value = (dragProgress.value ?? progress).clamp(0.0, 1.0);
+    if (!identical(_tickDocument, d)) {
+      _tickDocument = d;
+      _bookTicks = <double>[
+        if (d.length > 0)
+          for (var i = 1; i < d.texts.length; i++) d.starts[i] / d.length,
+      ];
+    }
     final left = (d.texts[chapter].length - offset).clamp(0, 1 << 40);
     final tracker = activity;
     final perMinute =
@@ -1681,12 +1841,12 @@ class _ReaderPageState extends State<ReaderPage>
         children: [
           _ReaderProgressBar(
             value: value,
-            ticks: ticks,
+            ticks: _bookTicks,
             ink: ink,
             accent: PepeColors.of(context).accent,
-            onChanged: (v) => setState(() => dragging = v),
+            onChanged: (v) => dragProgress.value = v,
             onChangeEnd: (v) {
-              setState(() => dragging = null);
+              dragProgress.value = null;
               final target = d.locate(v);
               _go(target.chapter, target.offset);
             },
@@ -1698,7 +1858,7 @@ class _ReaderPageState extends State<ReaderPage>
             runSpacing: 2,
             children: [
               Text(
-                '${(value * 100).toStringAsFixed(dragging == null ? 0 : 1)}% книги · глава ${chapter + 1} из ${d.texts.length}',
+                '${(value * 100).toStringAsFixed(dragProgress.value == null ? 0 : 1)}% книги · глава ${chapter + 1} из ${d.texts.length}',
                 style: muted,
               ),
               if (minutesLeft != null)
@@ -1708,8 +1868,11 @@ class _ReaderPageState extends State<ReaderPage>
                       : 'до конца главы около $minutesLeft мин',
                   style: muted,
                 ),
-              if (todayMs != null)
-                Text('сегодня ${todayMs! ~/ 60000} мин чтения', style: muted),
+              if (todayReading.value != null)
+                Text(
+                  'сегодня ${todayReading.value! ~/ 60000} мин чтения',
+                  style: muted,
+                ),
             ],
           ),
         ],
@@ -1989,6 +2152,7 @@ class _ReaderPageState extends State<ReaderPage>
   }
 
   Future<void> _pausePanel() async {
+    settledMoves.flush();
     panels++;
     activity?.pause('panel');
   }
@@ -2030,58 +2194,82 @@ class _ReaderProgressBar extends StatelessWidget {
           onHorizontalDragEnd: (_) => onChangeEnd(value),
           child: SizedBox(
             height: 22,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 9,
-                  height: 4,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: ink.withValues(alpha: .14),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 0,
-                  width: width * value,
-                  top: 9,
-                  height: 4,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: accent,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                for (final t in ticks)
-                  Positioned(
-                    left: width * t - 1,
-                    top: 6,
-                    width: 2,
-                    height: 10,
-                    child: ColoredBox(color: ink.withValues(alpha: .28)),
-                  ),
-                Positioned(
-                  left: width * value - 8,
-                  top: 3,
-                  width: 16,
-                  height: 16,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: ink,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-              ],
+            child: CustomPaint(
+              painter: _BookProgressPainter(value, ink, accent),
+              foregroundPainter: _BookProgressPainter(
+                value,
+                ink,
+                accent,
+                thumb: true,
+              ),
+              child: RepaintBoundary(
+                child: CustomPaint(painter: _BookTicksPainter(ticks, ink)),
+              ),
             ),
           ),
         ),
       );
     },
   );
+}
+
+class _BookProgressPainter extends CustomPainter {
+  final double value;
+  final Color ink, accent;
+  final bool thumb;
+  const _BookProgressPainter(
+    this.value,
+    this.ink,
+    this.accent, {
+    this.thumb = false,
+  });
+  @override
+  void paint(Canvas canvas, Size size) {
+    final x = size.width * value.clamp(0, 1);
+    if (thumb) {
+      canvas.drawCircle(Offset(x, 11), 8, Paint()..color = ink);
+      return;
+    }
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 9, size.width, 4),
+        const Radius.circular(2),
+      ),
+      Paint()..color = ink.withValues(alpha: .14),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 9, x, 4),
+        const Radius.circular(2),
+      ),
+      Paint()..color = accent,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _BookProgressPainter old) =>
+      value != old.value ||
+      ink != old.ink ||
+      accent != old.accent ||
+      thumb != old.thumb;
+}
+
+class _BookTicksPainter extends CustomPainter {
+  final List<double> ticks;
+  final Color ink;
+  const _BookTicksPainter(this.ticks, this.ink);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = ink.withValues(alpha: .28)
+      ..strokeWidth = 2;
+    for (final tick in ticks) {
+      final x = size.width * tick;
+      canvas.drawLine(Offset(x, 6), Offset(x, 16), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BookTicksPainter old) =>
+      ink != old.ink || !listEquals(ticks, old.ticks);
 }

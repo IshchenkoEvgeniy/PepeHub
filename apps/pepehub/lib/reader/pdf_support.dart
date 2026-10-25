@@ -87,26 +87,55 @@ Map<String, dynamic> pdfTextIndex(ReaderDocument document) => {
 Future<Map<String, dynamic>?> pdfStatisticsIndex(
   PdfDocument document, {
   required bool Function() cancelled,
+  Map<String, dynamic>? partial,
+  Future<void> Function(Map<String, dynamic>)? onProgress,
 }) async {
   if (document.permissions?.allowsCopying == false) return null;
   final starts = <int>[], lengths = <int>[];
   var total = 0;
-  for (final page in document.pages) {
-    if (cancelled()) return null;
+  final savedLengths = partial?['lengths'];
+  if (partial?['pdfPages'] == document.pages.length &&
+      partial?['pdfTextIndexVersion'] == 1 &&
+      savedLengths is List &&
+      savedLengths.length <= document.pages.length &&
+      savedLengths.every((length) => length is int && length >= 0)) {
+    for (final length in savedLengths.cast<int>()) {
+      starts.add(total);
+      lengths.add(length);
+      total += length;
+    }
+  }
+  Map<String, dynamic> snapshot() => {
+    'pdfPages': document.pages.length,
+    'length': total,
+    'starts': starts.toList(),
+    'lengths': lengths.toList(),
+    'pdfTextIndexVersion': 1,
+  };
+  var checkpointPages = lengths.length;
+  Future<void> checkpoint() async {
+    if (lengths.length == checkpointPages) return;
+    await onProgress?.call(snapshot());
+    checkpointPages = lengths.length;
+  }
+
+  for (final page in document.pages.skip(lengths.length)) {
+    if (cancelled()) {
+      await checkpoint();
+      return null;
+    }
     final length = (await page.loadStructuredText()).fullText.length;
-    if (cancelled()) return null;
     starts.add(total);
     lengths.add(length);
     total += length;
+    if (lengths.length - checkpointPages >= 32) await checkpoint();
     await Future<void>.delayed(const Duration(milliseconds: 20));
   }
-  return {
-    'pdfPages': lengths.length,
-    'length': total,
-    'starts': starts,
-    'lengths': lengths,
-    'pdfTextIndexVersion': 1,
-  };
+  if (cancelled()) {
+    await checkpoint();
+    return null;
+  }
+  return snapshot();
 }
 
 Future<PdfDocument> openLocalPdf(String path) async {

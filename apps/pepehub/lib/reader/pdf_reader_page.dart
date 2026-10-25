@@ -52,6 +52,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   Future<void> textWork = Future.value();
   Future<void> indexWork = Future.value();
   bool indexing = false, preparingText = false;
+  Timer? indexDelay;
   ReadingActivity? activity;
   ReaderPreferences preferences = const ReaderPreferences(mode: 'scroll');
   List<ReadingNote> notes = [];
@@ -111,13 +112,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     )) {
       history.add(p.clamp(1, count));
     }
-    final raw = await widget.repository.meta('reader:appearance');
-    if (raw != null) {
-      final restored = ReaderPreferences.fromJson(jsonDecode(raw));
-      preferences = restored.mode == 'seamless'
-          ? restored.copy(mode: 'scroll')
-          : restored;
-    }
+    preferences = await _storedPreferences() ?? preferences;
     notes = await library.notes(hash: widget.asset.hash);
     final card = await widget.repository.record(widget.asset.bookId);
     displayTitle = card == null
@@ -159,6 +154,25 @@ class _PdfReaderPageState extends State<PdfReaderPage>
       throw StateError('Просмотрщик закрыт');
     }
     return PdfDocumentRefDirect(opened, autoDispose: false);
+  }
+
+  static const _pdfModeKey = 'reader:pdf-mode';
+
+  /// Shared reader appearance with the PDF's own page mode.
+  Future<ReaderPreferences?> _storedPreferences() async {
+    final raw = await widget.repository.meta('reader:appearance');
+    final pdfMode = await widget.repository.meta(_pdfModeKey);
+    if (raw == null && pdfMode == null) return null;
+    final restored = raw == null
+        ? const ReaderPreferences()
+        : ReaderPreferences.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    return restored.copy(
+      mode: const ['pages', 'scroll'].contains(pdfMode)
+          ? pdfMode
+          : restored.mode == 'pages'
+          ? 'pages'
+          : 'scroll',
+    );
   }
 
   ReadingActivity _tracker() => ReadingActivity(
@@ -216,6 +230,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
 
   @override
   void dispose() {
+    indexDelay?.cancel();
     readerRoutes.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     if (fullscreen) {
@@ -669,10 +684,24 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     if (next == null || !mounted) return;
     setState(() => preferences = axisLocked ? next.copy(mode: 'scroll') : next);
     try {
-      await widget.repository.setMeta(
-        'reader:appearance',
-        jsonEncode(next.toJson()),
-      );
+      // Theme, highlights and tap zones are shared with the text reader, but
+      // its page mode is not: PDF has only pages/scroll, the text reader also
+      // has seamless/compact. Keep the text reader's mode intact.
+      await widget.repository.db.transaction(() async {
+        final raw = await widget.repository.meta('reader:appearance');
+        final stored = raw == null
+            ? <String, dynamic>{}
+            : jsonDecode(raw) as Map<String, dynamic>;
+        await widget.repository.setMeta(
+          'reader:appearance',
+          jsonEncode({
+            ...stored,
+            ...next.toJson(),
+            'mode': stored['mode'] ?? const ReaderPreferences().mode,
+          }),
+        );
+        await widget.repository.setMeta(_pdfModeKey, next.mode);
+      });
     } catch (e) {
       _message('Настройки не сохранены: $e');
     }
@@ -695,10 +724,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     }
   }
 
-  void _prepareIndex() {
-    // Large documents must not decode every page alongside the visible page.
-    // Existing indexes remain usable; text mode builds an index on demand.
-    if (count > 100) return;
+  void _prepareIndex({bool afterOpening = false}) {
     if (!mounted ||
         closing ||
         indexing ||
@@ -706,23 +732,43 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         !ready ||
         !foreground ||
         !routeVisible ||
+        panels > 0 ||
         (textIndex['starts'] as List?)?.length == count) {
+      return;
+    }
+    if (count > 100 && !afterOpening) {
+      // Let the initial page become interactive before starting native reads.
+      indexDelay ??= Timer(const Duration(milliseconds: 600), () {
+        indexDelay = null;
+        _prepareIndex(afterOpening: true);
+      });
       return;
     }
     indexing = true;
     indexWork = (() async {
       try {
+        final partialKey = 'reading-pdf-index-partial:${widget.asset.hash}';
+        final partial = await library.value(partialKey);
         final index = await pdfStatisticsIndex(
           document!,
+          partial: partial,
+          onProgress: (index) => library.update(partialKey, index),
           cancelled: () =>
               !mounted ||
               closing ||
               preparingText ||
+              panels > 0 ||
               !foreground ||
               !routeVisible,
         );
         if (index == null || !mounted || closing) return;
-        await library.update('reading-index:${widget.asset.hash}', index);
+        await widget.repository.db.transaction(() async {
+          await library.update('reading-index:${widget.asset.hash}', index);
+          await widget.repository.db.customStatement(
+            'DELETE FROM metadata WHERE key=?',
+            [partialKey],
+          );
+        });
         // No coordinate change in an existing session; rebaseline in a new one.
         await activity?.close();
         if (!mounted || closing) return;
@@ -855,16 +901,11 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     if (!mounted) return;
     final saved = await library.value('reader:${widget.asset.hash}');
     final fresh = await library.notes(hash: widget.asset.hash);
-    final appearance = await widget.repository.meta('reader:appearance');
+    final appearance = await _storedPreferences();
     if (!mounted) return;
     setState(() {
       notes = fresh;
-      if (appearance != null) {
-        final restored = ReaderPreferences.fromJson(jsonDecode(appearance));
-        preferences = restored.mode == 'seamless'
-            ? restored.copy(mode: 'scroll')
-            : restored;
-      }
+      if (appearance != null) preferences = appearance;
     });
     final nextActivity = _tracker();
     final target = (((saved['chapter'] as num?)?.toInt() ?? page - 1) + 1)

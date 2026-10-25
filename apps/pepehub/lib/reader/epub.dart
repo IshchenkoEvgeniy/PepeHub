@@ -85,6 +85,12 @@ Future<EpubBook> loadEpub(String path) => Isolate.run(() {
   return parseEpub(file.readAsBytesSync());
 });
 
+String? _cleanTitle(String? value) {
+  final text = value?.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (text == null || text.isEmpty) return null;
+  return text.length > 200 ? '${text.substring(0, 199)}…' : text;
+}
+
 class _LimitedBytes implements Sink<List<int>> {
   final int limit;
   final builder = BytesBuilder(copy: false);
@@ -163,10 +169,12 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
     return content;
   }
 
-  String read(String name) => utf8.decode(readBytes(name));
+  // A single invalid byte must not make the whole book unreadable.
+  String read(String name) =>
+      utf8.decode(readBytes(name), allowMalformed: true);
 
   XmlDocument xml(String name) {
-    final text = read(name);
+    final text = read(name).replaceFirst(RegExp('^\uFEFF'), '');
     if (text.contains('<!ENTITY')) {
       throw const FormatException('XML entities не поддерживаются');
     }
@@ -177,7 +185,32 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
     throw const FormatException('Это не EPUB');
   }
   if (files.containsKey('META-INF/encryption.xml')) {
-    throw const FormatException('Зашифрованные EPUB пока не поддерживаются');
+    // Font obfuscation also uses encryption.xml and is common in DRM-free
+    // books. Embedded fonts are never read, so only real DRM is refused.
+    const fontObfuscation = {
+      'http://www.idpf.org/2008/embedding',
+      'http://ns.adobe.com/pdf/enc#RC',
+    };
+    var onlyFonts = false;
+    try {
+      final methods = [
+        for (final data
+            in xml('META-INF/encryption.xml').descendants
+                .whereType<XmlElement>()
+                .where((e) => e.name.local == 'EncryptedData'))
+          data.descendants
+              .whereType<XmlElement>()
+              .where((e) => e.name.local == 'EncryptionMethod')
+              .firstOrNull
+              ?.getAttribute('Algorithm'),
+      ];
+      onlyFonts = methods.isNotEmpty && methods.every(fontObfuscation.contains);
+    } catch (_) {
+      /* Unreadable encryption data is treated as DRM. */
+    }
+    if (!onlyFonts) {
+      throw const FormatException('Зашифрованные EPUB пока не поддерживаются');
+    }
   }
   final container = xml('META-INF/container.xml');
   final root = container.descendants
@@ -206,6 +239,82 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
     for (final e in elements.where((e) => e.name.local == 'item'))
       if (e.getAttribute('id') != null) e.getAttribute('id')!: e,
   };
+  final bookTitle = _cleanTitle(
+    elements.where((e) => e.name.local == 'title').firstOrNull?.innerText,
+  );
+  // Chapter names come from the book's own table of contents first. Many
+  // EPUBs repeat the book title in every XHTML <title>.
+  final tocTitles = <String, String>{};
+  void addToc(String base, String href, String? label) {
+    final target = bookResourcePath(base, href);
+    final text = _cleanTitle(label);
+    if (target == null || text == null) return;
+    tocTitles.putIfAbsent(target, () => text);
+  }
+
+  try {
+    final navItem = manifest.values
+        .where(
+          (e) => (e.getAttribute('properties') ?? '')
+              .split(RegExp(r'\s+'))
+              .contains('nav'),
+        )
+        .firstOrNull;
+    if (navItem != null) {
+      final navPath = resolve(navItem.getAttribute('href') ?? '');
+      final navs = html.parse(read(navPath)).querySelectorAll('nav');
+      final toc =
+          navs
+              .where(
+                (n) => (n.attributes['epub:type'] ?? '')
+                    .split(RegExp(r'\s+'))
+                    .contains('toc'),
+              )
+              .firstOrNull ??
+          navs.firstOrNull;
+      for (final link in toc?.querySelectorAll('a[href]') ?? <dom.Element>[]) {
+        addToc(navPath, link.attributes['href']!, link.text);
+      }
+    }
+  } catch (_) {
+    /* A broken navigation document must not prevent reading. */
+  }
+  if (tocTitles.isEmpty) {
+    try {
+      final spine = elements.where((e) => e.name.local == 'spine').firstOrNull;
+      final ncxItem =
+          manifest[spine?.getAttribute('toc')] ??
+          manifest.values
+              .where(
+                (e) =>
+                    e.getAttribute('media-type') == 'application/x-dtbncx+xml',
+              )
+              .firstOrNull;
+      if (ncxItem != null) {
+        final ncxPath = resolve(ncxItem.getAttribute('href') ?? '');
+        for (final point
+            in xml(ncxPath).descendants
+                .whereType<XmlElement>()
+                .where((e) => e.name.local == 'navPoint')) {
+          final src = point.childElements
+              .where((e) => e.name.local == 'content')
+              .firstOrNull
+              ?.getAttribute('src');
+          if (src == null) continue;
+          addToc(
+            ncxPath,
+            src,
+            point.childElements
+                .where((e) => e.name.local == 'navLabel')
+                .firstOrNull
+                ?.innerText,
+          );
+        }
+      }
+    } catch (_) {
+      /* Optional legacy table of contents. */
+    }
+  }
   final chapters = <EpubChapter>[];
   final footnoteTargets = <String, dom.Document>{};
   final pendingImages = <BookIllustration>[];
@@ -228,13 +337,29 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
     (e) => e.name.local == 'itemref' && e.getAttribute('linear') != 'no',
   )) {
     final item = manifest[ref.getAttribute('idref')];
-    if (item == null ||
-        item.getAttribute('media-type') != 'application/xhtml+xml') {
-      throw const FormatException(
-        'Поддерживается текстовый EPUB с XHTML-главами',
-      );
-    }
+    if (item == null) continue;
+    final mediaType = (item.getAttribute('media-type') ?? '').trim();
     final path = resolve(item.getAttribute('href') ?? '');
+    if (!files.containsKey(path)) continue;
+    if (const {
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+    }.contains(mediaType)) {
+      // An image page in the reading order (often the cover) is shown before
+      // the next text chapter.
+      final bytes = artwork(path);
+      if (bytes != null) {
+        pendingImages.add(BookIllustration('Иллюстрация', bytes));
+      }
+      continue;
+    }
+    // SVG pages, scripts and other non-text items are skipped instead of
+    // refusing the whole book.
+    if (mediaType != 'application/xhtml+xml' && mediaType != 'text/html') {
+      continue;
+    }
     final document = html.parse(read(path));
     if (legacyProjection) {
       for (final node in document.querySelectorAll('svg,nav')) {
@@ -356,7 +481,7 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
           buffer.write('  │  ');
         }
       }
-      final linkStart = position();
+      final linkStart = tag == 'a' && links.length < 2048 ? position() : 0;
       for (final child in node.nodes) {
         visit(child, depth + 1);
       }
@@ -448,13 +573,15 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
       }
     }
     if (paragraphs.isNotEmpty) {
-      final title = document.querySelector('h1,h2,title')?.text.trim();
+      final pageTitle = _cleanTitle(document.querySelector('title')?.text);
+      final title =
+          tocTitles[path] ??
+          _cleanTitle(body?.querySelector('h1,h2,h3')?.text) ??
+          (pageTitle == bookTitle ? null : pageTitle);
       chapters.add(
         EpubChapter(
           path,
-          title == null || title.isEmpty
-              ? 'Глава ${chapters.length + 1}'
-              : title,
+          title ?? 'Глава ${chapters.length + 1}',
           paragraphs,
           footnotes: footnotes,
           illustrations: [...pendingImages, ...illustrations],

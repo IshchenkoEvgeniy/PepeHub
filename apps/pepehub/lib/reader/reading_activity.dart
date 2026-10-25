@@ -25,6 +25,7 @@ class ReadingActivity {
   bool reachedEnd = false;
   bool suspended = false, idle = false, closed = false;
   Timer? timer;
+  Timer? jumpCheckpoint;
   Future<void> writes = Future.value();
   static const idleLimit = Duration(minutes: 2);
   ReadingActivity(
@@ -137,7 +138,12 @@ class ReadingActivity {
     lastTouch = now;
   }
 
-  void move(int to, {bool jump = false, bool chapterEnded = false}) {
+  void move(
+    int to, {
+    bool jump = false,
+    bool chapterEnded = false,
+    bool deferCheckpoint = false,
+  }) {
     if (closed) return;
     tick();
     to = to.clamp(0, length);
@@ -179,7 +185,17 @@ class ReadingActivity {
     sampleActiveMs = 0;
     sampleEligible = !suspended;
     touch();
-    if (jump || chapterEnded) checkpoint(significant: true);
+    if (jump || chapterEnded) {
+      if (deferCheckpoint) {
+        jumpCheckpoint?.cancel();
+        jumpCheckpoint = Timer(
+          const Duration(milliseconds: 350),
+          () => checkpoint(significant: true),
+        );
+      } else {
+        checkpoint(significant: true);
+      }
+    }
   }
 
   Future<void> pause(String reason) async {
@@ -233,6 +249,8 @@ class ReadingActivity {
     'events': events,
   };
   Future<void> checkpoint({bool significant = false}) {
+    jumpCheckpoint?.cancel();
+    jumpCheckpoint = null;
     lastCheckpoint = clock();
     final json = jsonEncode(snapshot()),
         ranges = jsonEncode({'ranges': coverage});
@@ -269,6 +287,36 @@ class ReadingActivity {
       onError?.call(e);
     });
     return writes;
+  }
+}
+
+/// Coalesces rapid position reports (scroll updates, page animations) into
+/// one move once the text has been still for [delay]. Without this, every
+/// 250 ms update inside a gesture resets [ReadingActivity.move]'s two-second
+/// reading window and most of the scrolled text is never counted.
+class SettledReadingMoves {
+  final void Function(int position) onMove;
+  final Duration delay;
+  Timer? _timer;
+  int? _pending;
+  SettledReadingMoves(
+    this.onMove, {
+    this.delay = const Duration(milliseconds: 400),
+  });
+
+  void add(int position) {
+    _pending = position;
+    _timer?.cancel();
+    _timer = Timer(delay, flush);
+  }
+
+  /// Reports a pending position now, e.g. before a jump, a panel or closing.
+  void flush() {
+    _timer?.cancel();
+    _timer = null;
+    final pending = _pending;
+    _pending = null;
+    if (pending != null) onMove(pending);
   }
 }
 
