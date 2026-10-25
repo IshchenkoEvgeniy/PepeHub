@@ -6,6 +6,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 
 import '../media/audio_controller.dart';
+import '../media/audio_focus.dart';
 import 'models.dart';
 import 'video_captions_controller.dart';
 import 'video_controller.dart';
@@ -13,6 +14,7 @@ import 'video_engine.dart';
 import 'video_fullscreen.dart';
 import 'video_repository.dart';
 import 'video_import.dart';
+import '../music/music_metadata.dart';
 
 /// Owns a decoder beyond a player route: page, mini-player and PiP use one session.
 class VideoPlaybackSession extends BaseAudioHandler
@@ -38,6 +40,8 @@ class VideoPlaybackSession extends BaseAudioHandler
   bool _foreground = true;
   String? _publishedLesson, _pipState;
   List<int>? _publishedOrder;
+  bool get _ownsSound =>
+      audio == null || identical(audio!.systemHandler.owner, this);
   VideoPlaybackSession(
     this.repository, {
     this.audio,
@@ -117,7 +121,13 @@ class VideoPlaybackSession extends BaseAudioHandler
             }
           },
           afterPaused: () async {
-            if (_audioSession != null) await _audioSession!.setActive(false);
+            // Abandoning a transient request here drops Android's focus-gain
+            // callback. Retain it until gain, manual pause or permanent loss.
+            if (_ownsSound &&
+                _audioSession != null &&
+                controller?.retainsAudioFocus != true) {
+              await _audioSession!.setActive(false);
+            }
           },
           configureLesson: (lesson) async {
             await text.loadLesson(lesson);
@@ -132,26 +142,32 @@ class VideoPlaybackSession extends BaseAudioHandler
         await player.load(index);
       });
   Future<void> _takeSound() async {
-    if (audio?.playing == true) await audio!.pause();
+    if (audio != null &&
+        (audio!.playing || identical(audio!.systemHandler.owner, audio))) {
+      // A book paused by a notification may still have a pending resume.
+      await audio!.pause();
+    }
     await beforePlaying?.call();
     if (Platform.isAndroid || Platform.isIOS) {
       if (_audioSession == null) {
         final session = _audioSession = await AudioSession.instance;
         _subscriptions.add(
           session.interruptionEventStream.listen((event) {
-            if (event.begin) unawaited(pause().catchError((Object _) {}));
+            unawaited(handleInterruption(event).catchError((Object _) {}));
           }),
         );
         _subscriptions.add(
-          session.becomingNoisyEventStream.listen(
-            (_) => unawaited(pause().catchError((Object _) {})),
-          ),
+          session.becomingNoisyEventStream.listen((_) {
+            if (audio == null || identical(audio!.systemHandler.owner, this)) {
+              unawaited(pause().catchError((Object _) {}));
+            }
+          }),
         );
       }
       await _audioSession!.configure(
         controller?.current?.isAudio == true
             ? const AudioSessionConfiguration.music()
-            : const AudioSessionConfiguration.speech(),
+            : spokenAudioConfiguration,
       );
       if (await _audioSession!.setActive(true) != true) {
         throw StateError('Другое приложение удерживает аудиофокус');
@@ -164,7 +180,7 @@ class VideoPlaybackSession extends BaseAudioHandler
     await pause();
     // audio_session is shared by all players in the app. Restore the speech
     // profile before the audiobook takes focus after listening to music.
-    await _audioSession?.configure(const AudioSessionConfiguration.speech());
+    await _audioSession?.configure(spokenAudioConfiguration);
     audio?.systemHandler.release(this);
   }
 
@@ -214,16 +230,23 @@ class VideoPlaybackSession extends BaseAudioHandler
       final lesson = player.current;
       final key = lesson == null
           ? null
-          : '${lesson.id}:${lesson.mediaVersion}:${player.state.durationMs}';
+          : '${lesson.id}:${lesson.mediaVersion}:${player.state.durationMs}:${lesson.title}:${lesson.music?.toJson()}';
       if (_publishedLesson != key) {
         _publishedLesson = key;
+        _publishedOrder = null;
         mediaItem.add(
           lesson == null
               ? null
               : MediaItem(
                   id: 'video:${lesson.id}',
                   title: lesson.title,
-                  album: item?.title,
+                  album: lesson.music?.album.isNotEmpty == true
+                      ? lesson.music!.album
+                      : item?.title,
+                  artist: lesson.music?.artist,
+                  artUri: lesson.music?.coverPath == null
+                      ? null
+                      : Uri.file(lesson.music!.coverPath!),
                   duration: player.state.durationMs > 0
                       ? Duration(milliseconds: player.state.durationMs)
                       : null,
@@ -237,6 +260,11 @@ class VideoPlaybackSession extends BaseAudioHandler
             MediaItem(
               id: 'video:${player.lessons[i].id}',
               title: player.lessons[i].title,
+              artist: player.lessons[i].music?.artist,
+              album: player.lessons[i].music?.album,
+              artUri: player.lessons[i].music?.coverPath == null
+                  ? null
+                  : Uri.file(player.lessons[i].music!.coverPath!),
             ),
         ]);
       }
@@ -259,6 +287,7 @@ class VideoPlaybackSession extends BaseAudioHandler
             MediaAction.skipToPrevious,
             MediaAction.skipToNext,
             MediaAction.setShuffleMode,
+            MediaAction.setRepeatMode,
           },
           androidCompactActionIndices: const [0, 1, 2],
           processingState: player.loading
@@ -275,6 +304,13 @@ class VideoPlaybackSession extends BaseAudioHandler
           shuffleMode: player.shuffleEnabled
               ? AudioServiceShuffleMode.all
               : AudioServiceShuffleMode.none,
+          repeatMode: switch (player.current?.isAudio == true
+              ? player.repeatMode
+              : MusicRepeat.off) {
+            MusicRepeat.off => AudioServiceRepeatMode.none,
+            MusicRepeat.one => AudioServiceRepeatMode.one,
+            MusicRepeat.all => AudioServiceRepeatMode.all,
+          },
         ),
       );
       final nativePlaying =
@@ -324,10 +360,22 @@ class VideoPlaybackSession extends BaseAudioHandler
     await controller?.play();
   }
 
+  Future<void> handleInterruption(AudioInterruptionEvent event) async {
+    if (_disposed ||
+        audio != null && !identical(audio!.systemHandler.owner, this)) {
+      return;
+    }
+    await controller?.handleInterruption(event);
+  }
+
   @override
   Future<void> pause() async {
     await controller?.pause();
-    if (_audioSession != null) await _audioSession!.setActive(false);
+    if (_ownsSound &&
+        _audioSession != null &&
+        controller?.retainsAudioFocus != true) {
+      await _audioSession!.setActive(false);
+    }
   }
 
   @override
@@ -382,6 +430,16 @@ class VideoPlaybackSession extends BaseAudioHandler
   }
 
   @override
+  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
+    await controller?.setRepeat(switch (repeatMode) {
+      AudioServiceRepeatMode.one => MusicRepeat.one,
+      AudioServiceRepeatMode.all ||
+      AudioServiceRepeatMode.group => MusicRepeat.all,
+      _ => MusicRepeat.off,
+    });
+  }
+
+  @override
   Future<void> setSpeed(double speed) async {
     await controller?.setSpeed(speed);
   }
@@ -391,6 +449,7 @@ class VideoPlaybackSession extends BaseAudioHandler
   Future<void> _closeCurrent() async {
     final player = controller;
     if (player == null) return;
+    final ownedSound = _ownsSound;
     await player.close();
     player.removeListener(_changed);
     captions?.removeListener(_changed);
@@ -404,7 +463,9 @@ class VideoPlaybackSession extends BaseAudioHandler
     _publishedLesson = _pipState = null;
     _publishedOrder = null;
     audio?.systemHandler.release(this);
-    if (_audioSession != null) await _audioSession!.setActive(false);
+    if (ownedSound && _audioSession != null) {
+      await _audioSession!.setActive(false);
+    }
     if (miniWindow) {
       await window.setMiniWindow(false);
       miniWindow = false;
@@ -439,6 +500,7 @@ class VideoPlaybackSession extends BaseAudioHandler
       _work
           .then((_) => _closeCurrent())
           .catchError((Object _) async {
+            final ownedSound = _ownsSound;
             final player = controller;
             player?.removeListener(_changed);
             captions?.removeListener(_changed);
@@ -448,7 +510,9 @@ class VideoPlaybackSession extends BaseAudioHandler
             controller = null;
             captions = null;
             audio?.systemHandler.release(this);
-            if (_audioSession != null) await _audioSession!.setActive(false);
+            if (ownedSound && _audioSession != null) {
+              await _audioSession!.setActive(false);
+            }
             if (miniWindow) await window.setMiniWindow(false);
             await window.updatePlayback(
               playing: false,

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pepehub/data/database.dart';
@@ -89,6 +90,111 @@ class _Harness {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'back-to-back gain and permanent loss cannot strand or restart the player',
+    () async {
+      final h = _Harness();
+      await h.open();
+      addTearDown(h.close);
+      final begin = h.player.handleInterruption(
+        AudioInterruptionEvent(true, AudioInterruptionType.duck),
+      );
+      final end = h.player.handleInterruption(
+        AudioInterruptionEvent(false, AudioInterruptionType.duck),
+      );
+      await Future.wait([begin, end]);
+      expect(h.player.state.playing, isTrue);
+      final again = h.player.handleInterruption(
+        AudioInterruptionEvent(true, AudioInterruptionType.duck),
+      );
+      final permanent = h.player.handleInterruption(
+        AudioInterruptionEvent(true, AudioInterruptionType.unknown),
+      );
+      await Future.wait([again, permanent]);
+      await h.player.handleInterruption(
+        AudioInterruptionEvent(false, AudioInterruptionType.pause),
+      );
+      expect(h.player.state.playing, isFalse);
+    },
+  );
+  test('temporary focus pause retains its request and resumes at the same position', () async {
+    final h = _Harness();
+    await h.open();
+    addTearDown(h.close);
+    h.engine.tick(42000);
+    await h.player.handleInterruption(
+      AudioInterruptionEvent(true, AudioInterruptionType.duck),
+    );
+    expect(h.player.state.playing, isFalse);
+    expect(h.player.retainsAudioFocus, isTrue);
+    await h.player.handleInterruption(
+      AudioInterruptionEvent(true, AudioInterruptionType.duck),
+    );
+    await h.player.handleInterruption(
+      AudioInterruptionEvent(false, AudioInterruptionType.duck),
+    );
+    expect(h.player.state.playing, isTrue);
+    expect(h.player.positionMs, 42000);
+    expect(h.player.retainsAudioFocus, isFalse);
+  });
+  test(
+    'manual pause and permanent focus loss cancel a pending automatic resume',
+    () async {
+      final h = _Harness();
+      await h.open();
+      addTearDown(h.close);
+      await h.player.handleInterruption(
+        AudioInterruptionEvent(true, AudioInterruptionType.pause),
+      );
+      await h.player.pause();
+      expect(h.player.retainsAudioFocus, isFalse);
+      await h.player.handleInterruption(
+        AudioInterruptionEvent(false, AudioInterruptionType.pause),
+      );
+      expect(h.player.state.playing, isFalse);
+      await h.player.play();
+      await h.player.handleInterruption(
+        AudioInterruptionEvent(true, AudioInterruptionType.unknown),
+      );
+      await h.player.handleInterruption(
+        AudioInterruptionEvent(false, AudioInterruptionType.pause),
+      );
+      expect(h.player.state.playing, isFalse);
+      await h.player.play();
+      expect(h.player.state.playing, isTrue);
+    },
+  );
+  test('a late focus gain cannot bypass an expired sleep timer', () async {
+    final h = _Harness();
+    await h.open();
+    addTearDown(h.close);
+    await h.player.setSleepTimer(const Duration(seconds: 1));
+    await h.player.handleInterruption(
+      AudioInterruptionEvent(true, AudioInterruptionType.duck),
+    );
+    h.clock = 1500;
+    await h.player.handleInterruption(
+      AudioInterruptionEvent(false, AudioInterruptionType.duck),
+    );
+    expect(h.player.state.playing, isFalse);
+    h.timers.last.fire();
+    await h.player.flush();
+    expect(h.player.state.playing, isFalse);
+  });
+  test('manual source change discards the old interruption intent', () async {
+    final h = _Harness();
+    await h.open();
+    addTearDown(h.close);
+    await h.player.handleInterruption(
+      AudioInterruptionEvent(true, AudioInterruptionType.duck),
+    );
+    await h.player.load(1, play: false);
+    await h.player.handleInterruption(
+      AudioInterruptionEvent(false, AudioInterruptionType.duck),
+    );
+    expect(h.player.index, 1);
+    expect(h.player.state.playing, isFalse);
+  });
   test('audio in the background and visible PiP remain separate from hidden video time', () async {
     final h = _Harness();
     await h.open();

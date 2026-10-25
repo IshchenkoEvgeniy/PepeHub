@@ -1,4 +1,5 @@
 import 'media_formats.dart';
+import '../music/music_metadata.dart';
 
 enum VideoItemKind { video, course }
 
@@ -87,6 +88,7 @@ class VideoItem {
 }
 
 class VideoLesson {
+  final MusicMetadata? music;
   final String id, itemId, title, module, source, mediaVersion;
   final int ordinal;
   final int? durationMs;
@@ -103,6 +105,7 @@ class VideoLesson {
     this.durationMs,
     this.available = true,
     this.audio = false,
+    this.music,
   });
 
   bool get isAudio => audio || isMusicSource(source);
@@ -124,6 +127,11 @@ class VideoLesson {
         durationMs: data['durationMs'] as int?,
         available: data['available'] != false,
         audio: data['audio'] == true,
+        music: data['music'] is Map
+            ? MusicMetadata.fromJson(
+                Map<String, dynamic>.from(data['music'] as Map),
+              )
+            : null,
       );
 
   Map<String, dynamic> toJson() => {
@@ -137,6 +145,7 @@ class VideoLesson {
     'durationMs': durationMs,
     'available': available,
     'audio': isAudio,
+    if (music != null) 'music': music!.toJson(),
   };
 }
 
@@ -173,6 +182,7 @@ class VideoProgress {
 
 /// One continuous media range. The ID is retained while its checkpoint grows.
 class VideoInterval {
+  final String? mediaKind;
   final String id, sessionId, lessonId, mediaVersion;
   final VideoActivityMode mode;
   final DateTime startedAt;
@@ -190,6 +200,7 @@ class VideoInterval {
     required this.endMs,
     required this.wallMs,
     required this.speed,
+    this.mediaKind,
   });
 
   int get mediaMs => endMs - startMs;
@@ -211,6 +222,7 @@ class VideoInterval {
         endMs: data['endMs'] as int,
         wallMs: data['wallMs'] as int,
         speed: (data['speed'] as num).toDouble(),
+        mediaKind: data['mediaKind'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -227,6 +239,7 @@ class VideoInterval {
     'endMs': endMs,
     'wallMs': wallMs,
     'speed': speed,
+    if (mediaKind != null) 'mediaKind': mediaKind,
   };
 }
 

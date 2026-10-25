@@ -1,6 +1,6 @@
 # Обновления приложения через интернет
 
-Сборка **0.22.0+62**, 23 октября 2026. **Настройки → Обновление приложения → Проверить обновления**. Отдельный публичный репозиторий `IshchenkoEvgeniy/PepeHub-Releases` содержит только готовые Windows ZIP, Android APK и подписанный `update.json`. Исходники PepeHub и ключи в него не отправляются. Первая сборка с механизмом обновления — `0.21.0+52`.
+Сборка **0.22.1+63**, 25 октября 2026. **Настройки → Обновление приложения → Проверить обновления**. Отдельный публичный репозиторий `IshchenkoEvgeniy/PepeHub-Releases` содержит только готовые Windows ZIP, Android APK и подписанный `update.json`. Исходники PepeHub и ключи в него не отправляются. Первая сборка с механизмом обновления — `0.21.0+52`.
 
 ## Для пользователя
 
@@ -168,10 +168,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "<транзакция>\inst
 ```powershell
 Push-Location apps/pepehub
 $env:PEPEHUB_VERIFY_UPDATE_FEED = 'https://github.com/IshchenkoEvgeniy/PepeHub-Releases/releases/latest/download/update.json'
-$env:PEPEHUB_VERIFY_UPDATE_BUILD = '60'
+$env:PEPEHUB_VERIFY_UPDATE_BUILD = '63'
+$env:PEPEHUB_VERIFY_UPDATE_FROM_BUILD = '62'
+$env:PEPEHUB_VERIFY_UPDATE_FROM_VERSION = '0.22.0'
 flutter test test/update_public_acceptance_test.dart
 Remove-Item Env:PEPEHUB_VERIFY_UPDATE_FEED
 Remove-Item Env:PEPEHUB_VERIFY_UPDATE_BUILD
+Remove-Item Env:PEPEHUB_VERIFY_UPDATE_FROM_BUILD
+Remove-Item Env:PEPEHUB_VERIFY_UPDATE_FROM_VERSION
 Pop-Location
 ```
 

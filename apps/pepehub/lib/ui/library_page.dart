@@ -284,28 +284,28 @@ class _LibraryPageState extends State<LibraryPage> {
           ? await ReadingBookVisibility(widget.repository).deletedIds()
           : <String>{};
       final overrides = <String, String>{};
+      final flags = await widget.repository.metadataPrefixes(
+        readingSection
+            ? ['reading-library-hidden:']
+            : [
+                'audio-status-override:',
+                'audio-library-superseded:',
+                'audio-library-hidden:',
+              ],
+      );
       for (final book in allBooks) {
         if ((book.payload!['format'] != 'audio') != readingSection) continue;
         if (readingSection) {
           if (deleted.contains(book.id) ||
-              await widget.repository.meta(
-                    'reading-library-hidden:${book.id}',
-                  ) !=
-                  '1') {
+              flags['reading-library-hidden:${book.id}'] != '1') {
             b.add(book);
           }
           continue;
         }
-        final override = await widget.repository.meta(
-          'audio-status-override:${book.id}',
-        );
+        final override = flags['audio-status-override:${book.id}'];
         if (override != null) overrides[book.id] = override;
-        if (await widget.repository.meta(
-                  'audio-library-superseded:${book.id}',
-                ) !=
-                '1' &&
-            await widget.repository.meta('audio-library-hidden:${book.id}') !=
-                '1') {
+        if (flags['audio-library-superseded:${book.id}'] != '1' &&
+            flags['audio-library-hidden:${book.id}'] != '1') {
           b.add(book);
         }
       }

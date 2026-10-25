@@ -18,6 +18,13 @@ void main() {
   final expectedBuild = int.tryParse(
     Platform.environment['PEPEHUB_VERIFY_UPDATE_BUILD'] ?? '',
   );
+  final installedBuild =
+      int.tryParse(
+        Platform.environment['PEPEHUB_VERIFY_UPDATE_FROM_BUILD'] ?? '',
+      ) ??
+      52;
+  final installedVersion =
+      Platform.environment['PEPEHUB_VERIFY_UPDATE_FROM_VERSION'] ?? '0.21.0';
   test(
     'anonymous public feed verifies embedded key, resumes GitHub download and stages real Windows bundle',
     () async {
@@ -28,7 +35,7 @@ void main() {
       final service = UpdateService(
         repo,
         platform: FakeUpdatePlatform(
-          const UpdateAppInfo('0.21.0', 52, 'windows-x64'),
+          UpdateAppInfo(installedVersion, installedBuild, 'windows-x64'),
         ),
         observeLifecycle: false,
         directory: () async => cache,
@@ -43,12 +50,16 @@ void main() {
         if (expectedBuild != null) {
           expect(release.build, expectedBuild);
         }
-        expect(asset.versionCode, greaterThan(52));
+        expect(asset.versionCode, greaterThan(installedBuild));
         // The Android ABI code is distinct from the shared build number.
         final phone = UpdateService(
           repo,
           platform: FakeUpdatePlatform(
-            const UpdateAppInfo('0.21.0', 2052, 'android-arm64'),
+            UpdateAppInfo(
+              installedVersion,
+              installedBuild + 2000,
+              'android-arm64',
+            ),
           ),
           observeLifecycle: false,
           directory: () async => cache,

@@ -15,6 +15,8 @@ import 'peer_deletions_page.dart';
 import 'app_sync_review_page.dart';
 import 'peer_folder_files_page.dart';
 import 'peer_history_page.dart';
+import 'peer_qr.dart';
+import 'peer_folder_setup_page.dart';
 
 class PeerSyncPage extends StatefulWidget {
   final PeerSyncService service;
@@ -133,6 +135,7 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
                     'Код действует 5 минут и разрешает сопряжение одного устройства. Вставьте его в PepeHub на втором устройстве. Оба приложения должны быть открыты в одной сети.',
                   ),
                   const SizedBox(height: 16),
+                  PeerInvitationQr(code: code),
                   SelectableText(code, style: const TextStyle(fontSize: 12)),
                 ],
               ),
@@ -199,31 +202,20 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
   }
 
   Future<void> _add({PeerDevice? peer, Map<String, dynamic>? offer}) async {
-    if (!await _confirm(
-      'Общая папка',
-      'Выберите отдельную папку для обмена. Её содержимое объединится с папкой второго устройства. Входящее удаление файла потребует подтверждения на принимающем устройстве.',
-    )) {
-      return;
-    }
-    final root = await _pick();
-    if (root == null || !mounted) return;
-    final label =
-        offer?['name'] as String? ??
-        await _text('Название папки', '', 'Например: Английский');
-    if (label == null) return;
-    final library = await _libraryMode('all');
-    if (library == null) return;
-    final download = await _downloads();
-    if (download == null) return;
-    await service.addFolder(
-      root,
-      label,
-      id: offer?['id'] as String?,
-      sharedWith: peer == null ? {} : {peer.id},
-      library: library,
-      download: download,
+    final folder = await Navigator.push<PeerFolder>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PeerFolderSetupPage(
+          service: service,
+          pick: _pick,
+          peer: peer,
+          offer: offer,
+        ),
+      ),
     );
-    if (download == 'selected' && mounted) await _files(service.folders.last);
+    if (folder != null && folder.download == 'selected' && mounted) {
+      await _files(folder);
+    }
   }
 
   Future<void> _files(PeerFolder folder) => Navigator.push<void>(
@@ -232,52 +224,6 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
       builder: (_) => PeerFolderFilesPage(service: service, folder: folder),
     ),
   );
-  Future<String?> _downloads() async {
-    var value = 'none';
-    return showDialog<String>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, update) => AlertDialog(
-          title: const Text('Что скачивать на это устройство?'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Для большого курса можно выбрать отдельные уроки. Существующие локальные файлы остаются на месте.',
-                ),
-                for (final entry in const {
-                  'none': 'Только прогресс, заметки и другие данные',
-                  'selected': 'Выбранные файлы',
-                  'all': 'Всю папку целиком',
-                }.entries)
-                  ListTile(
-                    title: Text(entry.value),
-                    leading: Icon(
-                      value == entry.key
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                    ),
-                    onTap: () => update(() => value = entry.key),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, value),
-              child: const Text('Продолжить'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   static const _libraryLabels = {
     'none': 'Не подключать к библиотеке',
     'all': 'По содержимому: книги, аудио и видео',
@@ -603,6 +549,22 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
                       icon: const Icon(Icons.devices),
                       label: const Text('Вставить код'),
                     ),
+                    if (Platform.isAndroid)
+                      OutlinedButton.icon(
+                        onPressed: disabled || !service.loaded
+                            ? null
+                            : () => _run(() async {
+                                final code = await Navigator.push<String>(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const PeerQrScannerPage(),
+                                  ),
+                                );
+                                if (code != null) await service.pair(code);
+                              }),
+                        icon: const Icon(Icons.qr_code_scanner),
+                        label: const Text('Сканировать QR'),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 24),

@@ -10,6 +10,7 @@ import 'media_formats.dart';
 import 'video_activity.dart' show firstVideoCoverageCompletion;
 import 'video_annotations.dart';
 import 'video_subtitles.dart';
+import '../music/music_metadata.dart';
 
 class VideoSourceDraft {
   final String source, title, module;
@@ -191,6 +192,50 @@ class VideoRepository {
           'favorite': favorite,
         });
       });
+
+  Future<VideoLesson> saveMusicDetails(
+    VideoLesson lesson,
+    String title,
+    MusicMetadata metadata,
+  ) => repository.db.transaction(() async {
+    final current = await _checkLesson(lesson);
+    if (!current.isAudio ||
+        title.trim().isEmpty ||
+        title.runes.length > 300 ||
+        metadata.artist.runes.length > 500 ||
+        metadata.album.runes.length > 500 ||
+        (metadata.trackNumber != null &&
+            (metadata.trackNumber! < 1 || metadata.trackNumber! > 100000))) {
+      throw ArgumentError(
+        'Проверьте название, исполнителя, альбом и номер трека',
+      );
+    }
+    final row = (await repository.record(lesson.id))!;
+    final data = {
+      ...row.payload!,
+      'title': title.trim(),
+      'audio': true,
+      'music': metadata.toJson(),
+    };
+    if (jsonEncode(data) != jsonEncode(row.payload)) {
+      await _put('video_lesson', lesson.id, data);
+    }
+    return VideoLesson.fromJson(lesson.id, data);
+  });
+
+  Future<Map<String, dynamic>?> musicQueue(String itemId) async {
+    final value = await repository.meta('music-queue:$itemId');
+    if (value == null) return null;
+    try {
+      final decoded = jsonDecode(value);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  Future<void> saveMusicQueue(String itemId, Map<String, dynamic> value) =>
+      repository.setMeta('music-queue:$itemId', jsonEncode(value));
 
   static String structureToken(VideoItem item, List<VideoLesson> lessons) =>
       sha256
@@ -732,7 +777,10 @@ class VideoRepository {
             interval.speed <= 0) {
           throw ArgumentError('Некорректный интервал просмотра');
         }
-        await _put('video_interval', interval.id, interval.toJson());
+        await _put('video_interval', interval.id, {
+          ...interval.toJson(),
+          'mediaKind': lesson.isAudio ? 'music' : 'video',
+        });
       }
       await _put(
         'video_progress',
@@ -762,16 +810,29 @@ class VideoRepository {
     });
   }
 
-  Future<List<VideoInterval>> intervals({Set<String>? lessonIds}) async {
+  static const _mediaKind =
+      "COALESCE(json_extract(payload,'\$.mediaKind'),"
+      "(SELECT CASE WHEN json_extract(lesson.payload,'\$.audio')=1 THEN 'music' ELSE 'video' END "
+      "FROM records AS lesson WHERE lesson.id=json_extract(records.payload,'\$.lessonId') AND json_valid(lesson.payload) LIMIT 1),'video')";
+
+  Future<List<VideoInterval>> intervals({
+    Set<String>? lessonIds,
+    bool? music,
+    DateTime? start,
+  }) async {
     if (lessonIds?.isEmpty == true) return [];
     await ensureIndexes();
     final rows = await repository.db
         .customSelect(
           "SELECT id,payload FROM records WHERE type='video_interval' AND deleted=0 "
-          "${lessonIds == null ? '' : "AND json_extract(payload,'\$.lessonId') IN (${List.filled(lessonIds.length, '?').join(',')}) "}",
+          "${lessonIds == null ? '' : "AND json_extract(payload,'\$.lessonId') IN (${List.filled(lessonIds.length, '?').join(',')}) "}"
+          "${music == null ? '' : 'AND $_mediaKind=? '}"
+          "${start == null ? '' : "AND ($_intervalStart + json_extract(payload,'\$.wallMs'))>?"}",
           variables: [
             if (lessonIds != null)
               for (final id in lessonIds) Variable(id),
+            if (music != null) Variable(music ? 'music' : 'video'),
+            if (start != null) Variable(start.millisecondsSinceEpoch),
           ],
         )
         .get();
@@ -851,6 +912,7 @@ class VideoRepository {
   });
 
   Future<void> _recordCoverageMilestone(VideoLesson lesson) async {
+    if (lesson.isAudio) return;
     if (lesson.durationMs == null || lesson.durationMs! <= 0) return;
     final state = await learningState(lesson);
     if (state.coverageCompletedAt != null) return;
@@ -872,6 +934,7 @@ class VideoRepository {
   /// Keyset pagination retains a stable boundary even when a checkpoint grows.
   Future<VideoHistoryPage> history({
     Set<String>? lessonIds,
+    bool? music,
     DateTime? start,
     DateTime? end,
     VideoHistoryCursor? before,
@@ -882,6 +945,10 @@ class VideoRepository {
     await ensureIndexes();
     final where = <String>["type='video_interval'", 'deleted=0'];
     final values = <Variable>[];
+    if (music != null) {
+      where.add('$_mediaKind=?');
+      values.add(Variable(music ? 'music' : 'video'));
+    }
     if (lessonIds != null) {
       where.add(
         "json_extract(payload,'\$.lessonId') IN (${List.filled(lessonIds.length, '?').join(',')})",

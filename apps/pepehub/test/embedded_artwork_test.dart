@@ -43,6 +43,30 @@ void main() {
           ...frame,
         ]);
         expect(await embeddedArtwork(file.path), picture);
+        List<int> word(int value) =>
+            (ByteData(4)..setUint32(0, value)).buffer.asUint8List();
+        final mime = 'image/png'.codeUnits;
+        final flac = [
+          ...word(3),
+          ...word(mime.length),
+          ...mime,
+          ...word(0),
+          ...word(1),
+          ...word(1),
+          ...word(24),
+          ...word(0),
+          ...word(picture.length),
+          ...picture,
+        ];
+        await file.writeAsBytes([
+          ...'fLaC'.codeUnits,
+          0x86,
+          (flac.length >> 16) & 255,
+          (flac.length >> 8) & 255,
+          flac.length & 255,
+          ...flac,
+        ]);
+        expect(await embeddedArtwork(file.path), picture);
         await file.writeAsBytes(
           atom(
             'moov',

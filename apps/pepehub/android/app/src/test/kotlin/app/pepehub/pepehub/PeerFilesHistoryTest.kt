@@ -191,6 +191,32 @@ class PeerFilesHistoryTest {
     @Suppress("UNCHECKED_CAST")
     private fun history(policy: Map<String, Any?> = emptyMap(), migrate: Boolean = false, prune: Boolean = false, clear: Boolean = false) =
         run("history", mapOf("migrate" to migrate, "prune" to prune, "clear" to clear), policy) as Map<String, Any>
+    @Test fun metadataPreviewDoesNotOpenOrCreateFiles() {
+        provider.add("book.epub", byteArrayOf(1, 2))
+        val nested = provider.add("nested", directory = true).id
+        provider.add("song.mp3", byteArrayOf(3, 4, 5), parent = nested)
+        val ignored = provider.add(".pepehub", directory = true).id
+        provider.add("private", byteArrayOf(6), parent = ignored)
+        val before = provider.entries.keys.toSet()
+        provider.failOpen = true
+        val preview = run("preview") as Map<*, *>
+        assertEquals(2, preview["files"])
+        assertEquals(5L, preview["bytes"])
+        assertEquals(setOf("book.epub", "nested/song.mp3"), (preview["examples"] as List<*>).toSet())
+        assertEquals(before, provider.entries.keys.toSet())
+    }
+    @Test fun metadataPreviewRejectsInvalidPortableNamesWithoutWriting() {
+        provider.add("../invalid", byteArrayOf(1))
+        val before = provider.entries.keys.toSet()
+        assertThrows(Exception::class.java) { run("preview") }
+        assertEquals(before, provider.entries.keys.toSet())
+    }
+    @Test fun metadataPreviewFailsWhenProviderIsUnavailableWithoutWriting() {
+        provider.unavailableChildren = true
+        val before = provider.entries.keys.toSet()
+        assertThrows(Exception::class.java) { run("preview") }
+        assertEquals(before, provider.entries.keys.toSet())
+    }
     @Test fun disabledHistoryReplacesAndDeletesWithoutRetainingMedia() {
         provider.add("book.epub", byteArrayOf(1, 2))
         val stage = prepare(byteArrayOf(3, 4))

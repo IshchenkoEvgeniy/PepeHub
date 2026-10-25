@@ -316,6 +316,7 @@ class _HistoryVideos extends VideoRepository {
   _HistoryVideos(super.repository);
   @override
   Future<VideoHistoryPage> history({
+    bool? music,
     Set<String>? lessonIds,
     DateTime? start,
     DateTime? end,
@@ -324,6 +325,7 @@ class _HistoryVideos extends VideoRepository {
   }) {
     cursors.add(before);
     return super.history(
+      music: music,
       lessonIds: lessonIds,
       start: start,
       end: end,

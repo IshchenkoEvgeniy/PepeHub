@@ -339,6 +339,14 @@ class AppSyncMedia {
             'title': lesson.title,
             'module': lesson.module,
             'ordinal': lesson.ordinal,
+            if (lesson.isAudio) 'audio': true,
+            if (lesson.music != null)
+              'music': {
+                'artist': lesson.music!.artist,
+                'album': lesson.music!.album,
+                if (lesson.music!.trackNumber != null)
+                  'trackNumber': lesson.music!.trackNumber,
+              },
             'mediaVersion': versions[lesson.mediaVersion],
             'source': source,
           },
@@ -542,7 +550,22 @@ class AppSyncMedia {
         'ordinal': data['ordinal'],
         'mediaVersion': version,
         'durationMs': old?.payload?['durationMs'],
-        'audio': isMusicSource(source['path'] as String? ?? path ?? ''),
+        'audio':
+            data['audio'] == true ||
+            isMusicSource(
+              source['path'] as String? ??
+                  path ??
+                  source['name'] as String? ??
+                  '',
+            ),
+        if (data['music'] is Map)
+          'music': {
+            ...Map<String, dynamic>.from(data['music'] as Map),
+            if (old?.payload?['mediaVersion'] == version &&
+                old?.payload?['music'] is Map &&
+                old!.payload!['music']['coverPath'] != null)
+              'coverPath': old.payload!['music']['coverPath'],
+          },
         if (old?.payload?['mediaVersion'] != version) 'fileIdentity': null,
         'source':
             path ?? old?.payload?['source'] ?? 'pepehub-unavailable:$common',

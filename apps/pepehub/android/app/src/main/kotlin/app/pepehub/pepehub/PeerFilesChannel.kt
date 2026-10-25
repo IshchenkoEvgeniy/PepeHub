@@ -291,6 +291,29 @@ class PeerFilesChannel(contextSource: android.content.Context, messenger: Binary
     private fun execute(call: MethodCall): Any? {
         val tree = tree(call.argument<String>("root") ?: error("Нет папки"))
         if (call.method == "check") return null
+        if (call.method == "preview") {
+            var count = 0
+            var total = 0L
+            var visited = 0
+            val examples = mutableListOf<String>()
+            fun visit(parent: Uri, prefix: String, depth: Int) {
+                check(depth <= 32) { "В папке больше 32 уровней вложенности" }
+                for (entry in children(tree, parent)) {
+                    if (ignored(entry.name)) continue
+                    check(++visited <= 50000) { "Слишком много элементов в папке" }
+                    val relative = if (prefix.isEmpty()) entry.name else "$prefix/${entry.name}"
+                    path(relative)
+                    if (entry.directory) visit(entry.uri, relative, depth + 1)
+                    else {
+                        check(++count <= 10000) { "В общей папке допускается до 10000 файлов" }
+                        total += entry.bytes.coerceAtLeast(0)
+                        if (examples.size < 25) examples.add(relative)
+                    }
+                }
+            }
+            visit(root(tree), "", 0)
+            return mapOf("files" to count, "bytes" to total, "examples" to examples)
+        }
         if (call.method == "history") return History(tree, historyPolicy(call)).maintain(
             call.argument<Boolean>("migrate") == true, call.argument<Boolean>("prune") == true,
             call.argument<Boolean>("clear") == true)

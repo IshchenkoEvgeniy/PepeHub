@@ -25,6 +25,7 @@ import 'asset_store.dart';
 import 'audio_artwork.dart';
 import 'listening_clock.dart';
 import 'shared_media_handler.dart';
+import 'audio_focus.dart';
 
 class AudioController extends BaseAudioHandler with ChangeNotifier {
   final AssetStore assets;
@@ -231,6 +232,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   AudioProgress? _parkedProgress;
   bool _wasPlaying = false;
   bool _interrupted = false, _resumeAfterInterruption = false;
+  AudioInterruptionType? _interruptionType;
   int _interruptionGeneration = 0;
   int _sleepGeneration = 0;
   int? _sleepDeadlineMs;
@@ -499,16 +501,18 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         ),
       );
       final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.speech());
+      await session.configure(spokenAudioConfiguration);
       controller._subscriptions.add(
         session.interruptionEventStream.listen(
           (event) => unawaited(controller.handleInterruption(event)),
         ),
       );
       controller._subscriptions.add(
-        session.becomingNoisyEventStream.listen(
-          (_) => unawaited(controller.pause()),
-        ),
+        session.becomingNoisyEventStream.listen((_) {
+          if (identical(controller.systemHandler.owner, controller)) {
+            unawaited(controller.pause());
+          }
+        }),
       );
     }
     return controller;
@@ -959,25 +963,50 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   }
 
   Future<void> handleInterruption(AudioInterruptionEvent event) async {
+    // audio_session is shared with music/video. Only its current sound owner
+    // may respond; an inactive player must never pause or resume the other one.
+    if (!identical(systemHandler.owner, this) || _closed) return;
     if (event.begin) {
-      if (_interrupted) return;
+      if (_interrupted) {
+        if (event.type == AudioInterruptionType.unknown) {
+          _interruptionType = event.type;
+          _resumeAfterInterruption = false;
+          _interruptionGeneration++;
+        } else if (event.type == AudioInterruptionType.pause &&
+            _interruptionType == AudioInterruptionType.duck) {
+          _interruptionType = event.type;
+        }
+        return;
+      }
       _interrupted = true;
+      _interruptionType = event.type;
       _resumeAfterInterruption = playing;
       _interruptionGeneration++;
       if (playing) await _command(_pause);
     } else {
       final resume =
-          resumeAfterInterruption &&
+          (_interruptionType == AudioInterruptionType.duck ||
+              resumeAfterInterruption) &&
+          // iOS begins all interruptions as unknown; its end event supplies
+          // shouldResume. On Android unknown means permanent focus loss.
+          (_interruptionType != AudioInterruptionType.unknown ||
+              Platform.isIOS) &&
           _interrupted &&
           _resumeAfterInterruption &&
           event.type != AudioInterruptionType.unknown;
       final generation = _interruptionGeneration;
       _interrupted = false;
+      _interruptionType = null;
       _resumeAfterInterruption = false;
       if (resume && !_closed) {
-        await beforeBookPlayback?.call();
         await _command(() async {
-          if (generation == _interruptionGeneration && !_closed) await _play();
+          // A focus return keeps the existing owner. Re-running the handover
+          // hook could pause newly selected music while this action is queued.
+          if (generation == _interruptionGeneration &&
+              !_closed &&
+              identical(systemHandler.owner, this)) {
+            await _play();
+          }
         });
       }
     }

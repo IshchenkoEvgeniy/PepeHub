@@ -17,6 +17,19 @@ import 'text_book.dart';
 import 'pdf_support.dart';
 
 class ReadingLibrary {
+  static final _noteIndexes = Expando<Future<void>>();
+  static const _noteJson =
+      "CASE WHEN json_valid(value) THEN value ELSE '{}' END";
+  Future<void> _ensureNoteIndexes() =>
+      _noteIndexes[repository.db] ??= repository.db.transaction(() async {
+        for (final field in ['hash', 'bookId']) {
+          await repository.db.customStatement(
+            "CREATE INDEX IF NOT EXISTS reading_notes_$field ON metadata "
+            "(json_extract($_noteJson,'\$.$field')) "
+            "WHERE key>='reading-note:' AND key<'reading-note;'",
+          );
+        }
+      });
   final Repository repository;
   ReadingLibrary(this.repository);
   Future<Map<String, dynamic>> value(String key) async {
@@ -219,15 +232,26 @@ class ReadingLibrary {
   }
 
   Future<List<ReadingNote>> notes({String? hash, Set<String>? bookIds}) async {
-    final all = await entries('reading-note:');
-    final result = all.values
-        .map(ReadingNote.fromJson)
-        .where(
-          (n) =>
-              (hash == null || n.hash == hash) &&
-              (bookIds == null || bookIds.contains(n.bookId)),
+    if (bookIds?.isEmpty == true) return [];
+    await _ensureNoteIndexes();
+    final rows = await repository.db
+        .customSelect(
+          "SELECT value FROM metadata WHERE key>='reading-note:' AND key<'reading-note;' "
+          "${hash == null ? '' : "AND json_extract($_noteJson,'\$.hash')=? "}"
+          "${bookIds == null ? '' : "AND json_extract($_noteJson,'\$.bookId') IN (${List.filled(bookIds.length, '?').join(',')})"}",
+          variables: [
+            if (hash != null) Variable(hash),
+            if (bookIds != null)
+              for (final id in bookIds) Variable(id),
+          ],
         )
-        .toList();
+        .get();
+    final result = [
+      for (final row in rows)
+        ReadingNote.fromJson(
+          jsonDecode(row.read<String>('value')) as Map<String, dynamic>,
+        ),
+    ];
     result.sort((a, b) => b.updated.compareTo(a.updated));
     return result;
   }

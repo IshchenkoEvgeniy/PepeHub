@@ -436,7 +436,7 @@ void main() {
           await tester.tap(secondRow);
           await settle(tester);
           expect(session.controller!.index, 0);
-          await tester.tap(find.byTooltip('Закрыть панель урока'));
+          await tester.tap(find.byTooltip('Закрыть панель музыки'));
           await settle(tester);
           await screenshot('player');
           final position = session.controller!.positionMs;

@@ -1,11 +1,13 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 
 import '../../ui/audio_mini_player.dart';
 import 'app_sync_engine.dart';
 import 'app_sync_models.dart';
 import 'peer_service.dart';
+import 'app_sync_presentation.dart';
+import '../../reader/reading_library.dart';
+import '../../reader/reading_roots.dart';
+import '../../reader/text_book.dart';
 
 class AppSyncReviewPage extends StatefulWidget {
   final PeerSyncService service;
@@ -18,6 +20,7 @@ class _AppSyncReviewPageState extends State<AppSyncReviewPage> {
   List<AppSyncIssue> issues = [];
   bool loading = true;
   String? error;
+  Map<String, Map<String, dynamic>> readerIndexes = {};
   @override
   void initState() {
     super.initState();
@@ -31,9 +34,22 @@ class _AppSyncReviewPageState extends State<AppSyncReviewPage> {
       await app.refresh();
       await app.applyPending();
       final next = await app.issues();
+      final indexes = <String, Map<String, dynamic>>{};
+      for (final issue in next.where(
+        (issue) => issue.key.startsWith('position:reader:'),
+      )) {
+        final hash = issue.key.substring('position:reader:'.length);
+        try {
+          indexes[hash] = await ReadingLibrary(widget.service.store.repository)
+              .value('reading-index:$hash');
+        } catch (_) {
+          indexes[hash] = {};
+        }
+      }
       if (mounted) {
         setState(() {
           issues = next;
+          readerIndexes = indexes;
           error = null;
           loading = false;
         });
@@ -68,18 +84,153 @@ class _AppSyncReviewPageState extends State<AppSyncReviewPage> {
     final value = version.value;
     if (value == null) return 'Удалено на другом устройстве';
     if (version.key.startsWith('position:reader:')) {
-      return 'Глава ${(value['chapter'] as int) + 1}, смещение ${value['textOffset']}';
+      final hash = version.key.substring('position:reader:'.length);
+      return readerPositionDescription(value, readerIndexes[hash] ?? {});
     }
     if (version.key.startsWith('position:')) {
       final seconds = (value['positionMs'] as int) ~/ 1000;
       return '${seconds ~/ 3600}:${(seconds ~/ 60 % 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')} · ${value['speed']}×';
     }
-    final text = [
-      for (final field in ['title', 'front', 'back', 'body', 'text', 'name'])
-        if (value[field] is String) value[field] as String,
-    ].join('\n');
-    final result = text.isEmpty ? jsonEncode(value) : text;
-    return result.length > 1200 ? '${result.substring(0, 1200)}…' : result;
+    return appSyncDisplayFields(value).entries
+        .where((entry) => entry.key != 'Состояние')
+        .take(5)
+        .map((entry) => '${entry.key}: ${entry.value}')
+        .join('\n');
+  }
+
+  String _devices(AppSyncVersion version) => version.clock.keys
+      .map(
+        (id) => id == widget.service.deviceId
+            ? widget.service.name
+            : widget.service.devices
+                      .where((device) => device.id == id)
+                      .firstOrNull
+                      ?.name ??
+                  id.substring(0, 8),
+      )
+      .join(', ');
+
+  Widget _comparison(AppSyncIssue issue) {
+    final fields = appSyncChangedFields(issue.versions);
+    if (fields.isEmpty) return const SizedBox.shrink();
+    final values = [
+      for (final version in issue.versions) appSyncDisplayFields(version.value),
+    ];
+    return ExpansionTile(
+      title: Text('Сравнить изменения (${fields.length})'),
+      children: [
+        for (final field in fields)
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(field, style: Theme.of(context).textTheme.titleSmall),
+                for (var i = 0; i < issue.versions.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SelectableText(
+                          '${_devices(issue.versions[i])}\n${values[i][field] ?? 'Нет значения'}',
+                        ),
+                        if (values[i][field]?.endsWith('…') == true)
+                          TextButton(
+                            onPressed: () => showDialog<void>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: Text(
+                                  '$field · ${_devices(issue.versions[i])}',
+                                ),
+                                content: SizedBox(
+                                  width: 700,
+                                  child: SingleChildScrollView(
+                                    child: SelectableText(
+                                      appSyncDisplayFields(
+                                            issue.versions[i].value,
+                                            complete: true,
+                                          )[field] ??
+                                          'Нет значения',
+                                    ),
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: const Text('Закрыть'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            child: const Text('Показать полностью'),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<String> _context(AppSyncVersion version) async {
+    final assets = widget.service.assets;
+    if (assets == null || version.value == null) {
+      return 'Файл книги недоступен на этом устройстве.';
+    }
+    final hash = version.key.substring('position:reader:'.length);
+    final asset = await assets.byHash(hash);
+    if (asset == null) {
+      return 'Добавьте тот же файл книги на это устройство, чтобы увидеть фрагмент.';
+    }
+    if (asset.filename.toLowerCase().endsWith('.pdf')) {
+      return 'Для PDF сравните номера страниц и откройте документ в читалке.';
+    }
+    final readable = await ReadingRoots(assets).forReading(asset);
+    final book = await loadTextBook(readable.path, readable.filename);
+    final chapter = version.value!['chapter'] as int;
+    if (chapter < 0 || chapter >= book.chapters.length) {
+      return 'Эта глава отсутствует в локальном файле.';
+    }
+    final text = book.chapters[chapter].paragraphs.join('\n\n');
+    return '${book.chapters[chapter].title}\n\n${readerPositionContext(text, version.value!['textOffset'] as int)}';
+  }
+
+  Future<void> _showContext(AppSyncVersion version) async {
+    final future = _context(version);
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(_preview(version)),
+        content: SizedBox(
+          width: 600,
+          child: FutureBuilder<String>(
+            future: future,
+            builder: (context, snapshot) =>
+                snapshot.connectionState != ConnectionState.done
+                ? const SizedBox(
+                    height: 80,
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                : SingleChildScrollView(
+                    child: SelectableText(
+                      snapshot.hasError
+                          ? 'Не удалось открыть фрагмент. Файл и спорные позиции сохранены.'
+                          : snapshot.data ?? '',
+                    ),
+                  ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Закрыть'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _choose(AppSyncIssue issue, AppSyncVersion version) async {
@@ -231,6 +382,7 @@ class _AppSyncReviewPageState extends State<AppSyncReviewPage> {
                                   ? 'Ожидает источника или применения'
                                   : 'Есть независимые версии',
                             ),
+                            _comparison(issue),
                             for (final version in issue.versions)
                               Padding(
                                 padding: const EdgeInsets.only(top: 14),
@@ -238,6 +390,15 @@ class _AppSyncReviewPageState extends State<AppSyncReviewPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(_preview(version)),
+                                    if (version.key.startsWith(
+                                          'position:reader:',
+                                        ) &&
+                                        version.value != null)
+                                      TextButton.icon(
+                                        onPressed: () => _showContext(version),
+                                        icon: const Icon(Icons.menu_book),
+                                        label: const Text('Показать фрагмент'),
+                                      ),
                                     const SizedBox(height: 6),
                                     Text(
                                       'Устройства версии: ${version.clock.keys.map((id) => id == widget.service.deviceId ? widget.service.name : widget.service.devices.where((d) => d.id == id).firstOrNull?.name ?? id.substring(0, 8)).join(', ')}',

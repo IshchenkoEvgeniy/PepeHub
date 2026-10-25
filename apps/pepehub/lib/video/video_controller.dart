@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:audio_session/audio_session.dart';
 
 import '../data/repository.dart' show uuid;
 import 'models.dart';
@@ -9,6 +10,7 @@ import 'video_activity.dart';
 import 'video_engine.dart';
 import 'video_repository.dart';
 import 'video_tools.dart';
+import '../music/music_metadata.dart';
 
 class VideoPlaybackController extends ChangeNotifier {
   final VideoRepository repository;
@@ -22,24 +24,104 @@ class VideoPlaybackController extends ChangeNotifier {
   final DateTime Function() now;
   final Timer Function(Duration, void Function()) createSleepTimer;
   final Random _random;
-  late final List<int> _originalOrder = List.unmodifiable(
+  late List<int> _originalOrder = List.unmodifiable(
     List.generate(lessons.length, (i) => i),
   );
-  late final List<int> _musicOrder = [
-    for (var i = 0; i < lessons.length; i++)
+  List<int> get _musicOrder => [
+    for (final i in _originalOrder)
       if (lessons[i].isAudio && lessons[i].available) i,
   ];
   List<int> _shuffledOrder = const [];
   bool _shuffleEnabled = false;
   int _shuffleCursor = 0;
+  bool _queueRestored = false;
+  bool _focusInterrupted = false, _resumeFocus = false;
+  AudioInterruptionType? _focusType;
+  int _focusRevision = 0;
+  bool get retainsAudioFocus =>
+      _focusInterrupted &&
+      _resumeFocus &&
+      _focusType != AudioInterruptionType.unknown;
+
+  void _cancelFocusResume() {
+    _resumeFocus = false;
+    _focusRevision++;
+  }
+
+  void _clearFocusInterruption() {
+    _cancelFocusResume();
+    _focusInterrupted = false;
+    _focusType = null;
+  }
+
+  /// Pause briefly without abandoning the OS request that delivers focus gain.
+  /// Manual actions, timer expiry and a replaced source invalidate this intent.
+  Future<void> handleInterruption(AudioInterruptionEvent event) async {
+    if (_closed || _closing || current == null) return;
+    if (event.begin) {
+      if (_focusInterrupted) {
+        if (event.type == AudioInterruptionType.unknown) {
+          _focusType = event.type;
+          _cancelFocusResume();
+          await _command(() async {
+            if (state.playing) {
+              _stopLoop();
+              await _pausePlayback();
+            }
+          });
+        }
+        return;
+      }
+      _focusInterrupted = true;
+      _focusType = event.type;
+      _resumeFocus =
+          state.playing && event.type != AudioInterruptionType.unknown;
+      final revision = ++_focusRevision;
+      await _command(() async {
+        if (_focusInterrupted && revision == _focusRevision && state.playing) {
+          _stopLoop();
+          await _pausePlayback();
+        }
+      });
+    } else {
+      final resume =
+          _focusInterrupted &&
+          _resumeFocus &&
+          event.type != AudioInterruptionType.unknown &&
+          (_sleepDeadline == null || nowMonotonic() < _sleepDeadline!);
+      final revision = _focusRevision;
+      _focusInterrupted = false;
+      _resumeFocus = false;
+      _focusType = null;
+      if (resume) {
+        await _command(() async {
+          if (revision == _focusRevision &&
+              !_closed &&
+              !_closing &&
+              (_sleepDeadline == null || nowMonotonic() < _sleepDeadline!)) {
+            await _play();
+          }
+        });
+      }
+    }
+  }
+
+  MusicRepeat repeatMode = MusicRepeat.off;
   bool get shuffleEnabled => _shuffleEnabled;
   bool get canShuffle => _musicOrder.length > 1;
   List<int> get playbackOrder =>
       _shuffleEnabled ? _shuffledOrder : _originalOrder;
-  int get queueIndex => _shuffleEnabled ? _shuffleCursor : index;
-  bool get canGoNext => queueIndex + 1 < playbackOrder.length;
+  int get queueIndex =>
+      _shuffleEnabled ? _shuffleCursor : _originalOrder.indexOf(index);
+  bool get canGoNext =>
+      queueIndex + 1 < playbackOrder.length ||
+      current?.isAudio == true &&
+          repeatMode == MusicRepeat.all &&
+          playbackOrder.isNotEmpty;
   bool get canGoPrevious => queueIndex > 0;
-  int? get _nextIndex => canGoNext ? playbackOrder[queueIndex + 1] : null;
+  int? get _nextIndex => !canGoNext
+      ? null
+      : playbackOrder[(queueIndex + 1) % playbackOrder.length];
   int? get _previousIndex =>
       canGoPrevious ? playbackOrder[queueIndex - 1] : null;
   final VideoActivitySampler sampler = VideoActivitySampler();
@@ -248,7 +330,9 @@ class VideoPlaybackController extends ChangeNotifier {
             extra: {'sessionId': session},
           );
           // Music playlists advance; courses retain their existing lesson behavior.
-          final nextIndex = _nextIndex;
+          final nextIndex = repeatMode == MusicRepeat.one && lesson.isAudio
+              ? index
+              : _nextIndex;
           if (!sleepAtEnd &&
               lesson.isAudio &&
               _playAllowed &&
@@ -283,8 +367,10 @@ class VideoPlaybackController extends ChangeNotifier {
     return operation;
   }
 
-  Future<void> load(int nextIndex, {bool play = true}) =>
-      _command(() => _load(nextIndex, play: play));
+  Future<void> load(int nextIndex, {bool play = true}) => _command(() async {
+    await _restoreQueue();
+    await _load(nextIndex, play: play);
+  });
   Future<void> next() => _command(() async {
     final target = _nextIndex;
     if (target != null) await _load(target);
@@ -303,13 +389,136 @@ class VideoPlaybackController extends ChangeNotifier {
       _shuffleCursor = 0;
     }
     _shuffleEnabled = enabled;
+    await _saveQueue();
+    _notify();
+  });
+
+  Future<void> setRepeat(MusicRepeat mode) => _command(() async {
+    if (current?.isAudio != true) return;
+    repeatMode = mode;
+    await _saveQueue();
+    _notify();
+  });
+
+  Future<void> reorderQueue(int from, int to) => _command(() async {
+    if (current?.isAudio != true) return;
+    final order = [...playbackOrder];
+    if (from < 0 || from >= order.length || to < 0 || to >= order.length) {
+      throw RangeError('Позиция в очереди');
+    }
+    order.insert(to, order.removeAt(from));
+    await _replaceQueue(order);
+  });
+
+  Future<void> playNext(int lessonIndex) => _command(() async {
+    if (lessonIndex < 0 ||
+        lessonIndex >= lessons.length ||
+        !lessons[lessonIndex].isAudio ||
+        !lessons[lessonIndex].available) {
+      throw ArgumentError('Выберите доступный музыкальный трек');
+    }
+    if (current?.isAudio != true || lessonIndex == index) return;
+    final order = [...playbackOrder]..remove(lessonIndex);
+    order.insert(order.indexOf(index) + 1, lessonIndex);
+    await _replaceQueue(order);
+  });
+
+  Future<void> removeFromQueue(int lessonIndex) => _command(() async {
+    if (current?.isAudio != true || lessonIndex == index) return;
+    _originalOrder = List.unmodifiable(
+      _originalOrder.where((i) => i != lessonIndex),
+    );
+    await _replaceQueue([...playbackOrder]..remove(lessonIndex));
+  });
+
+  Future<void> _replaceQueue(List<int> order) async {
+    if (_shuffleEnabled) {
+      _shuffledOrder = List.unmodifiable(order);
+      _shuffleCursor = order.indexOf(index);
+      _originalOrder = List.unmodifiable([
+        ..._originalOrder,
+        ...order.where((i) => !_originalOrder.contains(i)),
+      ]);
+    } else {
+      _originalOrder = List.unmodifiable(order);
+    }
+    await _saveQueue();
+    _notify();
+  }
+
+  Future<void> _restoreQueue() async {
+    if (_queueRestored || lessons.isEmpty) return;
+    _queueRestored = true;
+    final saved = await repository.musicQueue(lessons.first.itemId);
+    if (saved == null || saved['version'] != 1) return;
+    final byId = {for (var i = 0; i < lessons.length; i++) lessons[i].id: i};
+    List<int> decode(Object? raw) => raw is! List
+        ? []
+        : [
+            for (final id in raw.whereType<String>().toSet())
+              if (byId[id] != null && lessons[byId[id]!].available) byId[id]!,
+          ];
+    final base = decode(saved['base']), shuffled = decode(saved['order']);
+    final known = saved['known'] is List
+        ? (saved['known'] as List).toSet()
+        : <Object?>{};
+    final added = [
+      for (var i = 0; i < lessons.length; i++)
+        if (!known.contains(lessons[i].id) && lessons[i].available) i,
+    ];
+    if (saved['base'] is List) {
+      _originalOrder = List.unmodifiable([...base, ...added]);
+    }
+    if (saved['shuffle'] == true && shuffled.isNotEmpty) {
+      _shuffledOrder = List.unmodifiable([
+        ...shuffled,
+        ...added.where((i) => lessons[i].isAudio && lessons[i].available),
+      ]);
+      _shuffleEnabled = true;
+    }
+    repeatMode = MusicRepeat.values.firstWhere(
+      (mode) => mode.name == saved['repeat'],
+      orElse: () => MusicRepeat.off,
+    );
+  }
+
+  Future<void> _saveQueue() async {
+    if (current?.isAudio != true || lessons.isEmpty) return;
+    await repository.saveMusicQueue(lessons.first.itemId, {
+      'version': 1,
+      'shuffle': _shuffleEnabled,
+      'repeat': repeatMode.name,
+      'current': current!.id,
+      'known': [for (final lesson in lessons) lesson.id],
+      'base': [for (final i in _originalOrder) lessons[i].id],
+      'order': [for (final i in playbackOrder) lessons[i].id],
+    });
+  }
+
+  Future<void> updateMusicDetails(
+    String title,
+    MusicMetadata metadata, {
+    String? lessonId,
+    String? mediaVersion,
+  }) => _command(() async {
+    final lesson = current;
+    if (lesson == null || !lesson.isAudio) return;
+    if (lessonId != null && lesson.id != lessonId ||
+        mediaVersion != null && lesson.mediaVersion != mediaVersion) {
+      throw StateError('Трек изменился. Откройте сведения заново.');
+    }
+    final updated = await repository.saveMusicDetails(lesson, title, metadata);
+    lessons[index] = current = updated;
     _notify();
   });
   Future<void> _load(int nextIndex, {bool play = true}) async {
+    _clearFocusInterruption();
     if (nextIndex < 0 || nextIndex >= lessons.length) return;
     if (!lessons[nextIndex].available) {
       throw StateError(
-        'Урок недоступен. Обновите или переподключите папку курса',
+        lessons[nextIndex].isAudio
+            ? 'Трек недоступен. Обновите или переподключите папку музыки'
+            : 'Урок недоступен. Обновите или переподключите папку курса',
       );
     }
     _stopLoop(clear: true);
@@ -330,6 +539,16 @@ class VideoPlaybackController extends ChangeNotifier {
       // new engine's position as progress for the previous lesson.
       current = null;
       index = nextIndex;
+      if (lesson.isAudio && !playbackOrder.contains(nextIndex)) {
+        if (_shuffleEnabled) {
+          _shuffledOrder = List.unmodifiable([..._shuffledOrder, nextIndex]);
+          if (!_originalOrder.contains(nextIndex)) {
+            _originalOrder = List.unmodifiable([..._originalOrder, nextIndex]);
+          }
+        } else {
+          _originalOrder = List.unmodifiable([..._originalOrder, nextIndex]);
+        }
+      }
       if (_shuffleEnabled) {
         if (lesson.isAudio) {
           _shuffleCursor = _shuffledOrder.indexOf(nextIndex);
@@ -344,6 +563,31 @@ class VideoPlaybackController extends ChangeNotifier {
         speed: saved?.speed ?? 1,
       );
       current = lesson;
+      if (lesson.isAudio) {
+        try {
+          final tags = await engine.readMusicMetadata(lesson);
+          if (tags != null) {
+            final existing = lesson.music;
+            final merged = MusicMetadata(
+              artist: existing?.artist.isNotEmpty == true
+                  ? existing!.artist
+                  : tags.$2.artist,
+              album: existing?.album.isNotEmpty == true
+                  ? existing!.album
+                  : tags.$2.album,
+              trackNumber: existing?.trackNumber ?? tags.$2.trackNumber,
+              coverPath: existing?.coverPath ?? tags.$2.coverPath,
+            );
+            lessons[index] = current = await repository.saveMusicDetails(
+              lesson,
+              existing == null && tags.$1.isNotEmpty ? tags.$1 : lesson.title,
+              merged,
+            );
+          }
+        } catch (_) {
+          /* Optional tags must never prevent playback. */
+        }
+      }
       final nextAudioOnly = lesson.isAudio || _requestedAudioOnly;
       await engine.setAudioOnly(nextAudioOnly);
       audioOnly = nextAudioOnly;
@@ -359,6 +603,7 @@ class VideoPlaybackController extends ChangeNotifier {
         await engine.play();
       }
       await _event(lesson, 'open', positionMs);
+      await _saveQueue();
     } finally {
       loading = false;
       _transition = false;
@@ -368,10 +613,21 @@ class VideoPlaybackController extends ChangeNotifier {
     }
   }
 
-  Future<void> toggle() => _command(() => state.playing ? _pause() : _play());
-  Future<void> play() => _command(_play);
+  Future<void> toggle() => _command(() async {
+    if (state.playing) {
+      await _pause();
+    } else {
+      _clearFocusInterruption();
+      await _play();
+    }
+  });
+  Future<void> play() {
+    _clearFocusInterruption();
+    return _command(_play);
+  }
+
   Future<void> _play() async {
-    if (current == null || !_playAllowed) return;
+    if (current == null || !_playAllowed || _focusInterrupted) return;
     if (loopWaiting) _stopLoop();
     await beforePlaying?.call();
     _boundary();
@@ -388,8 +644,13 @@ class VideoPlaybackController extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> pause() => _command(_pause);
+  Future<void> pause() {
+    _cancelFocusResume();
+    return _command(_pause);
+  }
+
   Future<void> _pause() async {
+    _cancelFocusResume();
     _stopLoop();
     await _pausePlayback();
   }
@@ -740,6 +1001,7 @@ class VideoPlaybackController extends ChangeNotifier {
       intervals: pending,
       durationMs: state.durationMs > 0 ? state.durationMs : null,
     );
+    await _saveQueue();
     for (final interval in pending) {
       if (identical(_unwritten[interval.id], interval)) {
         _unwritten.remove(interval.id);
@@ -754,6 +1016,7 @@ class VideoPlaybackController extends ChangeNotifier {
   });
 
   Future<void> close() {
+    _clearFocusInterruption();
     if (_closed) return Future.value();
     final previous = _closeFuture;
     if (previous != null) return previous;

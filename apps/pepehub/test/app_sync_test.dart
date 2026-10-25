@@ -20,6 +20,7 @@ import 'package:pepehub/sync/peer/app_sync_usage.dart';
 import 'package:pepehub/sync/peer/peer_models.dart';
 import 'package:pepehub/video/models.dart';
 import 'package:pepehub/video/video_repository.dart';
+import 'package:pepehub/music/music_metadata.dart';
 import 'package:pepehub/vocabulary/vocabulary_repository.dart';
 
 import 'peer_sync_test.dart' show ReplicaFixture, deviceA, deviceB;
@@ -132,6 +133,69 @@ void main() {
   tearDown(() async {
     await a.close();
     await b.close();
+  });
+
+  test('music sync preserves tags and interval type but never exports a local cover path', () async {
+    await a.files.write('song.mp3', [1, 2, 3, 4]);
+    await a.files.replica.scan();
+    final item = await a.videos.addSources(
+      title: 'Music',
+      sources: [
+        VideoSourceDraft(p.join(a.files.root.path, 'song.mp3'), 'Song'),
+      ],
+    );
+    final song = (await a.videos.lessons(itemId: item.id)).single;
+    final tagged = await a.videos.saveMusicDetails(
+      song,
+      'Tagged song',
+      const MusicMetadata(
+        artist: 'Artist',
+        album: 'Album',
+        trackNumber: 3,
+        coverPath: 'C:/private-local-cover.png',
+      ),
+    );
+    await a.videos.checkpoint(
+      lesson: tagged,
+      progress: VideoProgress(
+        lessonId: tagged.id,
+        mediaVersion: tagged.mediaVersion,
+        positionMs: 1000,
+        speed: 1,
+        updatedAt: DateTime.now(),
+      ),
+      intervals: [
+        VideoInterval(
+          id: uuid.v4(),
+          sessionId: uuid.v4(),
+          lessonId: tagged.id,
+          mediaVersion: tagged.mediaVersion,
+          mode: VideoActivityMode.audio,
+          startedAt: DateTime.now().toUtc(),
+          offsetMinutes: 0,
+          startMs: 0,
+          endMs: 1000,
+          wallMs: 1000,
+          speed: 1,
+        ),
+      ],
+    );
+    await a.app.refresh();
+    final versions = await a.store.heads();
+    expect(
+      jsonEncode(versions.map((version) => version.toJson()).toList()),
+      isNot(contains('private-local-cover')),
+    );
+    await b.files.receive(a.files);
+    await b.pull(a);
+    final received = (await b.videos.lessons()).single;
+    expect(received.isAudio, isTrue);
+    expect(received.music!.artist, 'Artist');
+    expect(received.music!.album, 'Album');
+    expect(received.music!.trackNumber, 3);
+    expect(received.music!.coverPath, isNull);
+    expect((await b.videos.intervals(music: true)).single.mediaKind, 'music');
+    expect(await b.videos.intervals(music: false), isEmpty);
   });
   test('direct sessions and their Obsidian mirrors deduplicate, including after deletion', () async {
     final first = await a.book(), second = await b.book();

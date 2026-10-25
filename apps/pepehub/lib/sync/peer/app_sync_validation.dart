@@ -54,6 +54,21 @@ void validateAppSyncData(AppSyncVersion version) {
       require(data['source'] is Map);
       source(data['source'] as Map);
       require((data['source'] as Map)['hash'] == data['mediaVersion']);
+      if (data.containsKey('audio')) require(data['audio'] is bool);
+      if (data.containsKey('music')) {
+        require(data['audio'] == true && data['music'] is Map);
+        final music = data['music'] as Map;
+        require(
+          text(music['artist'], 500, empty: true) &&
+              text(music['album'], 500, empty: true),
+        );
+        if (music.containsKey('trackNumber')) {
+          require(
+            integer(music['trackNumber'], 100000) && music['trackNumber'] > 0,
+          );
+        }
+        require(music.keys.every({'artist', 'album', 'trackNumber'}.contains));
+      }
       require(
         data.keys.every(
           {
@@ -63,6 +78,8 @@ void validateAppSyncData(AppSyncVersion version) {
             'ordinal',
             'mediaVersion',
             'source',
+            'audio',
+            'music',
           }.contains,
         ),
       );
@@ -167,6 +184,10 @@ void validateAppSyncData(AppSyncVersion version) {
         (data['wallMs'] as int) > 0 &&
             (data['endMs'] as int) > (data['positionMs'] as int),
       );
+    }
+  } else if (key.startsWith('record:video_interval:')) {
+    if (data.containsKey('mediaKind')) {
+      require(['music', 'video'].contains(data['mediaKind']));
     }
   } else if (key == 'meta:reading-daily-goal') {
     require(integer(data['setting'], 1440));

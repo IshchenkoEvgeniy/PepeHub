@@ -136,6 +136,27 @@ class Repository {
               )
               .getSingleOrNull())
           ?.read<String>('value');
+
+  /// A fixed number of indexed queries, independent of the library size.
+  Future<Map<String, String>> metadataPrefixes(List<String> prefixes) async {
+    if (prefixes.isEmpty) return {};
+    final rows = await db
+        .customSelect(
+          'SELECT key,value FROM metadata WHERE ${List.filled(prefixes.length, '(key>=? AND key<?)').join(' OR ')}',
+          variables: [
+            for (final prefix in prefixes) ...[
+              Variable(prefix),
+              Variable('$prefix\uffff'),
+            ],
+          ],
+        )
+        .get();
+    return {
+      for (final row in rows)
+        row.read<String>('key'): row.read<String>('value'),
+    };
+  }
+
   Future<void> setMeta(String key, String value) => db.customStatement(
     'INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
     [key, value],

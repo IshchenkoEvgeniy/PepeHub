@@ -53,9 +53,9 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
     final request = ++_request;
     historyLoading = false;
     try {
-      final nextLessons = await widget.repository.lessons(
+      final nextLessons = (await widget.repository.lessons(
         itemId: widget.item?.id,
-      );
+      )).where((lesson) => !lesson.isAudio).toList();
       final now = widget.now();
       final ids = widget.item == null
           ? null
@@ -72,7 +72,7 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
         analyzeVideoDashboard,
         VideoDashboardRequest(
           VideoAnalysisRequest(
-            await widget.repository.intervals(),
+            await widget.repository.intervals(music: false),
             lessonIds: ids,
             start: start,
             end: end,
@@ -82,6 +82,7 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
         ),
       );
       final firstPage = await widget.repository.history(
+        music: false,
         lessonIds: ids,
         start: start,
         end: end,
@@ -114,6 +115,7 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
     setState(() => historyLoading = true);
     try {
       final next = await widget.repository.history(
+        music: false,
         lessonIds: _historyLessons,
         start: _historyStart,
         end: _historyEnd,
@@ -187,7 +189,7 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
     return Scaffold(
       bottomNavigationBar: const AudioPlayerFooter(),
       appBar: AppBar(
-        title: Text(widget.item?.title ?? 'Статистика медиа'),
+        title: Text(widget.item?.title ?? 'Статистика видео и курсов'),
         actions: [
           IconButton(
             tooltip: 'Цели и порог просмотра',

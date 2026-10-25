@@ -18,6 +18,7 @@ import 'video_folder_dialog.dart';
 import 'video_session.dart';
 import '../vocabulary/vocabulary_page.dart';
 import '../vocabulary/vocabulary_repository.dart';
+import '../music/music_statistics_page.dart';
 
 class VideoLibraryPage extends StatefulWidget {
   final VideoRepository repository;
@@ -40,7 +41,8 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
   List<VideoLesson> lessons = [];
   Map<String, VideoProgress> progress = {};
   bool loading = true, busy = false, favorites = false;
-  String query = '', mediaFilter = 'all';
+  String query = '', mediaFilter = 'video';
+  bool _filterLoaded = false;
   String? error;
   int _request = 0;
   @override
@@ -59,6 +61,13 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
   Future<void> _load() async {
     final request = ++_request;
     try {
+      if (!_filterLoaded) {
+        mediaFilter =
+            await widget.repository.repository.meta('media-section') == 'music'
+            ? 'music'
+            : 'video';
+        _filterLoaded = true;
+      }
       final nextItems = await widget.repository.items();
       final nextLessons = await widget.repository.lessons();
       final nextProgress = await widget.repository.allProgress();
@@ -135,6 +144,10 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
       sources: confirmed.sources,
       root: confirmed.root,
     );
+    mediaFilter = confirmed.sources.every((source) => source.isAudio)
+        ? 'music'
+        : 'video';
+    await widget.repository.repository.setMeta('media-section', mediaFilter);
     await _load();
   });
 
@@ -145,12 +158,14 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
     );
     if (draft == null) return;
     await widget.repository.addSources(title: draft.title, sources: [draft]);
+    mediaFilter = draft.isAudio ? 'music' : 'video';
+    await widget.repository.repository.setMeta('media-section', mediaFilter);
     await _load();
   });
 
   VideoProgress? _recent(VideoItem item) {
     VideoProgress? recent;
-    for (final lesson in lessons.where((l) => l.itemId == item.id)) {
+    for (final lesson in _sectionLessons(item)) {
       final saved = progress[lesson.id];
       if (saved != null &&
           saved.mediaVersion == lesson.mediaVersion &&
@@ -161,8 +176,17 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
     return recent;
   }
 
+  Iterable<VideoLesson> _sectionLessons(VideoItem item) => lessons.where(
+    (lesson) =>
+        lesson.itemId == item.id && lesson.isAudio == (mediaFilter == 'music'),
+  );
+
   Future<void> _open(VideoItem item) => _run(() async {
-    final own = lessons.where((l) => l.itemId == item.id).toList();
+    final own = lessons
+        .where(
+          (l) => l.itemId == item.id && l.isAudio == (mediaFilter == 'music'),
+        )
+        .toList();
     if (own.isEmpty) return;
     if (item.kind == VideoItemKind.course &&
         !own.every((lesson) => lesson.isAudio)) {
@@ -177,6 +201,22 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
         ),
       );
     } else {
+      final savedQueue = own.every((lesson) => lesson.isAudio)
+          ? await widget.repository.musicQueue(item.id)
+          : null;
+      final remembered = own.indexWhere(
+        (lesson) => lesson.available && lesson.id == savedQueue?['current'],
+      );
+      final recent = own.indexWhere(
+        (lesson) => lesson.available && lesson.id == _recent(item)?.lessonId,
+      );
+      final first = own.indexWhere((lesson) => lesson.available);
+      if (first < 0) {
+        throw StateError(
+          'Нет доступных источников. Обновите или переподключите папку.',
+        );
+      }
+      if (!mounted) return;
       await Navigator.push<void>(
         context,
         MaterialPageRoute(
@@ -184,9 +224,11 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
             repository: widget.repository,
             item: item,
             lessons: own,
-            initialIndex: own
-                .indexWhere((lesson) => lesson.id == _recent(item)?.lessonId)
-                .clamp(0, own.length - 1),
+            initialIndex: remembered >= 0
+                ? remembered
+                : recent >= 0
+                ? recent
+                : first,
             beforePlaying: widget.audio?.pause,
           ),
         ),
@@ -203,20 +245,20 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
             .where(
               (item) =>
                   (!favorites || item.favorite) &&
-                  (mediaFilter == 'all' ||
-                      lessons.any(
-                        (lesson) =>
-                            lesson.itemId == item.id &&
-                            lesson.isAudio == (mediaFilter == 'music'),
-                      )) &&
+                  (lessons.any(
+                    (lesson) =>
+                        lesson.itemId == item.id &&
+                        lesson.isAudio == (mediaFilter == 'music'),
+                  )) &&
                   (query.isEmpty ||
                       item.title.toLowerCase().contains(query.toLowerCase()) ||
                       lessons.any(
                         (lesson) =>
                             lesson.itemId == item.id &&
-                            lesson.title.toLowerCase().contains(
-                              query.toLowerCase(),
-                            ),
+                            lesson.isAudio == (mediaFilter == 'music') &&
+                            '${lesson.title} ${lesson.music?.artist ?? ''} ${lesson.music?.album ?? ''}'
+                                .toLowerCase()
+                                .contains(query.toLowerCase()),
                       )),
             )
             .toList()
@@ -244,12 +286,15 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
           ),
         ),
         IconButton(
-          tooltip: 'Статистика медиа',
+          tooltip: mediaFilter == 'music'
+              ? 'Статистика музыки'
+              : 'Статистика видео и курсов',
           onPressed: () => Navigator.push<void>(
             context,
             MaterialPageRoute(
-              builder: (_) =>
-                  VideoStatisticsPage(repository: widget.repository),
+              builder: (_) => mediaFilter == 'music'
+                  ? MusicStatisticsPage(repository: widget.repository)
+                  : VideoStatisticsPage(repository: widget.repository),
             ),
           ),
           icon: const Icon(Icons.bar_chart),
@@ -297,14 +342,21 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
             spacing: 8,
             children: [
               for (final entry in const {
-                'all': 'Все',
-                'video': 'Видео',
+                'video': 'Видео и курсы',
                 'music': 'Музыка',
               }.entries)
                 ChoiceChip(
                   label: Text(entry.value),
                   selected: mediaFilter == entry.key,
-                  onSelected: (_) => setState(() => mediaFilter = entry.key),
+                  onSelected: busy
+                      ? null
+                      : (_) => _run(() async {
+                          await widget.repository.repository.setMeta(
+                            'media-section',
+                            entry.key,
+                          );
+                          if (mounted) setState(() => mediaFilter = entry.key);
+                        }),
                 ),
               FilterChip(
                 label: const Text('Избранное'),
@@ -369,9 +421,7 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                   vertical: 10,
                 ),
                 leading: Icon(
-                  lessons
-                          .where((l) => l.itemId == item.id)
-                          .every((l) => l.isAudio)
+                  mediaFilter == 'music'
                       ? Icons.music_note_outlined
                       : item.kind == VideoItemKind.course
                       ? Icons.school_outlined
@@ -385,14 +435,12 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                 ),
                 subtitle: Text(
                   [
-                    lessons
-                            .where((l) => l.itemId == item.id)
-                            .every((l) => l.isAudio)
+                    mediaFilter == 'music'
                         ? (item.kind == VideoItemKind.course
-                              ? 'Плейлист · треков: ${lessons.where((l) => l.itemId == item.id).length}'
+                              ? 'Плейлист · треков: ${_sectionLessons(item).length}'
                               : 'Музыка')
                         : item.kind == VideoItemKind.course
-                        ? 'Курс · ${lessons.where((l) => l.itemId == item.id).length} уроков'
+                        ? 'Курс · ${_sectionLessons(item).length} уроков'
                         : 'Видео',
                     if (_recent(item) != null)
                       'Последняя позиция: ${pepeTime(_recent(item)!.positionMs)}',
@@ -459,7 +507,9 @@ class _VideoCoursePageState extends State<_VideoCoursePage> {
       currentItem = (await widget.repository.items()).firstWhere(
         (item) => item.id == widget.item.id,
       );
-      final next = await widget.repository.lessons(itemId: widget.item.id);
+      final next = (await widget.repository.lessons(itemId: widget.item.id))
+          .where((lesson) => !lesson.isAudio)
+          .toList();
       final positions = await widget.repository.allProgress();
       final settings = await widget.repository.preferences();
       final states = await widget.repository.allLearningStates();

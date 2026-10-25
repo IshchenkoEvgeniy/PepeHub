@@ -16,6 +16,11 @@ import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/media/audio_controller.dart';
+import 'package:pepehub/video/video_session.dart';
+import 'package:pepehub/video/video_repository.dart';
+import 'package:pepehub/media/audio_focus.dart';
+
+import 'support/video_engine.dart';
 
 class TestTimer implements Timer {
   final void Function(Timer) callback;
@@ -677,7 +682,112 @@ void main() {
     await h.controller.pause();
     expect(h.player.processingState, ProcessingState.idle);
   });
-  test('automatic focus resume is opt-in and explicit Play recovers after a permanent interruption', () async {
+  test(
+    'notification pauses briefly and resumes even when call resume is disabled',
+    () async {
+      var handovers = 0;
+      h.controller.beforeBookPlayback = () async {
+        handovers++;
+      };
+      expect(spokenAudioConfiguration.androidWillPauseWhenDucked, isFalse);
+      expect(h.controller.resumeAfterInterruption, isFalse);
+      await h.controller.play();
+      await h.controller.handleInterruption(
+        AudioInterruptionEvent(true, AudioInterruptionType.duck),
+      );
+      expect(h.controller.playing, isFalse);
+      await h.controller.handleInterruption(
+        AudioInterruptionEvent(true, AudioInterruptionType.duck),
+      );
+      await h.controller.handleInterruption(
+        AudioInterruptionEvent(false, AudioInterruptionType.duck),
+      );
+      expect(h.controller.playing, isTrue);
+      expect(
+        handovers,
+        1,
+        reason: 'Focus return must not repeat ownership handover',
+      );
+      await h.controller.handleInterruption(
+        AudioInterruptionEvent(true, AudioInterruptionType.duck),
+      );
+      await h.controller.pause();
+      await h.controller.handleInterruption(
+        AudioInterruptionEvent(false, AudioInterruptionType.duck),
+      );
+      expect(h.controller.playing, isFalse);
+    },
+  );
+
+  test('a notification upgraded to exclusive or permanent focus does not restart the book', () async {
+    for (final type in [
+      AudioInterruptionType.pause,
+      AudioInterruptionType.unknown,
+    ]) {
+      await h.controller.play();
+      await h.controller.handleInterruption(
+        AudioInterruptionEvent(true, AudioInterruptionType.duck),
+      );
+      await h.controller.handleInterruption(AudioInterruptionEvent(true, type));
+      await h.controller.handleInterruption(
+        AudioInterruptionEvent(false, AudioInterruptionType.pause),
+      );
+      expect(h.controller.playing, isFalse);
+    }
+  });
+
+  test('expired sleep timer cancels notification resume', () async {
+    await h.controller.play();
+    h.controller.setSleepTimer(1);
+    await h.controller.handleInterruption(
+      AudioInterruptionEvent(true, AudioInterruptionType.duck),
+    );
+    await h.expire();
+    await h.controller.handleInterruption(
+      AudioInterruptionEvent(false, AudioInterruptionType.duck),
+    );
+    expect(h.controller.playing, isFalse);
+  });
+
+  test('only the current sound owner handles shared notifications after switching music and book', () async {
+    final videos = VideoRepository(h.controller.assets.repository);
+    final item = await videos.addSources(
+      title: 'Music',
+      sources: [const VideoSourceDraft('song.mp3', 'Song')],
+    );
+    final session = VideoPlaybackSession(
+      videos,
+      audio: h.controller,
+      engineFactory: TestVideoEngine.new,
+    );
+    try {
+      await h.controller.play();
+      await session.open(item, await videos.lessons(itemId: item.id), 0);
+      expect(h.controller.playing, isFalse);
+      expect(session.controller!.state.playing, isTrue);
+      final begin = AudioInterruptionEvent(true, AudioInterruptionType.duck);
+      final end = AudioInterruptionEvent(false, AudioInterruptionType.duck);
+      await h.controller.handleInterruption(begin);
+      await session.handleInterruption(begin);
+      await h.controller.handleInterruption(end);
+      await session.handleInterruption(end);
+      expect(session.controller!.state.playing, isTrue);
+      expect(h.controller.playing, isFalse);
+      await h.controller.play();
+      expect(session.controller!.state.playing, isFalse);
+      await h.controller.handleInterruption(begin);
+      await session.handleInterruption(begin);
+      await session.handleInterruption(end);
+      await h.controller.handleInterruption(end);
+      expect(h.controller.playing, isTrue);
+      expect(session.controller!.state.playing, isFalse);
+    } finally {
+      await session.close();
+      session.dispose();
+    }
+  });
+
+  test('automatic call resume is opt-in and explicit Play recovers after a permanent interruption', () async {
     await h.controller.play();
     await h.controller.handleInterruption(
       AudioInterruptionEvent(true, AudioInterruptionType.pause),

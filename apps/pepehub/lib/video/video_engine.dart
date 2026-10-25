@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
@@ -6,6 +7,8 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 import 'models.dart';
 import 'video_subtitles.dart';
+import '../music/music_metadata.dart';
+import '../music/music_artwork.dart';
 
 class VideoChapter {
   final String title;
@@ -59,6 +62,9 @@ abstract class VideoPlaybackEngine extends ChangeNotifier {
   Future<Uint8List?> captureFrame() async =>
       throw UnsupportedError('Снимок кадра недоступен');
   Future<List<VideoChapter>> readChapters() async => const [];
+  Future<(String, MusicMetadata)?> readMusicMetadata(
+    VideoLesson lesson,
+  ) async => null;
   Future<void> setAudioOnly(bool enabled) async {}
   Future<void> waitForTracks() async {}
   Future<void> selectAudioTrack(String id) async =>
@@ -164,6 +170,59 @@ class NativeVideoEngine extends VideoPlaybackEngine {
 
   @override
   Future<void> play() => player.play();
+  @override
+  Future<(String, MusicMetadata)?> readMusicMetadata(VideoLesson lesson) async {
+    if (!lesson.isAudio) return null;
+    // open() can complete when mpv accepts the load command, before metadata
+    // arrives. Reuse the bounded track-ready wait used by session setup.
+    await waitForTracks();
+    final native = player.platform;
+    final tags = <String, String>{};
+    if (native is NativePlayer) {
+      try {
+        final decoded = jsonDecode(await native.getProperty('metadata'));
+        if (decoded is Map) {
+          for (final entry in decoded.entries) {
+            if (entry.value is String) {
+              tags['${entry.key}'.toLowerCase()] = (entry.value as String)
+                  .trim();
+            }
+          }
+        }
+      } catch (_) {}
+      for (final key in ['title', 'artist', 'album', 'track']) {
+        if (tags[key]?.isNotEmpty == true) continue;
+        for (final candidate in [key, key.toUpperCase()]) {
+          try {
+            final value = (await native.getProperty(
+              'metadata/by-key/$candidate',
+            )).trim();
+            if (value.isNotEmpty && value != '(null)') {
+              tags[key] = value;
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+    }
+    String clean(String? value, int max) =>
+        String.fromCharCodes((value ?? '').runes.take(max));
+    final number = int.tryParse(
+      (tags['track'] ?? tags['tracknumber'] ?? '').split('/').first.trim(),
+    );
+    return (
+      clean(tags['title'], 300),
+      MusicMetadata(
+        artist: clean(tags['artist'] ?? tags['album_artist'], 500),
+        album: clean(tags['album'], 500),
+        trackNumber: number != null && number > 0 && number <= 100000
+            ? number
+            : null,
+        coverPath: await musicArtwork(lesson),
+      ),
+    );
+  }
+
   @override
   Future<void> pause() => player.pause();
   @override

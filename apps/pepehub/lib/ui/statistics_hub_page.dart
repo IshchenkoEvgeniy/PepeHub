@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../audio/audio_journal.dart';
 import '../audio/listening_analytics.dart';
+import '../audio/audio_daily_totals.dart';
 import '../data/repository.dart';
 import '../library/activity_store.dart';
 import '../media/audio_controller.dart';
@@ -87,10 +88,13 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
 
       await AudioJournal(repository).ensureIndexes();
       await widget.audio?.flushJournal();
-      final events = [
-        ...(await repository.records('audio_event')).map((r) => r.payload!),
-        ...await ActivityStore.foreignAudio(repository),
-      ];
+      final totals = AudioDailyStore(repository);
+      final native = await totals.period(
+        DateTime(selectedYear),
+        DateTime(selectedYear + 1),
+      );
+      final nativeAll = await totals.lifetime();
+      final events = await ActivityStore.foreignAudio(repository);
       final listening = await compute(analyzeListening, <String, dynamic>{
         'events': events,
         'book': null,
@@ -105,9 +109,9 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
         readingDays = reading.days;
         readingBooks = reading.books;
         readingAllDays = readingAll.days;
-        audioDays = listening.selected.days;
-        audioBooks = listening.selected.books;
-        audioAllDays = lifetime.days;
+        audioDays = _merge(native.days, listening.selected.days);
+        audioBooks = _merge(native.books, listening.selected.books);
+        audioAllDays = _merge(nativeAll.days, lifetime.days);
         error = null;
         loading = false;
       });

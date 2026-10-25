@@ -22,6 +22,7 @@ import 'video_transcript_panel.dart';
 import 'video_session.dart';
 import 'video_compact_controls.dart';
 import 'video_frame_export.dart';
+import '../music/music_player_view.dart';
 import 'video_seek_previews.dart';
 import 'video_annotation_editor.dart';
 import '../vocabulary/vocabulary_editor.dart';
@@ -1050,7 +1051,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 ),
               ),
               IconButton(
-                tooltip: 'Закрыть панель урока',
+                tooltip: controller?.current?.isAudio == true
+                    ? 'Закрыть панель музыки'
+                    : 'Закрыть панель урока',
                 onPressed: _closeStudy,
                 icon: const Icon(Icons.close),
               ),
@@ -1547,6 +1550,18 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                     )
                   : player == null
                   ? const SizedBox.shrink()
+                  : player.current?.isAudio == true &&
+                        !_studyOpen &&
+                        _annotation == null
+                  ? MusicPlayerView(
+                      player: player,
+                      repository: widget.repository,
+                      item: widget.item,
+                      onBack: () => _perform(_back),
+                      onMini: () => _perform(_minimize),
+                      onNotes: () => _perform(() => _studyPanel()),
+                      run: _perform,
+                    )
                   : _playerBody(player),
             ),
           ),
