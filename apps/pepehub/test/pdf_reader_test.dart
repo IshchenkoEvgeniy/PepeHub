@@ -213,7 +213,7 @@ void main() {
         );
         expect(jsonDecode(stored!)['mode'], 'compact');
         expect(
-          await tester.runAsync(() => repo.meta('reader:pdf-mode')),
+          await tester.runAsync(() => repo.meta('pdf-reader-mode')),
           'scroll',
         );
       } finally {

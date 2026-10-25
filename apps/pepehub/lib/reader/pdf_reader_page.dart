@@ -14,6 +14,7 @@ import 'package:pdfrx/pdfrx.dart';
 import '../data/repository.dart';
 import '../media/asset_store.dart';
 import 'pdf_support.dart';
+import 'pdf_image_regions.dart';
 import 'pdf_search_page.dart';
 import 'pdf_view_limits.dart';
 import 'reader_layout.dart';
@@ -47,6 +48,9 @@ class PdfReaderPage extends StatefulWidget {
 class _PdfReaderPageState extends State<PdfReaderPage>
     with WidgetsBindingObserver, RouteAware {
   final controller = PdfViewerController();
+  late final imageRegions = PdfImageRegions(widget.asset.path);
+  // Set in build; read by the page paint callback.
+  bool darkPages = false;
   late final library = ReadingLibrary(widget.repository);
   late final Future<PdfDocumentRefDirect> initial = _initial();
   PdfDocument? document;
@@ -161,12 +165,17 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     return PdfDocumentRefDirect(opened, autoDispose: false);
   }
 
-  static const _pdfModeKey = 'reader:pdf-mode';
+  // Not under "reader:": that prefix holds JSON positions keyed by book hash,
+  // and the library reads every "reader:*" value as a JSON object.
+  static const _pdfModeKey = 'pdf-reader-mode';
+  static const _legacyPdfModeKey = 'reader:pdf-mode';
 
   /// Shared reader appearance with the PDF's own page mode.
   Future<ReaderPreferences?> _storedPreferences() async {
     final raw = await widget.repository.meta('reader:appearance');
-    final pdfMode = await widget.repository.meta(_pdfModeKey);
+    final pdfMode =
+        await widget.repository.meta(_pdfModeKey) ??
+        await widget.repository.meta(_legacyPdfModeKey);
     if (raw == null && pdfMode == null) return null;
     final restored = raw == null
         ? const ReaderPreferences()
@@ -236,6 +245,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   @override
   void dispose() {
     indexDelay?.cancel();
+    imageRegions.close();
     readerRoutes.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     if (fullscreen) {
@@ -703,6 +713,13 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   }
 
   void _paint(Canvas canvas, Rect rect, PdfPage pdfPage) {
+    if (darkPages) {
+      // Undo the page inversion over photos and illustrations.
+      final regions = imageRegions.regions(pdfPage.pageNumber, () {
+        if (mounted && ready) controller.invalidate();
+      });
+      if (regions != null) PdfImageRegions.restore(canvas, rect, regions);
+    }
     final relevant =
         (preferences.showHighlights ? notes : const <ReadingNote>[]).where(
           (n) => n.chapter == pdfPage.pageNumber - 1 && n.end > n.start,
@@ -970,6 +987,10 @@ class _PdfReaderPageState extends State<PdfReaderPage>
           }),
         );
         await widget.repository.setMeta(_pdfModeKey, next.mode);
+        await widget.repository.db.customStatement(
+          'DELETE FROM metadata WHERE key=?',
+          [_legacyPdfModeKey],
+        );
       });
     } catch (e) {
       _message('Настройки не сохранены: $e');
@@ -1513,6 +1534,12 @@ class _PdfReaderPageState extends State<PdfReaderPage>
                     final dark = preferences.isDark(
                       MediaQuery.platformBrightnessOf(context),
                     );
+                    if (darkPages != dark) {
+                      darkPages = dark;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted && ready) controller.invalidate();
+                      });
+                    }
                     final filter = dark
                         ? const ColorFilter.matrix([
                             -.82,

@@ -335,6 +335,11 @@ class _LibraryPageState extends State<LibraryPage> {
           : await AudioLibraryRepository(widget.repository.db).bookSummaries();
       if (readingSection) {
         final index = await readingLibrary.entries('reading-index:');
+        try {
+          await migrateLegacyPdfMode(widget.repository);
+        } catch (_) {
+          /* The listing below tolerates the legacy value anyway. */
+        }
         final positions = await readingLibrary.entries('reader:');
         final prefs = await readingLibrary.entries('reading-book:');
         final sourcePaths = await readingLibrary.entries(

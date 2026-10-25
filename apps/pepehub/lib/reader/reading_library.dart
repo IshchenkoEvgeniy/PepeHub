@@ -44,12 +44,22 @@ class ReadingLibrary {
           variables: [Variable(prefix), Variable('$prefix\uffff')],
         )
         .get();
-    return {
-      for (final r in rows)
-        if (r.read<String>('key').startsWith(prefix))
-          r.read<String>('key').substring(prefix.length):
-              jsonDecode(r.read<String>('value')) as Map<String, dynamic>,
-    };
+    // One foreign or damaged value under a shared prefix (for example a plain
+    // setting stored as "reader:something") must not hide the whole library.
+    final result = <String, Map<String, dynamic>>{};
+    for (final r in rows) {
+      final key = r.read<String>('key');
+      if (!key.startsWith(prefix)) continue;
+      try {
+        final value = jsonDecode(r.read<String>('value'));
+        if (value is Map<String, dynamic>) {
+          result[key.substring(prefix.length)] = value;
+        }
+      } on FormatException {
+        /* Not a JSON record of this collection. */
+      }
+    }
+    return result;
   }
 
   Future<void> update(String key, Map<String, dynamic> changes) =>
@@ -458,4 +468,20 @@ double readingFraction(
     0.0,
     1.0,
   );
+}
+
+/// 0.23.0 kept the PDF page mode as plain text under "reader:pdf-mode". The
+/// "reader:" prefix holds JSON positions, so the value moves to its own key.
+Future<void> migrateLegacyPdfMode(Repository repository) async {
+  const legacyKey = 'reader:pdf-mode';
+  final legacy = await repository.meta(legacyKey);
+  if (legacy == null) return;
+  await repository.db.transaction(() async {
+    if (await repository.meta('pdf-reader-mode') == null) {
+      await repository.setMeta('pdf-reader-mode', legacy);
+    }
+    await repository.db.customStatement('DELETE FROM metadata WHERE key=?', [
+      legacyKey,
+    ]);
+  });
 }

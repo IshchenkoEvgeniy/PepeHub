@@ -1,7 +1,7 @@
 name: pepehub
 description: "Offline library and activity journal with Obsidian integration."
 publish_to: 'none'
-version: 0.23.0+65
+version: 0.23.1+66
 
 environment:
   sdk: ^3.13.3
@@ -30,6 +30,9 @@ dependencies:
   sqlite3: ^3.5.2
   uuid: ^4.6.0
   pdfrx: ^2.6.1
+  # Direct PDFium access for image areas in the dark PDF theme (pdfrx worker).
+  pdfium_dart: ^0.3.0
+  ffi: ^2.2.0
   markdown: ^7.3.1
   enough_convert: ^1.6.0
   qr_flutter: ^4.1.0
