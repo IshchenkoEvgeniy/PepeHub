@@ -81,6 +81,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('settings-entry:appearance')));
+      await tester.pumpAndSettle();
       for (final style in AppStyle.values) {
         await tester.ensureVisible(find.text(style.label));
         await tester.tap(find.text(style.label));
@@ -90,11 +92,17 @@ void main() {
         final context = tester.element(find.byType(SettingsPage));
         expect(ShelfPalette.of(context).accent, Color(style.accent));
       }
-      await tester.scrollUntilVisible(
-        find.text('Синхронизировать сейчас'),
-        400,
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('settings-entry:sync')),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('settings-entry:sync')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Obsidian'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Обменять с Obsidian'));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       appearance.dispose();

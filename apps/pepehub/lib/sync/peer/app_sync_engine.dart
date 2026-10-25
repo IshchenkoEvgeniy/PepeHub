@@ -116,12 +116,7 @@ class AppSyncEngine {
         after.isNotEmpty && !appSyncHash.hasMatch(after)) {
       throw const FormatException('Неверная страница индекса');
     }
-    final all = (await store.heads())..sort((a, b) => a.id.compareTo(b.id));
-    return all
-        .where((e) => e.id.compareTo(after) > 0)
-        .take(limit)
-        .map((e) => e.header)
-        .toList();
+    return store.manifestPage(after, limit);
   }
 
   Future<List<int>> read(String id, int offset, int count) async {

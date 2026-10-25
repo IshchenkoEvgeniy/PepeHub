@@ -179,6 +179,16 @@ class Repository {
               .get())
           .map(LibraryRecord.fromRow)
           .toList();
+  Future<List<LibraryRecord>> shelfBooks({required bool audio}) async =>
+      (await db
+              .customSelect(
+                "SELECT * FROM records WHERE type='book' AND deleted=0 AND (json_extract(payload,'\$.format')='audio')=? ORDER BY json_extract(payload,'\$.title'),id",
+                variables: [Variable(audio ? 1 : 0)],
+              )
+              .get())
+          .map(LibraryRecord.fromRow)
+          .toList();
+
   Future<LibraryRecord?> record(String id) async {
     final row = await db
         .customSelect(

@@ -56,6 +56,34 @@ class AppSyncStore {
           );
   }
 
+  Future<String> manifestRevision() async => appSyncDigest([
+    for (final row
+        in await db
+            .customSelect(
+              'SELECT id FROM peer_app_versions WHERE active=1 ORDER BY id',
+            )
+            .get())
+      row.read<String>('id'),
+  ]);
+
+  Future<List<Map<String, dynamic>>> manifestPage(
+    String after,
+    int limit,
+  ) async => [
+    for (final row
+        in await db
+            .customSelect(
+              'SELECT id,entity_key,length(CAST(payload AS BLOB)) AS bytes FROM peer_app_versions WHERE active=1 AND id>? ORDER BY id LIMIT ?',
+              variables: [Variable(after), Variable(limit)],
+            )
+            .get())
+      {
+        'id': row.read<String>('id'),
+        'key': row.read<String>('entity_key'),
+        'bytes': row.read<int>('bytes'),
+      },
+  ];
+
   Future<bool> merge(AppSyncVersion incoming) async {
     final current = await heads(incoming.key);
     for (final old in current) {

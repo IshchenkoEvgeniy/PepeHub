@@ -21,11 +21,16 @@ class ServiceFixture {
   late final repo = Repository(db);
   late final Directory directory, shared;
   late final PeerSyncService service;
-  Future<void> open({bool library = false, bool background = false}) async {
+  Future<void> open({
+    bool library = false,
+    bool background = false,
+    DateTime Function()? clock,
+  }) async {
     directory = await Directory.systemTemp.createTemp('pepe-app-service-');
     shared = await Directory(p.join(directory.path, 'shared')).create();
     service = PeerSyncService(
       PeerStore(repo),
+      clock: clock,
       assets: library
           ? AssetStore(repo, Directory(p.join(directory.path, 'app-assets')))
           : null,

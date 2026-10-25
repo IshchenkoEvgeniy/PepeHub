@@ -128,14 +128,13 @@ void main() {
       expect(service.enabled, false);
       expect(service.port, 0);
       expect(tester.takeException(), isNull);
-      await tester.scrollUntilVisible(find.text('Добавить папку'), 250);
+      await tester.ensureVisible(find.text('Общие папки'));
       await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-      await tester.scrollUntilVisible(
-        find.text('Облако — дополнительный режим'),
-        250,
-      );
+      await tester.tap(find.text('Общие папки'));
       await tester.pumpAndSettle();
+      expect(find.text('Добавить папку'), findsOneWidget);
+      expect(find.text('Английский язык'), findsOneWidget);
+      expect(find.text('Облако — дополнительный режим'), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       service.dispose();

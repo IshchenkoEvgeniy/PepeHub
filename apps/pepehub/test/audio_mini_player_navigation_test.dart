@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/main.dart';
+import 'package:pepehub/ui/settings_page.dart';
 import 'package:pepehub/updates/update_page.dart';
 import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/media/audio_controller.dart';
@@ -197,23 +198,22 @@ void main() {
         await ready(
           tester,
           () =>
-              find.text('НАСТРОЙКИ').evaluate().isNotEmpty &&
+              find.byType(SettingsPage).evaluate().isNotEmpty &&
               find.byType(CircularProgressIndicator).evaluate().isEmpty,
         );
         expect(find.byKey(const ValueKey('audio-mini-player')), findsOneWidget);
-        if (find.text('Обновление приложения').evaluate().isEmpty) {
-          await tester.scrollUntilVisible(
-            find.text('Обновление приложения'),
-            350,
-            scrollable: find.byType(Scrollable).first,
-          );
+        Future<void> openSetting(String key) async {
+          final sidebar = find.byKey(ValueKey('settings-nav:$key'));
+          final target = sidebar.evaluate().isNotEmpty
+              ? sidebar
+              : find.byKey(ValueKey('settings-entry:$key'));
+          await tester.ensureVisible(target);
+          await tester.pumpAndSettle();
+          await tester.tap(target);
+          await tester.pumpAndSettle();
         }
-        await Scrollable.ensureVisible(
-          tester.element(find.text('Обновление приложения')),
-          alignment: .5,
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Обновление приложения'));
+
+        await openSetting('updates');
         await ready(
           tester,
           () =>
@@ -224,21 +224,8 @@ void main() {
         await tester.pageBack();
         await tester.pumpAndSettle();
         expect(find.text('Аккаунт'), findsNothing);
-        if (find.text('Устройства и общие папки').evaluate().isEmpty) {
-          await tester.scrollUntilVisible(
-            find.text('Устройства и общие папки'),
-            350,
-            scrollable: find.byType(Scrollable).first,
-          );
-        }
-        await Scrollable.ensureVisible(
-          tester.element(find.text('Устройства и общие папки')),
-          alignment: .5,
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Устройства и общие папки'));
-        await tester.pumpAndSettle();
-        expect(find.text('Прямой обмен между ПК и телефоном'), findsOneWidget);
+        await openSetting('sync');
+        expect(find.text('Прямая синхронизация'), findsOneWidget);
         expect(find.byKey(const ValueKey('audio-mini-player')), findsOneWidget);
         await tester.pageBack();
         await tester.pumpAndSettle();

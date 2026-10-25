@@ -1,19 +1,76 @@
 import 'package:flutter/material.dart';
 
-import '../sync/peer/peer_service.dart';
-import '../sync/peer/peer_sync_page.dart';
-import '../updates/update_service.dart';
-import '../updates/update_page.dart';
-
 import '../audio/statistics_export.dart' show ListeningGoals;
 import '../library/library_service.dart';
 import '../recommendations/recommendation_store.dart';
-import 'app_theme.dart';
-import 'pepe_widgets.dart';
-import 'recommendations_page.dart';
-import 'shelf_components.dart';
+import '../sync/peer/peer_service.dart';
+import '../sync/peer/peer_sync_page.dart';
+import '../sync/peer/peer_sync_log_page.dart';
+import '../updates/update_page.dart';
+import '../updates/update_service.dart';
 import '../vocabulary/vocabulary_page.dart';
 import '../vocabulary/vocabulary_repository.dart';
+import 'app_theme.dart';
+import 'audio_mini_player.dart';
+import 'audio_roots_page.dart';
+import 'pepe_widgets.dart';
+import 'reading_hidden_books_page.dart';
+import 'reading_roots_page.dart';
+import 'recommendations_page.dart';
+import 'settings_components.dart';
+import 'shelf_components.dart';
+
+const _catalog = [
+  (
+    id: 'appearance',
+    group: 'Основные',
+    title: 'Оформление',
+    note: 'Тема, размер текста и плотность',
+    icon: Icons.palette_outlined,
+  ),
+  (
+    id: 'reading',
+    group: 'Основные',
+    title: 'Чтение и аудио',
+    note: 'Цели чтения и прослушивания',
+    icon: Icons.menu_book_outlined,
+  ),
+  (
+    id: 'files',
+    group: 'Данные',
+    title: 'Файлы и библиотека',
+    note: 'Источники, папки и скрытые книги',
+    icon: Icons.folder_open_outlined,
+  ),
+  (
+    id: 'sync',
+    group: 'Данные',
+    title: 'Синхронизация',
+    note: 'Устройства, папки и правила обмена',
+    icon: Icons.sync,
+  ),
+  (
+    id: 'integrations',
+    group: 'Данные',
+    title: 'Каталоги и инструменты',
+    note: 'Рекомендации, Anki и заметки',
+    icon: Icons.extension_outlined,
+  ),
+  (
+    id: 'updates',
+    group: 'Приложение',
+    title: 'Обновления',
+    note: 'Версия, загрузка и установка',
+    icon: Icons.system_update_outlined,
+  ),
+  (
+    id: 'help',
+    group: 'Приложение',
+    title: 'Помощь и диагностика',
+    note: 'Журналы и служебные сведения',
+    icon: Icons.help_outline,
+  ),
+];
 
 class SettingsPage extends StatefulWidget {
   final LibraryService library;
@@ -33,72 +90,145 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   int interval = 30, goal = 30;
-  bool history = true, covers = true, notes = true, loaded = false;
+  double? scaleDraft;
+  bool history = true,
+      covers = true,
+      notes = true,
+      loaded = false,
+      saving = false;
   ListeningGoals listening = const ListeningGoals();
-  final sections = {
-    for (final name in ['Оформление', 'Цели', 'Рекомендации', 'Obsidian'])
-      name: GlobalKey(),
-  };
+  String page = 'home';
+  String? error;
+  final navigation = <String>[];
+  int readingRoots = 0, audioRoots = 0;
+
   @override
   void initState() {
     super.initState();
+    widget.library.addListener(_libraryChanged);
     _load();
   }
 
+  @override
+  void dispose() {
+    widget.library.removeListener(_libraryChanged);
+    super.dispose();
+  }
+
+  void _libraryChanged() {
+    if (mounted) setState(() {});
+  }
+
   Future<void> _load() async {
-    final repo = widget.library.local;
-    final values = await Future.wait([
-      repo.meta('obsidian-sync-seconds'),
-      repo.meta('obsidian-sync-history'),
-      repo.meta('reading-daily-goal'),
-      repo.meta('obsidian-sync-covers'),
-      repo.meta('obsidian-sync-notes'),
-    ]);
-    ListeningGoals goals;
     try {
-      goals = await ListeningGoals.load(repo);
-    } catch (_) {
-      goals = const ListeningGoals();
+      final repo = widget.library.local;
+      final values = await Future.wait([
+        repo.meta('obsidian-sync-seconds'),
+        repo.meta('obsidian-sync-history'),
+        repo.meta('reading-daily-goal'),
+        repo.meta('obsidian-sync-covers'),
+        repo.meta('obsidian-sync-notes'),
+      ]);
+      ListeningGoals goals;
+      try {
+        final saved = await ListeningGoals.load(repo);
+        goals = ListeningGoals(
+          dailyMinutes: saved.dailyMinutes.clamp(0, 1440),
+          weeklyMinutes: saved.weeklyMinutes.clamp(0, 10080),
+        );
+      } on FormatException {
+        goals = const ListeningGoals();
+      } on TypeError {
+        goals = const ListeningGoals();
+      }
+      final roots = await repo.metadataPrefixes([
+        'reading-library-root:',
+        'audio-library-root:',
+      ]);
+      if (!mounted) return;
+      setState(() {
+        final seconds = int.tryParse(values[0] ?? '');
+        interval = [0, 30, 60, 300, 900, 1800, 3600].contains(seconds)
+            ? seconds!
+            : 30;
+        history = values[1] != 'false';
+        covers = values[3] != 'false';
+        notes = values[4] != 'false';
+        goal = (int.tryParse(values[2] ?? '') ?? 30).clamp(0, 1440);
+        listening = goals;
+        readingRoots = roots.keys
+            .where((k) => k.startsWith('reading-library-root:'))
+            .length;
+        audioRoots = roots.length - readingRoots;
+        loaded = true;
+        error = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          error = 'Не удалось прочитать настройки: $e';
+          loaded = true;
+        });
+      }
     }
-    if (!mounted) return;
-    setState(() {
-      interval = [0, 30, 60, 300].contains(int.tryParse(values[0] ?? ''))
-          ? int.parse(values[0]!)
-          : 30;
-      history = values[1] != 'false';
-      covers = values[3] != 'false';
-      notes = values[4] != 'false';
-      goal = (int.tryParse(values[2] ?? '') ?? 30).clamp(0, 1440);
-      listening = goals;
-      loaded = true;
-    });
+  }
+
+  Future<void> _change(Future<void> Function() action) async {
+    if (saving) return;
+    setState(() => saving = true);
+    try {
+      await action();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Изменение не сохранено: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
   }
 
   Future<void> _save(String key, String value) async {
     await widget.library.local.setMeta(key, value);
-    await widget.library.configureTimer();
+    if (key.startsWith('obsidian-sync-')) await widget.library.configureTimer();
   }
 
-  Future<void> _setGoal(int value) async {
+  Future<void> _setGoal(int value) => _change(() async {
     final next = value.clamp(0, 1440);
-    setState(() => goal = next);
     await _save('reading-daily-goal', '$next');
-  }
-
-  Future<void> _setListening({int? daily, int? weekly}) async {
+    if (mounted) setState(() => goal = next);
+  });
+  Future<void> _setListening({int? daily, int? weekly}) => _change(() async {
     final next = ListeningGoals(
       dailyMinutes: (daily ?? listening.dailyMinutes).clamp(0, 1440),
       weeklyMinutes: (weekly ?? listening.weeklyMinutes).clamp(0, 10080),
     );
-    setState(() => listening = next);
-    try {
-      await next.save(widget.library.local);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Цель не сохранена: $e')));
-      }
+    await next.save(widget.library.local);
+    if (mounted) setState(() => listening = next);
+  });
+  void _go(String next) {
+    if (page == next) return;
+    setState(() {
+      navigation.add(page);
+      page = next;
+    });
+  }
+
+  void _back() {
+    if (navigation.isNotEmpty) {
+      setState(() => page = navigation.removeLast());
+    } else {
+      Navigator.maybePop(context);
     }
+  }
+
+  Future<void> _open(Widget child) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (_) => child),
+    );
+    if (mounted) await _load();
   }
 
   Widget _palettes(AppTheme appearance) => LayoutBuilder(
@@ -136,7 +266,9 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () => appearance.preferences(style: style),
+          onTap: saving
+              ? null
+              : () => _change(() => appearance.preferences(style: style)),
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
@@ -219,7 +351,7 @@ class _SettingsPageState extends State<SettingsPage> {
     title: Text(title),
     subtitle: subtitle == null ? null : Text(subtitle),
     value: value,
-    onChanged: onChanged,
+    onChanged: saving ? null : onChanged,
   );
 
   Widget _goalLine(
@@ -259,385 +391,582 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         PepeStepper(
           value: value == 0 ? '—' : '$value',
-          onMinus: value <= 0 ? null : () => onChanged(value - step),
-          onPlus: value >= max ? null : () => onChanged(value + step),
+          onMinus: saving || value <= 0 ? null : () => onChanged(value - step),
+          onPlus: saving || value >= max ? null : () => onChanged(value + step),
         ),
       ],
     ),
   );
 
-  Widget _section(String name, Widget child, {String? note}) => Padding(
-    key: sections[name],
-    padding: const EdgeInsets.only(bottom: 16),
-    child: PepePanel(
-      title: name,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (note != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(
-                note,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: ShelfPalette.of(context).muted,
-                ),
-              ),
-            ),
-          child,
-        ],
+  Widget _groupTitle(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 18, 0, 10),
+    child: Text(
+      text.toUpperCase(),
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: ShelfPalette.of(context).muted,
+        letterSpacing: .8,
       ),
     ),
   );
-
-  Widget _link(
-    String title,
-    String? subtitle,
-    IconData icon,
-    VoidCallback? onTap,
-  ) => ListTile(
-    contentPadding: EdgeInsets.zero,
-    leading: Icon(icon),
-    title: Text(title),
-    subtitle: subtitle == null ? null : Text(subtitle),
-    trailing: const Icon(Icons.chevron_right),
-    onTap: onTap,
+  Widget _home() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      for (final group in ['Основные', 'Данные', 'Приложение']) ...[
+        _groupTitle(group),
+        SettingsGroup(
+          children: [
+            for (final item in _catalog.where((c) => c.group == group))
+              SettingsLink(
+                key: ValueKey('settings-entry:${item.id}'),
+                title: item.title,
+                subtitle: item.note,
+                icon: item.icon,
+                onTap: () => _go(item.id),
+              ),
+          ],
+        ),
+      ],
+    ],
   );
+  Widget _appearance(AppTheme appearance) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const SettingsHeading(
+        'Оформление',
+        'Цвет и размер элементов интерфейса. Настройки текста книги доступны в читалке.',
+      ),
+      SettingsNotice(
+        'Предпросмотр · ${appearance.style.label} · ${((scaleDraft ?? appearance.textScale) * 100).round()}%',
+      ),
+      _palettes(appearance),
+      const SizedBox(height: 22),
+      SettingsGroup(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Размер текста интерфейса: ${((scaleDraft ?? appearance.textScale) * 100).round()}%',
+                ),
+                Slider(
+                  value: scaleDraft ?? appearance.textScale,
+                  min: .9,
+                  max: 1.3,
+                  divisions: 4,
+                  label:
+                      '${((scaleDraft ?? appearance.textScale) * 100).round()}%',
+                  onChanged: saving
+                      ? null
+                      : (value) => setState(() => scaleDraft = value),
+                  onChangeEnd: (value) async {
+                    await _change(
+                      () => appearance.preferences(textScale: value),
+                    );
+                    if (mounted) setState(() => scaleDraft = null);
+                  },
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _switch(
+              'Компактный интерфейс',
+              'Меньше отступов в списках.',
+              appearance.compact,
+              (value) => _change(() => appearance.preferences(compact: value)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _switch(
+              'Уменьшить анимации',
+              null,
+              appearance.reduceMotion,
+              (value) =>
+                  _change(() => appearance.preferences(reduceMotion: value)),
+            ),
+          ),
+        ],
+      ),
+    ],
+  );
+  Widget _goals() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const SettingsHeading(
+        'Чтение и аудио',
+        'Цели чтения и аудиокниг учитываются отдельно. 0 — без цели.',
+      ),
+      SettingsGroup(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                _goalLine(
+                  ShelfPalette.of(context),
+                  'Цель чтения в день',
+                  goal == 0 ? 'Без цели' : '$goal мин · вся библиотека',
+                  goal,
+                  5,
+                  1440,
+                  _setGoal,
+                ),
+                _goalLine(
+                  ShelfPalette.of(context),
+                  'Прослушивание в день',
+                  listening.dailyMinutes == 0
+                      ? 'Без цели'
+                      : '${listening.dailyMinutes} мин',
+                  listening.dailyMinutes,
+                  5,
+                  1440,
+                  (v) => _setListening(daily: v),
+                ),
+                _goalLine(
+                  ShelfPalette.of(context),
+                  'Прослушивание в неделю',
+                  listening.weeklyMinutes == 0
+                      ? 'Без цели'
+                      : '${listening.weeklyMinutes} мин',
+                  listening.weeklyMinutes,
+                  30,
+                  10080,
+                  (v) => _setListening(weekly: v),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      const SettingsNotice(
+        'Шрифт, поля и режим чтения меняются в открытой книге. Скорость и таймер сна — в проигрывателе аудиокниги. Очередь, перемешивание и повтор — в музыкальном плеере. Музыка не входит в цель прослушивания аудиокниг.',
+      ),
+    ],
+  );
+  Widget _files() {
+    final assets = widget.library.assets;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SettingsHeading(
+          'Файлы и библиотека',
+          'Локальные источники полки. Подключение папки здесь само по себе не разрешает её передачу другим устройствам.',
+        ),
+        SettingsGroup(
+          children: [
+            SettingsLink(
+              title: 'Папки книг',
+              subtitle: 'Источники текстовой библиотеки',
+              value: 'Подключено: $readingRoots',
+              icon: Icons.folder_open_outlined,
+              onTap: assets == null
+                  ? null
+                  : () => _open(ReadingRootsPage(assets: assets)),
+            ),
+            SettingsLink(
+              title: 'Папки аудиокниг',
+              subtitle: 'Источники аудиобиблиотеки',
+              value: 'Подключено: $audioRoots',
+              icon: Icons.headphones_outlined,
+              onTap: assets == null
+                  ? null
+                  : () => _open(AudioRootsPage(assets: assets)),
+            ),
+            SettingsLink(
+              title: 'Скрытые книги',
+              subtitle: 'Вернуть карточку без повторного импорта',
+              icon: Icons.visibility_off_outlined,
+              onTap: assets == null
+                  ? null
+                  : () => _open(ReadingHiddenBooksPage(assets: assets)),
+            ),
+          ],
+        ),
+        const SettingsNotice(
+          'Путь и доступность файла видны в меню книги → «Источник и файл». Карточки синхронизации без локального файла находятся на полке во вкладке «Без файла». Скрытие карточки не удаляет книгу или историю.',
+        ),
+        SettingsGroup(
+          children: [
+            SettingsLink(
+              title: 'Общие папки для обмена',
+              subtitle: 'Отдельно разрешить передачу файлов',
+              icon: Icons.folder_shared_outlined,
+              onTap: () => _go('sync-folders'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 
+  Widget _obsidian() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const SettingsHeading(
+        'Obsidian',
+        'Отдельное подключение к каталогу и заметкам. Его расписание не меняет обмен между ПК и телефоном.',
+      ),
+      SettingsGroup(
+        children: [
+          SettingsLink(
+            title: 'Подключение',
+            subtitle: widget.library.config == null
+                ? 'Не настроено'
+                : 'Связь с каталогом настроена',
+            icon: Icons.link,
+            onTap: () async {
+              await widget.onConnection();
+              if (mounted) await _load();
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Автоматический обмен с Obsidian'),
+                const SizedBox(height: 8),
+                DropdownButton<int>(
+                  key: const ValueKey('obsidian-interval'),
+                  isExpanded: true,
+                  value: interval,
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('Вручную')),
+                    DropdownMenuItem(value: 30, child: Text('Каждые 30 с')),
+                    DropdownMenuItem(value: 60, child: Text('Раз в минуту')),
+                    DropdownMenuItem(value: 300, child: Text('Раз в 5 минут')),
+                    DropdownMenuItem(value: 900, child: Text('Раз в 15 минут')),
+                    DropdownMenuItem(
+                      value: 1800,
+                      child: Text('Раз в 30 минут'),
+                    ),
+                    DropdownMenuItem(value: 3600, child: Text('Раз в час')),
+                  ],
+                  onChanged: saving
+                      ? null
+                      : (value) {
+                          if (value != null) {
+                            _change(() async {
+                              await _save('obsidian-sync-seconds', '$value');
+                              if (mounted) setState(() => interval = value);
+                            });
+                          }
+                        },
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _switch(
+              'Синхронизировать журнал',
+              'Дни, длительность и прогресс связанных книг',
+              history,
+              (value) => _change(() async {
+                await _save('obsidian-sync-history', value ? 'true' : 'false');
+                if (mounted) setState(() => history = value);
+              }),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _switch(
+              'Синхронизировать обложки',
+              'Обложки связанных книг и аудиокниг',
+              covers,
+              (value) => _change(() async {
+                await _save('obsidian-sync-covers', value ? 'true' : 'false');
+                if (mounted) setState(() => covers = value);
+              }),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _switch(
+              'Синхронизировать заметки',
+              'Цитаты, комментарии, теги и заметки Obsidian',
+              notes,
+              (value) => _change(() async {
+                await _save('obsidian-sync-notes', value ? 'true' : 'false');
+                if (mounted) setState(() => notes = value);
+              }),
+            ),
+          ),
+        ],
+      ),
+      if (widget.library.error != null) SettingsNotice(widget.library.error!),
+      FilledButton.icon(
+        onPressed:
+            widget.library.config == null || widget.library.syncing || saving
+            ? null
+            : () => _change(widget.library.sync),
+        icon: widget.library.syncing
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.sync),
+        label: Text(
+          widget.library.syncing ? 'Обмен с Obsidian…' : 'Обменять с Obsidian',
+        ),
+      ),
+      const SizedBox(height: 12),
+      const Text(
+        'Обмен с Obsidian и синхронизация устройств запускаются разными кнопками.',
+      ),
+    ],
+  );
+  Widget _integrations() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const SettingsHeading(
+        'Каталоги и инструменты',
+        'Настройки источников и вход в словарь и заметки.',
+      ),
+      SettingsGroup(
+        children: [
+          SettingsLink(
+            title: 'Источники книжных рекомендаций',
+            subtitle: 'Inventaire, Open Library и Author.Today',
+            icon: Icons.manage_search,
+            onTap: () => _open(
+              RecommendationSourcesPage(
+                store: RecommendationStore(widget.library.local),
+              ),
+            ),
+          ),
+          SettingsLink(
+            title: 'Словарь Anki',
+            subtitle: 'Слова, предложения и экспорт карточек',
+            icon: Icons.style_outlined,
+            onTap: () => _open(
+              VocabularyPage(
+                repository: VocabularyRepository(widget.library.local),
+              ),
+            ),
+          ),
+        ],
+      ),
+      SettingsGroup(
+        children: [
+          SettingsLink(
+            title: 'Obsidian',
+            subtitle: 'Подключение, журнал, обложки и заметки',
+            icon: Icons.link,
+            onTap: () => _go('obsidian'),
+          ),
+          SettingsLink(
+            title: 'Заметки Obsidian',
+            subtitle: 'Открыть отдельный рабочий экран',
+            icon: Icons.notes_outlined,
+            onTap: widget.onNotes,
+          ),
+        ],
+      ),
+    ],
+  );
+  Widget _help() {
+    final peers = PeerSyncScope.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SettingsHeading(
+          'Помощь и диагностика',
+          'Источники книг, результаты обмена и журналы.',
+        ),
+        SettingsGroup(
+          children: [
+            SettingsLink(
+              title: 'Почему книга без файла?',
+              subtitle: 'Проверить источник и связь с папкой',
+              icon: Icons.find_in_page_outlined,
+              onTap: () => _go('files'),
+            ),
+            SettingsLink(
+              title: 'Журнал синхронизации',
+              subtitle: 'Результаты, ошибки и объём данных',
+              icon: Icons.receipt_long_outlined,
+              onTap: peers == null
+                  ? null
+                  : () => _open(PeerSyncLogPage(journal: peers.journal)),
+            ),
+            SettingsLink(
+              title: 'Журнал чтения и прослушивания',
+              subtitle: 'Просмотр и экспорт своих записей',
+              icon: Icons.history,
+              onTap: widget.onJournal,
+            ),
+            SettingsLink(
+              title: 'История файлов и очистка',
+              subtitle: 'Сначала выберите общую папку',
+              icon: Icons.manage_history,
+              onTap: () => _go('sync-folders'),
+            ),
+            SettingsLink(
+              title: 'Обновление приложения',
+              subtitle: 'Версия и служебные сведения',
+              icon: Icons.system_update_outlined,
+              onTap: () => _go('updates'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _content(String current, AppTheme appearance) {
+    if (current == 'updates' || current == 'update-details') {
+      final updates = UpdateScope.of(context);
+      return updates == null
+          ? const SettingsNotice('Обновления недоступны в этой сборке.')
+          : UpdatePage(
+              service: updates,
+              embedded: true,
+              details: current == 'update-details',
+              onDetails: () => _go('update-details'),
+            );
+    }
+    if (current == 'sync' || current.startsWith('sync-')) {
+      final peers = PeerSyncScope.of(context);
+      final part = current == 'sync' ? 'overview' : current.substring(5);
+      return peers == null
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SettingsHeading(
+                  'Синхронизация',
+                  'Прямой обмен между устройствами.',
+                ),
+                const SettingsNotice(
+                  'Прямая синхронизация недоступна в этой сборке.',
+                ),
+                SettingsGroup(
+                  children: [
+                    SettingsLink(
+                      title: 'Obsidian',
+                      subtitle: 'Отдельное подключение к каталогу и заметкам',
+                      icon: Icons.link,
+                      onTap: () => _go('obsidian'),
+                    ),
+                  ],
+                ),
+              ],
+            )
+          : PeerSyncPage(
+              service: peers,
+              embedded: true,
+              section: part,
+              onNavigate: (next) =>
+                  _go(next == 'overview' ? 'sync' : 'sync-$next'),
+              onObsidian: () => _go('obsidian'),
+            );
+    }
+    final child = switch (current) {
+      'appearance' => _appearance(appearance),
+      'reading' => _goals(),
+      'files' => _files(),
+      'obsidian' => _obsidian(),
+      'integrations' => _integrations(),
+      'help' => _help(),
+      _ => _home(),
+    };
+    return ListView(
+      key: ValueKey('settings-content:$current'),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+      children: [if (error != null) SettingsNotice(error!), child],
+    );
+  }
+
+  String _area(String current) =>
+      current.startsWith('sync') || current == 'obsidian'
+      ? 'sync'
+      : current.startsWith('update')
+      ? 'updates'
+      : current;
+  Widget _sidebar(String current) => SizedBox(
+    width: 248,
+    child: Material(
+      color: ShelfPalette.of(context).panel,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            right: BorderSide(color: ShelfPalette.of(context).line),
+          ),
+        ),
+        child: ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            for (final group in ['Основные', 'Данные', 'Приложение']) ...[
+              _groupTitle(group),
+              for (final item in _catalog.where((c) => c.group == group))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: ListTile(
+                    key: ValueKey('settings-nav:${item.id}'),
+                    selected: _area(current) == item.id,
+                    selectedTileColor: ShelfPalette.of(context).selected,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    leading: Icon(item.icon),
+                    title: Text(item.title),
+                    onTap: () => _go(item.id),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
   @override
   Widget build(BuildContext context) {
     final appearance = ThemeScope.of(context);
     if (appearance == null) {
       return const Scaffold(body: Center(child: Text('Настройки недоступны')));
     }
-    final palette = ShelfPalette.of(context);
-    final wide = pepeWide(context);
-    final look = _section(
-      'Оформление',
-      note: 'Цвет оформления',
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _palettes(appearance),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Размер текста: ${(appearance.textScale * 100).round()}%',
-                ),
-              ),
-              Text(
-                'Аа',
-                style: AppFonts.book(
-                  palette.text,
-                  size: 16 * appearance.textScale,
-                ),
-              ),
-            ],
-          ),
-          Slider(
-            value: appearance.textScale,
-            min: .9,
-            max: 1.3,
-            divisions: 4,
-            label: '${(appearance.textScale * 100).round()}%',
-            onChanged: (value) => appearance.preferences(textScale: value),
-          ),
-          _switch(
-            'Компактный интерфейс',
-            null,
-            appearance.compact,
-            (value) => appearance.preferences(compact: value),
-          ),
-          _switch(
-            'Уменьшить анимации',
-            null,
-            appearance.reduceMotion,
-            (value) => appearance.preferences(reduceMotion: value),
-          ),
-        ],
-      ),
-    );
-    final goals = _section(
-      'Цели',
-      note: '0 — без цели. Цели видны в статистике и на главных экранах.',
-      Column(
-        children: [
-          _goalLine(
-            palette,
-            'Цель чтения в день',
-            goal == 0 ? 'Без цели' : '$goal мин · вся библиотека',
-            goal,
-            5,
-            1440,
-            _setGoal,
-          ),
-          _goalLine(
-            palette,
-            'Прослушивание в день',
-            listening.dailyMinutes == 0
-                ? 'Без цели'
-                : '${listening.dailyMinutes} мин',
-            listening.dailyMinutes,
-            5,
-            1440,
-            (v) => _setListening(daily: v),
-          ),
-          _goalLine(
-            palette,
-            'Прослушивание в неделю',
-            listening.weeklyMinutes == 0
-                ? 'Без цели'
-                : '${listening.weeklyMinutes} мин',
-            listening.weeklyMinutes,
-            30,
-            10080,
-            (v) => _setListening(weekly: v),
-          ),
-        ],
-      ),
-    );
-    final recommendations = _section(
-      'Рекомендации',
-      _link(
-        'Источники книжных рекомендаций',
-        'Inventaire, Open Library и Author.Today',
-        Icons.manage_search,
-        () => Navigator.push<void>(
-          context,
-          MaterialPageRoute(
-            builder: (_) => RecommendationSourcesPage(
-              store: RecommendationStore(widget.library.local),
+    return LayoutBuilder(
+      builder: (context, size) {
+        final wide = size.maxWidth >= 960;
+        final current = page == 'home' && wide ? 'appearance' : page;
+        return PopScope<void>(
+          canPop: navigation.isEmpty,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && navigation.isNotEmpty) _back();
+          },
+          child: Scaffold(
+            appBar: AppBar(
+              leading: BackButton(onPressed: _back),
+              title: const Text('Настройки'),
             ),
-          ),
-        ),
-      ),
-    );
-    final obsidian = _section(
-      'Obsidian',
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _link(
-            'Подключение',
-            widget.library.config == null
-                ? 'Не настроено'
-                : widget.library.config!.url,
-            Icons.link,
-            () async {
-              await widget.onConnection();
-              if (mounted) setState(() {});
-            },
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Автоматическая синхронизация',
-            style: TextStyle(fontSize: 13, color: palette.muted),
-          ),
-          const SizedBox(height: 8),
-          PepeChoices<int>(
-            options: const [
-              (0, 'Вручную'),
-              (30, 'Каждые 30 с'),
-              (60, 'Раз в минуту'),
-              (300, 'Раз в 5 минут'),
-            ],
-            selected: interval,
-            onSelect: (value) async {
-              setState(() => interval = value);
-              await _save('obsidian-sync-seconds', '$value');
-            },
-          ),
-          const SizedBox(height: 8),
-          _switch(
-            'Синхронизировать журнал',
-            'Дни, длительность и прогресс чтения и прослушивания связанных книг',
-            history,
-            (value) async {
-              setState(() => history = value);
-              await _save('obsidian-sync-history', '$value');
-              if (value) await widget.library.sync();
-            },
-          ),
-          _switch(
-            'Синхронизировать обложки',
-            'Обложки связанных книг и аудиокниг доступны без интернета',
-            covers,
-            (value) async {
-              setState(() => covers = value);
-              await _save('obsidian-sync-covers', '$value');
-              if (value) await widget.library.sync();
-            },
-          ),
-          _switch(
-            'Синхронизировать заметки',
-            'Цитаты, комментарии, теги, персонажи и заметки Obsidian',
-            notes,
-            (value) async {
-              setState(() => notes = value);
-              await _save('obsidian-sync-notes', '$value');
-              if (value) await widget.library.sync();
-            },
-          ),
-        ],
-      ),
-    );
-    final data = PepePanel(
-      title: 'Данные',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _link('Заметки Obsidian', null, Icons.notes, widget.onNotes),
-          if (UpdateScope.of(context) case final updates?)
-            _link(
-              'Обновление приложения',
-              'Новые версии для Windows и Android',
-              Icons.system_update_outlined,
-              () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => UpdatePage(service: updates)),
-              ),
-            ),
-          if (PeerSyncScope.of(context) case final service?)
-            _link(
-              'Устройства и общие папки',
-              'Прямой обмен файлами между ПК и телефоном',
-              Icons.sync,
-              () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PeerSyncPage(service: service),
-                ),
-              ),
-            ),
-          _link(
-            'Словарь Anki',
-            'Слова, предложения и экспорт карточек',
-            Icons.style_outlined,
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => VocabularyPage(
-                  repository: VocabularyRepository(widget.library.local),
-                ),
-              ),
-            ),
-          ),
-          _link(
-            'Журнал чтения и прослушивания',
-            null,
-            Icons.history,
-            widget.onJournal,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            widget.library.config == null
-                ? 'Obsidian не подключён — данные хранятся только на этом устройстве.'
-                : widget.library.syncing
-                ? 'Идёт синхронизация…'
-                : widget.library.error ?? 'Связь с Obsidian настроена.',
-            style: TextStyle(fontSize: 12.5, color: palette.muted),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: () => widget.library.sync(),
-              child: const Text(
-                'Синхронизировать сейчас',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (!loaded) {
-      return const PepeSubpage(
-        title: 'Настройки',
-        settings: true,
-        children: [
-          Padding(
-            padding: EdgeInsets.all(40),
-            child: Center(child: CircularProgressIndicator()),
-          ),
-        ],
-      );
-    }
-    if (!wide) {
-      return PepeSubpage(
-        title: 'Настройки',
-        settings: true,
-        children: [look, goals, recommendations, obsidian, data],
-      );
-    }
-    return PepeSubpage(
-      title: 'Настройки',
-      settings: true,
-      maxWidth: 1480,
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 28),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 200,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final name in sections.keys)
-                    TextButton(
-                      style: TextButton.styleFrom(
-                        alignment: Alignment.centerLeft,
-                        foregroundColor: palette.text,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 14,
+            bottomNavigationBar: const AudioPlayerFooter(),
+            body: !loaded
+                ? const Center(child: CircularProgressIndicator())
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (wide) _sidebar(current),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 900),
+                            child: _content(current, appearance),
+                          ),
                         ),
                       ),
-                      onPressed: () {
-                        final target = sections[name]!.currentContext;
-                        if (target != null) {
-                          Scrollable.ensureVisible(
-                            target,
-                            duration: const Duration(milliseconds: 300),
-                          );
-                        }
-                      },
-                      child: Text(
-                        name,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 24),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.only(bottom: 40),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [look, goals, recommendations, obsidian],
-                ),
-              ),
-            ),
-            const SizedBox(width: 24),
-            SizedBox(
-              width: 320,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.only(bottom: 40),
-                child: data,
-              ),
-            ),
-          ],
-        ),
-      ),
+                    ],
+                  ),
+          ),
+        );
+      },
     );
   }
 }

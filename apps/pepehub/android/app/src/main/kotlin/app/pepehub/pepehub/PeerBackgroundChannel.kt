@@ -26,12 +26,13 @@ class PeerBackgroundChannel(contextSource: Context, messenger: BinaryMessenger) 
                     "configure" -> {
                         val enabled = call.argument<Boolean>("enabled") == true
                         val wifi = call.argument<Boolean>("wifiOnly") != false
+                        val interval = (call.argument<Number>("intervalMinutes")?.toLong() ?: 60L).coerceIn(15L, 1440L)
                         context.getSharedPreferences("peer_background", 0).edit().putBoolean("enabled", enabled).putBoolean("wifiOnly", wifi).apply()
                         val scheduler = context.getSystemService(JobScheduler::class.java)
                         if (!enabled) scheduler.cancel(JOB_ID)
                         else {
                             val builder = JobInfo.Builder(JOB_ID, ComponentName(context, PeerSyncJob::class.java))
-                                .setPeriodic(15 * 60 * 1000L)
+                                .setPeriodic(interval * 60 * 1000L)
                                 .setRequiredNetworkType(if (wifi) JobInfo.NETWORK_TYPE_UNMETERED else JobInfo.NETWORK_TYPE_ANY)
                                 .setPersisted(true)
                             if (android.os.Build.VERSION.SDK_INT >= 26) builder.setRequiresBatteryNotLow(true)

@@ -65,6 +65,10 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        await tapVisible(find.text('Общие папки'));
+        await tester.pumpAndSettle();
+        await tapVisible(find.text('English'));
+        await tester.pumpAndSettle();
         await tapVisible(find.text('История и очистка'));
         await waitFor(() => !fixture.service.busy && !legacy.existsSync());
         expect(find.byType(PeerHistoryPage), findsOneWidget);

@@ -49,6 +49,10 @@ import '../reader/reader_page.dart';
 import '../reader/book_formats.dart';
 import '../reader/pdf_reader_page.dart';
 import '../reader/reading_roots.dart';
+import '../reader/reading_shelf_sources.dart';
+
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+
 import '../reader/reading_book_actions.dart';
 import '../reader/reading_book_visibility.dart';
 import '../sync/peer/peer_service.dart';
@@ -82,7 +86,11 @@ class LibraryPage extends StatefulWidget {
 
 class _LibraryPageState extends State<LibraryPage> {
   final storage = const FlutterSecureStorage(), httpClient = http.Client();
-  List<LibraryRecord> books = [], sessions = [];
+  List<LibraryRecord> books = [];
+  ReadingShelfSources shelfSources = ReadingShelfSources([]);
+  Map<String, Map<String, dynamic>> effectiveReadingInfo = {};
+  bool _remoteOnly(LibraryRecord book) =>
+      reading && shelfSources.remoteOnly(book.id);
   List<LocalAsset> localAssets = [];
   Map<String, ({int? total, int? position, double speed})> audioSummaries = {};
   List<Map<String, dynamic>> conflicts = [];
@@ -277,8 +285,9 @@ class _LibraryPageState extends State<LibraryPage> {
     final readingSection = reading;
     coverRevision++;
     try {
-      final allBooks = await widget.repository.records('book'),
-          s = await widget.repository.records('session');
+      final allBooks = await widget.repository.shelfBooks(
+        audio: !readingSection,
+      );
       final b = <LibraryRecord>[];
       final deleted = readingSection
           ? await ReadingBookVisibility(widget.repository).deletedIds()
@@ -313,6 +322,8 @@ class _LibraryPageState extends State<LibraryPage> {
           ? (await widget.repository.conflicts()).map((r) => r.data).toList()
           : <Map<String, dynamic>>[];
       final files = await widget.assets?.list() ?? <LocalAsset>[];
+      final sources = ReadingShelfSources(files);
+      if (readingSection) await sources.load(widget.repository);
       final rootList = widget.assets == null
           ? <AudioRoot>[]
           : readingSection
@@ -348,6 +359,13 @@ class _LibraryPageState extends State<LibraryPage> {
         final groups = await readingLibrary.entries('reading-collection:');
         final order = await widget.repository.meta('reading-sort') ?? 'title';
         if (mounted && reading == readingSection) {
+          effectiveReadingInfo = {
+            for (final book in b)
+              book.id: ReadingLibrary.effective(
+                index[sources.first(book.id)?.hash] ?? {},
+                prefs[book.id] ?? {},
+              ),
+          };
           readingIndex = index;
           readingPositions = positions;
           readingPrefs = prefs;
@@ -387,14 +405,8 @@ class _LibraryPageState extends State<LibraryPage> {
                 : null;
           }
           localAssets = files;
+          shelfSources = sources;
           audioSummaries = summary;
-          sessions = s
-              .where(
-                (record) =>
-                    record.payload?['kind'] ==
-                    (readingSection ? 'reading' : 'listening'),
-              )
-              .toList();
           conflicts = c;
           loading = false;
         });
@@ -446,24 +458,17 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Map<String, dynamic> _textInfo(LibraryRecord b) {
-    final asset = localAssets.where((a) => a.bookId == b.id).firstOrNull;
-    return ReadingLibrary.effective(
-      readingIndex[asset?.hash] ?? {},
-      readingPrefs[b.id] ?? {},
-    );
+    return effectiveReadingInfo[b.id] ?? {};
   }
 
   Map<String, dynamic> _textPosition(LibraryRecord b) {
-    final asset = localAssets.where((a) => a.bookId == b.id).firstOrNull;
+    final asset = shelfSources.first(b.id);
     return readingPositions[asset?.hash] ?? {};
   }
 
   String _sourcePath(LibraryRecord book) =>
       readingSourcePaths[book.id]?['relativePath'] as String? ??
-      localAssets
-          .where((asset) => asset.bookId == book.id)
-          .firstOrNull
-          ?.filename ??
+      shelfSources.first(book.id)?.filename ??
       '';
 
   String _title(LibraryRecord b) {
@@ -635,6 +640,23 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
     await _action(() async {
+      if (action == 'hide' && reading) {
+        await widget.repository.db.transaction(() async {
+          for (final book in chosen) {
+            await widget.repository.setMeta(
+              'reading-user-hidden:${book.id}',
+              '1',
+            );
+            await widget.repository.setMeta(
+              'reading-library-hidden:${book.id}',
+              '1',
+            );
+          }
+        });
+        widget.repository.notifyExternalChange();
+        if (mounted) setState(selectedBooks.clear);
+        return;
+      }
       for (final book in chosen) {
         if (action == 'favorite') {
           final prefix = reading ? 'reading' : 'audio';
@@ -904,6 +926,9 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   });
   Future<void> _export() => _action(() async {
+    final sessions = (await widget.repository.records('session'))
+        .where((s) => s.payload?['kind'] == (reading ? 'reading' : 'listening'))
+        .toList();
     final text = exportMarkdown(books, sessions);
     if (Platform.isAndroid) {
       if (!mounted) return;
@@ -1294,7 +1319,7 @@ class _LibraryPageState extends State<LibraryPage> {
       );
     }
     final liveCount = books
-        .where((b) => !deletedReadingBooks.contains(b.id))
+        .where((b) => !deletedReadingBooks.contains(b.id) && !_remoteOnly(b))
         .length;
     final visible = books
         .where(
@@ -1307,7 +1332,11 @@ class _LibraryPageState extends State<LibraryPage> {
               (!reading ||
                   (statusFilter == 'deleted') ==
                       deletedReadingBooks.contains(b.id)) &&
+              (!reading ||
+                  statusFilter == 'deleted' ||
+                  (statusFilter == 'remote') == _remoteOnly(b)) &&
               (statusFilter == 'all' ||
+                  statusFilter == 'remote' ||
                   statusFilter == 'deleted' ||
                   _status(b) == statusFilter) &&
               (filter == 'all' ||
@@ -1418,6 +1447,11 @@ class _LibraryPageState extends State<LibraryPage> {
                     value: 'favorite',
                     child: Text('Добавить в избранное'),
                   ),
+                  if (reading && widget.assets != null)
+                    const PopupMenuItem(
+                      value: 'hide',
+                      child: Text('Убрать из списка без удаления файлов'),
+                    ),
                   const PopupMenuItem(
                     value: 'planned',
                     child: Text('Отметить новыми'),
@@ -1557,6 +1591,13 @@ class _LibraryPageState extends State<LibraryPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _statusTabs(),
+                        if (reading && books.any(_remoteOnly))
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              'Карточки синхронизации без локального файла находятся во вкладке «Без файла» и не входят в счётчик «Все». Их можно скрыть без удаления истории.',
+                            ),
+                          ),
                         if (reading && statusFilter == 'deleted') ...[
                           const SizedBox(height: 12),
                           const Text(
@@ -1815,6 +1856,8 @@ class _LibraryPageState extends State<LibraryPage> {
                           Text(
                             reading && statusFilter == 'deleted'
                                 ? 'Удалённых книг нет'
+                                : reading && statusFilter == 'remote'
+                                ? 'Карточек без файла нет'
                                 : liveCount == 0
                                 ? 'Начните с первой книги'
                                 : 'Ничего не найдено',
@@ -1834,6 +1877,8 @@ class _LibraryPageState extends State<LibraryPage> {
                           Text(
                             reading && statusFilter == 'deleted'
                                 ? 'Сюда попадают книги после удаления файла или обновления подключённой папки.'
+                                : reading && statusFilter == 'remote'
+                                ? 'Здесь показываются карточки синхронизации, для которых ещё не подключён файл.'
                                 : liveCount == 0
                                 ? 'Подключите папку или добавьте книгу.'
                                 : 'Попробуйте изменить поиск или фильтр.',
@@ -1978,7 +2023,101 @@ class _LibraryPageState extends State<LibraryPage> {
     return false;
   }
 
+  Future<void> _bookSource(LibraryRecord book) async {
+    final files = shelfSources.byBook[book.id] ?? <LocalAsset>[];
+    final descriptor = shelfSources.shared[book.id];
+    final connected = roots.where((r) => r.bookIds.contains(book.id)).toList();
+    final peers = PeerSyncScope.of(context);
+    final lines = <String>[
+      if (files.isEmpty)
+        descriptor == null
+            ? 'Карточка без подключённого файла. Первоначальный источник не записан.'
+            : 'Карточка участвует в синхронизации. Сам файл на этом устройстве не подключён. Обмен данными приложения переносит карточки и историю отдельно от файлов.',
+      if (connected.isEmpty)
+        'Связи с папкой библиотеки на этом устройстве нет.',
+      for (final root in connected)
+        'Папка библиотеки: ${root.title}\n${root.path}',
+    ];
+    for (final file in files) {
+      bool available;
+      try {
+        available = await audioSourceExists(file.path);
+      } catch (_) {
+        available = false;
+      }
+      lines.add(
+        '${widget.assets?.isManagedBookPath(file) == true ? 'Копия внутри приложения' : 'Подключённый файл'}: ${file.filename}\n${file.path}\n${available ? 'Доступен' : 'Нет доступа или файл отсутствует'} · ${file.bytes} байт',
+      );
+    }
+    for (final raw in descriptor?['sources'] as List? ?? []) {
+      final source = raw as Map;
+      final folder = peers?.folders
+          .where((f) => f.id == source['folder'])
+          .firstOrNull;
+      lines.add(
+        'Источник в обмене: ${source['name']}\n${folder == null ? 'Общая папка на этом устройстве не подключена' : 'Общая папка: ${folder.name}'}${source['path'] == null ? '' : '\nПуть в общей папке: ${source['path']}'}',
+      );
+    }
+    if (descriptor != null) {
+      final origin = shelfSources.receivedFrom[shelfSources.sharedIds[book.id]];
+      lines.add(
+        origin == null
+            ? 'Устройство первоначального импорта в старых данных не записано.'
+            : 'Последняя передача карточки: ${origin['name']}\n${origin['receivedAt']}',
+      );
+      lines.add(
+        'Карточка синхронизации сама по себе не означает наличие файла на телефоне или ПК.',
+      );
+    }
+    final source = readingSourcePaths[book.id];
+    if (source != null) {
+      lines.add(
+        'Последний подключённый источник: ${source['root']}\n${source['relativePath']}',
+      );
+    }
+    if (!mounted) return;
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Источник и файл'),
+        content: SizedBox(
+          width: 600,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              '${_title(book)}\n\n${lines.join('\n\n')}\n\n«Убрать из списка» скрывает карточку только на этом устройстве. Файлы, заметки и история сохраняются.',
+            ),
+          ),
+        ),
+        actions: [
+          if (files.isNotEmpty)
+            TextButton(
+              onPressed: () async {
+                await Clipboard.setData(
+                  ClipboardData(text: files.map((f) => f.path).join('\n')),
+                );
+              },
+              child: const Text('Копировать путь'),
+            ),
+          if (widget.assets != null)
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'hide-book'),
+              child: const Text('Убрать из списка'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Закрыть'),
+          ),
+        ],
+      ),
+    );
+    if (action != null && mounted) await _bookMenu(book, action);
+  }
+
   Future<void> _bookMenu(LibraryRecord book, String value) async {
+    if (value == 'source') {
+      await _bookSource(book);
+      return;
+    }
     if (value == 'restore-deleted') {
       await _importBook();
       return;
@@ -2064,7 +2203,7 @@ class _LibraryPageState extends State<LibraryPage> {
       await _action(() async {
         final files = book.payload!['format'] == 'audio'
             ? await widget.assets!.audioTracks(book.id)
-            : localAssets.where((a) => a.bookId == book.id).toList();
+            : shelfSources.byBook[book.id] ?? <LocalAsset>[];
         await shareBookFiles(files);
       });
       return;
@@ -2087,7 +2226,7 @@ class _LibraryPageState extends State<LibraryPage> {
             repository: widget.repository,
             book: book,
             assets: widget.assets,
-            asset: localAssets.where((a) => a.bookId == book.id).firstOrNull,
+            asset: shelfSources.first(book.id),
           ),
         ),
       );
@@ -2114,7 +2253,7 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
     if (value == 'metadata') {
-      final asset = localAssets.where((a) => a.bookId == book.id).firstOrNull;
+      final asset = shelfSources.first(book.id);
       if (asset != null && widget.assets != null) {
         await _action(
           () => readingLibrary.index(widget.assets!, asset, retry: true),
@@ -2168,7 +2307,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Widget _bookCard(LibraryRecord book) {
     final audio = book.payload!['format'] == 'audio';
-    final asset = localAssets.where((a) => a.bookId == book.id).firstOrNull;
+    final asset = shelfSources.first(book.id);
     final summary = audioSummaries[book.id];
     final selected = widget.audio?.current?.bookId == book.id;
     final scheme = Theme.of(context).colorScheme;
@@ -2193,7 +2332,7 @@ class _LibraryPageState extends State<LibraryPage> {
             : deleted
             ? () => _deletedBookInfo(book)
             : asset == null
-            ? null
+            ? () => _bookSource(book)
             : () => audio ? _openAudio(asset) : _openReader(asset),
         child: Padding(
           padding: const EdgeInsets.all(14),
@@ -2283,6 +2422,11 @@ class _LibraryPageState extends State<LibraryPage> {
                           style: TextStyle(fontSize: 10, color: scheme.primary),
                         ),
                       ),
+                    if (!audio && asset == null)
+                      const Text(
+                        'Файл не подключён на этом устройстве',
+                        style: TextStyle(fontSize: 11),
+                      ),
                     const SizedBox(height: 9),
                     Wrap(
                       spacing: 12,
@@ -2330,7 +2474,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Widget _bookMenuButton(LibraryRecord book) {
     final audio = book.payload!['format'] == 'audio';
-    final asset = localAssets.where((a) => a.bookId == book.id).firstOrNull;
+    final asset = shelfSources.first(book.id);
     final deleted = !audio && deletedReadingBooks.contains(book.id);
     return PopupMenuButton<String>(
       tooltip: 'Действия с книгой',
@@ -2346,7 +2490,7 @@ class _LibraryPageState extends State<LibraryPage> {
           child: Text(
             obsidianLibrary.forBook(book.id) == null ||
                     obsidianLibrary.forBook(book.id)!.state == 'removed'
-                ? 'Добавить в библиотеку'
+                ? 'Добавить в Obsidian'
                 : libraryState(obsidianLibrary.forBook(book.id)!),
           ),
         ),
@@ -2371,6 +2515,7 @@ class _LibraryPageState extends State<LibraryPage> {
           child: Text('Коллекции книги'),
         ),
         if (!audio) ...[
+          const PopupMenuItem(value: 'source', child: Text('Источник и файл')),
           if (widget.assets != null &&
               asset != null &&
               (!Platform.isAndroid ||
@@ -2389,7 +2534,7 @@ class _LibraryPageState extends State<LibraryPage> {
             value: 'reading-plan',
             child: Text('План чтения'),
           ),
-          if (!deleted)
+          if (!deleted && asset != null)
             const PopupMenuItem(
               value: 'metadata',
               child: Text('Обновить сведения из файла'),
@@ -2400,10 +2545,11 @@ class _LibraryPageState extends State<LibraryPage> {
               value: 'hide-book',
               child: Text('Убрать из списка'),
             ),
-            const PopupMenuItem(
-              value: 'delete-book',
-              child: Text('Удалить навсегда…'),
-            ),
+            if (asset != null)
+              const PopupMenuItem(
+                value: 'delete-book',
+                child: Text('Удалить навсегда…'),
+              ),
           ],
         ],
         const PopupMenuItem(value: 'planned', child: Text('Отметить новой')),
@@ -2430,7 +2576,10 @@ class _LibraryPageState extends State<LibraryPage> {
   LibraryRecord? _heroBook() {
     final active = books
         .where(
-          (b) => !deletedReadingBooks.contains(b.id) && _status(b) == 'active',
+          (b) =>
+              !deletedReadingBooks.contains(b.id) &&
+              !_remoteOnly(b) &&
+              _status(b) == 'active',
         )
         .toList();
     if (active.isEmpty) return null;
@@ -2447,7 +2596,10 @@ class _LibraryPageState extends State<LibraryPage> {
         .where(
           (b) => key == 'deleted'
               ? deletedReadingBooks.contains(b.id)
-              : !deletedReadingBooks.contains(b.id) &&
+              : key == 'remote'
+              ? _remoteOnly(b) && !deletedReadingBooks.contains(b.id)
+              : !_remoteOnly(b) &&
+                    !deletedReadingBooks.contains(b.id) &&
                     (key == 'all' || _status(b) == key),
         )
         .length;
@@ -2456,6 +2608,7 @@ class _LibraryPageState extends State<LibraryPage> {
       'active': reading ? 'Читаю' : 'Слушаю',
       'planned': 'В планах',
       'finished': reading ? 'Прочитано' : 'Прослушано',
+      if (reading) 'remote': 'Без файла',
       if (reading) 'deleted': 'Удалённые',
     };
     return Container(
@@ -2565,7 +2718,7 @@ class _LibraryPageState extends State<LibraryPage> {
   Widget _hero(LibraryRecord book) {
     final colors = PepeColors.of(context);
     final audio = book.payload!['format'] == 'audio';
-    final asset = localAssets.where((a) => a.bookId == book.id).firstOrNull;
+    final asset = shelfSources.first(book.id);
     final summary = audioSummaries[book.id];
     final total = summary?.total, position = summary?.position;
     final double fraction = !audio
@@ -2663,7 +2816,7 @@ class _LibraryPageState extends State<LibraryPage> {
   /// Cover tile used on wide windows.
   Widget _bookTile(LibraryRecord book, double width) {
     final audio = book.payload!['format'] == 'audio';
-    final asset = localAssets.where((a) => a.bookId == book.id).firstOrNull;
+    final asset = shelfSources.first(book.id);
     final summary = audioSummaries[book.id];
     final playing = widget.audio?.current?.bookId == book.id;
     final colors = PepeColors.of(context);

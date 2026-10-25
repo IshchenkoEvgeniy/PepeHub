@@ -13,6 +13,7 @@ import 'peer_history.dart';
 import 'peer_models.dart';
 import 'peer_replica.dart';
 import 'peer_store.dart';
+import 'peer_sync_schedule.dart';
 import 'peer_wire.dart';
 import 'peer_diagnostics.dart';
 import 'peer_library.dart';
@@ -51,6 +52,8 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
   final bool? discoverAddresses;
   final bool backgroundWorker;
   final bool Function(String target)? protectsTarget;
+  late final schedule = PeerSyncSchedule(store.repository, now: clock);
+  final DateTime Function()? clock;
   late final journal = PeerSyncJournal(store.repository);
   AppSyncEngine? application;
   final Map<String, bool> remoteAppSharing = {};
@@ -115,6 +118,7 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
   int get port => wire.port;
   PeerSyncService(
     this.store, {
+    this.clock,
     this.secrets = const SecurePeerSecrets(),
     this.assets,
     this.workDirectory,
@@ -134,6 +138,7 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _initialize() async {
     try {
       await store.initialize();
+      await schedule.load();
       await journal.initialize();
       if (Platform.isAndroid && observeLifecycle) {
         final report = await _backgroundChannel
@@ -531,6 +536,13 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
     _scheduleChanges();
   }
 
+  Future<void> setSyncInterval(int minutes) async {
+    await schedule.setMinutes(minutes);
+    await configureBackground();
+    _scheduleChanges();
+    _changed();
+  }
+
   Future<void> setAutoSync(bool value) async {
     autoSync = value;
     await store.repository.setMeta('peer-sync-auto', value ? '1' : '0');
@@ -578,8 +590,7 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
           _appActive = false;
         }
       }
-      final heads = await application!.store.heads();
-      parts.add(heads.map((h) => h.id).toList()..sort());
+      parts.add(await application!.store.manifestRevision());
       parts.add(application!.validationWarnings);
     }
     return peerDigest(utf8.encode(jsonEncode(parts)));
@@ -599,7 +610,9 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
     try {
       for (final peer in devices.toList()) {
         if (!enabled || !autoSync || busy || _disposed) return;
+        if (!schedule.checkDue(peer.id)) continue;
         if (_retryAfter[peer.id]?.isAfter(DateTime.now()) == true) continue;
+        await schedule.checked(peer.id);
         try {
           final remote = await _request(peer, {'op': 'probe'}, quiet: true);
           if (remote['busy'] == true) continue;
@@ -1417,12 +1430,23 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
         await _saveAddress(device, address, nextPort);
         return {'device': deviceId, 'nonce': nonce, 'port': port};
       case 'probe':
-        if (busy) return {'busy': true};
+        if (busy || !schedule.probeDue(device.id)) return {'busy': true};
+        await schedule.probed(device.id);
         return {
           'revision': await _stateFor(device, prepare: !backgroundWorker),
           'automatic': autoSync && _foreground,
         };
       case 'folders':
+        if (request['automatic'] == true && !schedule.exchangeDue(device.id)) {
+          return {
+            'busy': true,
+            'folders': <Object>[],
+            'applicationData': false,
+          };
+        }
+        if (request.containsKey('automatic')) {
+          await schedule.exchanged(device.id);
+        }
         journal.add(
           'Устройство проверяет доступные папки и разрешения.',
           peer: device.name,
@@ -1478,12 +1502,25 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
             _changed();
           }
         }
-        return {
-          'versions': await app.manifest(
-            after: request['after'] as String? ?? '',
-          ),
-          'warnings': app.validationWarnings,
-        };
+        return app.store.db.transaction(() async {
+          final revision = await app.store.manifestRevision();
+          if ((request['after'] as String? ?? '').isEmpty &&
+              request['knownRevision'] == revision) {
+            return {
+              'unchanged': true,
+              'revision': revision,
+              'warnings': app.validationWarnings,
+            };
+          }
+          return {
+            'versions': await app.manifest(
+              after: request['after'] as String? ?? '',
+            ),
+            'revision': revision,
+            if ((request['after'] as String? ?? '').isEmpty)
+              'warnings': app.validationWarnings,
+          };
+        });
       case 'app_read':
         if (!_appAllowed(device.id)) {
           throw StateError('Обмен данными приложения не разрешён');
@@ -1696,8 +1733,19 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
     journal.add(peerFailureDescription(failure), level: PeerLogLevel.error);
   }
 
-  Future<List<Map<String, dynamic>>> offeredFolders(PeerDevice peer) async {
-    final result = await _request(peer, {'op': 'folders'});
+  Future<List<Map<String, dynamic>>> offeredFolders(
+    PeerDevice peer, {
+    bool? automatic,
+  }) async {
+    final result = await _request(peer, {
+      'op': 'folders',
+      'automatic': ?automatic,
+    });
+    if (result['busy'] == true) {
+      throw StateError(
+        'Второе устройство ожидает следующего интервала автообмена. Ручной обмен доступен.',
+      );
+    }
     remoteAppSharing[peer.id] = result['applicationData'] == true;
     final list = (result['folders'] as List)
         .map((e) => Map<String, dynamic>.from(e as Map))
@@ -1928,6 +1976,7 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
     bool metadataOnly = false,
   }) async {
     if (busy || !enabled) return;
+    if (automatic && !schedule.exchangeDue(peer.id)) return;
     _syncing = true;
     _manualRescan = !automatic;
     error = null;
@@ -1941,7 +1990,8 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
     );
     _changed();
     try {
-      final offers = await offeredFolders(peer),
+      await schedule.exchanged(peer.id);
+      final offers = await offeredFolders(peer, automatic: automatic),
           ids = offers.map((f) => f['id']).toSet();
       final includeApp =
           _appAllowed(peer.id) && remoteAppSharing[peer.id] == true;
@@ -2050,6 +2100,7 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
         }
       }
       lastExchange = DateTime.now();
+      await schedule.exchanged(peer.id);
       status = 'Прямой обмен завершён';
       if (pendingDeletions.isNotEmpty) {
         status +=
@@ -2208,6 +2259,11 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
         stage: 'Ожидание индекса данных приложения на втором устройстве',
       );
       var after = '';
+      final revisionKey = 'peer-app-remote-revision:${peer.id}';
+      final knownRevision = await store.repository.meta(revisionKey);
+      String? indexRevision;
+      var stableIndex = true, unchanged = false;
+      var indexBytes = 0;
       var received = 0;
       var downloaded = 0, checked = 0;
       while (true) {
@@ -2215,14 +2271,31 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
         final response = await _request(peer, {
           'op': 'app_manifest',
           'after': after,
+          if (after.isEmpty && knownRevision != null)
+            'knownRevision': knownRevision,
         });
-        final versions = response['versions'] as List;
+        indexBytes += utf8.encode(jsonEncode(response)).length;
+        final revision = response['revision'] as String?;
+        if (after.isEmpty) indexRevision = revision;
+        if (revision == null || revision != indexRevision) stableIndex = false;
         if (response['warnings'] case final List warnings) {
           recordDiagnostics(
             warnings.whereType<String>().take(100),
             remote: true,
           );
         }
+        if (response['unchanged'] == true) {
+          if (knownRevision == null ||
+              revision != knownRevision ||
+              after.isNotEmpty) {
+            throw const FormatException(
+              'Invalid conditional application index',
+            );
+          }
+          unchanged = true;
+          break;
+        }
+        final versions = response['versions'] as List;
         if (versions.length > 128 || (received += versions.length) > 100000) {
           throw StateError('Слишком большой индекс данных');
         }
@@ -2244,6 +2317,7 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
             throw StateError('Неверная последовательность индекса');
           }
           try {
+            final beforeDownload = downloaded;
             await app.receive(header, (offset, count) async {
               allowed();
               final result = await _request(peer, {
@@ -2266,7 +2340,20 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
               );
               return bytes;
             });
+            final entity = header['key'] as String;
+            if (downloaded > beforeDownload &&
+                entity.startsWith('media:book:')) {
+              await store.repository.setMeta(
+                'peer-book-origin:${entity.substring('media:book:'.length)}',
+                jsonEncode({
+                  'device': peer.id,
+                  'name': peer.name,
+                  'receivedAt': DateTime.now().toUtc().toIso8601String(),
+                }),
+              );
+            }
           } on AppSyncRejectedRecord catch (failure) {
+            stableIndex = false;
             recordDiagnostics([
               'Запись ${AppSyncLocalProblem(failure.key, '', '').reference} не принята: ${failure.message}. Остальные данные продолжают синхронизироваться.',
             ], remote: true);
@@ -2277,8 +2364,11 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
         if (versions.length < 128) break;
       }
       allowed();
+      if (stableIndex && indexRevision != null) {
+        await store.repository.setMeta(revisionKey, indexRevision);
+      }
       journal.add(
-        'Индекс обработан: $checked записей, получено $downloaded байт. Применение прогресса, заметок и статистики.',
+        '${unchanged ? 'Индекс не изменился' : 'Индекс обработан: $checked записей'}. Ответы индекса: $indexBytes байт JSON; содержимое записей: $downloaded байт. Шифрование и сетевые заголовки сюда не входят. Применение прогресса, заметок и статистики.',
         peer: peer.name,
       );
       journal.update(activity, stage: 'Применение данных приложения');
@@ -2339,6 +2429,7 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
       await _backgroundChannel.invokeMethod<void>('configure', {
         'enabled': next && enabled,
         'wifiOnly': wifi,
+        'intervalMinutes': schedule.minutes,
       });
     }
     await store.repository.setMeta('peer-background-enabled', next ? '1' : '0');

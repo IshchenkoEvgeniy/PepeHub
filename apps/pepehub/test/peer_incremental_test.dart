@@ -135,10 +135,11 @@ void main() {
   Future<(ServiceFixture, ServiceFixture)> pair({
     bool app = false,
     bool library = false,
+    DateTime Function()? clock,
   }) async {
     final a = ServiceFixture(), b = ServiceFixture();
-    await a.open(library: library);
-    await b.open(library: library);
+    await a.open(library: library, clock: clock);
+    await b.open(library: library, clock: clock);
     addTearDown(a.close);
     addTearDown(b.close);
     await a.service.setEnabled(true);
@@ -226,8 +227,9 @@ void main() {
     );
   });
 
-  test('automatic idle probes converge then perform no exchanges; local changes and application changes restart exchange', () async {
-    final (a, b) = await pair(app: true);
+  test('automatic checks respect the interval; pending file and application changes sync when due', () async {
+    var now = DateTime.utc(2026, 10, 25);
+    final (a, b) = await pair(app: true, clock: () => now);
     final initiator = a.service.deviceId.compareTo(b.service.deviceId) < 0
         ? a
         : b;
@@ -246,10 +248,17 @@ void main() {
     other.service.localFilesChanged();
     await initiator.service.checkForChanges();
     expect(
+      await File(p.join(initiator.shared.path, 'added.txt')).exists(),
+      false,
+    );
+    now = now.add(const Duration(minutes: 61));
+    await initiator.service.checkForChanges();
+    expect(
       await File(p.join(initiator.shared.path, 'added.txt')).readAsString(),
       'New file',
     );
     await VocabularyRepository(other.repo).save(front: 'word', back: 'слово');
+    now = now.add(const Duration(minutes: 61));
     other.service.localFilesChanged();
     await initiator.service.checkForChanges();
     expect(

@@ -40,7 +40,13 @@ void main() {
         ),
       );
       Future<void> tap(String text) async {
-        await tester.ensureVisible(find.text(text));
+        if (find.text(text).evaluate().isEmpty) {
+          await tester.scrollUntilVisible(find.text(text), 250);
+        }
+        await Scrollable.ensureVisible(
+          tester.element(find.text(text)),
+          alignment: .5,
+        );
         await tester.pumpAndSettle();
         await tester.tap(find.text(text));
         await tester.pump();

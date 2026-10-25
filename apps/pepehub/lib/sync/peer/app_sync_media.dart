@@ -50,7 +50,10 @@ class AppSyncMedia {
   ) async {
     final previous = aliases['$kind:$id'];
     common = previous?['shared'] as String? ?? common;
-    await store.alias(kind, id, common, data);
+    if (previous == null ||
+        appSyncJson(previous['data']) != appSyncJson(data)) {
+      await store.alias(kind, id, common, data);
+    }
     aliases['$kind:$id'] = {
       'kind': kind,
       'local': id,
