@@ -255,7 +255,7 @@ class MusicPlayerView extends StatelessWidget {
                                     )
                                   : null,
                               icon: const Icon(Icons.shuffle),
-                              selectedIcon: const Icon(Icons.shuffle_on),
+                              selectedIcon: const Icon(Icons.shuffle),
                             ),
                             IconButton(
                               tooltip: 'Предыдущий трек',

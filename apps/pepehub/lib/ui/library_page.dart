@@ -1,5 +1,6 @@
 import 'audio_mini_player.dart';
 import 'app_theme.dart';
+import 'book_action_menu.dart';
 import 'settings_page.dart';
 import 'activity_page.dart';
 import 'obsidian_notes_page.dart';
@@ -2476,100 +2477,62 @@ class _LibraryPageState extends State<LibraryPage> {
     final audio = book.payload!['format'] == 'audio';
     final asset = shelfSources.first(book.id);
     final deleted = !audio && deletedReadingBooks.contains(book.id);
-    return PopupMenuButton<String>(
+    return IconButton(
       tooltip: 'Действия с книгой',
-      onSelected: (v) => _bookMenu(book, v),
-      itemBuilder: (_) => [
-        if (deleted && widget.assets != null)
-          const PopupMenuItem(
-            value: 'restore-deleted',
-            child: Text('Добавить файл заново'),
-          ),
-        PopupMenuItem(
-          value: 'obsidian',
-          child: Text(
-            obsidianLibrary.forBook(book.id) == null ||
+      icon: const Icon(Icons.more_vert),
+      onPressed: () async {
+        final action = await showBookActionMenu(
+          context: context,
+          repository: widget.repository,
+          title: _title(book),
+          available: {
+            if (deleted && widget.assets != null)
+              'restore-deleted': 'Добавить файл заново',
+            'obsidian':
+                obsidianLibrary.forBook(book.id) == null ||
                     obsidianLibrary.forBook(book.id)!.state == 'removed'
                 ? 'Добавить в Obsidian'
                 : libraryState(obsidianLibrary.forBook(book.id)!),
-          ),
-        ),
-        if (!deleted &&
-            Platform.isAndroid &&
-            widget.assets != null &&
-            asset != null)
-          const PopupMenuItem(
-            value: 'share',
-            child: Text('Поделиться файлом книги'),
-          ),
-        PopupMenuItem(
-          value: 'favorite',
-          child: Text(
-            bookPrefs[book.id]?['favorite'] == true
+            if (!deleted &&
+                Platform.isAndroid &&
+                widget.assets != null &&
+                asset != null)
+              'share': 'Поделиться файлом книги',
+            'favorite': bookPrefs[book.id]?['favorite'] == true
                 ? 'Убрать из избранного'
                 : 'В избранное',
-          ),
-        ),
-        const PopupMenuItem(
-          value: 'collections',
-          child: Text('Коллекции книги'),
-        ),
-        if (!audio) ...[
-          const PopupMenuItem(value: 'source', child: Text('Источник и файл')),
-          if (widget.assets != null &&
-              asset != null &&
-              (!Platform.isAndroid ||
-                  asset.path.startsWith('content:') ||
-                  readingSourcePaths.containsKey(book.id)))
-            PopupMenuItem(
-              value: 'reveal-book',
-              child: Text(
-                Platform.isAndroid
+            'collections': 'Коллекции книги',
+            if (!audio) ...{
+              'source': 'Источник и файл',
+              if (widget.assets != null &&
+                  asset != null &&
+                  (!Platform.isAndroid ||
+                      asset.path.startsWith('content:') ||
+                      readingSourcePaths.containsKey(book.id)))
+                'reveal-book': Platform.isAndroid
                     ? 'Показать папку файла'
                     : 'Показать в проводнике',
-              ),
-            ),
-          const PopupMenuItem(value: 'details', child: Text('Карточка книги')),
-          const PopupMenuItem(
-            value: 'reading-plan',
-            child: Text('План чтения'),
-          ),
-          if (!deleted && asset != null)
-            const PopupMenuItem(
-              value: 'metadata',
-              child: Text('Обновить сведения из файла'),
-            ),
-          if (!deleted && widget.assets != null) ...[
-            const PopupMenuDivider(),
-            const PopupMenuItem(
-              value: 'hide-book',
-              child: Text('Убрать из списка'),
-            ),
-            if (asset != null)
-              const PopupMenuItem(
-                value: 'delete-book',
-                child: Text('Удалить навсегда…'),
-              ),
-          ],
-        ],
-        const PopupMenuItem(value: 'planned', child: Text('Отметить новой')),
-        const PopupMenuItem(value: 'active', child: Text('Отметить начатой')),
-        const PopupMenuItem(
-          value: 'finished',
-          child: Text('Отметить завершённой'),
-        ),
-        const PopupMenuItem(value: 'session', child: Text('Записать сессию')),
-        if (audio)
-          const PopupMenuItem(
-            value: 'folder',
-            child: Text('Переименовать / переместить папку'),
-          ),
-        if (audio)
-          const PopupMenuItem(
-            value: 'reconnect',
-            child: Text('Указать папку заново'),
-          ),
-      ],
+              'details': 'Карточка книги',
+              'reading-plan': 'План чтения',
+              if (!deleted && asset != null)
+                'metadata': 'Обновить сведения из файла',
+              if (!deleted && widget.assets != null) ...{
+                'hide-book': 'Убрать из списка',
+                if (asset != null) 'delete-book': 'Удалить навсегда…',
+              },
+            },
+            'planned': 'Отметить новой',
+            'active': 'Отметить начатой',
+            'finished': 'Отметить завершённой',
+            'session': 'Записать сессию',
+            if (audio) ...{
+              'folder': 'Переименовать / переместить папку',
+              'reconnect': 'Указать папку заново',
+            },
+          },
+        );
+        if (mounted && action != null) await _bookMenu(book, action);
+      },
     );
   }
 

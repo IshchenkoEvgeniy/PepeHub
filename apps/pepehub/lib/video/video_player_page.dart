@@ -372,7 +372,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _openingAnnotation = true;
     _controlsTimer?.cancel();
     try {
-      await controller!.pause();
+      if (!draft.forAnki) await controller!.pause();
       if (seek || draft.existing != null) {
         await controller!.seek(draft.positionMs);
       }
@@ -391,6 +391,18 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     if (saved) _session.refresh();
     _showControls();
     _focus.requestFocus();
+  }
+
+  void _nextAnkiCard(VocabularyCard card) {
+    final player = controller!;
+    setState(() {
+      _annotation = VideoAnnotationDraft(
+        lesson: player.current!,
+        positionMs: player.positionMs,
+        durationMs: player.state.durationMs,
+        forAnki: true,
+      );
+    });
   }
 
   Future<void> _statistics() async {
@@ -648,6 +660,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                       !_fullscreenHost.pip &&
                       _annotation == null
                   ? 130
+                  : _annotation != null
+                  ? 52
                   : 12,
               fontScale: _fullscreenHost.pip ? .65 : 1,
               maxLines: _fullscreenHost.pip ? 2 : 4,
@@ -1356,6 +1370,66 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                     },
                   ),
                 ),
+              if (noteLayout != null)
+                Positioned(
+                  left: noteLayout.video.left,
+                  top: noteLayout.video.bottom - 44,
+                  width: noteLayout.video.width,
+                  height: 44,
+                  child: Focus(
+                    canRequestFocus: false,
+                    descendantsAreFocusable: false,
+                    child: Material(
+                      color: Colors.black87,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          IconButton(
+                            tooltip: 'Назад на 10 секунд',
+                            onPressed: _enabled
+                                ? () => _perform(
+                                    () =>
+                                        player.seek(player.positionMs - 10000),
+                                  )
+                                : null,
+                            icon: const Icon(Icons.replay_10),
+                          ),
+                          IconButton(
+                            key: const ValueKey('annotation-playback'),
+                            tooltip: player.state.playing
+                                ? 'Пауза видео'
+                                : 'Продолжить видео',
+                            onPressed: _enabled
+                                ? () => _perform(player.toggle)
+                                : null,
+                            icon: Icon(
+                              player.state.playing
+                                  ? Icons.pause
+                                  : Icons.play_arrow,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Вперёд на 10 секунд',
+                            onPressed: _enabled
+                                ? () => _perform(
+                                    () =>
+                                        player.seek(player.positionMs + 10000),
+                                  )
+                                : null,
+                            icon: const Icon(Icons.forward_10),
+                          ),
+                          Text(
+                            videoTimestamp(player.positionMs),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               if (player.error != null)
                 Positioned(
                   top: 76,
@@ -1442,6 +1516,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                               ),
                             );
                           },
+                          onSavedAndNext: _nextAnkiCard,
                           onCancel: _finishAnnotation,
                         )
                       : VideoAnnotationEditor(

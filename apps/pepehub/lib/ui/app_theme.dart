@@ -396,7 +396,9 @@ class AppTheme extends ChangeNotifier {
           error: const Color(0xffff7a70),
           onError: const Color(0xff2a0705),
         );
-    final pill = RoundedRectangleBorder(borderRadius: BorderRadius.circular(22));
+    final pill = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(22),
+    );
     final textTheme = ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
@@ -489,6 +491,17 @@ class AppTheme extends ChangeNotifier {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(foregroundColor: c.accent),
       ),
+      iconButtonTheme: IconButtonThemeData(
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected) ? c.accent : null,
+          ),
+          foregroundColor: WidgetStateProperty.resolveWith(
+            (states) =>
+                states.contains(WidgetState.selected) ? c.onAccent : null,
+          ),
+        ),
+      ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: c.accent,
         foregroundColor: c.onAccent,
@@ -496,22 +509,25 @@ class AppTheme extends ChangeNotifier {
       ),
       chipTheme: ChipThemeData(
         backgroundColor: c.background,
-        selectedColor: c.text,
+        selectedColor: c.accent,
         disabledColor: c.surface,
         side: BorderSide(color: c.strongLine),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         labelStyle: TextStyle(
           fontFamily: AppFonts.body,
           fontSize: 13,
-          color: c.text,
+          color: WidgetStateColor.resolveWith(
+            (states) =>
+                states.contains(WidgetState.selected) ? c.onAccent : c.text,
+          ),
         ),
         secondaryLabelStyle: TextStyle(
           fontFamily: AppFonts.body,
           fontSize: 13,
           fontWeight: FontWeight.w700,
-          color: c.background,
+          color: c.onAccent,
         ),
-        checkmarkColor: c.background,
+        checkmarkColor: c.onAccent,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       ),
       listTileTheme: ListTileThemeData(
@@ -544,7 +560,8 @@ class AppTheme extends ChangeNotifier {
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected) ? c.onAccent : c.muted,
+          (states) =>
+              states.contains(WidgetState.selected) ? c.onAccent : c.muted,
         ),
         trackColor: WidgetStateProperty.resolveWith(
           (states) =>

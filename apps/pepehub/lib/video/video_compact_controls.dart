@@ -123,7 +123,7 @@ class VideoCompactControls extends StatelessWidget {
                                 ? 'Выключить перемешивание'
                                 : 'Перемешать треки',
                             isSelected: player.shuffleEnabled,
-                            selectedIcon: const Icon(Icons.shuffle_on),
+                            selectedIcon: const Icon(Icons.shuffle),
                             icon: const Icon(Icons.shuffle),
                             onPressed: enabled && player.canShuffle
                                 ? () => perform(

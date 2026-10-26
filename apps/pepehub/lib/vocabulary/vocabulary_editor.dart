@@ -10,6 +10,7 @@ class VocabularyEditor extends StatefulWidget {
   final VocabularySource? source;
   final String initialFront, initialContext;
   final ValueChanged<VocabularyCard> onSaved;
+  final ValueChanged<VocabularyCard>? onSavedAndNext;
   final VoidCallback onCancel;
   const VocabularyEditor({
     super.key,
@@ -19,6 +20,7 @@ class VocabularyEditor extends StatefulWidget {
     this.initialFront = '',
     this.initialContext = '',
     required this.onSaved,
+    this.onSavedAndNext,
     required this.onCancel,
   });
   @override
@@ -46,7 +48,7 @@ class VocabularyEditorState extends State<VocabularyEditor> {
       (widget.initialFront.trim().contains(RegExp(r'[.!?。！？]$'))
           ? VocabularyKind.sentence
           : VocabularyKind.word);
-  late final String _initial;
+  late String _initial;
   bool _details = false, saving = false;
   String? _error;
 
@@ -98,7 +100,7 @@ class VocabularyEditorState extends State<VocabularyEditor> {
     if (mounted) widget.onCancel();
   }
 
-  Future<void> submit() async {
+  Future<void> submit({bool next = false}) async {
     if (saving || !_form.currentState!.validate()) return;
     setState(() {
       saving = true;
@@ -115,7 +117,20 @@ class VocabularyEditorState extends State<VocabularyEditor> {
         deck: _deck.text,
         tags: _tags.text.split(RegExp(r'\s+')),
       );
-      if (mounted) widget.onSaved(card);
+      if (!mounted) return;
+      if (next && widget.onSavedAndNext != null) {
+        setState(() {
+          _front.clear();
+          _back.clear();
+          _context.clear();
+          saving = false;
+          _initial = _snapshot;
+        });
+        widget.onSavedAndNext!(card);
+        _frontFocus.requestFocus();
+      } else {
+        widget.onSaved(card);
+      }
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -208,6 +223,15 @@ class VocabularyEditorState extends State<VocabularyEditor> {
                         iconSize: 20,
                         visualDensity: VisualDensity.compact,
                       ),
+                      if (widget.onSavedAndNext != null)
+                        IconButton(
+                          key: const ValueKey('vocabulary-save-next'),
+                          tooltip: 'Сохранить и следующая карточка',
+                          onPressed: saving ? null : () => submit(next: true),
+                          icon: const Icon(Icons.playlist_add),
+                          iconSize: 20,
+                          visualDensity: VisualDensity.compact,
+                        ),
                       FilledButton(
                         onPressed: saving ? null : submit,
                         style: FilledButton.styleFrom(
