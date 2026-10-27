@@ -1,7 +1,7 @@
 name: pepehub
 description: "Offline library and activity journal with Obsidian integration."
 publish_to: 'none'
-version: 0.24.3+70
+version: 0.24.4+71
 
 environment:
   sdk: ^3.13.3

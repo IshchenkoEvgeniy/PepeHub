@@ -18,6 +18,138 @@ import 'reader_annotations_bookmarks_test.dart' show asset, document;
 import 'reader_improvements_test.dart' show settle, size;
 
 void main() {
+  test(
+    'screen geometry retains usable dimensions when display data disappears',
+    () {
+      final geometry = ReaderScreenGeometry();
+      expect(
+        geometry.resolve(
+          display: const Size(390, 844),
+          window: const Size(390, 796),
+        ),
+        const Size(390, 844),
+      );
+      for (final invalid in [
+        Size.zero,
+        const Size(0, 844),
+        const Size(double.nan, double.infinity),
+      ]) {
+        expect(
+          geometry.resolve(display: invalid, window: const Size(390, 844)),
+          const Size(390, 844),
+        );
+      }
+      // Some Android hosts keep natural display orientation while the view rotates.
+      expect(
+        geometry.resolve(
+          display: const Size(390, 844),
+          window: const Size(796, 390),
+        ),
+        const Size(844, 390),
+      );
+    },
+  );
+
+  test('screen geometry recovers after a zero-size startup window', () {
+    final geometry = ReaderScreenGeometry();
+    geometry.resolve(display: Size.zero, window: Size.zero);
+    expect(
+      geometry.resolve(display: Size.zero, window: const Size(390, 844)),
+      const Size(390, 844),
+    );
+  });
+
+  testWidgets('layout never hides text inside a zero-size page', (
+    tester,
+  ) async {
+    size(tester, const Size(390, 844));
+    var page = Size.zero;
+    late StateSetter update;
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return ReaderLayoutFrame(
+              pageSize: page,
+              builder: (_, box) =>
+                  Center(child: Text('${box.maxWidth} × ${box.maxHeight}')),
+            );
+          },
+        ),
+      ),
+    );
+    expect(find.text('390.0 × 844.0').hitTestable(), findsOneWidget);
+    update(() => page = const Size(390, 800));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('390.0 × 800.0').hitTestable(), findsOneWidget);
+    update(() => page = Size.zero);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('390.0 × 800.0').hitTestable(), findsOneWidget);
+  });
+
+  for (final mode in ['seamless', 'pages', 'compact', 'scroll']) {
+    testWidgets('$mode shows text when Android reports an empty display', (
+      tester,
+    ) async {
+      size(tester, const Size(390, 796));
+      tester.view.display.size = Size.zero;
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = Repository(db);
+      await repo.setMeta('reader:appearance', jsonEncode({'mode': mode}));
+      final book = ReaderDocument(
+        EpubBook('Book', const [], [
+          EpubChapter('one', 'Начало', [
+            for (var i = 0; i < 15; i++)
+              'Море было спокойным, и мы продолжали путь. ' * 8,
+          ]),
+        ]),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ReaderPage(
+            repository: repo,
+            asset: asset,
+            suppliedDocument: book,
+          ),
+        ),
+      );
+      await settle(tester);
+      final viewport = find.byType(ReaderViewport);
+      final before = tester.widget<ReaderViewport>(viewport);
+      expect(before.width, 390);
+      expect(before.height, 796);
+      expect(find.byTooltip('Закрыть книгу'), findsOneWidget);
+      final text = find
+          .descendant(
+            of: viewport,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is RichText &&
+                      widget.text.toPlainText().contains('Море') ||
+                  widget is EditableText &&
+                      widget.controller.text.contains('Море'),
+            ),
+          )
+          .hitTestable();
+      expect(text, findsWidgets);
+      final state = tester.state(viewport);
+      await tester.tapAt(tester.getCenter(viewport));
+      await tester.pump();
+      tester.view.physicalSize = const Size(390, 844);
+      await settle(tester);
+      expect(tester.state(viewport), same(state));
+      expect(tester.widget<ReaderViewport>(viewport).key, before.key);
+      expect(text, findsWidgets);
+      await tester.pumpWidget(const SizedBox());
+      await settle(tester);
+    });
+  }
+
   for (final mode in ['seamless', 'pages', 'compact', 'scroll']) {
     for (final screen in [const Size(390, 844), const Size(844, 390)]) {
       testWidgets(

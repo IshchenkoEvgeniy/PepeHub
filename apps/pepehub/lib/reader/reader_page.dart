@@ -184,6 +184,7 @@ class _ReaderPageState extends State<ReaderPage>
 
   final dragProgress = ValueNotifier<double?>(null);
   final viewportController = ReaderViewportController();
+  final screenGeometry = ReaderScreenGeometry();
   List<ReadingNote>? _cachedSourceNotes;
   _SeamlessBook? _cachedNotesFlow;
   List<ReadingNote> _cachedFlowNotes = const [];
@@ -1427,11 +1428,15 @@ class _ReaderPageState extends State<ReaderPage>
                           Theme.of(context).platform == TargetPlatform.android;
                       final view = View.of(context);
                       final screen = android
-                          ? view.display.size / view.devicePixelRatio
+                          ? screenGeometry.resolve(
+                              display:
+                                  view.display.size / view.devicePixelRatio,
+                              window: outer.biggest,
+                            )
                           : outer.biggest;
-                      final wideLayout = screen.width >= 1000;
+                      final wideLayout = outer.maxWidth >= 1000;
                       final showToc = wideLayout && tocOpen;
-                      final showNotes = wideLayout && screen.width >= 1250;
+                      final showNotes = wideLayout && outer.maxWidth >= 1250;
                       final sideWidth =
                           (wideLayout ? 280.0 : 0.0) +
                           (showNotes ? 300.0 : 0.0);
