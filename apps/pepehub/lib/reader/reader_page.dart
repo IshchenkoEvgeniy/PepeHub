@@ -1423,9 +1423,31 @@ class _ReaderPageState extends State<ReaderPage>
                 child: SizedBox.expand(
                   child: LayoutBuilder(
                     builder: (context, outer) {
-                      final wideLayout = outer.maxWidth >= 1000;
+                      final android =
+                          Theme.of(context).platform == TargetPlatform.android;
+                      final view = View.of(context);
+                      final screen = android
+                          ? view.display.size / view.devicePixelRatio
+                          : outer.biggest;
+                      final wideLayout = screen.width >= 1000;
                       final showToc = wideLayout && tocOpen;
-                      final showNotes = wideLayout && outer.maxWidth >= 1250;
+                      final showNotes = wideLayout && screen.width >= 1250;
+                      final sideWidth =
+                          (wideLayout ? 280.0 : 0.0) +
+                          (showNotes ? 300.0 : 0.0);
+                      final pageSize = Size(
+                        (screen.width - sideWidth).clamp(
+                          0.0,
+                          preferences.columnWidth,
+                        ),
+                        screen.height,
+                      );
+                      final readerWidth = (outer.maxWidth - sideWidth).clamp(
+                        0.0,
+                        preferences.columnWidth,
+                      );
+                      final croppedBottom = (pageSize.height - outer.maxHeight)
+                          .clamp(0.0, double.infinity);
                       final reader = Center(
                         child: ConstrainedBox(
                           constraints: BoxConstraints(
@@ -1435,6 +1457,7 @@ class _ReaderPageState extends State<ReaderPage>
                             fit: StackFit.expand,
                             children: [
                               ReaderLayoutFrame(
+                                pageSize: android ? pageSize : null,
                                 onResize: viewportController.flushPosition,
                                 builder: (context, box) {
                                   final scaler = MediaQuery.textScalerOf(
@@ -1491,9 +1514,12 @@ class _ReaderPageState extends State<ReaderPage>
                                         : flow.starts[chapter] + offset,
                                     preferences: preferences,
                                     hideControls: fullscreen,
-                                    controlsBottomInset: MediaQuery.paddingOf(
-                                      context,
-                                    ).bottom,
+                                    controlsBottomInset:
+                                        MediaQuery.paddingOf(context).bottom +
+                                        croppedBottom,
+                                    controlsSideInset:
+                                        ((pageSize.width - readerWidth) / 2)
+                                            .clamp(0.0, double.infinity),
                                     onToggleControls: _toggleFullscreen,
                                     selectingRange: rangeStart != null,
                                     onBoundary: (at, end) => flow == null

@@ -224,6 +224,14 @@ void main() {
         await tester.pageBack();
         await tester.pumpAndSettle();
         expect(find.text('Аккаунт'), findsNothing);
+        // Desktop sections replace the settings route instead of stacking it.
+        // Back returns to the library; reopen settings for the next section.
+        if (find.byType(SettingsPage).evaluate().isEmpty) {
+          tester.widget<ShelfShell>(find.byType(ShelfShell)).navigation.onSettings();
+          await ready(tester, () =>
+              find.byType(SettingsPage).evaluate().isNotEmpty &&
+              find.byType(CircularProgressIndicator).evaluate().isEmpty);
+        }
         await openSetting('sync');
         expect(find.text('Прямая синхронизация'), findsOneWidget);
         expect(find.byKey(const ValueKey('audio-mini-player')), findsOneWidget);

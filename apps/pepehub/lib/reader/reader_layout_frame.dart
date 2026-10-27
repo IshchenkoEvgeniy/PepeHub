@@ -7,7 +7,15 @@ import 'package:flutter/widgets.dart';
 class ReaderLayoutFrame extends StatefulWidget {
   final Widget Function(BuildContext, BoxConstraints) builder;
   final VoidCallback? onResize;
-  const ReaderLayoutFrame({super.key, required this.builder, this.onResize});
+  // Android's Flutter view can grow when system bars disappear. A reading
+  // page is measured against the display, independently of that view.
+  final Size? pageSize;
+  const ReaderLayoutFrame({
+    super.key,
+    required this.builder,
+    this.onResize,
+    this.pageSize,
+  });
   @override
   State<ReaderLayoutFrame> createState() => _ReaderLayoutFrameState();
 }
@@ -24,7 +32,7 @@ class _ReaderLayoutFrameState extends State<ReaderLayoutFrame> {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, box) {
-      final next = box.biggest;
+      final next = widget.pageSize ?? box.biggest;
       size ??= next;
       if (pending != next) {
         pending = next;

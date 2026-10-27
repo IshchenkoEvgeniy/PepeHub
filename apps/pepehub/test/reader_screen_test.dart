@@ -19,6 +19,8 @@ void main() {
     'reader paginates, searches and returns, scrolls and restores exact anchor',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
+      tester.view.display.size = const Size(390, 844);
+      addTearDown(tester.view.display.resetSize);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -177,6 +179,7 @@ void main() {
         expect(find.byType(PageView), findsNothing);
         expect((await position())['textOffset'], after['textOffset']);
         tester.view.physicalSize = const Size(844, 390);
+        tester.view.display.size = const Size(844, 390);
         await settle();
         expect((await position())['textOffset'], after['textOffset']);
         expect(tester.takeException(), isNull);

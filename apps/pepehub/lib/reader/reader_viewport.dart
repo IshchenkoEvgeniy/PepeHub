@@ -41,6 +41,7 @@ class ReaderViewport extends StatefulWidget {
   final TextStyle style;
   final TextScaler scaler;
   final double width, height, margin, pageHeightFactor, controlsBottomInset;
+  final double controlsSideInset;
   final int anchor;
   final int? highlightStart, highlightEnd;
   final bool scrolling, compactFlow, firstChapter, lastChapter;
@@ -77,6 +78,7 @@ class ReaderViewport extends StatefulWidget {
     required this.margin,
     this.pageHeightFactor = 1,
     this.controlsBottomInset = 0,
+    this.controlsSideInset = 0,
     required this.anchor,
     this.highlightStart,
     this.highlightEnd,
@@ -1559,8 +1561,8 @@ class _ReaderViewportState extends State<ReaderViewport> {
               ),
               if (!widget.scrolling && !widget.hideControls)
                 Positioned(
-                  left: 0,
-                  right: 0,
+                  left: widget.controlsSideInset,
+                  right: widget.controlsSideInset,
                   bottom: widget.controlsBottomInset,
                   height: 48,
                   child: Listener(

@@ -28,8 +28,10 @@ Future<void> settle(WidgetTester tester) async {
 
 void size(WidgetTester tester, Size value) {
   tester.view.physicalSize = value;
+  tester.view.display.size = value;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.display.resetSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 

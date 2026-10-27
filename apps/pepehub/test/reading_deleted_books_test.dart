@@ -181,6 +181,11 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Добавить файл заново'), findsOneWidget);
         expect(find.text('Удалить навсегда…'), findsNothing);
+        if (find.text('Карточка книги').evaluate().isEmpty) {
+          await tester.tap(find.text('Книга и коллекции'));
+          await tester.pumpAndSettle();
+        }
+        await tester.ensureVisible(find.text('Карточка книги'));
         await tester.tap(find.text('Карточка книги'));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);

@@ -40,6 +40,8 @@ class StudyAudio extends DocumentationPlayer {
 
 void phone(WidgetTester tester) {
   tester.view.physicalSize = const Size(360, 800);
+  tester.view.display.size = const Size(360, 800);
+  addTearDown(tester.view.display.resetSize);
   tester.view.devicePixelRatio = 1;
   tester.view.padding = const FakeViewPadding(top: 24, bottom: 24);
   addTearDown(tester.view.resetPhysicalSize);

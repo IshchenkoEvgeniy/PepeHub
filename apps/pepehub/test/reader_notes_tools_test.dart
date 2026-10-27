@@ -239,6 +239,8 @@ void main() {
     'long quote survives page turns and fullscreen; notes filter and edit on phone',
     (tester) async {
       tester.view.physicalSize = const Size(430, 900);
+      tester.view.display.size = const Size(430, 900);
+      addTearDown(tester.view.display.resetSize);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -317,7 +319,7 @@ void main() {
         await tester.tap(find.byTooltip('Полный экран'));
         await settle();
         expect(find.byType(AppBar), findsNothing);
-        await tester.tap(find.byTooltip('Выйти из полного экрана'));
+        await tester.tapAt(tester.getCenter(find.byType(ReaderViewport)));
         await settle();
         await select(0, 6);
         expect(find.text('Начать длинную цитату'), findsNothing);

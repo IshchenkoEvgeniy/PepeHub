@@ -118,6 +118,8 @@ void main() {
     'save exact repeated selection, edit/search notes and jump after reopen',
     (tester) async {
       tester.view.physicalSize = const Size(430, 900);
+      tester.view.display.size = const Size(430, 900);
+      addTearDown(tester.view.display.resetSize);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
