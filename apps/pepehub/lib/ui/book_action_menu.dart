@@ -56,14 +56,22 @@ const bookMenuActions = [
 
 const bookMenuHiddenKey = 'book-menu-hidden-actions';
 
+String bookMenuHiddenKeyFor({bool audio = false}) =>
+    '$bookMenuHiddenKey:${audio ? 'audio' : 'reading'}';
+
 Future<String?> showBookActionMenu({
   required BuildContext context,
   required Repository repository,
   required String title,
+  bool audio = false,
   // Only actions supported by this book; labels can reflect its current state.
   required Map<String, String> available,
 }) async {
-  final raw = await repository.meta(bookMenuHiddenKey);
+  final settingsKey = bookMenuHiddenKeyFor(audio: audio);
+  // Preserve the pre-existing choice until each shelf saves its own preference.
+  final raw =
+      await repository.meta(settingsKey) ??
+      await repository.meta(bookMenuHiddenKey);
   var hidden = <String>{};
   try {
     final decoded = raw == null ? null : jsonDecode(raw);
@@ -77,6 +85,8 @@ Future<String?> showBookActionMenu({
     builder: (_) => _BookActionMenu(
       repository: repository,
       title: title,
+      audio: audio,
+      settingsKey: settingsKey,
       available: available,
       hidden: hidden,
     ),
@@ -85,12 +95,15 @@ Future<String?> showBookActionMenu({
 
 class _BookActionMenu extends StatefulWidget {
   final Repository repository;
-  final String title;
+  final String title, settingsKey;
+  final bool audio;
   final Map<String, String> available;
   final Set<String> hidden;
   const _BookActionMenu({
     required this.repository,
     required this.title,
+    required this.audio,
+    required this.settingsKey,
     required this.available,
     required this.hidden,
   });
@@ -110,7 +123,7 @@ class _BookActionMenuState extends State<_BookActionMenu> {
     });
     try {
       await widget.repository.setMeta(
-        bookMenuHiddenKey,
+        widget.settingsKey,
         jsonEncode(next.toList()..sort()),
       );
       if (mounted) setState(() => hidden = next);
@@ -143,6 +156,9 @@ class _BookActionMenuState extends State<_BookActionMenu> {
         )
         .toList();
     final scheme = Theme.of(context).colorScheme;
+    final primaryGroup = widget.available.containsKey('restore-deleted')
+        ? BookActionGroup.files
+        : BookActionGroup.library;
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: ConstrainedBox(
@@ -184,7 +200,9 @@ class _BookActionMenuState extends State<_BookActionMenu> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: Text(
                 configuring
-                    ? 'Отметьте нужные функции. Настройка применяется ко всем книгам на этом устройстве.'
+                    ? widget.audio
+                          ? 'Отметьте нужные функции. Настройка применяется только к аудиокнигам на этом устройстве.'
+                          : 'Отметьте нужные функции. Настройка применяется только к текстовым книгам на этом устройстве.'
                     : widget.title,
                 maxLines: configuring ? null : 2,
                 overflow: configuring ? null : TextOverflow.ellipsis,
@@ -216,7 +234,10 @@ class _BookActionMenuState extends State<_BookActionMenu> {
                             'book-menu-group:${group.name}:$configuring',
                           ),
                           initiallyExpanded:
-                              configuring || group == BookActionGroup.library,
+                              configuring ||
+                              visible.length <= 8 ||
+                              group == primaryGroup ||
+                              group == BookActionGroup.removal,
                           leading: Icon(group.icon),
                           title: Text(group.label),
                           children: [

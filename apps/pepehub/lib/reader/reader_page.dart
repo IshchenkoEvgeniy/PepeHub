@@ -1374,6 +1374,8 @@ class _ReaderPageState extends State<ReaderPage>
             },
             child: Scaffold(
               resizeToAvoidBottomInset: false,
+              extendBodyBehindAppBar: true,
+              extendBody: true,
               appBar: fullscreen
                   ? null
                   : PreferredSize(
@@ -1391,46 +1393,37 @@ class _ReaderPageState extends State<ReaderPage>
                         ),
                       ),
                     ),
-              floatingActionButton: fullscreen
-                  ? Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        FloatingActionButton.small(
-                          heroTag: 'quick-reader-bookmark',
-                          tooltip: 'Сохранить закладку',
-                          onPressed: savingBookmark ? null : _quickBookmark,
-                          child: const Icon(Icons.bookmark_add_outlined),
-                        ),
-                        if (linkReturn != null)
-                          FloatingActionButton.small(
-                            heroTag: 'return-from-link',
-                            tooltip: 'Вернуться после ссылки',
-                            onPressed: _returnFromLink,
-                            child: const Icon(Icons.undo),
-                          ),
-                        if (pinnedAway)
-                          FloatingActionButton.small(
-                            heroTag: 'return-to-chapter',
-                            tooltip: 'К закреплённой главе',
-                            onPressed: _returnToPinnedChapter,
-                            child: const Icon(Icons.push_pin),
-                          ),
-                        FloatingActionButton.small(
-                          heroTag: 'exit-reader-fullscreen',
-                          tooltip: 'Выйти из полного экрана',
-                          onPressed: _toggleFullscreen,
-                          child: const Icon(Icons.fullscreen_exit),
-                        ),
-                      ],
-                    )
-                  : null,
+              bottomNavigationBar: Visibility(
+                visible: !fullscreen,
+                maintainState: true,
+                child: Material(
+                  color: background,
+                  child: SafeArea(
+                    top: false,
+                    child: ListenableBuilder(
+                      listenable: Listenable.merge([
+                        positionChanges,
+                        dragProgress,
+                        todayReading,
+                      ]),
+                      builder: (context, _) => _footer(
+                        d,
+                        d.length == 0
+                            ? 0
+                            : (d.starts[chapter] + offset) / d.length,
+                        foreground,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               body: Listener(
                 onPointerDown: (_) => activity?.touch(),
                 onPointerSignal: (_) => activity?.touch(),
-                child: SafeArea(
+                child: SizedBox.expand(
                   child: LayoutBuilder(
                     builder: (context, outer) {
-                      final wideLayout = !fullscreen && outer.maxWidth >= 1000;
+                      final wideLayout = outer.maxWidth >= 1000;
                       final showToc = wideLayout && tocOpen;
                       final showNotes = wideLayout && outer.maxWidth >= 1250;
                       final reader = Center(
@@ -1473,7 +1466,9 @@ class _ReaderPageState extends State<ReaderPage>
                                         d.book.chapters[chapter].illustrations,
                                     chapterBreaks:
                                         flow?.chapterBreaks ?? const [],
-                                    showScrollbar: preferences.showScrollbar,
+                                    showScrollbar:
+                                        !fullscreen &&
+                                        preferences.showScrollbar,
                                     onLink: (href, at) => _openBookLink(
                                       href,
                                       flow?.locate(at).chapter ?? chapter,
@@ -1496,6 +1491,9 @@ class _ReaderPageState extends State<ReaderPage>
                                         : flow.starts[chapter] + offset,
                                     preferences: preferences,
                                     hideControls: fullscreen,
+                                    controlsBottomInset: MediaQuery.paddingOf(
+                                      context,
+                                    ).bottom,
                                     onToggleControls: _toggleFullscreen,
                                     selectingRange: rangeStart != null,
                                     onBoundary: (at, end) => flow == null
@@ -1620,169 +1618,161 @@ class _ReaderPageState extends State<ReaderPage>
                                   );
                                 },
                               ),
-                              Positioned(
-                                left: 8,
-                                right: 8,
-                                // Keep page arrows/slider available while the
-                                // reader is completing a long quotation.
-                                bottom:
-                                    preferences.mode != 'compact' &&
-                                        (preferences.mode != 'pages' ||
-                                            !fullscreen)
-                                    ? 56
-                                    : 8,
-                                child: Material(
-                                  color: background,
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (searchIndex != null &&
-                                          searchSession.hits.isNotEmpty)
-                                        _searchBar(context),
-                                      if (!fullscreen &&
-                                          (linkReturn != null || pinnedAway))
-                                        Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                          ),
-                                          child: Wrap(
-                                            spacing: 8,
-                                            children: [
-                                              if (linkReturn != null)
-                                                ActionChip(
-                                                  avatar: const Icon(
-                                                    Icons.undo,
-                                                    size: 18,
+                              if (!fullscreen)
+                                Positioned(
+                                  left: 8,
+                                  right: 8,
+                                  // Keep page arrows/slider available while the
+                                  // reader is completing a long quotation.
+                                  bottom:
+                                      MediaQuery.paddingOf(context).bottom +
+                                      (preferences.mode != 'compact' &&
+                                              (preferences.mode != 'pages' ||
+                                                  !fullscreen)
+                                          ? 56
+                                          : 8),
+                                  child: Material(
+                                    color: background,
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (searchIndex != null &&
+                                            searchSession.hits.isNotEmpty)
+                                          _searchBar(context),
+                                        if (!fullscreen &&
+                                            (linkReturn != null || pinnedAway))
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                            ),
+                                            child: Wrap(
+                                              spacing: 8,
+                                              children: [
+                                                if (linkReturn != null)
+                                                  ActionChip(
+                                                    avatar: const Icon(
+                                                      Icons.undo,
+                                                      size: 18,
+                                                    ),
+                                                    label: const Text(
+                                                      'Вернуться после ссылки',
+                                                    ),
+                                                    onPressed: _returnFromLink,
                                                   ),
-                                                  label: const Text(
-                                                    'Вернуться после ссылки',
+                                                if (pinnedAway)
+                                                  ActionChip(
+                                                    avatar: const Icon(
+                                                      Icons.push_pin,
+                                                      size: 18,
+                                                    ),
+                                                    label: Text(
+                                                      'К главе ${pinnedChapter!.chapter + 1}',
+                                                    ),
+                                                    onPressed:
+                                                        _returnToPinnedChapter,
                                                   ),
-                                                  onPressed: _returnFromLink,
-                                                ),
-                                              if (pinnedAway)
-                                                ActionChip(
-                                                  avatar: const Icon(
-                                                    Icons.push_pin,
-                                                    size: 18,
-                                                  ),
-                                                  label: Text(
-                                                    'К главе ${pinnedChapter!.chapter + 1}',
-                                                  ),
-                                                  onPressed:
-                                                      _returnToPinnedChapter,
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                      if (rangeStart != null)
-                                        Container(
-                                          padding: const EdgeInsets.only(
-                                            left: 16,
-                                          ),
-                                          color: theme
-                                              .colorScheme
-                                              .secondaryContainer,
-                                          child: Row(
-                                            children: [
-                                              const Expanded(
-                                                child: Text(
-                                                  'Начало цитаты сохранено. Перелистните и выделите конец → «Закончить здесь».',
-                                                ),
-                                              ),
-                                              IconButton(
-                                                tooltip:
-                                                    'Отменить длинную цитату',
-                                                onPressed: () => setState(
-                                                  () => rangeStart = null,
-                                                ),
-                                                icon: const Icon(Icons.close),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      if (saveError != null)
-                                        Padding(
-                                          padding: const EdgeInsets.all(8),
-                                          child: Text(
-                                            saveError!,
-                                            style: TextStyle(
-                                              color: theme.colorScheme.error,
+                                              ],
                                             ),
                                           ),
-                                        ),
-                                      if (activityError != null)
-                                        Padding(
-                                          padding: const EdgeInsets.all(8),
-                                          child: Text(
-                                            activityError!,
-                                            style: TextStyle(
-                                              color: theme.colorScheme.error,
+                                        if (rangeStart != null)
+                                          Container(
+                                            padding: const EdgeInsets.only(
+                                              left: 16,
+                                            ),
+                                            color: theme
+                                                .colorScheme
+                                                .secondaryContainer,
+                                            child: Row(
+                                              children: [
+                                                const Expanded(
+                                                  child: Text(
+                                                    'Начало цитаты сохранено. Перелистните и выделите конец → «Закончить здесь».',
+                                                  ),
+                                                ),
+                                                IconButton(
+                                                  tooltip:
+                                                      'Отменить длинную цитату',
+                                                  onPressed: () => setState(
+                                                    () => rangeStart = null,
+                                                  ),
+                                                  icon: const Icon(Icons.close),
+                                                ),
+                                              ],
                                             ),
                                           ),
-                                        ),
-                                    ],
+                                        if (saveError != null)
+                                          Padding(
+                                            padding: const EdgeInsets.all(8),
+                                            child: Text(
+                                              saveError!,
+                                              style: TextStyle(
+                                                color: theme.colorScheme.error,
+                                              ),
+                                            ),
+                                          ),
+                                        if (activityError != null)
+                                          Padding(
+                                            padding: const EdgeInsets.all(8),
+                                            child: Text(
+                                              activityError!,
+                                              style: TextStyle(
+                                                color: theme.colorScheme.error,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ),
                             ],
                           ),
                         ),
                       );
-                      final body = !showToc && !showNotes
-                          ? reader
-                          : Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                if (showToc)
-                                  SizedBox(
-                                    width: 280,
-                                    child: ValueListenableBuilder(
-                                      valueListenable: panelPosition,
-                                      builder: (context, _, _) =>
-                                          _contentsPanel(
-                                            d,
-                                            foreground,
-                                            background,
-                                          ),
-                                    ),
-                                  ),
-                                Expanded(child: reader),
-                                if (showNotes)
-                                  SizedBox(
-                                    width: 300,
-                                    child: ValueListenableBuilder(
-                                      valueListenable: noteChapter,
-                                      builder: (context, _, _) => _notesPanel(
-                                        d,
-                                        foreground,
-                                        background,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            );
-                      if (fullscreen) return body;
-                      return Column(
+                      // Reserve desktop columns independently of chrome so
+                      // hiding controls never changes the measured text width.
+                      final body = Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Expanded(child: body),
-                          ListenableBuilder(
-                            listenable: Listenable.merge([
-                              positionChanges,
-                              dragProgress,
-                              todayReading,
-                            ]),
-                            builder: (context, _) => _footer(
-                              d,
-                              d.length == 0
-                                  ? 0
-                                  : (d.starts[chapter] + offset) / d.length,
-                              foreground,
+                          if (wideLayout)
+                            SizedBox(
+                              width: 280,
+                              child: Padding(
+                                padding: MediaQuery.paddingOf(context),
+                                child: Visibility(
+                                  visible: !fullscreen && showToc,
+                                  maintainState: true,
+                                  child: ValueListenableBuilder(
+                                    valueListenable: panelPosition,
+                                    builder: (context, _, _) => _contentsPanel(
+                                      d,
+                                      foreground,
+                                      background,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
+                          Expanded(child: reader),
+                          if (showNotes)
+                            SizedBox(
+                              width: 300,
+                              child: Padding(
+                                padding: MediaQuery.paddingOf(context),
+                                child: Visibility(
+                                  visible: !fullscreen,
+                                  maintainState: true,
+                                  child: ValueListenableBuilder(
+                                    valueListenable: noteChapter,
+                                    builder: (context, _, _) =>
+                                        _notesPanel(d, foreground, background),
+                                  ),
+                                ),
+                              ),
+                            ),
                         ],
                       );
+                      return body;
                     },
                   ),
                 ),

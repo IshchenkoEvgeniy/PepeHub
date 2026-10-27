@@ -49,16 +49,23 @@ class ReadingBookActions {
         false;
   }
 
-  Future<void> hide(String id, {bool hidden = true}) async {
+  Future<void> hide(String id, {bool hidden = true}) =>
+      hideMany([id], hidden: hidden);
+
+  Future<void> hideMany(Iterable<String> ids, {bool hidden = true}) async {
+    final selected = ids.toSet();
+    if (selected.isEmpty) return;
     await assets.repository.db.transaction(() async {
-      await assets.repository.setMeta(
-        'reading-user-hidden:$id',
-        hidden ? '1' : '0',
-      );
-      await assets.repository.setMeta(
-        'reading-library-hidden:$id',
-        hidden ? '1' : '0',
-      );
+      for (final id in selected) {
+        await assets.repository.setMeta(
+          'reading-user-hidden:$id',
+          hidden ? '1' : '0',
+        );
+        await assets.repository.setMeta(
+          'reading-library-hidden:$id',
+          hidden ? '1' : '0',
+        );
+      }
     });
     assets.repository.notifyExternalChange();
   }

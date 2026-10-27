@@ -642,19 +642,8 @@ class _LibraryPageState extends State<LibraryPage> {
     }
     await _action(() async {
       if (action == 'hide' && reading) {
-        await widget.repository.db.transaction(() async {
-          for (final book in chosen) {
-            await widget.repository.setMeta(
-              'reading-user-hidden:${book.id}',
-              '1',
-            );
-            await widget.repository.setMeta(
-              'reading-library-hidden:${book.id}',
-              '1',
-            );
-          }
-        });
-        widget.repository.notifyExternalChange();
+        await ReadingBookActions(widget.assets!)
+            .hideMany(chosen.map((book) => book.id));
         if (mounted) setState(selectedBooks.clear);
         return;
       }
@@ -2025,6 +2014,8 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _bookSource(LibraryRecord book) async {
+    final canHide =
+        widget.assets != null && !deletedReadingBooks.contains(book.id);
     final files = shelfSources.byBook[book.id] ?? <LocalAsset>[];
     final descriptor = shelfSources.shared[book.id];
     final connected = roots.where((r) => r.bookIds.contains(book.id)).toList();
@@ -2085,7 +2076,7 @@ class _LibraryPageState extends State<LibraryPage> {
           width: 600,
           child: SingleChildScrollView(
             child: SelectableText(
-              '${_title(book)}\n\n${lines.join('\n\n')}\n\n«Убрать из списка» скрывает карточку только на этом устройстве. Файлы, заметки и история сохраняются.',
+              '${_title(book)}\n\n${lines.join('\n\n')}${canHide ? '\n\n«Убрать из списка» скрывает карточку только на этом устройстве. Файлы, заметки и история сохраняются.' : ''}',
             ),
           ),
         ),
@@ -2093,13 +2084,33 @@ class _LibraryPageState extends State<LibraryPage> {
           if (files.isNotEmpty)
             TextButton(
               onPressed: () async {
-                await Clipboard.setData(
-                  ClipboardData(text: files.map((f) => f.path).join('\n')),
-                );
+                final messenger = ScaffoldMessenger.of(this.context);
+                try {
+                  await Clipboard.setData(
+                    ClipboardData(text: files.map((f) => f.path).join('\n')),
+                  );
+                  if (!mounted) return;
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        files.length == 1
+                            ? 'Путь скопирован'
+                            : 'Пути скопированы',
+                      ),
+                    ),
+                  );
+                } catch (error) {
+                  if (!mounted) return;
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Не удалось скопировать путь: $error'),
+                    ),
+                  );
+                }
               },
               child: const Text('Копировать путь'),
             ),
-          if (widget.assets != null)
+          if (canHide)
             TextButton(
               onPressed: () => Navigator.pop(context, 'hide-book'),
               child: const Text('Убрать из списка'),
@@ -2437,7 +2448,7 @@ class _LibraryPageState extends State<LibraryPage> {
                         ShelfStatus(deleted ? 'deleted' : status),
                         Text(
                           !audio
-                              ? '${formatLabel(book.payload!['format'] as String)} · ${((fraction ?? 0) * 100).toStringAsFixed(1)}%'
+                              ? '${formatLabel(book.payload!['format'] as String?)} · ${((fraction ?? 0) * 100).toStringAsFixed(1)}%'
                               : fraction == null
                               ? 'Аудиокнига'
                               : '${(fraction * 100).round()}% прослушано',
@@ -2485,6 +2496,7 @@ class _LibraryPageState extends State<LibraryPage> {
           context: context,
           repository: widget.repository,
           title: _title(book),
+          audio: audio,
           available: {
             if (deleted && widget.assets != null)
               'restore-deleted': 'Добавить файл заново',
@@ -2896,7 +2908,8 @@ class _LibraryPageState extends State<LibraryPage> {
                                     ? (audio
                                           ? 'Аудио'
                                           : formatLabel(
-                                              book.payload!['format'] as String,
+                                              book.payload!['format']
+                                                  as String?,
                                             ))
                                     : '${(fraction * 100).round()}%',
                                 maxLines: 1,

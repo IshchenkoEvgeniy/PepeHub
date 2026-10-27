@@ -36,6 +36,7 @@ class SettingsLink extends StatelessWidget {
   final String? subtitle, value;
   final IconData icon;
   final VoidCallback? onTap;
+  final bool enabled;
   const SettingsLink({
     super.key,
     required this.title,
@@ -43,20 +44,26 @@ class SettingsLink extends StatelessWidget {
     this.subtitle,
     this.value,
     this.onTap,
+    this.enabled = true,
   });
   @override
   Widget build(BuildContext context) {
     final colors = ShelfPalette.of(context);
     return ListTile(
+      enabled: enabled,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
       leading: Container(
         width: 36,
         height: 36,
         decoration: BoxDecoration(
-          color: colors.selected,
+          color: enabled ? colors.selected : colors.raised,
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, size: 20, color: colors.accent),
+        child: Icon(
+          icon,
+          size: 20,
+          color: enabled ? colors.accent : Theme.of(context).disabledColor,
+        ),
       ),
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: subtitle == null && value == null
@@ -65,10 +72,10 @@ class SettingsLink extends StatelessWidget {
               [?subtitle, ?value].join(' · '),
               style: TextStyle(color: colors.muted),
             ),
-      trailing: onTap == null
+      trailing: !enabled || onTap == null
           ? null
           : const Icon(Icons.chevron_right, size: 20),
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
     );
   }
 }

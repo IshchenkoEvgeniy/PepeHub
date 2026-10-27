@@ -207,10 +207,14 @@ class _SettingsPageState extends State<SettingsPage> {
     await next.save(widget.library.local);
     if (mounted) setState(() => listening = next);
   });
-  void _go(String next) {
-    if (page == next) return;
+  void _go(String next, {bool replace = false}) {
+    if (page == next && (!replace || navigation.isEmpty)) return;
     setState(() {
-      navigation.add(page);
+      if (replace) {
+        navigation.clear();
+      } else {
+        navigation.add(page);
+      }
       page = next;
     });
   }
@@ -562,6 +566,7 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             SettingsLink(
               title: 'Папки книг',
+              enabled: assets != null,
               subtitle: 'Источники текстовой библиотеки',
               value: 'Подключено: $readingRoots',
               icon: Icons.folder_open_outlined,
@@ -571,6 +576,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             SettingsLink(
               title: 'Папки аудиокниг',
+              enabled: assets != null,
               subtitle: 'Источники аудиобиблиотеки',
               value: 'Подключено: $audioRoots',
               icon: Icons.headphones_outlined,
@@ -580,6 +586,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             SettingsLink(
               title: 'Скрытые книги',
+              enabled: assets != null,
               subtitle: 'Вернуть карточку без повторного импорта',
               icon: Icons.visibility_off_outlined,
               onTap: assets == null
@@ -917,7 +924,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     leading: Icon(item.icon),
                     title: Text(item.title),
-                    onTap: () => _go(item.id),
+                    onTap: () => _go(item.id, replace: true),
                   ),
                 ),
             ],

@@ -53,6 +53,8 @@ String bookFormat(String filename) {
   return format;
 }
 
-String formatLabel(String format) => format == 'audio'
+String formatLabel(String? format) => format == null || format.isEmpty
+    ? 'Формат не указан'
+    : format == 'audio'
     ? 'Аудиокнига'
     : bookFormats[format] ?? format.toUpperCase();

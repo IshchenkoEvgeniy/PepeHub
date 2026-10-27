@@ -40,7 +40,7 @@ class ReaderViewport extends StatefulWidget {
   final String text;
   final TextStyle style;
   final TextScaler scaler;
-  final double width, height, margin, pageHeightFactor;
+  final double width, height, margin, pageHeightFactor, controlsBottomInset;
   final int anchor;
   final int? highlightStart, highlightEnd;
   final bool scrolling, compactFlow, firstChapter, lastChapter;
@@ -76,6 +76,7 @@ class ReaderViewport extends StatefulWidget {
     required this.height,
     required this.margin,
     this.pageHeightFactor = 1,
+    this.controlsBottomInset = 0,
     required this.anchor,
     this.highlightStart,
     this.highlightEnd,
@@ -119,9 +120,14 @@ class _ReaderViewportState extends State<ReaderViewport> {
   bool interacted = false;
   Offset? down;
   DateTime? downAt;
+  int? tapPointer;
+  int? controlPointer;
+  bool tapMoved = false;
+  bool tapLinkHandled = false;
   bool hasSelection = false;
   final selectionArea = GlobalKey<SelectionAreaState>();
   final selectedRanges = <int, TextSelection>{};
+  final recognizers = <Object, TapGestureRecognizer>{};
   TextSelection get sourceSelection {
     if (selectedRanges.isEmpty) {
       return const TextSelection.collapsed(offset: -1);
@@ -136,8 +142,6 @@ class _ReaderViewportState extends State<ReaderViewport> {
     );
   }
 
-  final recognizers = <BookFootnote, TapGestureRecognizer>{};
-  final linkRecognizers = <String, TapGestureRecognizer>{};
   final images = <ReaderSlice, BookIllustration>{};
   bool crossingChapter = false;
   DateTime lastPositionUpdate = DateTime.fromMillisecondsSinceEpoch(0);
@@ -161,8 +165,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
   }
 
   // The scroll viewport and a reading page can have different heights.
-  double get viewportExtent =>
-      widget.height - (!widget.scrolling && !widget.hideControls ? 48 : 0);
+  double get viewportExtent => widget.height;
   double get extent => widget.scrolling && !widget.compactFlow
       ? viewportExtent * widget.pageHeightFactor
       : viewportExtent;
@@ -173,7 +176,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
     final block = _blockAt(at)?.block;
     final borderAndMargin = block == 'pre'
         ? 8.0
-        : const {'aside', 'blockquote'}.contains(block)
+        : block == 'aside'
         ? 9.0
         : 0.0;
     return (textWidth - _indent(at) - borderAndMargin)
@@ -360,11 +363,8 @@ class _ReaderViewportState extends State<ReaderViewport> {
   @override
   void dispose() {
     widget.controller?._detach(this);
-    for (final r in recognizers.values) {
-      r.dispose();
-    }
-    for (final r in linkRecognizers.values) {
-      r.dispose();
+    for (final recognizer in recognizers.values) {
+      recognizer.dispose();
     }
     pager?.dispose();
     scroll?.dispose();
@@ -465,9 +465,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
       return illustrationHeight + widget.margin * 2;
     }
     final block = _blockAt(segment.start)?.block;
-    final blockMargin = const {'aside', 'blockquote', 'pre'}.contains(block)
-        ? 8.0
-        : 0.0;
+    final blockMargin = const {'aside', 'pre'}.contains(block) ? 8.0 : 0.0;
     return (segment.height ?? 0) + (widget.scrolling ? 10 : 24) + blockMargin;
   }
 
@@ -618,8 +616,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
               continue;
             }
             final block = _blockAt(paragraphStart)?.block;
-            final blockMargin =
-                const {'aside', 'blockquote', 'pre'}.contains(block)
+            final blockMargin = const {'aside', 'pre'}.contains(block)
                 ? 8.0
                 : 0.0;
             final firstHeight =
@@ -885,6 +882,58 @@ class _ReaderViewportState extends State<ReaderViewport> {
     if (action == 'controls') widget.onToggleControls?.call();
   }
 
+  bool _isReadingTap(PointerUpEvent event) =>
+      tapPointer == event.pointer &&
+      !tapMoved &&
+      !hasSelection &&
+      down != null &&
+      (event.position - down!).distance <= kTouchSlop &&
+      downAt != null &&
+      DateTime.now().difference(downAt!).inMilliseconds <= 350;
+
+  void _dispatchLink(VoidCallback activate) {
+    if (tapLinkHandled) return;
+    tapLinkHandled = true;
+    // Native span taps, the selectable-text fallback and accessibility all
+    // share one activation, regardless of pointer dispatch order.
+    scheduleMicrotask(() => tapLinkHandled = false);
+    activate();
+  }
+
+  // SelectableText does not dispatch inline TextSpan recognizers. Resolve
+  // short pointer taps against the same glyph boxes used to measure the page,
+  // before considering the configured reading tap zones.
+  bool _activateTextLink(ReaderSlice segment, Offset position) {
+    final raw = _text(segment);
+    final end = segment.start + raw.length;
+    final painter = _painter(raw, start: segment.start);
+    bool contains(int start, int finish) => painter
+        .getBoxesForSelection(
+          TextSelection(
+            baseOffset: (start - segment.start).clamp(0, raw.length),
+            extentOffset: (finish - segment.start).clamp(0, raw.length),
+          ),
+        )
+        .any((box) => box.toRect().inflate(2).contains(position));
+    try {
+      for (final note in footnoteIndex.overlapping(segment.start, end)) {
+        if (contains(note.start, note.end)) {
+          _dispatchLink(() => widget.onFootnote?.call(note));
+          return true;
+        }
+      }
+      for (final link in _markupOverlapping(segment.start, end)) {
+        if (link.href != null && contains(link.start, link.end)) {
+          _dispatchLink(() => widget.onLink?.call(link.href!, link.start));
+          return true;
+        }
+      }
+      return false;
+    } finally {
+      painter.dispose();
+    }
+  }
+
   Widget _scrollingList(
     List<ReaderSlice> list,
     Widget Function(int index) item,
@@ -959,10 +1008,10 @@ class _ReaderViewportState extends State<ReaderViewport> {
       for (var j = 0; j < points.length - 1; j++) {
         final link = markupRanges
             .where(
-              (r) =>
-                  r.href != null &&
-                  r.start <= base + points[j] &&
-                  r.end > base + points[j],
+              (range) =>
+                  range.href != null &&
+                  range.start <= base + points[j] &&
+                  range.end > base + points[j],
             )
             .firstOrNull;
         final footnote = footnotes
@@ -980,21 +1029,22 @@ class _ReaderViewportState extends State<ReaderViewport> {
             text: footnote == null
                 ? raw.substring(points[j], points[j + 1])
                 : _noteMarker(raw.substring(points[j], points[j + 1])),
-            recognizer: footnote == null
-                ? (link == null
-                      ? null
-                      : linkRecognizers.putIfAbsent(
-                          '${link.start}:${link.href}',
-                          () =>
-                              TapGestureRecognizer()
-                                ..onTap = () =>
-                                    widget.onLink?.call(link.href!, link.start),
-                        ))
-                : recognizers.putIfAbsent(
+            recognizer: footnote != null
+                ? recognizers.putIfAbsent(
                     footnote,
-                    () =>
-                        TapGestureRecognizer()
-                          ..onTap = () => widget.onFootnote?.call(footnote),
+                    () => TapGestureRecognizer()
+                      ..onTap = () => _dispatchLink(
+                        () => widget.onFootnote?.call(footnote),
+                      ),
+                  )
+                : link == null
+                ? null
+                : recognizers.putIfAbsent(
+                    (link.start, link.href),
+                    () => TapGestureRecognizer()
+                      ..onTap = () => _dispatchLink(
+                        () => widget.onLink?.call(link.href!, link.start),
+                      ),
                   ),
             style:
                 (footnote == null
@@ -1124,7 +1174,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
       if (images.containsKey(segment)) {
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTapUp: (e) => _tapAt(e.localPosition.dx / widget.width),
+
           child: Padding(
             padding: EdgeInsets.fromLTRB(
               widget.margin,
@@ -1146,9 +1196,18 @@ class _ReaderViewportState extends State<ReaderViewport> {
           ),
         );
       }
-      final text = GestureDetector(
+      final text = Listener(
         behavior: HitTestBehavior.opaque,
-        onTapUp: (e) => _tapAt(e.localPosition.dx / widget.width),
+        onPointerUp: (event) {
+          if (!_isReadingTap(event)) return;
+          final position =
+              event.localPosition -
+              Offset(
+                widget.margin + _indent(segment.start),
+                widget.scrolling ? 5 : 12,
+              );
+          tapLinkHandled = _activateTextLink(segment, position);
+        },
         child: Padding(
           padding: EdgeInsets.fromLTRB(
             widget.margin + _indent(segment.start),
@@ -1158,69 +1217,60 @@ class _ReaderViewportState extends State<ReaderViewport> {
           ),
           child: SizedBox(
             width: textWidth - _indent(segment.start),
-            child: Listener(
-              onPointerDown: (e) {
-                down = e.localPosition;
-                downAt = DateTime.now();
-              },
-              child: widget.scrolling
-                  ? ReaderSelectableParagraph(
-                      key: ValueKey((segment.start, segment.end)),
-                      span: span(segment) as TextSpan,
-                      style: widget.style,
-                      scaler: widget.scaler,
-                      alignment: _alignment(segment.start),
-                      onSelection: (range) {
-                        if (range == null || range.isCollapsed) {
-                          selectedRanges.remove(segment.start);
-                        } else {
-                          selectedRanges[segment.start] = TextSelection(
-                            baseOffset: segment.start + range.start,
-                            extentOffset: segment.start + range.end,
-                          );
-                        }
-                        hasSelection = selectedRanges.isNotEmpty;
-                      },
-                    )
-                  : SelectableText.rich(
-                      span(segment) as TextSpan,
-                      key: ValueKey((segment.start, segment.end)),
-                      style: widget.style,
-                      textScaler: widget.scaler,
-                      // The chapter flow owns scrolling. SelectableText must
-                      // never create a nested scrollable viewport of its own.
-                      scrollPhysics: const NeverScrollableScrollPhysics(),
-                      textAlign: _alignment(segment.start),
-                      onSelectionChanged: (s, cause) =>
-                          hasSelection = !s.isCollapsed,
-                      onTap: () {
-                        if (hasSelection ||
-                            down == null ||
-                            downAt == null ||
-                            DateTime.now().difference(downAt!).inMilliseconds >
-                                350) {
-                          return;
-                        }
-                        _tapAt((down!.dx + widget.margin) / widget.width);
-                      },
-                      contextMenuBuilder: (context, state) {
-                        return selectionToolbar(
-                          context,
-                          state.textEditingValue.selection,
-                          segment.start,
-                          state.contextMenuAnchors,
-                          state.hideToolbar,
-                          state.contextMenuButtonItems,
+            child: widget.scrolling
+                ? ReaderSelectableParagraph(
+                    key: ValueKey((segment.start, segment.end)),
+                    span: span(segment) as TextSpan,
+                    style: widget.style,
+                    scaler: widget.scaler,
+                    alignment: _alignment(segment.start),
+                    onSelection: (range) {
+                      if (range == null || range.isCollapsed) {
+                        selectedRanges.remove(segment.start);
+                      } else {
+                        selectedRanges[segment.start] = TextSelection(
+                          baseOffset: segment.start + range.start,
+                          extentOffset: segment.start + range.end,
                         );
-                      },
+                      }
+                      hasSelection = selectedRanges.isNotEmpty;
+                    },
+                  )
+                : SelectableText.rich(
+                    span(segment) as TextSpan,
+                    key: ValueKey((segment.start, segment.end)),
+                    style: widget.style.copyWith(
+                      inherit: false,
+                      fontSize: widget.style.fontSize ?? 22,
+                      textBaseline:
+                          widget.style.textBaseline ?? TextBaseline.alphabetic,
                     ),
-            ),
+                    strutStyle: StrutStyle.fromTextStyle(widget.style),
+                    textHeightBehavior: const TextHeightBehavior(),
+                    textScaler: widget.scaler,
+                    // The chapter flow owns scrolling. SelectableText must
+                    // never create a nested scrollable viewport of its own.
+                    scrollPhysics: const NeverScrollableScrollPhysics(),
+                    textAlign: _alignment(segment.start),
+                    onSelectionChanged: (s, cause) =>
+                        hasSelection = !s.isCollapsed,
+                    contextMenuBuilder: (context, state) {
+                      return selectionToolbar(
+                        context,
+                        state.textEditingValue.selection,
+                        segment.start,
+                        state.contextMenuAnchors,
+                        state.hideToolbar,
+                        state.contextMenuButtonItems,
+                      );
+                    },
+                  ),
           ),
         ),
       );
       final block = _blockAt(segment.start);
       Widget styledText = text;
-      if (const {'aside', 'blockquote', 'pre'}.contains(block?.block)) {
+      if (const {'aside', 'pre'}.contains(block?.block)) {
         final foreground =
             widget.style.color ?? Theme.of(context).colorScheme.onSurface;
         final isCode = block?.block == 'pre';
@@ -1288,11 +1338,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
             fit: StackFit.expand,
             children: [
               Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapUp: (event) =>
-                      _tapAt(event.localPosition.dx / widget.width),
-                ),
+                child: GestureDetector(behavior: HitTestBehavior.opaque),
               ),
               Positioned.fill(
                 child: ClipRect(
@@ -1340,6 +1386,33 @@ class _ReaderViewportState extends State<ReaderViewport> {
         const SingleActivator(LogicalKeyboardKey.end): () => _keyBoundary(true),
       },
       child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (event) {
+          if (event.buttons != kPrimaryButton ||
+              controlPointer == event.pointer) {
+            return;
+          }
+          tapPointer = event.pointer;
+          down = event.position;
+          downAt = DateTime.now();
+          tapMoved = false;
+          tapLinkHandled = false;
+        },
+        onPointerMove: (event) {
+          if (tapPointer == event.pointer &&
+              down != null &&
+              (event.position - down!).distance > kTouchSlop) {
+            tapMoved = true;
+          }
+        },
+        onPointerCancel: (_) => tapPointer = null,
+        onPointerUp: (event) {
+          if (_isReadingTap(event) && !tapLinkHandled) {
+            _tapAt(event.localPosition.dx / widget.width);
+          }
+          tapPointer = null;
+          controlPointer = null;
+        },
         onPointerSignal: (event) {
           if (event is PointerScrollEvent &&
               widget.scrolling &&
@@ -1354,9 +1427,10 @@ class _ReaderViewportState extends State<ReaderViewport> {
         },
         child: Focus(
           autofocus: ModalRoute.of(context)?.isCurrent ?? true,
-          child: Column(
+          child: Stack(
+            fit: StackFit.expand,
             children: [
-              Expanded(
+              Positioned.fill(
                 child: widget.scrolling
                     ? Actions(
                         actions: {
@@ -1484,35 +1558,45 @@ class _ReaderViewportState extends State<ReaderViewport> {
                       ),
               ),
               if (!widget.scrolling && !widget.hideControls)
-                SizedBox(
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: widget.controlsBottomInset,
                   height: 48,
-                  child: Row(
-                    children: [
-                      IconButton(
-                        tooltip: 'Предыдущая страница',
-                        onPressed:
-                            index == 0 &&
-                                widget.firstChapter &&
-                                layoutStart == 0
-                            ? null
-                            : () => _step(-1),
-                        icon: const Icon(Icons.chevron_left),
+                  child: Listener(
+                    onPointerDown: (event) => controlPointer = event.pointer,
+                    child: Material(
+                      color: Theme.of(context).scaffoldBackgroundColor,
+                      child: Row(
+                        children: [
+                          IconButton(
+                            tooltip: 'Предыдущая страница',
+                            onPressed:
+                                index == 0 &&
+                                    widget.firstChapter &&
+                                    layoutStart == 0
+                                ? null
+                                : () => _step(-1),
+                            icon: const Icon(Icons.chevron_left),
+                          ),
+                          Expanded(
+                            child: Text(
+                              '${layoutStart > 0 ? 'Участок' : 'Страница'} · ${index + 1}/${list.length}${layoutComplete ? '' : '+'}',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.labelSmall,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip:
+                                index == list.length - 1 && widget.lastChapter
+                                ? 'Конец книги'
+                                : 'Следующая страница',
+                            onPressed: () => _step(1),
+                            icon: const Icon(Icons.chevron_right),
+                          ),
+                        ],
                       ),
-                      Expanded(
-                        child: Text(
-                          '${layoutStart > 0 ? 'Участок' : 'Страница'} · ${index + 1}/${list.length}${layoutComplete ? '' : '+'}',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: index == list.length - 1 && widget.lastChapter
-                            ? 'Конец книги'
-                            : 'Следующая страница',
-                        onPressed: () => _step(1),
-                        icon: const Icon(Icons.chevron_right),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
             ],
