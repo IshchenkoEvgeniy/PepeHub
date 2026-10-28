@@ -122,31 +122,47 @@ void main() {
         expect((await position())['textOffset'], before['textOffset']);
         await tester.tap(find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('reader-appearance-tab:Страница')),
+        );
+        await tester.pumpAndSettle();
         await tester.tap(find.text('Без пустых мест'));
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Применить'));
-        await tester.tap(find.text('Применить'));
+        await tester.ensureVisible(find.text('Готово'));
+        await tester.tap(find.text('Готово'));
         await settle();
         expect(find.byType(ReaderSelectableParagraph), findsWidgets);
         expect(tester.takeException(), isNull);
         await tester.tap(find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('reader-appearance-tab:Страница')),
+        );
+        await tester.pumpAndSettle();
         await tester.tap(find.text('Перелистывание'));
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Применить'));
-        await tester.tap(find.text('Применить'));
+        await tester.ensureVisible(find.text('Готово'));
+        await tester.tap(find.text('Готово'));
         await settle();
         expect(find.byType(PageView), findsOneWidget);
         expect(find.byType(SelectableText), findsWidgets);
         expect(tester.takeException(), isNull);
         await tester.tap(find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
+        );
+        await tester.pumpAndSettle();
         await tester.tap(find.text('Тёмная'));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('reader-appearance-tab:Страница')),
+        );
         await tester.pumpAndSettle();
         await tester.tap(find.text('По главам'));
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Применить'));
-        await tester.tap(find.text('Применить'));
+        await tester.ensureVisible(find.text('Готово'));
+        await tester.tap(find.text('Готово'));
         await settle();
         expect(find.byType(PageView), findsNothing);
         expect((await position())['textOffset'], before['textOffset']);

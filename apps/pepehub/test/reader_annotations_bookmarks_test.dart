@@ -323,6 +323,8 @@ void main() {
         final viewport = find.byType(ReaderViewport);
         final originalState = tester.state(viewport);
         await select(tester, 5, 7);
+        await tester.tap(find.text('Выделить'));
+        await tester.pumpAndSettle();
         await tester.tap(find.byTooltip('Выделить: синий'));
         await settle(tester);
         final note = (await library.notes(hash: asset.hash)).single;
@@ -363,6 +365,8 @@ void main() {
         );
         await select(tester, 0, 4);
         await tester.tap(find.text('Выделить'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Выделить: синий'));
         await settle(tester);
         final saved = await library.notes(hash: asset.hash);
         expect(saved, hasLength(2));

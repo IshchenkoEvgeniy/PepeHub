@@ -5,25 +5,36 @@ import 'epub.dart';
 Future<void> showBookFootnote(BuildContext context, BookFootnote note) =>
     showModalBottomSheet<void>(
       context: context,
+      useSafeArea: true,
       showDragHandle: true,
       isScrollControlled: true,
+      constraints: const BoxConstraints(maxWidth: 640),
       builder: (context) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.sizeOf(context).height * .55,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * .65,
+          ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                title: Text('Сноска ${note.label}'),
+                title: Text(
+                  'Примечание ${note.label.replaceAll(RegExp(r'[\[\]]'), '')}',
+                ),
                 trailing: IconButton(
                   tooltip: 'Закрыть сноску',
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close),
                 ),
               ),
-              Expanded(
+              Flexible(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: SelectableText(note.text),
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                  child: SelectableText(
+                    note.text,
+                    style: Theme.of(context).textTheme.bodyLarge
+                        ?.copyWith(height: 1.6),
+                  ),
                 ),
               ),
             ],

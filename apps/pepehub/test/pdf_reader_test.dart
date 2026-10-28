@@ -154,8 +154,12 @@ void main() {
   }, skip: pdfium == null);
 
   testWidgets(
-    'compact text preferences open in PDF as scrolling and stay intact',
+    'PDF appearance saves zoom and crop, cancels changes and returns from exact link targets',
     (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       late Directory root;
       late AppDatabase db;
       late Repository repo;
@@ -165,7 +169,7 @@ void main() {
         db = AppDatabase(NativeDatabase.memory());
         repo = Repository(db);
         final file = File('${root.path}/story.pdf');
-        await file.writeAsBytes(twoPagePdf());
+        await file.writeAsBytes(twoPagePdf(withLinks: true));
         asset = await AssetStore(
           repo,
           Directory('${root.path}/assets'),
@@ -196,18 +200,45 @@ void main() {
           }
         }
         expect(find.byType(PdfViewer), findsOneWidget);
-        await tester.tap(find.byType(PopupMenuButton<String>));
-        await pumpIo();
-        await tester.tap(find.text('Оформление'));
-        await pumpIo();
+        final viewer = tester.widget<PdfViewer>(find.byType(PdfViewer));
+        final controller = viewer.controller!;
+        Future<void> appearance() async {
+          await tester.tap(find.byType(PopupMenuButton<String>));
+          await pumpIo();
+          await tester.tap(find.text('Оформление'));
+          await pumpIo();
+        }
+
+        void sameMatrix(Matrix4 expected) {
+          for (var i = 0; i < 16; i++) {
+            expect(
+              controller.value.storage[i],
+              closeTo(expected.storage[i], .001),
+            );
+          }
+        }
+
+        final original = controller.value.clone();
+        await appearance();
         // Compact is a text-reader mode; PDF shows it as vertical scrolling
         // and saving PDF appearance keeps the text reader's own mode.
         expect(tester.takeException(), isNull);
         expect(find.text('Вертикальная прокрутка'), findsWidgets);
-        await tester.ensureVisible(find.text('Применить'));
+        await tester.tap(find.byTooltip('Увеличить масштаб PDF'));
         await pumpIo();
-        await tester.tap(find.text('Применить'));
+        expect(controller.currentZoom, greaterThan(original.storage[0]));
+        await tester.tap(find.text('Отменить'));
         await pumpIo();
+        sameMatrix(original);
+        await appearance();
+        await tester.tap(find.byTooltip('Увеличить масштаб PDF'));
+        await pumpIo();
+        final selectedZoom = controller.currentZoom;
+        await tester.ensureVisible(find.text('Готово'));
+        await pumpIo();
+        await tester.tap(find.text('Готово'));
+        await pumpIo();
+        expect(controller.currentZoom, closeTo(selectedZoom, .001));
         final stored = await tester.runAsync(
           () => repo.meta('reader:appearance'),
         );
@@ -216,6 +247,62 @@ void main() {
           await tester.runAsync(() => repo.meta('pdf-reader-mode')),
           'scroll',
         );
+        await controller.goToPage(pageNumber: 1, duration: Duration.zero);
+        await pumpIo();
+        final links = (await tester.runAsync(
+          () => controller.document.pages.first.loadLinks(),
+        ))!;
+        expect(links, hasLength(2));
+        Future<void> followAndReturn() async {
+          for (final link in links) {
+            final origin = controller.value.clone();
+            final originLabel = tester
+                .widget<Text>(find.textContaining(' / 2'))
+                .data;
+            viewer.params.linkHandlerParams!.onLinkTap(link);
+            await pumpIo();
+            expect(controller.currentZoom, closeTo(2, .001));
+            await tester.tap(find.byTooltip('Вернуться на прежнее место'));
+            await pumpIo();
+            sameMatrix(origin);
+            expect(find.text(originLabel!), findsOneWidget);
+          }
+        }
+
+        await followAndReturn();
+        await appearance();
+        final beforeCrop = controller.currentZoom;
+        await tester.tap(find.text('Обрезать белые поля'));
+        await pumpIo();
+        expect(controller.currentZoom, isNot(closeTo(beforeCrop, .001)));
+        final croppedMatrix = controller.value.clone();
+        await tester.tap(find.text('Готово'));
+        await pumpIo();
+        sameMatrix(croppedMatrix);
+        await followAndReturn();
+        expect(
+          await tester.runAsync(
+            () async =>
+                (await ReadingLibrary(repo)
+                    .value('pdf-view:${asset.hash}'))['cropMargins'],
+          ),
+          isTrue,
+        );
+        await appearance();
+        expect(
+          tester
+              .widget<SwitchListTile>(
+                find.widgetWithText(SwitchListTile, 'Обрезать белые поля'),
+              )
+              .value,
+          isTrue,
+        );
+        await tester.tap(find.text('Обрезать белые поля'));
+        await pumpIo();
+        await tester.tap(find.text('Отменить'));
+        await pumpIo();
+        sameMatrix(croppedMatrix);
+        expect(tester.takeException(), isNull);
       } finally {
         await tester.pumpWidget(const SizedBox());
         await pumpIo();
@@ -444,13 +531,20 @@ void main() {
 
       Future<void> palette(String name) async {
         await menu('Оформление');
-        await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+        await tester.tap(
+          find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
+        );
         await settle();
-        await tester.tap(find.text(name).last);
+        final label = switch (name) {
+          'Системная' => 'Как в системе',
+          'Тёмная (инверсия страниц)' => 'Тёмная',
+          _ => name,
+        };
+        await tester.tap(find.text(label).last);
         await settle();
-        await tester.ensureVisible(find.text('Применить'));
+        await tester.ensureVisible(find.text('Готово'));
         await settle();
-        await tester.tap(find.text('Применить'));
+        await tester.tap(find.text('Готово'));
         await settle();
       }
 
@@ -556,7 +650,9 @@ void main() {
         final expectedCopy = await tester.runAsync(
           () => viewer.controller!.textSelectionDelegate.getSelectedText(),
         );
-        await tester.tap(find.widgetWithText(TextButton, 'Copy').hitTestable());
+        await tester.tap(
+          find.widgetWithText(TextButton, 'Копировать').hitTestable(),
+        );
         await settle();
         expect(copied, expectedCopy);
         expect(copied, isNotEmpty);
@@ -585,6 +681,8 @@ void main() {
           () => viewer.controller!.textSelectionDelegate.selectAllText(),
         );
         await settle();
+        await tester.tap(find.text('Выделить'));
+        await tester.pumpAndSettle();
         await tester.tap(find.byTooltip('Выделить: зелёный'));
         await settle();
         await readDatabase(() async {
@@ -607,6 +705,8 @@ void main() {
         );
         await settle();
         await tester.tap(find.text('Выделить'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Выделить: зелёный'));
         await settle();
         await readDatabase(() async {
           expect(
@@ -619,7 +719,7 @@ void main() {
           () => viewer.controller!.textSelectionDelegate.selectAllText(),
         );
         await settle();
-        await tester.tap(find.text('Ещё'));
+        await tester.tap(find.byTooltip('Ещё'));
         await settle();
         await tester.tap(find.text('Карточка Anki'));
         await settle();
@@ -679,11 +779,15 @@ void main() {
         trace('notes read before hiding');
         await menu('Оформление');
         trace('highlight settings opened');
+        await tester.tap(
+          find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
+        );
+        await settle();
         await tester.tap(find.byType(SwitchListTile));
         await settle();
-        await tester.ensureVisible(find.text('Применить'));
+        await tester.ensureVisible(find.text('Готово'));
         await settle();
-        await tester.tap(find.text('Применить'));
+        await tester.tap(find.text('Готово'));
         await settle();
         trace('highlights hidden');
         await readDatabase(() async {

@@ -162,7 +162,7 @@ void main() {
     },
   );
 
-  testWidgets('settings preview, dismiss to save and explicit cancel', (
+  testWidgets('settings preview, explicit save and dismissal cancel', (
     tester,
   ) async {
     size(tester, const Size(800, 1100));
@@ -187,19 +187,26 @@ void main() {
     );
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
-    final slider = tester.widget<Slider>(find.byType(Slider).first);
-    slider.onChanged!(30);
+    for (var i = 0; i < 8; i++) {
+      await tester.tap(find.byTooltip('Увеличить размер текста'));
+      await tester.pump();
+    }
     await tester.pump(const Duration(milliseconds: 200));
     expect(preview!.size, 30);
-    Navigator.pop(tester.element(find.byType(Slider).first));
+    await tester.tap(find.text('Готово'));
     await tester.pumpAndSettle();
     expect(result!.size, 30);
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
-    tester.widget<Slider>(find.byType(Slider).first).onChanged!(40);
+    await tester.tap(find.byTooltip('Увеличить размер текста'));
     await tester.pump(const Duration(milliseconds: 200));
-    await tester.ensureVisible(find.text('Отмена'));
-    await tester.tap(find.text('Отмена'));
+    await tester.ensureVisible(find.text('Отменить'));
+    await tester.tap(find.text('Отменить'));
+    await tester.pumpAndSettle();
+    expect(result, isNull);
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+    Navigator.pop(tester.element(find.byType(BottomSheet)));
     await tester.pumpAndSettle();
     expect(result, isNull);
   });

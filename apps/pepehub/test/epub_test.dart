@@ -149,16 +149,13 @@ void main() {
         expect(find.textContaining('Конец'), findsWidgets);
         await tester.tap(find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
-        final sizeSlider = find
-            .descendant(
-              of: find.byType(BottomSheet),
-              matching: find.byType(Slider),
-            )
-            .first;
-        tester.widget<Slider>(sizeSlider).onChanged!(26);
+        for (var i = 0; i < 2; i++) {
+          await tester.tap(find.byTooltip('Увеличить размер текста'));
+          await tester.pump();
+        }
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Применить'));
-        await tester.tap(find.text('Применить'));
+        await tester.ensureVisible(find.text('Готово'));
+        await tester.tap(find.text('Готово'));
         await tester.runAsync(() async {
           await Future<void>.delayed(const Duration(milliseconds: 100));
         });

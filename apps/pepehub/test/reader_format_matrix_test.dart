@@ -364,6 +364,8 @@ void main() {
             (text.data ?? text.textSpan!.toPlainText()).runes.take(6),
           );
           await select(tester, 0, quote.length);
+          await tester.tap(find.text('Выделить'));
+          await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('Выделить: синий'));
           await settle(tester);
           final notes = (await tester.runAsync(
@@ -393,14 +395,30 @@ void main() {
 
           await tester.tap(find.byTooltip('Оформление чтения'));
           await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
+          );
+          await tester.pumpAndSettle();
           await tester.ensureVisible(find.text('Сепия'));
+          await tester.tap(
+            find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
+          );
+          await tester.pumpAndSettle();
           await tester.tap(find.text('Сепия'));
           await tester.pumpAndSettle();
+          await tester.tap(
+            find.byKey(const ValueKey('reader-appearance-tab:Страница')),
+          );
+          await tester.pumpAndSettle();
           await tester.ensureVisible(find.text('Без пустых мест'));
+          await tester.tap(
+            find.byKey(const ValueKey('reader-appearance-tab:Страница')),
+          );
+          await tester.pumpAndSettle();
           await tester.tap(find.text('Без пустых мест'));
           await tester.pumpAndSettle();
-          await tester.ensureVisible(find.text('Применить'));
-          await tester.tap(find.text('Применить'));
+          await tester.ensureVisible(find.text('Готово'));
+          await tester.tap(find.text('Готово'));
           await settle(tester);
           expect(find.byType(PageView), findsNothing);
           final saved = await position();

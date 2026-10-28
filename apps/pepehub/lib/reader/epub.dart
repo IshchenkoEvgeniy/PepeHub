@@ -34,6 +34,57 @@ class BookFootnote {
   const BookFootnote(this.label, this.text, this.start, this.end);
 }
 
+final _legacyNoteId = RegExp(
+  r'^(?:n|fn|ftn|note|footnote|endnote)[_-]?[0-9]+$',
+  caseSensitive: false,
+);
+
+String _epubFootnoteText(dom.Element anchor) {
+  String normalized(dom.Element node) =>
+      node.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  bool explanation(String text) =>
+      text.isNotEmpty &&
+      !RegExp(r'^[\s0-9⁰¹²³⁴⁵⁶⁷⁸⁹\[\]().:†*↩←_-]+$').hasMatch(text);
+  final id = anchor.id.isNotEmpty ? anchor.id : anchor.attributes['name'];
+  bool containsNextNote(dom.Element node) =>
+      [node, ...node.querySelectorAll('[id], [name]')].any((child) {
+        final value = child.id.isNotEmpty ? child.id : child.attributes['name'];
+        return value != null && value != id && _legacyNoteId.hasMatch(value);
+      });
+
+  var block = anchor;
+  while (!explanation(normalized(block))) {
+    final parent = block.parent;
+    if (parent == null ||
+        const {'body', 'html'}.contains(parent.localName) ||
+        containsNextNote(parent)) {
+      break;
+    }
+    block = parent;
+  }
+  final ownText = normalized(block);
+  if (explanation(ownText)) return ownText;
+  final parts = <String>[if (ownText.isNotEmpty) ownText];
+  var length = ownText.length;
+  // Older converters place a named anchor or numeric title before the note
+  // paragraphs. Stop at the next note instead of including the whole file.
+  for (
+    var next = block.nextElementSibling;
+    next != null;
+    next = next.nextElementSibling
+  ) {
+    if (containsNextNote(next) ||
+        RegExp(r'^h[1-6]$').hasMatch(next.localName ?? '')) {
+      break;
+    }
+    final text = normalized(next);
+    length += text.length;
+    if (length > 32000) break;
+    if (text.isNotEmpty) parts.add(text);
+  }
+  return parts.join('\n\n');
+}
+
 class BookIllustration {
   final String label;
   final Uint8List bytes;
@@ -536,7 +587,7 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
             '${e.attributes['epub:type'] ?? ''} ${e.attributes['role'] ?? ''} ${e.className}',
         ].join(' ');
         final noteTarget = RegExp(
-          r'(^|[/#_.-])(fn|ftn|note|notes|footnote|endnote)s?[0-9_-]*([/#_.-]|$)',
+          r'(^|[/#_.-])(?:(?:content)?(?:footnotes?|endnotes?|notes?)|ftn|fn|n)[0-9_-]*([/#_.-]|$)',
           caseSensitive: false,
         ).hasMatch('$targetPath#$id');
         final semanticNote = RegExp(
@@ -548,18 +599,7 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
         if (!semanticNote && !(numericMarker && noteTarget)) {
           continue;
         }
-        final noteElement =
-            element.text.trim().length < 3 &&
-                const {
-                  'p',
-                  'li',
-                  'aside',
-                  'div',
-                  'section',
-                }.contains(element.parent?.localName)
-            ? element.parent!
-            : element;
-        final content = noteElement.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+        final content = _epubFootnoteText(element);
         final end = link.end.clamp(0, text.length);
         var start = link.start.clamp(0, end);
         while (start < end && text[start].trim().isEmpty) {

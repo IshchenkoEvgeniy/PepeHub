@@ -6,7 +6,7 @@ PepeHub — личная библиотека и медиатека для **Win
 
 Основные возможности работают **офлайн и без аккаунта**. По желанию подключаются синхронизация устройств, обмен с Obsidian и поиск книг во внешних каталогах.
 
-[![Версия](https://img.shields.io/badge/version-0.24.4-E8A56B?style=flat-square)](https://github.com/IshchenkoEvgeniy/PepeHub-Releases/releases/tag/v0.24.4-71)
+[![Версия](https://img.shields.io/badge/version-0.25.0-E8A56B?style=flat-square)](https://github.com/IshchenkoEvgeniy/PepeHub-Releases/releases/tag/v0.25.0-72)
 ![Windows x64](https://img.shields.io/badge/Windows-x64-49759B?style=flat-square)
 ![Android ARM64](https://img.shields.io/badge/Android-ARM64-527D69?style=flat-square)
 ![Локальные данные](https://img.shields.io/badge/data-local-725D93?style=flat-square)
@@ -17,16 +17,25 @@ PepeHub — личная библиотека и медиатека для **Win
 
 ## Скачать и установить
 
-Текущий выпуск — **0.24.4+71**. [Описание изменений](docs/RELEASE_0244.md) · [GitHub Releases](https://github.com/IshchenkoEvgeniy/PepeHub-Releases/releases).
+Текущий выпуск — **0.25.0+72**. [Описание изменений](docs/RELEASE_0250.md) · [GitHub Releases](https://github.com/IshchenkoEvgeniy/PepeHub-Releases/releases).
 
 | Платформа | Скачать | Установка |
 |---|---|---|
-| **Windows x64** | [ZIP 0.24.4](https://github.com/IshchenkoEvgeniy/PepeHub-Releases/releases/download/v0.24.4-71/PepeHub-windows-x64.zip) | Распакуйте **весь архив** и запустите `pepehub.exe`. DLL и каталог `data` должны оставаться рядом. |
-| **Android ARM64, 7.0+** | [APK 0.24.4](https://github.com/IshchenkoEvgeniy/PepeHub-Releases/releases/download/v0.24.4-71/PepeHub-android-arm64.apk) | Установите APK поверх прежнего приложения. Сертификат подписи сохранён. |
+| **Windows x64** | [ZIP 0.25.0](https://github.com/IshchenkoEvgeniy/PepeHub-Releases/releases/download/v0.25.0-72/PepeHub-windows-x64.zip) | Распакуйте **весь архив** и запустите `pepehub.exe`. DLL и каталог `data` должны оставаться рядом. |
+| **Android ARM64, 7.0+** | [APK 0.25.0](https://github.com/IshchenkoEvgeniy/PepeHub-Releases/releases/download/v0.25.0-72/PepeHub-android-arm64.apk) | Установите APK поверх прежнего приложения. Сертификат подписи сохранён. |
 
 Пакеты доступны публично без аккаунта. Размеры и **SHA-256** находятся в подписанном `update.json` выпуска. Приложение проверяет подпись и скачанные файлы автоматически.
 
 В версиях с механизмом обновления откройте **Настройки → Обновления → Проверить обновления**. Для старой 0.19.0 новый пакет нужно установить вручную один раз. APK устанавливайте поверх прежнего приложения, данные не очищайте. [Как работают обновления](docs/APP_UPDATES.md).
+
+### Что нового в 0.25.0
+
+- Компактное меню выделения с палитрой по нажатию и отдельной панелью дополнительных действий.
+- Новое оформление чтения с вкладками, предпросмотром и постоянными кнопками сохранения и отмены.
+- В PDF добавлены масштаб, подгонка страницы и обрезка белых полей; отмена восстанавливает прежний вид.
+- Исправлены старые сноски EPUB и точные переходы по ссылкам PDF с возвратом к прежнему месту.
+
+[Подробности выпуска](docs/RELEASE_0250.md).
 
 ### Исправления в 0.24.4
 

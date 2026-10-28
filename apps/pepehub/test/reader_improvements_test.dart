@@ -375,13 +375,21 @@ void main() {
         expect(identical(tester.state(viewport), initialState), isTrue);
         await tester.tap(find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Сепия'));
-        await tester.ensureVisible(find.text('Применить'));
+        await tester.tap(
+          find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
+        );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Применить'));
+        await tester.tap(find.text('Сепия'));
+        await tester.ensureVisible(find.text('Готово'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Готово'));
         await settle(tester);
         expect(identical(tester.state(viewport), initialState), isTrue);
         await tester.tap(find.byTooltip('Оформление чтения'));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('reader-appearance-tab:Страница')),
+        );
         await tester.pumpAndSettle();
         await tester.ensureVisible(
           find.byKey(const ValueKey('reader-column-width')),
@@ -390,9 +398,9 @@ void main() {
         final slider = find.byKey(const ValueKey('reader-column-width'));
         final box = tester.getRect(slider);
         await tester.tapAt(Offset(box.left + 30, box.center.dy));
-        await tester.ensureVisible(find.text('Применить'));
+        await tester.ensureVisible(find.text('Готово'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Применить'));
+        await tester.tap(find.text('Готово'));
         await settle(tester);
         expect(tester.widget<ReaderViewport>(viewport).width, lessThan(650));
         expect(identical(tester.state(viewport), initialState), isFalse);

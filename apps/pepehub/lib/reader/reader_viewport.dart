@@ -12,6 +12,8 @@ import 'epub.dart';
 import 'reader_ranges.dart';
 import 'reader_shortcuts.dart';
 import 'reader_selectable_paragraph.dart';
+import 'reader_selection_toolbar.dart';
+export 'reader_selection_toolbar.dart' show readerSelectionToolbar;
 
 /// Allows deliberate navigation inside the already measured source window.
 /// A false result asks the owner to open a new window near the target instead.
@@ -1631,85 +1633,3 @@ class _ReaderViewportState extends State<ReaderViewport> {
     });
   }
 }
-
-Widget readerSelectionToolbar({
-  required BuildContext context,
-  required double width,
-  required TextSelectionToolbarAnchors anchors,
-  required List<ContextMenuButtonItem> buttonItems,
-  VoidCallback? onMore,
-  Widget? palette,
-}) => Padding(
-  padding: const EdgeInsets.all(8),
-  child: CustomSingleChildLayout(
-    delegate: TextSelectionToolbarLayoutDelegate(
-      anchorAbove: anchors.primaryAnchor - const Offset(8, 16),
-      anchorBelow:
-          (anchors.secondaryAnchor ?? anchors.primaryAnchor) +
-          const Offset(-8, 16),
-    ),
-    child: Material(
-      elevation: 5,
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: SizedBox(
-        width: (width - 32).clamp(200, 400),
-        child: Wrap(
-          children: [
-            if (palette != null)
-              SizedBox(
-                width: double.infinity,
-                child: Center(child: palette),
-              ),
-            for (final item in buttonItems.where(_primarySelectionAction))
-              TextButton(
-                onPressed: item.onPressed,
-                child: Text(
-                  AdaptiveTextSelectionToolbar.getButtonLabel(context, item),
-                ),
-              ),
-            if (buttonItems.any((item) => !_primarySelectionAction(item)))
-              TextButton(
-                onPressed: () async {
-                  final navigator = Navigator.of(context);
-                  onMore?.call();
-                  final chosen =
-                      await showModalBottomSheet<ContextMenuButtonItem>(
-                        context: navigator.context,
-                        showDragHandle: true,
-                        builder: (context) => SafeArea(
-                          child: ListView(
-                            shrinkWrap: true,
-                            children: [
-                              for (final item in buttonItems.where(
-                                (item) => !_primarySelectionAction(item),
-                              ))
-                                ListTile(
-                                  title: Text(
-                                    AdaptiveTextSelectionToolbar.getButtonLabel(
-                                      context,
-                                      item,
-                                    ),
-                                  ),
-                                  onTap: () => Navigator.pop(context, item),
-                                ),
-                            ],
-                          ),
-                        ),
-                      );
-                  chosen?.onPressed?.call();
-                },
-                child: const Text('Ещё'),
-              ),
-          ],
-        ),
-      ),
-    ),
-  ),
-);
-
-bool _primarySelectionAction(ContextMenuButtonItem item) =>
-    item.type == ContextMenuButtonType.copy ||
-    item.label == 'Выделить' ||
-    item.label == 'Заметка' ||
-    item.label == 'Цитата / заметка';

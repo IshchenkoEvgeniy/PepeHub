@@ -18,6 +18,11 @@ import 'pdf_image_regions.dart';
 import 'pdf_search_page.dart';
 import 'pdf_view_limits.dart';
 import 'reader_layout.dart';
+import 'reader_appearance.dart';
+import 'pdf_page_tools.dart';
+
+import 'package:url_launcher/url_launcher.dart';
+
 import 'reader_viewport.dart';
 import 'reader_page.dart';
 import 'reading_activity.dart';
@@ -57,6 +62,12 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   ReaderDocument? textDocument;
   Map<String, dynamic> textIndex = {};
   bool axisLocked = false;
+  bool cropMargins = false;
+  bool followingLink = false;
+  int pageFitGeneration = 0;
+  int appearanceGeneration = 0;
+  final contentBounds = PdfContentBounds();
+  ({int page, Matrix4 matrix, bool addedHistory})? linkReturn;
   double? lockedX, lockedZoom;
   Future<void> textWork = Future.value();
   Future<void> indexWork = Future.value();
@@ -133,6 +144,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
       'pdfPages': count,
     });
     final view = await library.value('pdf-view:${widget.asset.hash}');
+    cropMargins = view['cropMargins'] == true;
     axisLocked = view['locked'] == true;
     lockedX = (view['x'] as num?)?.toDouble();
     lockedZoom = (view['zoom'] as num?)?.toDouble();
@@ -303,6 +315,51 @@ class _PdfReaderPageState extends State<PdfReaderPage>
       finished = false;
     });
     _save();
+    if (cropMargins &&
+        !axisLocked &&
+        !navigating &&
+        !followingLink &&
+        panels == 0) {
+      unawaited(_fitContent(page));
+    }
+  }
+
+  Future<void> _fitContent(int at, {bool Function()? stillActive}) async {
+    if (!ready || document == null || axisLocked) return;
+    final generation = ++pageFitGeneration;
+    Rect? bounds;
+    try {
+      bounds = await contentBounds.forPage(document!.pages[at - 1]);
+    } catch (_) {
+      if (stillActive != null) rethrow;
+      return;
+    }
+    if (!mounted ||
+        !ready ||
+        at != page ||
+        generation != pageFitGeneration ||
+        bounds == null ||
+        stillActive?.call() == false) {
+      return;
+    }
+    final layout = controller.layout.pageLayouts[at - 1];
+    final rect = Rect.fromLTRB(
+      layout.left + bounds.left * layout.width,
+      layout.top + bounds.top * layout.height,
+      layout.left + bounds.right * layout.width,
+      layout.top + bounds.bottom * layout.height,
+    );
+    final zoom = (controller.viewSize.width - 16) / rect.width;
+    await controller.goTo(
+      controller.calcMatrixFor(
+        Offset(
+          rect.center.dx,
+          rect.top + controller.viewSize.height / 2 / zoom,
+        ),
+        zoom: zoom,
+      ),
+      duration: Duration.zero,
+    );
   }
 
   Future<void> _go(
@@ -317,6 +374,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
       return;
     }
     if (remember && !reading) {
+      linkReturn = null;
       history.add(page);
       if (history.length > 20) history.removeAt(0);
     }
@@ -332,9 +390,96 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         finished = false;
       });
       await controller.goToPage(pageNumber: value, duration: Duration.zero);
+      if (cropMargins && !axisLocked && !followingLink) {
+        await _fitContent(value);
+      }
       await _save();
     } finally {
       navigating = false;
+    }
+  }
+
+  Future<void> _followLink(PdfLink link) async {
+    final dest = link.dest;
+    if (dest != null) {
+      if (!ready ||
+          followingLink ||
+          dest.pageNumber < 1 ||
+          dest.pageNumber > count) {
+        return;
+      }
+      final origin = (
+        page: page,
+        matrix: controller.value.clone(),
+        addedHistory: dest.pageNumber != page,
+      );
+      followingLink = true;
+      // An in-flight automatic margin fit must not replace the link's exact
+      // destination or its saved return position.
+      pageFitGeneration++;
+      try {
+        await _go(dest.pageNumber);
+        if (!mounted || !ready) return;
+        await controller.goTo(
+          controller.calcMatrixForDest(dest),
+          duration: Duration.zero,
+        );
+        if (mounted) setState(() => linkReturn = origin);
+        await WidgetsBinding.instance.endOfFrame;
+      } finally {
+        followingLink = false;
+      }
+    } else if (link.url != null) {
+      final uri = link.url!;
+      await _panel(
+        () => showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Внешняя ссылка'),
+            content: SelectableText('$uri'),
+            actions: [
+              TextButton(
+                onPressed: () => Clipboard.setData(ClipboardData(text: '$uri')),
+                child: const Text('Копировать'),
+              ),
+              if (const ['http', 'https', 'mailto'].contains(uri.scheme))
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  },
+                  child: const Text('Открыть в браузере'),
+                ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Закрыть'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _returnFromPdfLink() async {
+    final target = linkReturn;
+    if (target == null || followingLink) return;
+    followingLink = true;
+    pageFitGeneration++;
+    try {
+      setState(() => linkReturn = null);
+      if (target.addedHistory &&
+          history.isNotEmpty &&
+          history.last == target.page) {
+        history.removeLast();
+      }
+      await _go(target.page, remember: false);
+      if (mounted && ready) {
+        await controller.goTo(target.matrix, duration: Duration.zero);
+        await WidgetsBinding.instance.endOfFrame;
+      }
+    } finally {
+      followingLink = false;
     }
   }
 
@@ -671,9 +816,13 @@ class _PdfReaderPageState extends State<PdfReaderPage>
               IconButton(
                 tooltip: 'Вернуться на прежнее место',
                 visualDensity: VisualDensity.compact,
-                onPressed: !ready || history.isEmpty
+                onPressed: !ready || history.isEmpty && linkReturn == null
                     ? null
                     : () {
+                        if (linkReturn != null) {
+                          _returnFromPdfLink();
+                          return;
+                        }
                         final target = history.removeLast();
                         _go(target, remember: false);
                       },
@@ -823,151 +972,113 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   }
 
   Future<void> _appearance() async {
-    var value = preferences;
-    var cancelled = false;
+    final generation = ++appearanceGeneration;
+    pageFitGeneration++;
+    final original = preferences;
+    final originalCrop = cropMargins;
+    final originalMatrix = ready ? controller.value.clone() : null;
+    final originalPage = page;
     final result = await _panel(
-      () => showModalBottomSheet<ReaderPreferences>(
-        context: context,
-        showDragHandle: true,
-        isScrollControlled: true,
-        builder: (context) {
-          return StatefulBuilder(
-            builder: (context, update) => SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Оформление PDF',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      isExpanded: true,
-                      initialValue: value.palette,
-                      decoration: const InputDecoration(labelText: 'Тема'),
-                      items: [
-                        for (final e in {
-                          'light': 'Светлая',
-                          'dark': 'Тёмная (инверсия страниц)',
-                          'sepia': 'Сепия',
-                          'system': 'Системная',
-                        }.entries)
-                          DropdownMenuItem(
-                            value: e.key,
-                            child: Text(
-                              e.value,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                      ],
-                      onChanged: (v) =>
-                          update(() => value = value.copy(palette: v)),
-                    ),
-                    DropdownButtonFormField<String>(
-                      isExpanded: true,
-                      initialValue: value.mode,
-                      decoration: const InputDecoration(labelText: 'Навигация'),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'pages',
-                          child: Text(
-                            'Горизонтальные страницы',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        DropdownMenuItem(
-                          value: 'scroll',
-                          child: Text(
-                            'Вертикальная прокрутка',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                      onChanged: (v) =>
-                          update(() => value = value.copy(mode: v)),
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Показывать выделения'),
-                      subtitle: const Text(
-                        'Цитаты и заметки сохраняются при скрытии',
-                      ),
-                      value: value.showHighlights,
-                      onChanged: (v) =>
-                          update(() => value = value.copy(showHighlights: v)),
-                    ),
-                    for (final zone in ['left', 'center', 'right'])
-                      DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: switch (zone) {
-                          'left' => value.leftTap,
-                          'right' => value.rightTap,
-                          _ => value.centerTap,
-                        },
-                        decoration: InputDecoration(
-                          labelText: switch (zone) {
-                            'left' => 'Нажатие слева',
-                            'right' => 'Нажатие справа',
-                            _ => 'Нажатие в центре',
-                          },
-                        ),
-                        items: [
-                          for (final e in {
-                            'previous': 'Назад',
-                            'next': 'Вперёд',
-                            'controls': 'Показать / скрыть панели',
-                            'none': 'Без действия',
-                          }.entries)
-                            DropdownMenuItem(
-                              value: e.key,
-                              child: Text(
-                                e.value,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                        ],
-                        onChanged: (v) => update(
-                          () => value = switch (zone) {
-                            'left' => value.copy(leftTap: v),
-                            'right' => value.copy(rightTap: v),
-                            _ => value.copy(centerTap: v),
-                          },
-                        ),
-                      ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        'Шрифт, межстрочный интервал и поля доступны в текстовом режиме. В оригинале сохраняется вёрстка PDF; используйте масштаб.',
-                      ),
-                    ),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(context, value),
-                      child: const Text('Применить'),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        cancelled = true;
-                        Navigator.pop(context);
-                      },
-                      child: const Text('Отмена'),
-                    ),
-                    const Text('Изменения сохранятся при закрытии шторки.'),
-                  ],
-                ),
-              ),
-            ),
+      () => showReaderAppearance(
+        context,
+        original,
+        pdf: true,
+        pdfModeLocked: axisLocked,
+        onPreview: (value) {
+          if (!mounted || generation != appearanceGeneration) return;
+          final modeChanged = value.mode != preferences.mode;
+          setState(
+            () => preferences = axisLocked ? value.copy(mode: 'scroll') : value,
           );
+          if (modeChanged) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && ready && generation == appearanceGeneration) {
+                controller.goToPage(
+                  pageNumber: originalPage,
+                  duration: Duration.zero,
+                );
+              }
+            });
+          }
         },
+        pdfPreview: (value) => ColorFiltered(
+          colorFilter: value.isDark(MediaQuery.platformBrightnessOf(context))
+              ? const ColorFilter.matrix([
+                  -1,
+                  0,
+                  0,
+                  0,
+                  255,
+                  0,
+                  -1,
+                  0,
+                  0,
+                  255,
+                  0,
+                  0,
+                  -1,
+                  0,
+                  255,
+                  0,
+                  0,
+                  0,
+                  1,
+                  0,
+                ])
+              : value.palette == 'sepia'
+              ? const ColorFilter.mode(Color(0xfff3e8d0), BlendMode.modulate)
+              : const ColorFilter.mode(Colors.transparent, BlendMode.srcOver),
+          child: PdfPageView(
+            document: document,
+            pageNumber: originalPage,
+            maximumDpi: 72,
+          ),
+        ),
+        pdfPageTools: PdfPageTools(
+          controller: controller,
+          locked: axisLocked,
+          page: originalPage,
+          initialCrop: cropMargins,
+          onCrop: (value) async {
+            if (value) {
+              await _fitContent(
+                originalPage,
+                stillActive: () => generation == appearanceGeneration,
+              );
+            } else if (ready) {
+              await controller.goTo(
+                controller.calcMatrixFitWidthForPage(pageNumber: originalPage),
+              );
+            }
+            if (mounted && generation == appearanceGeneration) {
+              setState(() => cropMargins = value);
+            }
+          },
+        ),
       ),
     );
-    if (cancelled || !mounted) return;
-    final next = result ?? value;
+    appearanceGeneration++;
+    pageFitGeneration++;
+    if (!mounted) return;
+    if (result == null) {
+      setState(() {
+        preferences = original;
+        cropMargins = originalCrop;
+      });
+      await WidgetsBinding.instance.endOfFrame;
+      if (mounted && ready && originalMatrix != null) {
+        followingLink = true;
+        try {
+          await controller.goTo(originalMatrix, duration: Duration.zero);
+          await WidgetsBinding.instance.endOfFrame;
+        } finally {
+          followingLink = false;
+        }
+      }
+      return;
+    }
+    final next = result;
+    final modeChanged = next.mode != preferences.mode;
     setState(() => preferences = axisLocked ? next.copy(mode: 'scroll') : next);
     try {
       // Theme, highlights and tap zones are shared with the text reader, but
@@ -987,6 +1098,9 @@ class _PdfReaderPageState extends State<PdfReaderPage>
           }),
         );
         await widget.repository.setMeta(_pdfModeKey, next.mode);
+        await library.update('pdf-view:${widget.asset.hash}', {
+          'cropMargins': cropMargins,
+        });
         await widget.repository.db.customStatement(
           'DELETE FROM metadata WHERE key=?',
           [_legacyPdfModeKey],
@@ -996,7 +1110,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
       _message('Настройки не сохранены: $e');
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && ready) {
+      if (mounted && ready && modeChanged) {
         controller.goToPage(pageNumber: page, duration: Duration.zero);
       }
     });
@@ -1645,6 +1759,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
                                   final note = widget.initialNote;
                                   if (note != null) {
                                     _reveal(page, note.start, note.end);
+                                  } else if (cropMargins && !axisLocked) {
+                                    unawaited(_fitContent(page));
                                   }
                                 },
                                 onPageChanged: _changed,
@@ -1710,11 +1826,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
                                     ),
                                 linkHandlerParams: PdfLinkHandlerParams(
                                   enableAutoLinkDetection: false,
-                                  onLinkTap: (link) {
-                                    if (link.dest != null) {
-                                      _go(link.dest!.pageNumber);
-                                    }
-                                  },
+                                  onLinkTap: _followLink,
                                 ),
                               ),
                             ),
