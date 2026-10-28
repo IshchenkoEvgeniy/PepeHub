@@ -9,6 +9,7 @@ import 'package:pepehub/reader/reader_appearance.dart';
 import 'package:pepehub/reader/reader_layout.dart';
 import 'package:pepehub/reader/reader_selection_toolbar.dart';
 import 'package:pepehub/reader/pdf_page_tools.dart';
+import 'package:pepehub/ui/app_theme.dart';
 
 import 'reader_improvements_test.dart' show size;
 
@@ -69,6 +70,8 @@ void main() {
           find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
         );
         await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Сепия'));
+        await tester.pumpAndSettle();
         await tester.tap(find.text('Сепия'));
         await tester.pump(const Duration(milliseconds: 200));
         expect(preview?.palette, 'sepia');
@@ -108,7 +111,9 @@ void main() {
       await tester.pump();
       expect(find.text('23'), findsOneWidget);
       final sample = tester.widget<Text>(
-          find.text('Дорога уходила к морю.\nВечерний ветер стихал.'),
+        find.text(
+          'Їжак і ґанок. Є вечір.\nТихий вечер у реки.\nA quiet evening.',
+        ),
       );
       expect(sample.style?.fontSize, 23);
       await tester.tap(find.text('Готово'));
@@ -244,7 +249,7 @@ void main() {
     });
     await tester.pumpWidget(
       MaterialApp(
-        theme: ThemeData(brightness: Brightness.dark, fontFamily: 'Onest'),
+        theme: AppTheme.data(Brightness.dark, style: AppStyle.pine),
         home: Builder(
           builder: (context) => Scaffold(
             body: TextButton(

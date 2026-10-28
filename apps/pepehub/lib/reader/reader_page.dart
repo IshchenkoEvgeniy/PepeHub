@@ -1288,17 +1288,14 @@ class _ReaderPageState extends State<ReaderPage>
     final foreground = dark
         ? Color.lerp(pepe.text, pepe.muted, .15)!
         : const Color(0xff302b24);
-    final theme = ThemeData(
-      useMaterial3: true,
+    final appTheme = Theme.of(context);
+    // Keep every application component theme. Paper brightness is used by the
+    // reading viewport; it must not generate a new palette for reader windows.
+    final theme = appTheme.copyWith(
       brightness: dark ? Brightness.dark : Brightness.light,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: dark ? pepe.accent : const Color(0xff557b70),
-        brightness: dark ? Brightness.dark : Brightness.light,
-        surface: background,
-      ),
-      scaffoldBackgroundColor: background,
-      extensions: [pepe],
     );
+    final chromeBackground = appTheme.scaffoldBackgroundColor;
+    final chromeInk = appTheme.colorScheme.onSurface;
     final wholeBookFlow = const [
       'seamless',
       'pages',
@@ -1374,6 +1371,7 @@ class _ReaderPageState extends State<ReaderPage>
               }
             },
             child: Scaffold(
+              backgroundColor: background,
               resizeToAvoidBottomInset: false,
               extendBodyBehindAppBar: true,
               extendBody: true,
@@ -1386,8 +1384,8 @@ class _ReaderPageState extends State<ReaderPage>
                         builder: (context, _, _) => _header(
                           context,
                           d,
-                          background,
-                          foreground,
+                          chromeBackground,
+                          chromeInk,
                           d.length == 0
                               ? 0
                               : (d.starts[chapter] + offset) / d.length,
@@ -1398,7 +1396,7 @@ class _ReaderPageState extends State<ReaderPage>
                 visible: !fullscreen,
                 maintainState: true,
                 child: Material(
-                  color: background,
+                  color: chromeBackground,
                   child: SafeArea(
                     top: false,
                     child: ListenableBuilder(
@@ -1412,7 +1410,7 @@ class _ReaderPageState extends State<ReaderPage>
                         d.length == 0
                             ? 0
                             : (d.starts[chapter] + offset) / d.length,
-                        foreground,
+                        chromeInk,
                       ),
                     ),
                   ),
@@ -1663,7 +1661,7 @@ class _ReaderPageState extends State<ReaderPage>
                                           ? 56
                                           : 8),
                                   child: Material(
-                                    color: background,
+                                    color: appTheme.colorScheme.surface,
                                     borderRadius: BorderRadius.circular(12),
                                     child: Column(
                                       mainAxisSize: MainAxisSize.min,
@@ -1777,8 +1775,8 @@ class _ReaderPageState extends State<ReaderPage>
                                     valueListenable: panelPosition,
                                     builder: (context, _, _) => _contentsPanel(
                                       d,
-                                      foreground,
-                                      background,
+                                      chromeInk,
+                                      chromeBackground,
                                     ),
                                   ),
                                 ),
@@ -1795,8 +1793,11 @@ class _ReaderPageState extends State<ReaderPage>
                                   maintainState: true,
                                   child: ValueListenableBuilder(
                                     valueListenable: noteChapter,
-                                    builder: (context, _, _) =>
-                                        _notesPanel(d, foreground, background),
+                                    builder: (context, _, _) => _notesPanel(
+                                      d,
+                                      chromeInk,
+                                      chromeBackground,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -2100,6 +2101,7 @@ class _ReaderPageState extends State<ReaderPage>
     final pinned = pinnedChapter;
     return Container(
       decoration: BoxDecoration(
+        color: background,
         border: Border(right: BorderSide(color: ink.withValues(alpha: .12))),
       ),
       child: Column(
@@ -2252,6 +2254,7 @@ class _ReaderPageState extends State<ReaderPage>
     final length = d.texts[chapter].length;
     return Container(
       decoration: BoxDecoration(
+        color: background,
         border: Border(left: BorderSide(color: ink.withValues(alpha: .12))),
       ),
       child: ListView(

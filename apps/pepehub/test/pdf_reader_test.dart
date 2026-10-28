@@ -19,8 +19,10 @@ import 'package:pepehub/reader/reader_viewport.dart';
 import 'package:pepehub/reader/reader_progress_panel.dart';
 import 'package:pepehub/reader/reading_library.dart';
 import 'package:pepehub/vocabulary/vocabulary_editor.dart';
+import 'package:pepehub/ui/app_theme.dart';
 
 import 'support/pdf_fixture.dart';
+import 'reader_window_theme_test.dart' show expectReaderWindowTheme;
 
 // Reuse an existing native runtime. This suite never builds an application.
 final pdfium = Platform.environment['PEPEHUB_PDFIUM'];
@@ -185,9 +187,11 @@ void main() {
         }
       }
 
+      final theme = AppTheme.data(Brightness.dark, style: AppStyle.plum);
       try {
         await tester.pumpWidget(
           MaterialApp(
+            theme: theme,
             home: PdfReaderPage(repository: repo, asset: asset),
           ),
         );
@@ -207,6 +211,7 @@ void main() {
           await pumpIo();
           await tester.tap(find.text('Оформление'));
           await pumpIo();
+          expectReaderWindowTheme(tester, find.text('Оформление PDF'), theme);
         }
 
         void sameMatrix(Matrix4 expected) {
@@ -550,11 +555,15 @@ void main() {
 
       tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
       addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+      final applicationTheme = AppTheme.data(
+        Brightness.dark,
+        style: AppStyle.brass,
+      );
 
       try {
         await tester.pumpWidget(
           MaterialApp(
-            theme: ThemeData.dark(),
+            theme: applicationTheme,
             home: RepaintBoundary(
               key: screen,
               child: PdfReaderPage(repository: repo, asset: asset),
@@ -604,6 +613,11 @@ void main() {
         await tester.enterText(find.byType(TextField), 'page two');
         await settle();
         expect(find.text('Совпадений: 1'), findsOneWidget);
+        expectReaderWindowTheme(
+          tester,
+          find.byType(TextField),
+          applicationTheme,
+        );
         trace('search works');
         await tester.tap(find.text('Страница 2'));
         await settle();
@@ -612,6 +626,11 @@ void main() {
         await settle();
         expect(find.textContaining('Страница 1 / 2'), findsOneWidget);
         await menu('Заметка к странице');
+        expectReaderWindowTheme(
+          tester,
+          find.byType(AlertDialog),
+          applicationTheme,
+        );
         await tester.enterText(
           find.byType(TextField).first,
           'Мысль о первой странице',
@@ -646,6 +665,11 @@ void main() {
         );
         await settle();
         expect(find.text('Заметка').hitTestable(), findsOneWidget);
+        expectReaderWindowTheme(
+          tester,
+          find.text('Заметка').hitTestable(),
+          applicationTheme,
+        );
         await screenshot('pdf-reader-selection');
         final expectedCopy = await tester.runAsync(
           () => viewer.controller!.textSelectionDelegate.getSelectedText(),

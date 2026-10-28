@@ -1,7 +1,7 @@
 name: pepehub
 description: "Offline library and activity journal with Obsidian integration."
 publish_to: 'none'
-version: 0.25.0+72
+version: 0.25.1+73
 
 environment:
   sdk: ^3.13.3
@@ -56,6 +56,14 @@ flutter:
     - assets/fonts/Oswald-OFL.txt
     - assets/fonts/CormorantGaramond-OFL.txt
     - assets/fonts/Onest-OFL.txt
+    - assets/fonts/Literata-OFL.txt
+    - assets/fonts/Merriweather-OFL.txt
+    - assets/fonts/Merriweather-FONTLOG.txt
+    - assets/fonts/NotoSerif-OFL.txt
+    - assets/fonts/PTSerif-OFL.txt
+    - assets/fonts/PTSans-OFL.txt
+    - assets/fonts/Roboto-OFL.txt
+    - assets/fonts/OpenSans-OFL.txt
   fonts:
     - family: Manrope
       fonts:
@@ -74,3 +82,48 @@ flutter:
     - family: Onest
       fonts:
         - asset: assets/fonts/Onest.ttf
+    - family: ReaderLiterata
+      fonts:
+        - asset: assets/fonts/Literata.ttf
+        - asset: assets/fonts/Literata-Italic.ttf
+          style: italic
+    - family: ReaderMerriweather
+      fonts:
+        - asset: assets/fonts/Merriweather.ttf
+        - asset: assets/fonts/Merriweather-Italic.ttf
+          style: italic
+    - family: ReaderNotoSerif
+      fonts:
+        - asset: assets/fonts/NotoSerif.ttf
+        - asset: assets/fonts/NotoSerif-Italic.ttf
+          style: italic
+    - family: ReaderPTSerif
+      fonts:
+        - asset: assets/fonts/PTSerif.ttf
+        - asset: assets/fonts/PTSerif-Italic.ttf
+          style: italic
+        - asset: assets/fonts/PTSerif-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/PTSerif-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: ReaderPTSans
+      fonts:
+        - asset: assets/fonts/PTSans.ttf
+        - asset: assets/fonts/PTSans-Italic.ttf
+          style: italic
+        - asset: assets/fonts/PTSans-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/PTSans-BoldItalic.ttf
+          weight: 700
+          style: italic
+    - family: ReaderRoboto
+      fonts:
+        - asset: assets/fonts/Roboto.ttf
+        - asset: assets/fonts/Roboto-Italic.ttf
+          style: italic
+    - family: ReaderOpenSans
+      fonts:
+        - asset: assets/fonts/OpenSans.ttf
+        - asset: assets/fonts/OpenSans-Italic.ttf
+          style: italic

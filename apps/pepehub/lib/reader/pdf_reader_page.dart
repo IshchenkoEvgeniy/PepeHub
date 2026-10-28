@@ -779,11 +779,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   }
 
   Widget _footer() {
-    final dark = preferences.isDark(MediaQuery.platformBrightnessOf(context));
     final pepe = PepeColors.of(context);
-    final ink = dark
-        ? Color.lerp(pepe.text, pepe.muted, .15)!
-        : const Color(0xff302b24);
+    final ink = Theme.of(context).colorScheme.onSurface;
     final value = (dragging ?? progress).clamp(0.0, 1.0);
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1453,24 +1450,9 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         : preferences.palette == 'sepia'
         ? const Color(0xfff3e8d0)
         : const Color(0xfffafafa);
-    final ink = dark
-        ? Color.lerp(pepe.text, pepe.muted, .15)!
-        : const Color(0xff302b24);
-    final theme = ThemeData(
-      useMaterial3: true,
+    final appTheme = Theme.of(context);
+    final theme = appTheme.copyWith(
       brightness: dark ? Brightness.dark : Brightness.light,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: dark ? pepe.accent : const Color(0xff557b70),
-        brightness: dark ? Brightness.dark : Brightness.light,
-        surface: background,
-      ),
-      scaffoldBackgroundColor: background,
-      fontFamily: AppFonts.body,
-      extensions: [pepe],
-      appBarTheme: AppBarTheme(
-        backgroundColor: background,
-        foregroundColor: ink,
-      ),
     );
     return Theme(
       data: theme,
@@ -1533,6 +1515,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
           child: Focus(
             autofocus: true,
             child: Scaffold(
+              backgroundColor: background,
               resizeToAvoidBottomInset: false,
               appBar: fullscreen
                   ? null
@@ -1851,7 +1834,10 @@ class _PdfReaderPageState extends State<PdfReaderPage>
               ),
               bottomNavigationBar: fullscreen
                   ? null
-                  : SafeArea(child: _footer()),
+                  : Material(
+                      color: appTheme.scaffoldBackgroundColor,
+                      child: SafeArea(child: _footer()),
+                    ),
             ),
           ),
         ),

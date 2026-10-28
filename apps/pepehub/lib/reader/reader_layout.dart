@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'epub.dart';
+import 'reader_fonts.dart';
 
 class ReaderPreferences {
   final double size, spacing, margin, pageHeightFactor, columnWidth;
@@ -39,7 +40,7 @@ class ReaderPreferences {
       360,
       1200,
     ),
-    font: data['font'] == 'sans' ? 'sans' : 'serif',
+    font: readerFont(data['font']).id,
     palette:
         const ['light', 'dark', 'sepia', 'system'].contains(data['palette'])
         ? data['palette'] as String
@@ -124,7 +125,7 @@ class ReaderPreferences {
     inherit: false,
     fontSize: size,
     height: spacing,
-    fontFamily: font == 'serif' ? 'ReaderLora' : 'Onest',
+    fontFamily: readerFont(font).family,
     color: color,
     letterSpacing: 0,
     wordSpacing: 0,

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'reader_layout.dart';
+import 'reader_fonts.dart';
+import '../ui/app_theme.dart';
 
 Future<ReaderPreferences?> showReaderAppearance(
   BuildContext context,
@@ -18,12 +20,9 @@ Future<ReaderPreferences?> showReaderAppearance(
     return await showModalBottomSheet<ReaderPreferences>(
       context: context,
       useSafeArea: true,
+      showDragHandle: true,
       isScrollControlled: true,
       constraints: const BoxConstraints(maxWidth: 640),
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
       builder: (context) => _AppearanceSheet(
         initial: initial,
         pdf: pdf,
@@ -147,13 +146,22 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
         key: const ValueKey('reader-font'),
         initialValue: value.font,
         isExpanded: true,
+        menuMaxHeight: 420,
         decoration: const InputDecoration(
           labelText: 'Шрифт',
-          border: OutlineInputBorder(),
+          helperText: 'Українська · English · Русский',
         ),
-        items: const [
-          DropdownMenuItem(value: 'serif', child: Text('Lora · с засечками')),
-          DropdownMenuItem(value: 'sans', child: Text('Onest · без засечек')),
+        items: [
+          for (final font in readerFonts)
+            DropdownMenuItem(
+              value: font.id,
+              child: Text(
+                '${font.name} · ${font.serif ? 'с засечками' : 'без засечек'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontFamily: font.family),
+              ),
+            ),
         ],
         onChanged: (font) => change(value.copy(font: font)),
       ),
@@ -394,15 +402,18 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
 
   Widget sample() {
     final dark = value.isDark(MediaQuery.platformBrightnessOf(context));
+    final colors = PepeColors.of(context);
     final background = dark
-        ? const Color(0xff111517)
+        ? colors.background
         : value.palette == 'sepia'
         ? const Color(0xfff3e8d0)
         : const Color(0xfffafafa);
-    final foreground = dark ? const Color(0xffdedbd3) : const Color(0xff302b24);
+    final foreground = dark
+        ? Color.lerp(colors.text, colors.muted, .15)!
+        : const Color(0xff302b24);
     return Container(
       key: const ValueKey('reader-appearance-preview'),
-      height: 108,
+      height: 128,
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
@@ -416,7 +427,7 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Дорога уходила к морю.\nВечерний ветер стихал.',
+                  'Їжак і ґанок. Є вечір.\nТихий вечер у реки.\nA quiet evening.',
                   maxLines: 3,
                   overflow: TextOverflow.fade,
                   style: value.style(foreground),
@@ -439,15 +450,6 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
           length: tabs.length,
           child: Column(
             children: [
-              const SizedBox(height: 10),
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
                 child: Row(
@@ -466,7 +468,7 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
                   ],
                 ),
               ),
-              if (MediaQuery.sizeOf(context).height > 560) sample(),
+              if (MediaQuery.sizeOf(context).height > 680) sample(),
               LayoutBuilder(
                 builder: (context, box) => TabBar(
                   isScrollable:
