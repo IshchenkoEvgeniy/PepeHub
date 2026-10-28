@@ -9,6 +9,7 @@ import 'package:drift/drift.dart';
 import 'package:path/path.dart' as p;
 
 import '../media/asset_store.dart';
+import '../data/database_schema.dart';
 import '../data/repository.dart';
 import 'audio_folder.dart';
 import 'audio_roots.dart';
@@ -515,7 +516,8 @@ Future<void> exportAudioJournal(AssetStore assets, AudioRoot root) async {
   final placeholders = List.filled(ids.length, '?').join(',');
   final days = await repo.db
       .customSelect(
-        "SELECT json_extract(payload,'\$.localDay') AS day,COUNT(*) AS n,SUM(revision) AS rev FROM records WHERE type='audio_event' AND json_extract(payload,'\$.bookId') IN ($placeholders) GROUP BY day",
+        "SELECT ${SchemaSql.audioEventDay} AS day,COUNT(*) AS n,SUM(revision) AS rev FROM records "
+        "WHERE ${SchemaSql.audioEventRows} AND ${SchemaSql.audioEventBook} IN ($placeholders) GROUP BY day",
         variables: [for (final id in ids) Variable(id)],
       )
       .get();
@@ -531,7 +533,9 @@ Future<void> exportAudioJournal(AssetStore assets, AudioRoot root) async {
     final events =
         (await repo.db
                 .customSelect(
-                  "SELECT * FROM records WHERE type='audio_event' AND json_extract(payload,'\$.localDay')=? AND json_extract(payload,'\$.bookId') IN ($placeholders) ORDER BY json_extract(payload,'\$.at'),id",
+                  "SELECT * FROM records WHERE ${SchemaSql.audioEventRows} "
+                  "AND ${SchemaSql.audioEventDay}=? AND ${SchemaSql.audioEventBook} IN ($placeholders) "
+                  "ORDER BY json_extract(payload,'\$.at'),id",
                   variables: [
                     Variable(day),
                     for (final id in ids) Variable(id),

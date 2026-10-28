@@ -86,7 +86,6 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
       );
       final readingAll = readingTotals(rows);
 
-      await AudioJournal(repository).ensureIndexes();
       await widget.audio?.flushJournal();
       final totals = AudioDailyStore(repository);
       final native = await totals.period(

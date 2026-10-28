@@ -47,65 +47,13 @@ List<_Span> _decodeSpans(String? raw) {
 
 /// Numeric projection of reading spans. The dirty queue also observes writes
 /// from sync, deletion and recovery; repeated queries never parse old journals.
+/// Tables and metadata triggers come from the schema migration.
 class ReadingDailyTotals {
   final Repository repository;
-  static final _ready = Expando<Future<void>>();
   static final _refreshing = Expando<Future<void>>();
   ReadingDailyTotals(this.repository);
 
-  Future<void> ensure() =>
-      _ready[repository.db] ??= _install().catchError((Object e) {
-        _ready[repository.db] = null;
-        throw e;
-      });
-
-  Future<void> _install() => repository.db.transaction(() async {
-    final existed = await repository.db
-        .customSelect(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='reading_span_index_v1'",
-        )
-        .getSingleOrNull();
-    await repository.db.customStatement(
-      'CREATE TABLE IF NOT EXISTS reading_span_index_v1('
-      'session_key TEXT NOT NULL, ordinal INTEGER NOT NULL, start_us INTEGER NOT NULL, '
-      'finish_us INTEGER NOT NULL, active_ms INTEGER NOT NULL, PRIMARY KEY(session_key,ordinal))',
-    );
-    await repository.db.customStatement(
-      'CREATE INDEX IF NOT EXISTS reading_span_finish_v1 '
-      'ON reading_span_index_v1(finish_us)',
-    );
-    await repository.db.customStatement(
-      'CREATE TABLE IF NOT EXISTS reading_span_dirty_v1('
-      'session_key TEXT PRIMARY KEY NOT NULL)',
-    );
-    for (final (kind, event, sources) in [
-      ('insert', 'AFTER INSERT', ['NEW']),
-      ('update', 'AFTER UPDATE', ['OLD', 'NEW']),
-      ('delete', 'AFTER DELETE', ['OLD']),
-    ]) {
-      final enqueue = sources
-          .map(
-            (source) =>
-                'INSERT INTO reading_span_dirty_v1(session_key) SELECT $source.key '
-                "WHERE $source.key>='reading-session:' AND $source.key<'reading-session;' "
-                'AND NOT EXISTS(SELECT 1 FROM reading_span_dirty_v1 WHERE session_key=$source.key);',
-          )
-          .join();
-      await repository.db.customStatement(
-        'CREATE TRIGGER IF NOT EXISTS reading_span_${kind}_v1 '
-        '$event ON metadata BEGIN $enqueue END',
-      );
-    }
-    if (existed == null) {
-      await repository.db.customStatement(
-        'INSERT OR IGNORE INTO reading_span_dirty_v1 '
-        "SELECT key FROM metadata WHERE key>='reading-session:' AND key<'reading-session;'",
-      );
-    }
-  });
-
   Future<void> refresh() async {
-    await ensure();
     final previous = _refreshing[repository.db];
     if (previous != null) return previous;
     final work = _refresh();

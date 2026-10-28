@@ -3,6 +3,7 @@ import 'app_theme.dart';
 import 'book_action_menu.dart';
 import 'settings_page.dart';
 import 'activity_page.dart';
+import 'library_link_review.dart';
 import 'obsidian_notes_page.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
@@ -1193,6 +1194,16 @@ class _LibraryPageState extends State<LibraryPage> {
         context,
         MaterialPageRoute(
           builder: (_) => LibraryMetadataEditor(
+            coverResolver: obsidianLibrary.coverReferencePath,
+            suggestions: obsidianLibrary.suggestions,
+            collection: obsidianLibrary.collectionFor(linked.item),
+            collections:
+                (obsidianLibrary.snapshot?['collections'] as List? ?? [])
+                    .map((c) => Map<String, dynamic>.from(c as Map))
+                    .toList(),
+            syncPolicy: obsidianLibrary.policies[linked.item.id] ?? const {},
+            onSavePolicy: (policy) =>
+                obsidianLibrary.savePolicy(linked.item.id, policy),
             onPickCover: obsidianLibrary.chooseCover,
             item: linked.item,
             entry: linked,
@@ -1256,7 +1267,18 @@ class _LibraryPageState extends State<LibraryPage> {
             ],
           ),
         );
-        if (id != null) await obsidianLibrary.link(id, book.id);
+        if (id != null && mounted) {
+          final target = obsidianLibrary.entries
+              .where((e) => e.item.id == id)
+              .first
+              .item;
+          final preview = await obsidianLibrary.previewLink(book, target);
+          if (!mounted) return;
+          final policy = await reviewLibraryLink(context, target, preview);
+          if (policy != null) {
+            await obsidianLibrary.link(id, book.id, policy: policy);
+          }
+        }
         return;
       }
     }
@@ -1266,11 +1288,22 @@ class _LibraryPageState extends State<LibraryPage> {
       context,
       MaterialPageRoute(
         builder: (_) => LibraryMetadataEditor(
+          coverResolver: obsidianLibrary.coverReferencePath,
+          suggestions: obsidianLibrary.suggestions,
+          collection: obsidianLibrary.collectionFor(draft),
+          collections: (obsidianLibrary.snapshot?['collections'] as List? ?? [])
+              .map((c) => Map<String, dynamic>.from(c as Map))
+              .toList(),
+          onSavePolicy: (policy) =>
+              obsidianLibrary.savePolicy(draft.id, policy),
           onPickCover: obsidianLibrary.chooseCover,
           item: draft,
           saveLabel: 'Добавить в библиотеку',
-          onSave: (values) =>
-              obsidianLibrary.add(draft.withValues(values), book.id),
+          onSave: (values) => obsidianLibrary.add(
+            draft.withValues(values),
+            book.id,
+            original: draft.values,
+          ),
         ),
       ),
     );

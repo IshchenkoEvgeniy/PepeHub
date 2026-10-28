@@ -1,10 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import 'audio_mini_player.dart';
 
 import '../library/models.dart';
+import '../library/metadata_values.dart';
+import 'metadata_input.dart';
 import 'shelf_components.dart';
 
 export 'obsidian_library_dashboard.dart' show ObsidianLibraryPage;
@@ -47,6 +50,12 @@ class LibraryMetadataEditor extends StatefulWidget {
   final Future<void> Function()? onUseObsidian;
   final String saveLabel;
   final Future<String?> Function()? onPickCover;
+  final Map<String, List<String>> suggestions;
+  final Map<String, dynamic>? collection;
+  final List<Map<String, dynamic>> collections;
+  final Map<String, String> syncPolicy;
+  final Future<void> Function(Map<String, String>)? onSavePolicy;
+  final String? Function(String)? coverResolver;
   const LibraryMetadataEditor({
     super.key,
     required this.item,
@@ -55,6 +64,12 @@ class LibraryMetadataEditor extends StatefulWidget {
     this.onUseObsidian,
     this.saveLabel = 'Сохранить',
     this.onPickCover,
+    this.suggestions = const {},
+    this.collection,
+    this.collections = const [],
+    this.syncPolicy = const {},
+    this.onSavePolicy,
+    this.coverResolver,
   });
   @override
   State<LibraryMetadataEditor> createState() => _LibraryMetadataEditorState();
@@ -63,13 +78,26 @@ class LibraryMetadataEditor extends StatefulWidget {
 class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
   final form = GlobalKey<FormState>();
   final controllers = <String, TextEditingController>{};
+  final focusNodes = <String, FocusNode>{};
+  late final policy = Map<String, String>.from(widget.syncPolicy);
   late final fields = {
     for (final field in widget.item.fields) field.key: field,
   };
   late final values = Map<String, dynamic>.from(widget.item.values);
   bool saving = false;
+  int editGeneration = 0;
   String? error;
   bool get editable => widget.entry == null || widget.entry!.state == 'synced';
+  Map<String, dynamic>? get selectedCollection {
+    final key = fields.values
+        .where((f) => f.field == 'libraryType')
+        .firstOrNull
+        ?.key;
+    final id = controllers[key]?.text;
+    return widget.collections.where((c) => c['id'] == id).firstOrNull ??
+        widget.collection;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -78,12 +106,27 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
         text: _fieldText(key, values[key]),
       );
     }
+    if (widget.collection?['statuses'] is Map) {
+      final key = fields.values
+          .where((f) => f.field == 'status')
+          .firstOrNull
+          ?.key;
+      if (key != null) {
+        controllers[key]!.text = exportLibraryStatus(
+          values[key],
+          widget.collection,
+        );
+      }
+    }
   }
 
   @override
   void dispose() {
     for (final controller in controllers.values) {
       controller.dispose();
+    }
+    for (final node in focusNodes.values) {
+      node.dispose();
     }
     super.dispose();
   }
@@ -132,7 +175,9 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
       }
       return parsed;
     }
-    if (original is num || (kind == 'number' && original is! String)) {
+    if (original is num ||
+        (kind == 'number' && original is! String) ||
+        ['total', 'progress', 'seriesIndex'].contains(fields[key]?.field)) {
       final number = num.tryParse(text.replaceAll(',', '.'));
       if (number == null || !number.isFinite) {
         throw const FormatException('Введите число');
@@ -154,6 +199,19 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
         for (final entry in controllers.entries)
           entry.key: _parse(entry.key, entry.value.text),
       };
+      dynamic property(String field) =>
+          next[fields.values.where((f) => f.field == field).firstOrNull?.key];
+      final start = DateTime.tryParse('${property('startDate')}');
+      final end = DateTime.tryParse('${property('endDate')}');
+      if (start != null && end != null && end.isBefore(start)) {
+        throw const FormatException('Дата завершения раньше даты начала');
+      }
+      final total = num.tryParse('${property('total')}');
+      final progress = num.tryParse('${property('progress')}');
+      if (total != null && total > 0 && progress != null && progress > total) {
+        throw const FormatException('Прогресс больше общего объёма');
+      }
+      await widget.onSavePolicy?.call(policy);
       await widget.onSave(next);
       if (mounted && ModalRoute.of(context)?.isCurrent == true) {
         Navigator.pop(context);
@@ -164,6 +222,131 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
       if (mounted) setState(() => saving = false);
     }
   }
+
+  Future<void> _suggestTitle() async {
+    final proposal = suggestAudioTitle(widget.item.title);
+    if (proposal == null) return;
+    final chosen = proposal.keys.toSet();
+    final apply = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Разобрать название'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Предложение по имени файла. Проверьте автора, часть и чтеца перед применением.',
+                ),
+                for (final entry in proposal.entries)
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(libraryLabels[entry.key] ?? 'Чтец'),
+                    subtitle: Text(
+                      entry.value is List
+                          ? (entry.value as List).join(', ')
+                          : '${entry.value}',
+                    ),
+                    value: chosen.contains(entry.key),
+                    onChanged: (value) => update(() {
+                      if (value == true) {
+                        chosen.add(entry.key);
+                      } else {
+                        chosen.remove(entry.key);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Применить'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (apply != true || !mounted) return;
+    setState(() {
+      for (final field in chosen) {
+        final key =
+            fields.values.where((f) => f.field == field).firstOrNull?.key ??
+            field;
+        final value = proposal[field];
+        values[key] = value;
+        (controllers[key] ??= TextEditingController()).text = value is List
+            ? jsonEncode(value)
+            : '$value';
+      }
+      editGeneration++;
+    });
+  }
+
+  Widget _policyPanel() => ShelfPanel(
+    child: ExpansionTile(
+      title: const Text('Автообновление из приложения'),
+      subtitle: const Text('Статус, прогресс и ручные правки'),
+      childrenPadding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'Авто обновляет данные, заполненные приложением. Ручные изменения сохраняются. Для связанных карточек можно явно выбрать источник.',
+        ),
+        const SizedBox(height: 12),
+        for (final field in [
+          'status',
+          'progress',
+          'startDate',
+          'endDate',
+          'readingTime',
+          'author',
+          'genre',
+          'series',
+        ])
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: DropdownButtonFormField<String>(
+              initialValue: policy[field] ?? 'auto',
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: field == 'progress'
+                    ? 'Прогресс, объём и единицы'
+                    : libraryLabels[field],
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'auto',
+                  child: Text('Авто · сохранять мои правки'),
+                ),
+                DropdownMenuItem(
+                  value: 'local',
+                  child: Text('Обновлять из приложения'),
+                ),
+                DropdownMenuItem(
+                  value: 'obsidian',
+                  child: Text('Оставлять значение Obsidian'),
+                ),
+              ],
+              onChanged: !editable || saving
+                  ? null
+                  : (value) {
+                      policy[field] = value!;
+                      if (field == 'progress') {
+                        policy['total'] = value;
+                        policy['unit'] = value;
+                      }
+                    },
+            ),
+          ),
+      ],
+    ),
+  );
 
   Future<void> _addProperty() async {
     var name = '';
@@ -199,47 +382,396 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
     });
   }
 
-  Widget _field(String key) => Padding(
-    padding: const EdgeInsets.only(bottom: 16),
-    child: TextFormField(
-      key: ValueKey('metadata:$key'),
-      controller: controllers[key],
-      enabled: editable && !saving,
-      minLines: 1,
-      maxLines: 5,
-      decoration: InputDecoration(
-        suffixIcon: fields[key]?.field == 'cover' && widget.onPickCover != null
-            ? IconButton(
-                tooltip: 'Выбрать файл обложки',
-                icon: const Icon(Icons.image_outlined),
-                onPressed: editable && !saving
-                    ? () async {
-                        try {
-                          final selected = await widget.onPickCover!();
-                          if (selected != null && mounted) {
-                            setState(() => controllers[key]!.text = selected);
-                          }
-                        } catch (e) {
-                          if (mounted) setState(() => error = '$e');
-                        }
-                      }
-                    : null,
-              )
-            : null,
-        labelText: libraryLabels[fields[key]?.field] ?? key,
-        helperText:
-            '${values[key] is List || fields[key]?.kind == 'list' ? 'Через запятую · ' : ''}$key',
+  String? _validate(String key, String? text) {
+    try {
+      final parsed = _parse(key, text ?? '');
+      final field = fields[key]?.field ?? key;
+      if (field == 'title' && '${parsed ?? ''}'.trim().isEmpty) {
+        return 'Укажите название';
+      }
+      if (['startDate', 'endDate', 'targetDate'].contains(field) &&
+          parsed != null &&
+          DateTime.tryParse('$parsed') == null) {
+        return 'Выберите дату';
+      }
+      if (parsed is num &&
+          ['progress', 'total', 'rating', 'seriesIndex'].contains(field) &&
+          parsed < 0) {
+        return 'Укажите число не меньше нуля';
+      }
+      return null;
+    } catch (_) {
+      return 'Проверьте значение';
+    }
+  }
+
+  Future<void> _date(String key) async {
+    final value =
+        DateTime.tryParse(controllers[key]!.text)?.toLocal() ?? DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: value.isBefore(DateTime(1900))
+          ? DateTime(1900)
+          : value.isAfter(DateTime(2200))
+          ? DateTime(2200)
+          : value,
+      firstDate: DateTime(1900),
+      lastDate: DateTime(2200),
+    );
+    if (selected != null && mounted) {
+      setState(
+        () => controllers[key]!.text =
+            '${selected.year}-${selected.month.toString().padLeft(2, '0')}-${selected.day.toString().padLeft(2, '0')}',
+      );
+    }
+  }
+
+  Future<void> _rating(String key) async {
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Оценка по шкале 0–10'),
+        content: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (var score = 0; score <= 10; score++)
+              ActionChip(
+                label: Text('$score'),
+                onPressed: () => Navigator.pop(context, score),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Отмена'),
+          ),
+        ],
       ),
-      validator: (text) {
-        try {
-          _parse(key, text ?? '');
-          return null;
-        } catch (e) {
-          return '$e';
-        }
-      },
-    ),
-  );
+    );
+    if (selected != null && mounted) {
+      setState(() => controllers[key]!.text = '$selected');
+    }
+  }
+
+  Widget _field(String key) {
+    final semantic = fields[key]?.field ?? key;
+    final label =
+        libraryLabels[semantic] ??
+        {
+          'narrator': 'Чтец',
+          'language': 'Язык',
+          'publisher': 'Издательство',
+          'tags': 'Теги',
+        }[key] ??
+        key;
+    final enabled = editable && !saving;
+    final suggestions = widget.suggestions[semantic] ?? const <String>[];
+    if (['author', 'genre', 'tags'].contains(semantic)) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: MetadataTokensField(
+          key: ValueKey('tokens:$key:$editGeneration'),
+          controller: controllers[key]!,
+          initial: _parse(key, controllers[key]!.text),
+          label: label,
+          suggestions: suggestions,
+          enabled: enabled,
+        ),
+      );
+    }
+    if (semantic == 'status' ||
+        semantic == 'unit' ||
+        semantic == 'format' ||
+        semantic == 'libraryType') {
+      final statuses = libraryStatuses(selectedCollection);
+      final options = <String>{
+        if (controllers[key]!.text.isNotEmpty) controllers[key]!.text,
+        ...suggestions.map(
+          (s) => semantic == 'status'
+              ? statuses[canonicalLibraryStatus(s)] ?? s
+              : s,
+        ),
+        if (semantic == 'status') ...statuses.values,
+        if (semantic == 'unit')
+          ...((selectedCollection?['progressUnits'] as List?)?.cast<String>() ??
+                  ['pages', 'minutes', 'hours', 'characters'])
+              .where(
+                (unit) =>
+                    widget.item.mediaType != 'audiobook' ||
+                    ['minutes', 'hours'].contains(unit),
+              ),
+        if (semantic == 'format') ...['E-book', 'Audiobook', 'Paper'],
+        if (semantic == 'libraryType')
+          ...widget.collections
+              .where(
+                (c) =>
+                    c['mediaType'] == widget.item.mediaType ||
+                    c['id'] == 'book',
+              )
+              .map((c) => '${c['id']}'),
+      };
+      const unitLabels = {
+        'pages': 'Страницы',
+        'minutes': 'Минуты',
+        'hours': 'Часы',
+        'percent': 'Проценты',
+        'characters': 'Символы',
+      };
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: DropdownButtonFormField<String>(
+          key: ValueKey('choice:$key:${controllers[key]!.text}'),
+          initialValue: controllers[key]!.text.isEmpty
+              ? null
+              : controllers[key]!.text,
+          isExpanded: true,
+          decoration: InputDecoration(labelText: label),
+          items: [
+            for (final value in options)
+              DropdownMenuItem(
+                value: value,
+                child: Text(
+                  semantic == 'unit'
+                      ? unitLabels[value] ?? value
+                      : statuses[canonicalLibraryStatus(value)] ?? value,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: !enabled
+              ? null
+              : (value) {
+                  final old = statuses;
+                  final previous = controllers[key]!.text;
+                  controllers[key]!.text = value ?? '';
+                  String? propertyKey(String field) => fields.values
+                      .where((f) => f.field == field)
+                      .firstOrNull
+                      ?.key;
+                  if (semantic == 'status') {
+                    final canonical =
+                        statuses.entries
+                            .where((e) => e.value == value)
+                            .firstOrNull
+                            ?.key ??
+                        canonicalLibraryStatus(value);
+                    if (canonical == 'finished' || canonical == 'active') {
+                      final dateKey = propertyKey(
+                        canonical == 'finished' ? 'endDate' : 'startDate',
+                      );
+                      if (dateKey != null &&
+                          controllers[dateKey]!.text.isEmpty) {
+                        final now = DateTime.now();
+                        controllers[dateKey]!.text =
+                            '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+                      }
+                    }
+                    if (canonical == 'finished') {
+                      final totalKey = propertyKey('total'),
+                          progressKey = propertyKey('progress');
+                      if (totalKey != null &&
+                          progressKey != null &&
+                          controllers[totalKey]!.text.isNotEmpty) {
+                        controllers[progressKey]!.text =
+                            controllers[totalKey]!.text;
+                      }
+                    }
+                    setState(() {});
+                  }
+                  if (semantic == 'unit' && previous != value) {
+                    final totalKey = propertyKey('total'),
+                        progressKey = propertyKey('progress');
+                    final total = num.tryParse(
+                      controllers[totalKey]?.text ?? '',
+                    );
+                    for (final target in [
+                      totalKey,
+                      progressKey,
+                    ].whereType<String>()) {
+                      final amount = num.tryParse(controllers[target]!.text);
+                      if (amount == null) continue;
+                      final factor = previous == 'minutes' && value == 'hours'
+                          ? 1 / 60
+                          : previous == 'hours' && value == 'minutes'
+                          ? 60
+                          : value == 'percent' && total != null && total > 0
+                          ? 100 / total
+                          : null;
+                      if (factor != null) {
+                        controllers[target]!.text =
+                            '${(amount * factor * 100).round() / 100}';
+                      }
+                    }
+                    setState(() {});
+                  }
+                  if (semantic == 'libraryType') {
+                    final statusKey = fields.values
+                        .where((f) => f.field == 'status')
+                        .firstOrNull
+                        ?.key;
+                    if (statusKey != null) {
+                      final text = controllers[statusKey]!.text;
+                      final canonical =
+                          old.entries
+                              .where((e) => e.value == text)
+                              .firstOrNull
+                              ?.key ??
+                          canonicalLibraryStatus(text);
+                      controllers[statusKey]!.text =
+                          libraryStatuses(selectedCollection)[canonical] ??
+                          text;
+                    }
+                    setState(() {});
+                  }
+                },
+        ),
+      );
+    }
+    final numeric =
+        fields[key]?.kind == 'number' ||
+        values[key] is num ||
+        ['total', 'progress', 'seriesIndex'].contains(semantic);
+    final isDate = ['startDate', 'endDate', 'targetDate'].contains(semantic);
+    final decoration = InputDecoration(
+      labelText: label,
+      helperText: semantic == 'total' || semantic == 'progress'
+          ? 'В выбранных единицах объёма'
+          : semantic == 'readingTime'
+          ? 'Фактическое время, ЧЧ:ММ:СС'
+          : null,
+      suffixIcon: isDate
+          ? IconButton(
+              tooltip: 'Выбрать дату',
+              onPressed: enabled ? () => _date(key) : null,
+              icon: const Icon(Icons.calendar_today_outlined),
+            )
+          : semantic == 'rating'
+          ? IconButton(
+              tooltip: 'Выбрать оценку',
+              onPressed: enabled ? () => _rating(key) : null,
+              icon: const Icon(Icons.star_outline_rounded),
+            )
+          : semantic == 'cover' && widget.onPickCover != null
+          ? IconButton(
+              tooltip: 'Выбрать файл обложки',
+              icon: const Icon(Icons.image_outlined),
+              onPressed: !enabled
+                  ? null
+                  : () async {
+                      try {
+                        final selected = await widget.onPickCover!();
+                        if (selected != null && mounted) {
+                          setState(() => controllers[key]!.text = selected);
+                        }
+                      } catch (e) {
+                        if (mounted) setState(() => error = '$e');
+                      }
+                    },
+            )
+          : null,
+    );
+    Widget input(
+      TextEditingController controller,
+      FocusNode? node,
+      VoidCallback? submit,
+    ) => TextFormField(
+      key: ValueKey('metadata:$key'),
+      controller: controller,
+      focusNode: node,
+      enabled: enabled,
+      minLines: 1,
+      maxLines: numeric || isDate || suggestions.isNotEmpty
+          ? 1
+          : semantic == 'title'
+          ? 2
+          : 5,
+      keyboardType: numeric
+          ? const TextInputType.numberWithOptions(decimal: true)
+          : null,
+      decoration: decoration,
+      validator: (text) => _validate(key, text),
+      onChanged: semantic == 'cover' ? (_) => setState(() {}) : null,
+      onFieldSubmitted: submit == null ? null : (_) => submit(),
+    );
+    final field = suggestions.isEmpty
+        ? input(controllers[key]!, null, null)
+        : RawAutocomplete<String>(
+            textEditingController: controllers[key],
+            focusNode: focusNodes.putIfAbsent(key, () => FocusNode()),
+            optionsBuilder: (value) => suggestions
+                .where(
+                  (s) => s.toLowerCase().contains(value.text.toLowerCase()),
+                )
+                .take(8),
+            fieldViewBuilder: (context, controller, node, submit) =>
+                input(controller, node, submit),
+            optionsViewBuilder: (context, onSelected, options) => Align(
+              alignment: Alignment.topLeft,
+              child: Material(
+                elevation: 6,
+                borderRadius: BorderRadius.circular(16),
+                clipBehavior: Clip.antiAlias,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: (MediaQuery.sizeOf(context).width - 96).clamp(
+                      160,
+                      420,
+                    ),
+                    maxHeight: 240,
+                  ),
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    children: [
+                      for (final option in options)
+                        ListTile(
+                          title: Text(option),
+                          onTap: () => onSelected(option),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [field, if (semantic == 'cover') _coverPreview(key)],
+      ),
+    );
+  }
+
+  Widget _coverPreview(String key) {
+    final reference = controllers[key]!.text;
+    final path = widget.coverResolver?.call(reference);
+    final remote = Uri.tryParse(reference);
+    final Widget? picture = path != null
+        ? Image.file(
+            File(path),
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => const Icon(Icons.broken_image_outlined),
+          )
+        : remote?.scheme == 'https'
+        ? Image.network(
+            reference,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => const Icon(Icons.broken_image_outlined),
+          )
+        : null;
+    if (picture == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(width: 88, height: 120, child: picture),
+      ),
+    );
+  }
+
   Widget _fieldsPanel(String title, IconData icon, Iterable<String> keys) =>
       ShelfPanel(
         padding: const EdgeInsets.all(22),
@@ -285,14 +817,24 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
     };
     final main = controllers.keys.where(
       (key) =>
-          fields.containsKey(key) &&
-          !progressFields.contains(fields[key]!.field),
+          (fields.containsKey(key) &&
+              !progressFields.contains(fields[key]!.field)) ||
+          ['narrator', 'language', 'publisher', 'tags'].contains(key),
     );
     final progress = controllers.keys.where(
       (key) => progressFields.contains(fields[key]?.field),
     );
     final extra = controllers.keys.where(
-      (key) => !fields.containsKey(key) && key != 'pepehub_time_from_journal',
+      (key) =>
+          !fields.containsKey(key) &&
+          !key.startsWith('pepehub_') &&
+          ![
+            'narrator',
+            'language',
+            'publisher',
+            'tags',
+            'embeddedMetadata',
+          ].contains(key),
     );
     return Scaffold(
       appBar: AppBar(title: const Text('Метаданные книги')),
@@ -360,14 +902,31 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
                     ),
                   ),
                   const SizedBox(height: 9),
-                  Text(
-                    widget.item.title,
-                    style: const TextStyle(
-                      fontSize: 25,
-                      fontWeight: FontWeight.w700,
-                      height: 1.35,
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable:
+                        controllers[fields.values
+                            .where((f) => f.field == 'title')
+                            .firstOrNull
+                            ?.key] ??
+                        controllers.values.first,
+                    builder: (context, value, _) => Text(
+                      value.text.isEmpty ? 'Новая книга' : value.text,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
                   ),
+                  if (editable &&
+                      widget.item.mediaType == 'audiobook' &&
+                      suggestAudioTitle(widget.item.title) != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: saving ? null : _suggestTitle,
+                        icon: const Icon(Icons.auto_fix_high_outlined),
+                        label: const Text('Разобрать имя файла'),
+                      ),
+                    ),
                   if (widget.item.authors.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 7),
@@ -468,12 +1027,21 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
                       );
                     },
                   ),
+                  if (widget.onSavePolicy != null) ...[
+                    const SizedBox(height: 20),
+                    _policyPanel(),
+                  ],
                   if (extra.isNotEmpty) ...[
                     const SizedBox(height: 20),
-                    _fieldsPanel(
-                      'Дополнительные свойства',
-                      Icons.tune_rounded,
-                      extra,
+                    ExpansionTile(
+                      title: const Text('Дополнительные свойства'),
+                      children: [
+                        _fieldsPanel(
+                          'Сведения об издании',
+                          Icons.tune_rounded,
+                          extra,
+                        ),
+                      ],
                     ),
                   ],
                   if (editable)
@@ -505,6 +1073,14 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
                       childrenPadding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
                       expandedAlignment: Alignment.centerLeft,
                       children: [
+                        for (final field in fields.values)
+                          Text(
+                            '${libraryLabels[field.field] ?? field.field}: ${field.key}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: palette.muted,
+                            ),
+                          ),
                         if (widget.item.path.isNotEmpty)
                           SelectableText(
                             widget.item.path,

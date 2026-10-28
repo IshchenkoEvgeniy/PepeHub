@@ -137,7 +137,6 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> initialize() => _initializing ??= _initialize();
   Future<void> _initialize() async {
     try {
-      await store.initialize();
       await schedule.load();
       await journal.initialize();
       if (Platform.isAndroid && observeLifecycle) {
@@ -1487,7 +1486,6 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
           throw StateError('Обмен данными приложения не разрешён');
         }
         final app = application!;
-        await app.initialize();
         if (!_appActive && (request['after'] as String? ?? '').isEmpty) {
           _appActive = true;
           final activity = journal.start(

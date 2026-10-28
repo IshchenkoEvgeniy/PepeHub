@@ -25,12 +25,6 @@ class ReadingShelfSources {
       receivedFrom[entry.key.substring('peer-book-origin:'.length)] =
           Map<String, dynamic>.from(jsonDecode(entry.value) as Map);
     }
-    final table = await repository.db
-        .customSelect(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name='peer_app_alias'",
-        )
-        .get();
-    if (table.isEmpty) return;
     for (final row
         in await repository.db
             .customSelect(

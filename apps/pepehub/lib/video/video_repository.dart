@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 
+import '../data/database_schema.dart';
 import '../data/repository.dart';
 import 'models.dart';
 import 'media_formats.dart';
@@ -32,38 +33,8 @@ class VideoSourceDraft {
 class VideoRepository {
   final Repository repository;
   VideoRepository(this.repository);
-  Future<void>? _indexes;
-  static const _intervalStart =
-      "COALESCE(json_extract(payload,'\$.startEpochMs'),"
-      "CAST(ROUND(unixepoch(json_extract(payload,'\$.startedAt'),'subsec')*1000) AS INTEGER))";
-
-  Future<void>
-  ensureIndexes() => _indexes ??= repository.db.transaction(() async {
-    await repository.db.customStatement(
-      "CREATE INDEX IF NOT EXISTS video_lesson_item ON records "
-      "(json_extract(payload,'\$.itemId'),json_extract(payload,'\$.ordinal'),id) "
-      "WHERE type='video_lesson' AND deleted=0",
-    );
-    await repository.db.customStatement(
-      "CREATE INDEX IF NOT EXISTS video_interval_lesson ON records "
-      "(json_extract(payload,'\$.lessonId'),json_extract(payload,'\$.mediaVersion')) "
-      "WHERE type='video_interval' AND deleted=0",
-    );
-    await repository.db.customStatement(
-      "CREATE INDEX IF NOT EXISTS video_interval_history ON records "
-      "($_intervalStart DESC,id DESC) WHERE type='video_interval' AND deleted=0",
-    );
-    await repository.db.customStatement(
-      "CREATE INDEX IF NOT EXISTS video_annotation_lesson ON records "
-      r"(json_extract(payload,'$.lessonId'),json_extract(payload,'$.mediaVersion'),json_extract(payload,'$.startMs'),id) "
-      "WHERE type='video_annotation' AND deleted=0",
-    );
-    await repository.db.customStatement(
-      "CREATE INDEX IF NOT EXISTS video_subtitle_lesson ON records "
-      r"(json_extract(payload,'$.lessonId'),json_extract(payload,'$.mediaVersion'),json_extract(payload,'$.digest')) "
-      "WHERE type='video_subtitle' AND deleted=0",
-    );
-  });
+  // Must match the video_interval_history index in the schema.
+  static const _intervalStart = SchemaSql.videoIntervalStart;
 
   Future<void> _put(
     String type,
@@ -86,7 +57,7 @@ class VideoRepository {
   Future<List<VideoLesson>> lessons({String? itemId}) async {
     final rows = await repository.db
         .customSelect(
-          "SELECT * FROM records WHERE type='video_lesson' AND deleted=0 "
+          'SELECT * FROM records WHERE ${SchemaSql.videoLessonRows} '
           "${itemId == null ? '' : "AND json_extract(payload,'\$.itemId')=? "}"
           "ORDER BY json_extract(payload,'\$.ordinal'),id",
           variables: [if (itemId != null) Variable(itemId)],
@@ -426,10 +397,9 @@ class VideoRepository {
   });
 
   Future<List<VideoSubtitleRecord>> subtitles(VideoLesson lesson) async {
-    await ensureIndexes();
     final rows = await repository.db
         .customSelect(
-          "SELECT id,revision,payload FROM records WHERE type='video_subtitle' AND deleted=0 "
+          'SELECT id,revision,payload FROM records WHERE ${SchemaSql.videoSubtitleRows} '
           r"AND json_extract(payload,'$.lessonId')=? AND json_extract(payload,'$.mediaVersion')=? ORDER BY id",
           variables: [Variable(lesson.id), Variable(lesson.mediaVersion)],
         )
@@ -458,7 +428,6 @@ class VideoRepository {
       throw ArgumentError('Субтитры больше 8 МиБ');
     }
     await compute(parseVideoSubtitles, VideoSubtitleParseRequest(text, format));
-    await ensureIndexes();
     final digest = sha256
         .convert(utf8.encode('${format.name}\n$text'))
         .toString();
@@ -466,7 +435,7 @@ class VideoRepository {
       await _checkLesson(lesson);
       final duplicate = await repository.db
           .customSelect(
-            "SELECT id,revision,payload FROM records WHERE type='video_subtitle' AND deleted=0 "
+            'SELECT id,revision,payload FROM records WHERE ${SchemaSql.videoSubtitleRows} '
             r"AND json_extract(payload,'$.lessonId')=? AND json_extract(payload,'$.mediaVersion')=? AND json_extract(payload,'$.digest')=? LIMIT 1",
             variables: [
               Variable(lesson.id),
@@ -598,10 +567,9 @@ class VideoRepository {
   }
 
   Future<List<VideoAnnotation>> annotations(VideoLesson lesson) async {
-    await ensureIndexes();
     final rows = await repository.db
         .customSelect(
-          "SELECT id,revision,payload FROM records WHERE type='video_annotation' AND deleted=0 "
+          'SELECT id,revision,payload FROM records WHERE ${SchemaSql.videoAnnotationRows} '
           r"AND json_extract(payload,'$.lessonId')=? AND json_extract(payload,'$.mediaVersion')=? "
           r"ORDER BY json_extract(payload,'$.startMs'),id",
           variables: [Variable(lesson.id), Variable(lesson.mediaVersion)],
@@ -750,7 +718,6 @@ class VideoRepository {
     required List<VideoInterval> intervals,
     int? durationMs,
   }) async {
-    await ensureIndexes();
     if (progress.lessonId != lesson.id ||
         progress.mediaVersion != lesson.mediaVersion ||
         progress.positionMs < 0 ||
@@ -821,10 +788,9 @@ class VideoRepository {
     DateTime? start,
   }) async {
     if (lessonIds?.isEmpty == true) return [];
-    await ensureIndexes();
     final rows = await repository.db
         .customSelect(
-          "SELECT id,payload FROM records WHERE type='video_interval' AND deleted=0 "
+          'SELECT id,payload FROM records WHERE ${SchemaSql.videoIntervalRows} '
           "${lessonIds == null ? '' : "AND json_extract(payload,'\$.lessonId') IN (${List.filled(lessonIds.length, '?').join(',')}) "}"
           "${music == null ? '' : 'AND $_mediaKind=? '}"
           "${start == null ? '' : "AND ($_intervalStart + json_extract(payload,'\$.wallMs'))>?"}",
@@ -942,8 +908,7 @@ class VideoRepository {
   }) async {
     if (limit < 1 || limit > 200) throw ArgumentError('Размер страницы: 1–200');
     if (lessonIds?.isEmpty == true) return const VideoHistoryPage([], null);
-    await ensureIndexes();
-    final where = <String>["type='video_interval'", 'deleted=0'];
+    final where = <String>[SchemaSql.videoIntervalRows];
     final values = <Variable>[];
     if (music != null) {
       where.add('$_mediaKind=?');

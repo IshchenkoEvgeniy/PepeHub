@@ -35,7 +35,6 @@ class AppFixture {
   Repository get repo => files.store.repository;
   Future<void> open() async {
     await files.open();
-    await app.initialize();
   }
 
   Future<VideoLesson> course() async {

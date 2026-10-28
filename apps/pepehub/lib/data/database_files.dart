@@ -4,7 +4,9 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:uuid/uuid.dart';
 
-const currentDatabaseVersion = 3;
+const currentDatabaseVersion = 4;
+
+/// Frozen at the name introduced by schema 3: later versions migrate in place.
 const currentDatabaseFilename = 'pepehub-v3.sqlite';
 
 /// Runs on a background isolate before Drift opens the database. VACUUM INTO
@@ -21,7 +23,8 @@ String prepareDatabaseFiles(String directoryPath) {
     try {
       final version =
           source.select('PRAGMA user_version').single.values.first as int;
-      if (version < 1 || version > 2) {
+      // 1–2: the original 0.4 database; later versions: a restored backup.
+      if (version < 1 || version > currentDatabaseVersion) {
         throw StateError(
           'Неизвестная версия исходной базы: $version. Данные сохранены.',
         );
@@ -49,7 +52,10 @@ String prepareDatabaseFiles(String directoryPath) {
           ..createSync();
         _snapshot(
           source,
-          p.join(backups.path, 'before-v3-${const Uuid().v4()}.sqlite'),
+          p.join(
+            backups.path,
+            'before-v$currentDatabaseVersion-${const Uuid().v4()}.sqlite',
+          ),
         );
       }
     } finally {

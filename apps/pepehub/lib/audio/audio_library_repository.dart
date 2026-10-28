@@ -11,16 +11,26 @@ class AudioLibraryRepository {
   AudioLibraryRepository(this.db);
 
   Future<Map<String, ({int? total, int? position, double speed})>>
-  bookSummaries() async {
-    final rows = await db.customSelect(
-      '''SELECT e.book_id,t.id,t.duration_ms,
+  bookSummaries({String? bookId}) async {
+    final rows = await db
+        .customSelect(
+          '''SELECT e.book_id,e.id AS edition_id,t.id,t.duration_ms,
       p.track_id,p.position_ms,p.speed FROM audio_editions e
       JOIN audio_tracks t ON t.edition_id=e.id
-      LEFT JOIN audio_progress p ON p.edition_id=e.id ORDER BY e.id,t.ordinal''',
-    ).get();
+      LEFT JOIN audio_progress p ON p.edition_id=e.id
+      ${bookId == null ? '' : 'WHERE e.book_id=?'} ORDER BY e.book_id,p.updated_at DESC,e.id,t.ordinal''',
+          variables: [if (bookId != null) Variable(bookId)],
+        )
+        .get();
     final grouped = <String, List<QueryRow>>{};
+    final selectedEditions = <String, String>{};
     for (final row in rows) {
-      grouped.putIfAbsent(row.read<String>('book_id'), () => []).add(row);
+      final book = row.read<String>('book_id'),
+          edition = row.read<String>('edition_id');
+      // Different editions are alternatives, never consecutive chapters.
+      if (selectedEditions.putIfAbsent(book, () => edition) == edition) {
+        grouped.putIfAbsent(book, () => []).add(row);
+      }
     }
     return {
       for (final entry in grouped.entries)

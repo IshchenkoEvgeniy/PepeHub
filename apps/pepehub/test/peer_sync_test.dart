@@ -44,7 +44,6 @@ class ReplicaFixture {
   Future<void> open() async {
     base = await Directory.systemTemp.createTemp('pepe-peer-test-');
     root = await Directory(p.join(base.path, 'shared')).create();
-    await store.initialize();
     replica = PeerReplica(
       store: store,
       folder: PeerFolder(id: folderId, name: 'Course', root: root.path),

@@ -167,7 +167,10 @@ export class PepeHubLibraryService {
         for(const path of this.cached.keys())if(!seen.has(path))this.cached.delete(path);
         return { version: 1, ready: true, items, fields: this.fields({}),
             collections: this.plugin.settings.mediaCollections.filter(c => c.enabled && (c.id === 'book' || /audio|аудио/i.test(c.id)))
-                .map(c => ({ id: c.id, title: c.id, mediaType: /audio|аудио/i.test(c.id) ? 'audiobook' : 'book' })) };
+                .map(c => ({ id: c.id, title: c.id, mediaType: /audio|аудио/i.test(c.id) ? 'audiobook' : 'book',
+                    statuses: {planned: this.plugin.settings.language === 'ru' ? 'В планах' : 'Planned',
+                        active:c.readingStatusName,paused:c.pausedStatusName || 'На паузе',finished:c.finishedStatusName},
+                    progressUnits:['pages','minutes','hours','percent','characters'] })) };
     }
     private async apply(op: MetadataOperation): Promise<MetadataReceipt> {
         const coverKey=this.key(op.values,'cover');
@@ -197,7 +200,11 @@ export class PepeHubLibraryService {
         let template = '';
         const templateFile = this.plugin.app.vault.getAbstractFileByPath(normalizePath(collection.templatePath.endsWith('.md') ? collection.templatePath : `${collection.templatePath}.md`));
         if (templateFile instanceof TFile) template = await this.plugin.app.vault.read(templateFile);
-        const values: Record<string, JsonValue> = { ...this.read(template), ...op.values, [ID_PROPERTY]: op.itemId };
+        // An untouched empty form field must not erase a template default.
+        // Explicit nulls in update operations still mean "clear this field".
+        const supplied=Object.fromEntries(Object.entries(op.values).filter(([,v])=>v!==null&&v!==''&&(!Array.isArray(v)||v.length>0)));
+        for(const key of op.clearFields??[])if(Object.prototype.hasOwnProperty.call(op.values,key))supplied[key]=op.values[key]??null;
+        const values: Record<string, JsonValue> = { ...this.read(template), ...supplied, [ID_PROPERTY]: op.itemId };
         values[this.key(values, 'libraryType')] = collection.id;
         if (!values[this.key(values, 'format')]) values[this.key(values, 'format')] = op.mediaType === 'audiobook' ? 'Audiobook' : 'E-book';
         const folder = normalizePath(collection.folder);

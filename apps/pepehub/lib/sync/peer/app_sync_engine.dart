@@ -33,7 +33,6 @@ class AppSyncEngine {
     ];
   }
 
-  Future<void>? _initializing;
   Future<void> _work = Future.value();
   Future<T> _serialize<T>(Future<T> Function() action) {
     final next = _work.then((_) => action());
@@ -48,10 +47,8 @@ class AppSyncEngine {
     bool Function(String)? isProtected,
   }) : store = media.store,
        codec = AppSyncCodec(media, isProtected: isProtected);
-  Future<void> initialize() => _initializing ??= store.initialize();
   Future<void> refresh() => _serialize(_refreshPrepared);
   Future<void> _refreshPrepared() async {
-    await initialize();
     await codec.media.prepare();
     await codec.media.prepareNames();
     codec.media.checkAmbiguousBindings();
@@ -110,7 +107,6 @@ class AppSyncEngine {
     String after = '',
     int limit = 128,
   }) async {
-    await initialize();
     if (limit < 1 ||
         limit > 128 ||
         after.isNotEmpty && !appSyncHash.hasMatch(after)) {
@@ -190,7 +186,6 @@ class AppSyncEngine {
   Future<int> applyPending({void Function()? ensureAllowed}) =>
       _serialize(() => _applyPending(ensureAllowed));
   Future<int> _applyPending(void Function()? ensureAllowed) async {
-    await initialize();
     ensureAllowed?.call();
     var count = 0;
     await store.db.transaction(() async {

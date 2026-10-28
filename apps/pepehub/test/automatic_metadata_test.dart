@@ -141,6 +141,7 @@ void main() {
           return {
             'durationMs': 600000,
             'author': 'Рассказчик',
+            'writer': 'Автор книги',
             'genre': 'Fantasy',
             'year': '2021',
           };
@@ -155,7 +156,8 @@ void main() {
     final details = await AutomaticMetadata(assets).details(book);
     expect(details['durationMinutes'], 20);
     expect(details['readingTime'], '00:01:00');
-    expect(details['authors'], ['Рассказчик']);
+    expect(details['authors'], ['Автор книги']);
+    expect(details['narrator'], 'Рассказчик');
     expect(uris.any((u) => u.startsWith('file:')), true);
     expect(uris.any((u) => u.startsWith('content:')), true);
     await AutomaticMetadata(assets).details(book);

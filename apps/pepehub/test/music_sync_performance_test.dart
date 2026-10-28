@@ -125,7 +125,6 @@ void main() {
   test('daily aggregates roll back with source records and ignore non-listening events', () async {
     final store = AudioDailyStore(repository),
         journal = AudioJournal(repository);
-    await store.ensure();
     await journal.put('audio_event', 'pause', {
       'kind': 'pause',
       'bookId': 'book',

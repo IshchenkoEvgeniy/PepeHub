@@ -97,6 +97,9 @@ String metadataProgressLabel(ObsidianLibraryItem item) {
       progress = _number(item.value('progress'));
   final unit = _text(item.value('unit'));
   if (total == null && progress == null) return 'Прогресс не указан';
+  if (unit == 'percent') {
+    return progress == null ? 'Прогресс не указан' : '${_amount(progress)}%';
+  }
   if (item.mediaType == 'audiobook' &&
       (unit.isEmpty ||
           [
@@ -104,12 +107,14 @@ String metadataProgressLabel(ObsidianLibraryItem item) {
             'minute',
             'мин',
             'минуты',
+            'hours',
           ].contains(unit.toLowerCase()))) {
+    final factor = unit.toLowerCase() == 'hours' ? 60 : 1;
     return progress == null
-        ? _duration(total!)
+        ? _duration(total! * factor)
         : total == null
-        ? _duration(progress)
-        : '${_duration(progress)} / ${_duration(total)}';
+        ? _duration(progress * factor)
+        : '${_duration(progress * factor)} / ${_duration(total * factor)}';
   }
   final label = unit.isEmpty || unit == 'pages' ? 'стр.' : unit;
   return progress == null
@@ -282,6 +287,15 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     context,
     MaterialPageRoute(
       builder: (_) => LibraryMetadataEditor(
+        coverResolver: widget.service.coverReferencePath,
+        suggestions: widget.service.suggestions,
+        collection: widget.service.collectionFor(entry.item),
+        collections: (widget.service.snapshot?['collections'] as List? ?? [])
+            .map((c) => Map<String, dynamic>.from(c as Map))
+            .toList(),
+        syncPolicy: widget.service.policies[entry.item.id] ?? const {},
+        onSavePolicy: (policy) =>
+            widget.service.savePolicy(entry.item.id, policy),
         onPickCover: widget.service.chooseCover,
         item: entry.item,
         entry: entry,
@@ -572,9 +586,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       children: [
         LayoutBuilder(
           builder: (context, constraints) => constraints.maxWidth < 520
-              ? Column(
-                  children: [field, const SizedBox(height: 10), selector],
-                )
+              ? Column(children: [field, const SizedBox(height: 10), selector])
               : Row(
                   children: [
                     Expanded(child: field),

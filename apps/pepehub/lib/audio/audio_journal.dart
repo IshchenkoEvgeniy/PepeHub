@@ -122,9 +122,6 @@ class AudioJournal {
         _listenData = data;
       });
 
-  Future<void> ensureIndexes() => repository.db.customStatement(
-    "CREATE INDEX IF NOT EXISTS records_audio_day ON records(type,json_extract(payload,'\$.localDay'),json_extract(payload,'\$.bookId'))",
-  );
   Future<void> put(String type, String id, Map<String, dynamic> data) =>
       repository.db.customStatement(
         'INSERT INTO records(id,type,revision,deleted,payload) VALUES(?,?,1,0,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,deleted=0,revision=records.revision+1',

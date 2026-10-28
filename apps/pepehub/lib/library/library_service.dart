@@ -14,6 +14,7 @@ import 'activity_store.dart';
 import 'cover_sync.dart';
 import 'automatic_metadata.dart';
 import 'note_store.dart';
+import 'metadata_values.dart';
 import '../media/asset_store.dart';
 
 class LibraryService extends ChangeNotifier {
@@ -45,8 +46,31 @@ class LibraryService extends ChangeNotifier {
     return hash == null ? null : covers?.path(hash);
   }
 
+  String? coverReferencePath(String value) {
+    final hash = CoverSync.referenceHash(value);
+    return hash == null ? null : covers?.path(hash);
+  }
+
   List<LibraryEntry> entries = [];
   Map<String, dynamic>? snapshot;
+  final Map<String, Map<String, String>> policies = {};
+  Map<String, List<String>> get suggestions => metadataSuggestions(entries);
+  Map<String, dynamic>? collectionFor(ObsidianLibraryItem item) =>
+      (snapshot?['collections'] as List? ?? [])
+          .whereType<Map>()
+          .where((c) => c['id'] == item.collectionId)
+          .map((c) => Map<String, dynamic>.from(c))
+          .firstOrNull;
+  Future<void> savePolicy(String id, Map<String, String> policy) async {
+    final repo = repository;
+    if (repo == null) throw StateError('Подключите Obsidian.');
+    await local.setMeta(
+      'obsidian-policy:${repo.namespace}:$id',
+      jsonEncode(policy),
+    );
+    policies[id] = Map.of(policy);
+  }
+
   bool syncing = false;
   bool _syncAgain = false;
   String? error;
@@ -92,6 +116,19 @@ class LibraryService extends ChangeNotifier {
     final warning = repo == null
         ? null
         : await local.meta('obsidian-cover-errors:${repo.namespace}');
+    final loadedPolicies = <String, Map<String, String>>{};
+    if (repo != null) {
+      for (final entry in values.values) {
+        final raw = await local.meta(
+          'obsidian-policy:${repo.namespace}:${entry.item.id}',
+        );
+        if (raw != null) {
+          loadedPolicies[entry.item.id] = Map<String, String>.from(
+            jsonDecode(raw) as Map,
+          );
+        }
+      }
+    }
     if (generation != _generation || _disposed) return;
     entries = values.values.toList()
       ..sort(
@@ -99,6 +136,9 @@ class LibraryService extends ChangeNotifier {
             a.item.title.toLowerCase().compareTo(b.item.title.toLowerCase()),
       );
     snapshot = schema;
+    policies
+      ..clear()
+      ..addAll(loadedPolicies);
     if (error == null && warning != null && warning.isNotEmpty) error = warning;
     _notify();
   }
@@ -187,9 +227,33 @@ class LibraryService extends ChangeNotifier {
     return item;
   }
 
-  Future<void> add(ObsidianLibraryItem item, String sourceBookId) async {
+  Future<void> add(
+    ObsidianLibraryItem item,
+    String sourceBookId, {
+    Map<String, dynamic>? original,
+  }) async {
     final repo = repository;
     if (repo == null) throw StateError('Подключите Obsidian.');
+    final chosen = item.value('libraryType');
+    if (chosen != null && chosen != item.collectionId) {
+      final collection = (snapshot?['collections'] as List? ?? [])
+          .whereType<Map>()
+          .where((c) => c['id'] == chosen)
+          .firstOrNull;
+      if (collection == null ||
+          collection['mediaType'] != item.mediaType &&
+              collection['id'] != 'book') {
+        throw StateError('Выберите подходящую коллекцию библиотеки.');
+      }
+      item = ObsidianLibraryItem(
+        id: item.id,
+        path: item.path,
+        collectionId: '$chosen',
+        mediaType: item.mediaType,
+        fields: item.fields,
+        values: item.values,
+      );
+    }
     await repo.mutate((data) async {
       if (data.values.any(
             (e) => e.sourceBookId == sourceBookId && e.state != 'removed',
@@ -213,6 +277,18 @@ class LibraryService extends ChangeNotifier {
           'mediaType': item.mediaType,
           'base': <String, dynamic>{},
           'values': item.values,
+          if (original != null)
+            'clearFields': [
+              for (final entry in original.entries)
+                if (entry.value != null &&
+                    entry.value != '' &&
+                    !(entry.value is List && (entry.value as List).isEmpty) &&
+                    (item.values[entry.key] == null ||
+                        item.values[entry.key] == '' ||
+                        item.values[entry.key] is List &&
+                            (item.values[entry.key] as List).isEmpty))
+                  entry.key,
+            ],
         },
       );
     });
@@ -220,7 +296,37 @@ class LibraryService extends ChangeNotifier {
     await sync();
   }
 
-  Future<void> link(String itemId, String sourceBookId) async {
+  Future<ObsidianLibraryItem> previewLink(
+    LibraryRecord book,
+    ObsidianLibraryItem target,
+  ) async {
+    final schema = snapshot;
+    if (schema == null) throw StateError('Дождитесь библиотеки Obsidian.');
+    return LibraryMapper.fromBook(
+      book,
+      {
+        ...schema,
+        'fields': target.fields.map((f) => f.toJson()).toList(),
+        'collections': [
+          collectionFor(target) ??
+              {'id': target.collectionId, 'mediaType': target.mediaType},
+        ],
+      },
+      matchLibraryProgress(
+        assets == null
+            ? {...?book.payload}
+            : await AutomaticMetadata(assets!).details(book),
+        target,
+      ),
+      target.id,
+    );
+  }
+
+  Future<void> link(
+    String itemId,
+    String sourceBookId, {
+    Map<String, String>? policy,
+  }) async {
     final repo = repository;
     if (repo == null) throw StateError('Подключите Obsidian.');
     await repo.mutate((data) async {
@@ -234,6 +340,12 @@ class LibraryService extends ChangeNotifier {
         throw StateError('Книга уже связана с другой карточкой.');
       }
       data[itemId] = LibraryEntry(entry.item, sourceBookId: sourceBookId);
+      if (policy != null) {
+        await local.setMeta(
+          'obsidian-policy:${repo.namespace}:$itemId',
+          jsonEncode(policy),
+        );
+      }
     });
     await reload();
     await sync();

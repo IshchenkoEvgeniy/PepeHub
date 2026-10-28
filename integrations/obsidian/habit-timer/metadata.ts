@@ -17,7 +17,9 @@ export interface MetadataSnapshot {
   ready: boolean;
   items: MetadataItem[];
   fields: MetadataField[];
-  collections: Array<{ id: string; mediaType: 'book' | 'audiobook'; title: string }>;
+  collections: Array<{ id: string; mediaType: 'book' | 'audiobook'; title: string;
+    statuses?: Record<'planned' | 'active' | 'paused' | 'finished', string>;
+    progressUnits?: string[] }>;
 }
 export interface MetadataOperation {
   operationId: string;
@@ -27,6 +29,7 @@ export interface MetadataOperation {
   mediaType: 'book' | 'audiobook';
   base: Record<string, JsonValue>;
   values: Record<string, JsonValue>;
+  clearFields?: string[];
 }
 export interface MetadataReceipt {
   operationId: string;
@@ -41,7 +44,9 @@ export function validMetadataFields(value:unknown):value is MetadataField[] {
   return Array.isArray(value)&&value.every(f=>f&&boundedText(f.key,200)&&boundedText(f.field,100)&&['text','number','list','json'].includes(f.kind));
 }
 export function validMetadataCollections(value:unknown):value is MetadataSnapshot['collections'] {
-  return Array.isArray(value)&&value.every(c=>c&&boundedText(c.id,100)&&boundedText(c.title,1000)&&['book','audiobook'].includes(c.mediaType));
+  return Array.isArray(value)&&value.every(c=>c&&boundedText(c.id,100)&&boundedText(c.title,1000)&&['book','audiobook'].includes(c.mediaType)
+    &&(c.statuses===undefined||c.statuses&&typeof c.statuses==='object'&&['planned','active','paused','finished'].every(k=>boundedText(c.statuses[k],200)))
+    &&(c.progressUnits===undefined||Array.isArray(c.progressUnits)&&c.progressUnits.length<=20&&c.progressUnits.every((u:unknown)=>boundedText(u,30))));
 }
 export function validMetadataItem(value:unknown):value is MetadataItem {
   if(!value||typeof value!=='object')return false;
@@ -82,7 +87,8 @@ export function validOperation(value: unknown): value is MetadataOperation {
   const op = value as MetadataOperation;
   return validId(op.operationId) && validId(op.itemId) && ['create', 'update'].includes(op.action)
     && typeof op.collectionId === 'string' && op.collectionId.length > 0 && op.collectionId.length <= 100
-    && ['book', 'audiobook'].includes(op.mediaType) && safeValues(op.base) && safeValues(op.values);
+    && ['book', 'audiobook'].includes(op.mediaType) && safeValues(op.base) && safeValues(op.values)
+    && (op.clearFields===undefined||Array.isArray(op.clearFields)&&op.clearFields.length<=200&&op.clearFields.every(k=>boundedText(k,200)&&Object.prototype.hasOwnProperty.call(op.values,k)));
 }
 /** Compare only edited properties; a concurrent change of another field is preserved. */
 export function conflictingKeys(current: Record<string, unknown>, op: MetadataOperation): string[] {

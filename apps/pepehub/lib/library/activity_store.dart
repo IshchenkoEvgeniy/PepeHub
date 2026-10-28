@@ -1,6 +1,9 @@
 import 'dart:convert';
 
+import 'package:drift/drift.dart' show Variable;
+
 import 'models.dart';
+import '../data/database_schema.dart';
 import '../data/repository.dart';
 import '../reader/reading_library.dart';
 import '../audio/audio_journal.dart' show dayKey;
@@ -123,39 +126,51 @@ class ActivityStore {
     final links = await LibraryRepository(local, namespace).entries();
     final rows = await ActivityStore(local, namespace).entries();
     // A native session may arrive both directly and through its Obsidian mirror.
-    final native = <String>{
-      for (final row
-          in await local.db
-              .customSelect(
-                "SELECT id,type FROM records WHERE type IN ('session','audio_event')",
-              )
-              .get())
-        '${row.read<String>('type') == 'session' ? 'manual' : 'audio'}:${row.read<String>('id')}',
-      for (final row
-          in await local.db
-              .customSelect(
-                "SELECT key FROM metadata WHERE key LIKE 'reading-session:%'",
-              )
-              .get())
-        'reader:${row.read<String>('key').substring('reading-session:'.length)}',
-    };
-    final replicated = await local.db
-        .customSelect(
-          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='peer_app_projection'",
-        )
-        .getSingleOrNull();
-    if (replicated != null) {
-      for (final row
-          in await local.db
-              .customSelect(
-                "SELECT target FROM peer_app_projection WHERE target LIKE 'm:reading-session:%' AND materialized=1",
-              )
-              .get()) {
-        native.add(
-          'reader:${row.read<String>('target').substring('m:reading-session:'.length)}',
-        );
+    // Only the sources these slots name are looked up, by primary key, so the
+    // cost follows the Obsidian journal rather than the whole listening history.
+    final wanted = <String, Set<String>>{};
+    for (final slot in rows) {
+      final source = slot['source'];
+      if (source is Map && source['kind'] is String && source['id'] != null) {
+        (wanted[source['kind'] as String] ??= {}).add('${source['id']}');
       }
     }
+    final native = <String>{};
+    Future<void> lookup(String kind, String sql, String prefix) async {
+      final ids = wanted[kind];
+      if (ids == null || ids.isEmpty) return;
+      for (final row
+          in await local.db
+              .customSelect(sql, variables: [Variable(jsonEncode([...ids]))])
+              .get()) {
+        native.add('$kind:${row.read<String>('id').substring(prefix.length)}');
+      }
+    }
+
+    await lookup(
+      'manual',
+      "SELECT id FROM records WHERE type='session' "
+          'AND id IN (SELECT value FROM json_each(?))',
+      '',
+    );
+    await lookup(
+      'audio',
+      "SELECT id FROM records WHERE type='audio_event' "
+          'AND id IN (SELECT value FROM json_each(?))',
+      '',
+    );
+    await lookup(
+      'reader',
+      'SELECT key AS id FROM metadata '
+          "WHERE key IN (SELECT 'reading-session:'||value FROM json_each(?))",
+      'reading-session:',
+    );
+    await lookup(
+      'reader',
+      'SELECT target AS id FROM peer_app_projection WHERE materialized=1 '
+          "AND target IN (SELECT 'm:reading-session:'||value FROM json_each(?))",
+      'm:reading-session:',
+    );
     return [
       for (final slot in rows)
         if ((slot['source'] == null ||
@@ -379,9 +394,21 @@ class ActivityStore {
         );
       }
     }
+    // Only linked books are journaled: their listening events come through the
+    // per-book index and their (few) manual sessions through records_type,
+    // instead of decoding every audio_event and session ever recorded.
+    final linked = jsonEncode([...byBook.keys]);
     final rows = await local.db
         .customSelect(
-          "SELECT * FROM records WHERE type IN ('audio_event','session')",
+          'SELECT * FROM records WHERE ${SchemaSql.audioEventRows} '
+          'AND ${SchemaSql.audioEventBook} IN (SELECT value FROM json_each(?)) '
+          "AND json_extract(payload,'\$.kind')='listen' "
+          'UNION ALL '
+          "SELECT * FROM records WHERE type='session' AND json_valid(payload) "
+          "AND json_extract(payload,'\$.bookId') IN (SELECT value FROM json_each(?)) "
+          "AND json_extract(payload,'\$.kind') IN ('reading','listening') "
+          "AND json_extract(payload,'\$.source') IS NOT 'player'",
+          variables: [Variable(linked), Variable(linked)],
         )
         .get();
     for (final row in rows) {

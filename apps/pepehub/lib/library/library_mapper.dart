@@ -1,5 +1,6 @@
 import '../data/repository.dart';
 import 'models.dart';
+import 'metadata_values.dart';
 
 /// Property names always come from the plugin snapshot and its configured aliases.
 class LibraryMapper {
@@ -36,8 +37,15 @@ class LibraryMapper {
     set('seriesIndex', details['seriesNumber'] ?? details['seriesIndex']);
     set('format', audio ? 'Audiobook' : 'E-book');
     set('libraryType', collection['id']);
-    set('unit', details['unit'] ?? (audio ? 'minutes' : 'pages'));
-    set('status', details['status']);
+    final percent =
+        details['unit'] == 'characters' &&
+        (collection['progressUnits'] as List? ?? []).contains('percent') &&
+        (details['total'] as num? ?? 0) > 0;
+    set(
+      'unit',
+      percent ? 'percent' : details['unit'] ?? (audio ? 'minutes' : 'pages'),
+    );
+    set('status', exportLibraryStatus(details['status'], collection));
     set('rating', details['rating']);
     set('startDate', details['startedAt'] ?? details['startDate']);
     set(
@@ -52,12 +60,19 @@ class LibraryMapper {
       'total',
       audio
           ? details['durationMinutes']
+          : percent
+          ? 100
           : details['total'] ?? details['pdfPages'] ?? details['pages'],
     );
     set(
       'progress',
       audio
           ? details['listenedMinutes']
+          : percent
+          ? (((details['progress'] as num? ?? 0) / (details['total'] as num)) *
+                        10000)
+                    .round() /
+                100
           : details['progress'] ?? details['readPages'],
     );
     // Retain descriptive metadata; local file/cover paths and content are never exported.
@@ -70,7 +85,6 @@ class LibraryMapper {
       'tags',
       'notes',
       'favorite',
-      'readingTime',
       'publicationDate',
       'sourceLanguage',
       'publicationCity',
@@ -82,8 +96,13 @@ class LibraryMapper {
       'createdAt',
       'modifiedAt',
       'embeddedMetadata',
+      'narrator',
     ]) {
       if (details.containsKey(key)) values[key] = details[key];
+    }
+    if (details['unit'] == 'characters') {
+      values['pepehub_text_length'] = details['total'];
+      values['pepehub_text_position'] = details['progress'];
     }
     final cover = details['cover'];
     if (cover is String &&

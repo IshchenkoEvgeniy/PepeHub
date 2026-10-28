@@ -80,7 +80,6 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
     final requestedPeriod = period, requestedBook = selectedBook;
     final requestedRange = customRange;
     try {
-      await AudioJournal(widget.repository).ensureIndexes();
       await widget.controller?.flushJournal();
       final books = (await widget.repository.records('book'))
           .where((b) => b.payload?['format'] == 'audio')

@@ -9,6 +9,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
 import '../audio/audio_folder.dart';
+import '../data/database_schema.dart';
 import '../data/repository.dart';
 import '../media/asset_store.dart';
 import 'book_formats.dart';
@@ -17,19 +18,8 @@ import 'text_book.dart';
 import 'pdf_support.dart';
 
 class ReadingLibrary {
-  static final _noteIndexes = Expando<Future<void>>();
-  static const _noteJson =
-      "CASE WHEN json_valid(value) THEN value ELSE '{}' END";
-  Future<void> _ensureNoteIndexes() =>
-      _noteIndexes[repository.db] ??= repository.db.transaction(() async {
-        for (final field in ['hash', 'bookId']) {
-          await repository.db.customStatement(
-            "CREATE INDEX IF NOT EXISTS reading_notes_$field ON metadata "
-            "(json_extract($_noteJson,'\$.$field')) "
-            "WHERE key>='reading-note:' AND key<'reading-note;'",
-          );
-        }
-      });
+  // Must match the reading_notes_* expression indexes in the schema.
+  static const _noteJson = SchemaSql.noteJson;
   final Repository repository;
   ReadingLibrary(this.repository);
   Future<Map<String, dynamic>> value(String key) async {
@@ -243,7 +233,6 @@ class ReadingLibrary {
 
   Future<List<ReadingNote>> notes({String? hash, Set<String>? bookIds}) async {
     if (bookIds?.isEmpty == true) return [];
-    await _ensureNoteIndexes();
     final rows = await repository.db
         .customSelect(
           "SELECT value FROM metadata WHERE key>='reading-note:' AND key<'reading-note;' "

@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import 'database_files.dart';
+import 'database_schema.dart';
 
 class AppDatabase extends GeneratedDatabase {
   AppDatabase(super.executor);
@@ -50,14 +51,16 @@ class AppDatabase extends GeneratedDatabase {
       );
       await _addAudioSchema();
       await _addEditionSchema();
-      await customStatement('PRAGMA user_version = 3');
+      await createFeatureSchema(this);
+      await customStatement('PRAGMA user_version = $currentDatabaseVersion');
     }),
     onUpgrade: (_, from, to) async {
       if (from > to) throw StateError('Нельзя открыть более новую схему базы');
       await transaction(() async {
         if (from < 2) await _addAudioSchema();
         if (from < 3) await _addEditionSchema();
-        await customStatement('PRAGMA user_version = 3');
+        if (from < 4) await createFeatureSchema(this);
+        await customStatement('PRAGMA user_version = $currentDatabaseVersion');
       });
     },
     beforeOpen: (_) async {

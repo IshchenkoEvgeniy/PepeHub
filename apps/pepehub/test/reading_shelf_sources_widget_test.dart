@@ -32,9 +32,6 @@ void main() {
         'reading-note:keep',
         jsonEncode({'bookId': 'remote-card', 'text': 'Keep this note'}),
       );
-      await db.customStatement(
-        'CREATE TABLE peer_app_alias(kind TEXT,local_id TEXT,shared_id TEXT,data TEXT)',
-      );
       await db.customStatement('INSERT INTO peer_app_alias VALUES(?,?,?,?)', [
         'book',
         'remote-card',

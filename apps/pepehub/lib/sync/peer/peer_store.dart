@@ -28,21 +28,6 @@ class SecurePeerSecrets implements PeerSecrets {
 class PeerStore {
   final Repository repository;
   PeerStore(this.repository);
-  Future<void> initialize() async {
-    await repository.db.customStatement(
-      'CREATE TABLE IF NOT EXISTS peer_sync_files(folder_id TEXT NOT NULL,path TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(folder_id,path))',
-    );
-    await repository.db.customStatement(
-      'CREATE TABLE IF NOT EXISTS peer_sync_deletions(folder_id TEXT NOT NULL,path TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(folder_id,path))',
-    );
-    await repository.db.customStatement(
-      'CREATE TABLE IF NOT EXISTS peer_sync_scan_cache(folder_id TEXT NOT NULL,path TEXT NOT NULL,root TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(folder_id,path))',
-    );
-    await repository.db.customStatement(
-      'CREATE TABLE IF NOT EXISTS peer_sync_remote_index(device TEXT NOT NULL,folder TEXT NOT NULL,revision TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(device,folder))',
-    );
-  }
-
   Future<Map<String, PeerDiskFile>> scanCache(PeerFolder folder) async => {
     for (final row
         in await repository.db

@@ -81,7 +81,6 @@ void main() {
     await a.receive(b);
     expect(await File(p.join(a.root.path, 'book.txt')).exists(), false);
     final reopened = PeerStore(b.store.repository);
-    await reopened.initialize();
     expect((await reopened.pendingDeletions()).single.time, pending.time);
     await b.replica.resolveDeletion(pending, delete: true);
     expect(await File(p.join(b.root.path, 'book.txt')).exists(), false);

@@ -13,7 +13,23 @@ function Add-BridgeHook([string]$Content, [string]$Marker, [string]$Anchor, [str
     return $Content.Replace($Anchor, $Replacement)
 }
 # Prepare hook edits first; preserve all existing changes in the plugin checkout.
+$unitTypes = [IO.File]::ReadAllText((Join-Path $bridgePlugin 'src\types.ts'))
+if (-not $unitTypes.Contains("| 'percent' | 'characters'")) {
+    $unitAnchor = "export type MediaDailyGoalUnit = 'pages' | 'items' | 'episodes' | 'chapters' | 'minutes' | 'hours' | 'lessons' | 'units';"
+    if (-not $unitTypes.Contains($unitAnchor)) { throw 'Missing media progress unit declaration' }
+    $unitTypes = $unitTypes.Replace($unitAnchor, $unitAnchor.Replace("| 'units';", "| 'units' | 'percent' | 'characters';"))
+}
+$goalUnits = [IO.File]::ReadAllText((Join-Path $bridgePlugin 'src\library\daily-goals.ts'))
+if (-not $goalUnits.Contains("percent: ['%', '%']")) {
+    $labelsAnchor = "lessons: ['lessons', 'уроков'], units: ['units', 'единиц']"
+    if (-not $goalUnits.Contains($labelsAnchor)) { throw 'Missing media unit labels' }
+    $goalUnits = $goalUnits.Replace("'lessons', 'units'", "'lessons', 'units', 'percent', 'characters'")
+    $goalUnits = $goalUnits.Replace("    if (/page|", "    if (/percent|процент|%/.test(normalized)) return 'percent';`n    if (/character|символ/.test(normalized)) return 'characters';`n    if (/page|")
+    $goalUnits = $goalUnits.Replace($labelsAnchor, "$labelsAnchor,`n        percent: ['%', '%'], characters: ['characters', 'символов']")
+}
 $pluginMain = [IO.File]::ReadAllText((Join-Path $bridgePlugin 'src\main.ts'))
+$audioUnitAnchor = "    if (normalizedFormat.includes('audio') || normalizedFormat.includes('аудио')) return 'minutes';"
+$goalUnits = $goalUnits.Replace($audioUnitAnchor, "    if (normalizedFormat.includes('audio') || normalizedFormat.includes('аудио')) {`n        return normalizeDailyGoalUnit(explicitUnit, 'minutes') === 'hours' ? 'hours' : 'minutes';`n    }")
 $pluginMain = Add-BridgeHook $pluginMain "import { PepeHubLibraryService }" "export default class HabitTimerPlugin" "import { PepeHubLibraryService } from './services/pepehub-library-service';`n`nexport default class HabitTimerPlugin"
 $pluginMain = Add-BridgeHook $pluginMain 'pepehubLibrary: PepeHubLibraryService;' '    companion: CloudflareCompanionService;' "    companion: CloudflareCompanionService;`n    pepehubLibrary: PepeHubLibraryService;"
 $pluginMain = Add-BridgeHook $pluginMain 'this.pepehubLibrary = new' '        this.companion = new CloudflareCompanionService(this);' "        this.companion = new CloudflareCompanionService(this);`n        this.pepehubLibrary = new PepeHubLibraryService(this);"
@@ -55,6 +71,8 @@ Write-BridgeFile 'cloudflare-companion\src\activity-api.ts' ([IO.File]::ReadAllT
 Write-BridgeFile 'cloudflare-companion\migrations\0012_pepehub_activity.sql' ([IO.File]::ReadAllText((Join-Path $bridgeRoot '002_pepehub_activity.sql')))
 Write-BridgeFile 'cloudflare-companion\migrations\0011_pepehub_library.sql' ([IO.File]::ReadAllText((Join-Path $bridgeRoot '001_pepehub_library.sql')))
 Write-BridgeFile 'src\main.ts' $pluginMain
+Write-BridgeFile 'src\types.ts' $unitTypes
+Write-BridgeFile 'src\library\daily-goals.ts' $goalUnits
 $workerMain=$workerMain.Replace('handleMetadataApi(request, env.DB, profile(env));','handleMetadataApi(request, env.DB, profile(env), env.COVERS);')
 Write-BridgeFile 'cloudflare-companion\src\index.ts' $workerMain
 Write-Output 'PepeHub metadata bridge installed in plugin sources. Build the plugin and deploy Companion with the new D1 migration.'

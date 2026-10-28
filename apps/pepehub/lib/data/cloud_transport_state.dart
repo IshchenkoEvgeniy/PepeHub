@@ -19,13 +19,8 @@ class CloudTransportState {
           ?.read<String>('value') ==
       '1';
 
+  /// Tables come from the schema migration; this only archives the queue.
   Future<void> initialize() async {
-    await db.customStatement(
-      'CREATE TABLE IF NOT EXISTS cloud_local_state(id TEXT PRIMARY KEY,digest TEXT NOT NULL)',
-    );
-    await db.customStatement(
-      'CREATE TABLE IF NOT EXISTS legacy_cloud_outbox(operation_id TEXT PRIMARY KEY,entity_id TEXT NOT NULL,operation TEXT NOT NULL,state TEXT NOT NULL,receipt TEXT,attempted INTEGER NOT NULL,archived_at TEXT NOT NULL)',
-    );
     if (await enabled) return;
     // Retain exact operations, receipts and attempt flags before removing them
     // from the active queue. Repeating this migration is safe.

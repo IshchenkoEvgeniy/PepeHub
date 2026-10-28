@@ -12,24 +12,6 @@ class AppSyncStore {
   final PeerStore peer;
   AppSyncStore(this.peer);
   AppDatabase get db => peer.repository.db;
-  Future<void> initialize() async {
-    await db.customStatement(
-      'CREATE TABLE IF NOT EXISTS peer_app_versions(id TEXT PRIMARY KEY,entity_key TEXT NOT NULL,payload TEXT NOT NULL,active INTEGER NOT NULL)',
-    );
-    await db.customStatement(
-      'CREATE INDEX IF NOT EXISTS peer_app_heads ON peer_app_versions(entity_key,active)',
-    );
-    await db.customStatement(
-      'CREATE TABLE IF NOT EXISTS peer_app_projection(entity_key TEXT PRIMARY KEY,target TEXT NOT NULL,digest TEXT NOT NULL,clock TEXT NOT NULL,materialized INTEGER NOT NULL)',
-    );
-    await db.customStatement(
-      'CREATE TABLE IF NOT EXISTS peer_app_alias(kind TEXT NOT NULL,local_id TEXT NOT NULL,shared_id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(kind,local_id))',
-    );
-    await db.customStatement(
-      'CREATE INDEX IF NOT EXISTS peer_app_shared ON peer_app_alias(kind,shared_id)',
-    );
-  }
-
   Future<List<AppSyncVersion>> heads([String? key]) async => [
     for (final row
         in await db

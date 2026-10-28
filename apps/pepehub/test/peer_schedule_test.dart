@@ -29,7 +29,6 @@ void main() {
     final store = AppSyncStore(peer);
     const device = '00000000-0000-0000-0000-000000000001';
     final app = AppSyncEngine(peer, device, AppSyncMedia(store, () => []));
-    await app.initialize();
     final expected = <String, Map<String, dynamic>>{};
     await db.transaction(() async {
       for (var i = 0; i < 300; i++) {
@@ -153,10 +152,7 @@ void main() {
     addTearDown(db.close);
     final repo = Repository(db);
     final sources = ReadingShelfSources([]);
-    await sources.load(repo); // No peer tables on a fresh installation.
-    await db.customStatement(
-      'CREATE TABLE peer_app_alias(kind TEXT,local_id TEXT,shared_id TEXT,data TEXT)',
-    );
+    await sources.load(repo); // Empty peer tables on a fresh installation.
     await db.transaction(() async {
       for (var i = 0; i < 2000; i++) {
         final id = 'remote-$i';

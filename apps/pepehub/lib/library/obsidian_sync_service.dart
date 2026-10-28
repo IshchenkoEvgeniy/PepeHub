@@ -140,8 +140,7 @@ class ObsidianSyncService {
     return (value: snapshot, changed: changed);
   }
 
-  Future<bool> run() async {
-    // The only outbound data are durable operations queued by explicit user actions.
+  Future<void> _sendMetadata() async {
     for (final entry in (await repository.entries()).values.where(
       (e) => e.pending,
     )) {
@@ -155,6 +154,10 @@ class ObsidianSyncService {
         await repository.receipt(entry.item.id, receipt);
       }
     }
+  }
+
+  Future<bool> run() async {
+    await _sendMetadata();
     final pulled = await _librarySnapshot(), snapshot = pulled.value;
     if (await repository.repository.meta('obsidian-sync-history') != 'false') {
       final history = ActivityStore(repository.repository, config.namespace);
@@ -214,6 +217,9 @@ class ObsidianSyncService {
     }
     if (covers != null) {
       await AutomaticMetadata(covers!.assets).refresh(repository, snapshot);
+      // Autofill creates durable operations too. Send them now, even when the
+      // periodic timer is disabled, rather than waiting for another sync.
+      await _sendMetadata();
     }
     return covers != null &&
             await repository.repository.meta('obsidian-sync-covers') != 'false'
