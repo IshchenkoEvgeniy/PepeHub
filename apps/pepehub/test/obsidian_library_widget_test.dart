@@ -19,13 +19,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Библиотека'));
     await tester.pumpAndSettle();
-    expect(find.text('Подключить Obsidian'), findsOneWidget);
+    expect(find.text('Добавить книгу'), findsOneWidget);
     expect(await repo.meta('library-section'), 'metadata');
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
     await tester.pumpWidget(PepeHubApp(repository: repo));
     await tester.pumpAndSettle();
-    expect(find.text('Подключить Obsidian'), findsOneWidget);
+    expect(find.text('Добавить книгу'), findsOneWidget);
     await tester.tap(find.byTooltip('Книги'));
     await tester.pumpAndSettle();
     expect(await repo.meta('library-section'), 'reading');
@@ -157,8 +157,11 @@ void main() {
             path: '',
             collectionId: 'book',
             mediaType: type,
-            values: {'Title': type},
-            fields: const [LibraryField('Title', 'title', 'text')],
+            values: {'Title': type, 'Status': 'finished'},
+            fields: const [
+              LibraryField('Title', 'title', 'text'),
+              LibraryField('Status', 'status', 'text'),
+            ],
           ),
         ),
     ];

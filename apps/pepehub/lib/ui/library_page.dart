@@ -155,6 +155,10 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _loadObsidian() async {
+    await obsidianLibrary.reload();
+    if (await widget.repository.meta('obsidian-library-enabled') == 'false') {
+      return;
+    }
     final url = await widget.repository.meta('obsidian-library-url');
     if (url == null) return;
     try {
@@ -1122,7 +1126,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                    'Укажите адрес и API-токен Cloudflare Companion из настроек плагина. Библиотека Obsidian появится автоматически. Книги из приложения добавляются только по вашей команде.',
+                    'Укажите адрес и API-токен Cloudflare Companion из настроек плагина. Карточки Obsidian будут импортированы в локальную библиотеку. Новые книги PepeHub экспортируются по вашему выбору.',
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -1186,8 +1190,8 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _addToObsidian(LibraryRecord book) async {
-    if (obsidianLibrary.config == null) await _obsidianSettings();
-    if (!mounted || obsidianLibrary.config == null) return;
+    await obsidianLibrary.reload();
+    if (!mounted) return;
     final linked = obsidianLibrary.forBook(book.id);
     if (linked != null && linked.state != 'removed') {
       await Navigator.push<void>(
@@ -1218,17 +1222,7 @@ class _LibraryPageState extends State<LibraryPage> {
       );
       return;
     }
-    if (obsidianLibrary.snapshot == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Дождитесь получения библиотеки Obsidian в разделе «Библиотека».',
-          ),
-        ),
-      );
-      return;
-    }
-    // Explicit linking is available for a local file whose existing Obsidian UUID is unknown.
+    // Link a file to an existing personal card rather than duplicating it.
     if (obsidianLibrary.entries.any(
       (e) => e.state == 'synced' && e.sourceBookId == null,
     )) {
@@ -1239,7 +1233,7 @@ class _LibraryPageState extends State<LibraryPage> {
           children: [
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, 'create'),
-              child: const Text('Создать карточку в Obsidian'),
+              child: const Text('Создать карточку в библиотеке'),
             ),
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, 'link'),
@@ -1253,7 +1247,7 @@ class _LibraryPageState extends State<LibraryPage> {
         final id = await showDialog<String>(
           context: context,
           builder: (context) => SimpleDialog(
-            title: const Text('Карточка Obsidian'),
+            title: const Text('Карточка библиотеки'),
             children: [
               for (final entry in obsidianLibrary.entries.where(
                 (e) => e.state == 'synced' && e.sourceBookId == null,
@@ -1282,7 +1276,8 @@ class _LibraryPageState extends State<LibraryPage> {
         return;
       }
     }
-    final draft = await obsidianLibrary.prepareDraft(book);
+    final source = await obsidianLibrary.prepareDraft(book);
+    final draft = source.withValues({...source.values, 'status': 'finished'});
     if (!mounted) return;
     await Navigator.push<void>(
       context,
@@ -1304,6 +1299,52 @@ class _LibraryPageState extends State<LibraryPage> {
             book.id,
             original: draft.values,
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _archiveRecommendation(RecommendedBook book) async {
+    final audio = await showDialog<bool>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Сохранить результат'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Книга прочитана'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Аудиокнига прослушана'),
+          ),
+        ],
+      ),
+    );
+    if (audio == null || !mounted) return;
+    await obsidianLibrary.reload();
+    final draft = obsidianLibrary.fromRecommendation(book, audio: audio);
+    final existing = obsidianLibrary.entries
+        .where((e) => e.item.id == draft.id)
+        .firstOrNull;
+    if (!mounted) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LibraryMetadataEditor(
+          item: draft,
+          collection: obsidianLibrary.collectionFor(draft),
+          suggestions: obsidianLibrary.suggestions,
+          coverResolver: obsidianLibrary.coverReferencePath,
+          onPickCover: obsidianLibrary.chooseCover,
+          saveLabel: 'Сохранить в библиотеке',
+          onSave: (values) => existing == null
+              ? obsidianLibrary.add(draft.withValues(values), '')
+              : obsidianLibrary.save(
+                  existing.item.id,
+                  values,
+                  original: existing.item.values,
+                ),
         ),
       ),
     );
@@ -1332,13 +1373,14 @@ class _LibraryPageState extends State<LibraryPage> {
         store: recommendations,
         catalog: bookCatalog,
         navigation: _navigation,
+        onCompleted: _archiveRecommendation,
       );
     }
     if (metadataSection) {
       return ObsidianLibraryPage(
         service: obsidianLibrary,
         navigation: _navigation,
-        onSettings: _appSettings,
+        onSettings: () => unawaited(_obsidianSettings()),
       );
     }
     final liveCount = books
@@ -2331,6 +2373,10 @@ class _LibraryPageState extends State<LibraryPage> {
         await widget.repository.put('book', book.id, {
           ...book.payload!,
           'status': value,
+          'finishedAt': value == 'finished'
+              ? (book.payload?['finishedAt'] ??
+                    DateTime.now().toUtc().toIso8601String())
+              : null,
         });
         if (book.payload!['format'] == 'audio') {
           await widget.repository.setMeta(
@@ -2343,11 +2389,16 @@ class _LibraryPageState extends State<LibraryPage> {
             'overrides': {
               ...Map<String, dynamic>.from(prefs['overrides'] as Map? ?? {}),
               'status': value,
+              'finishedAt': value == 'finished'
+                  ? ((prefs['overrides'] as Map?)?['finishedAt'] ??
+                        DateTime.now().toUtc().toIso8601String())
+                  : null,
             },
           });
         }
       });
     });
+    await obsidianLibrary.reload();
   }
 
   Widget _bookCard(LibraryRecord book) {
@@ -2536,7 +2587,7 @@ class _LibraryPageState extends State<LibraryPage> {
             'obsidian':
                 obsidianLibrary.forBook(book.id) == null ||
                     obsidianLibrary.forBook(book.id)!.state == 'removed'
-                ? 'Добавить в Obsidian'
+                ? 'Добавить в библиотеку'
                 : libraryState(obsidianLibrary.forBook(book.id)!),
             if (!deleted &&
                 Platform.isAndroid &&

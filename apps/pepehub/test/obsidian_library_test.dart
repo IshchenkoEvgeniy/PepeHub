@@ -41,6 +41,7 @@ Map<String, dynamic> snapshot(List<Map<String, dynamic>> items) => {
   'fields': fields,
   'collections': [
     {'id': 'book', 'mediaType': 'book', 'title': 'Books'},
+    {'id': 'audiobook', 'mediaType': 'audiobook', 'title': 'Audio'},
   ],
 };
 http.Response jsonResponse(Object data) => http.Response(
@@ -82,7 +83,9 @@ void main() {
     expect(service.entries.length, 120);
     expect((await local.records('book')).length, 300);
     expect(requests, ['GET', 'GET']);
-    expect(service.entries.first.item.values['Дата завершения'], isNull);
+    expect(service.entries.first.item.value('endDate'), isNull);
+    expect(service.inbox.length, 120);
+    expect(service.completed, isEmpty);
     expect(service.entries.first.item.values['Custom'], {
       'tags': ['a'],
       'favorite': false,
@@ -102,13 +105,20 @@ void main() {
       'durationMinutes': 120,
       'listenedMinutes': 3,
       'cover': 'C:/private/cover.png',
+      'status': 'finished',
     });
     await service.add(draft, book.id);
     await service.add(draft, book.id);
+    expect(await repo.entries(), isEmpty);
+    expect(service.completed.single.item.id, draft.id);
+    await service.exportToObsidian(draft.id);
     expect((await repo.entries()).length, 1);
     final pending = (await repo.entries()).values.single;
     expect(pending.pending, isTrue);
-    expect(pending.operation!['values'], isNot(contains('cover')));
+    expect(
+      pending.operation!['values'].toString(),
+      isNot(contains('C:/private/')),
+    );
     final operationId = pending.operation!['operationId'];
     service.dispose();
     client.close();
@@ -130,7 +140,7 @@ void main() {
     await resumed.sync();
     expect(received.length, 2);
     expect(received.map((op) => op['operationId']).toSet(), {operationId});
-    expect(received.map((op) => op['itemId']).toSet(), {draft.id});
+    expect(received.map((op) => op['itemId']).toSet(), {pending.item.id});
     expect(resumed.entries.single.item.mediaType, 'audiobook');
   });
   test('blank finish date is editable and only changed fields go back; stale editor bases are retained', () async {
@@ -153,16 +163,18 @@ void main() {
     await service.connect(config);
     expect(service.error, isNull);
     final original = {...service.entries.single.item.values};
+    final localId = service.entries.single.item.id;
     (data['items'][0]['values'] as Map)['Title'] = 'Changed in Obsidian';
     await service.sync();
-    await service.save(id, {
+    await service.save(localId, {
       ...original,
-      'Дата завершения': '2026-10-03',
+      'endDate': '2026-10-03',
     }, original: original);
+    await service.exportToObsidian(localId);
     expect(posts.single['values'], {'Дата завершения': '2026-10-03'});
     expect(posts.single['base'], {'Дата завершения': null});
     expect(service.entries.single.item.title, 'Changed in Obsidian');
-    expect(service.entries.single.item.values['Дата завершения'], '2026-10-03');
+    expect(service.entries.single.item.value('endDate'), '2026-10-03');
   });
   test('conflict keeps local values and remote metadata; explicit resolution restores remote', () async {
     final repo = LibraryRepository(local, config.namespace),
@@ -176,10 +188,12 @@ void main() {
     addTearDown(client.close);
     await service.connect(config);
     final original = service.entries.single.item.values;
-    await service.save(id, {
+    final localId = service.entries.single.item.id;
+    await service.save(localId, {
       ...original,
-      'Title': 'Local edit',
+      'title': 'Local edit',
     }, original: original);
+    await service.exportToObsidian(localId);
     final queued = (await repo.entries())[id]!;
     await repo.receipt(id, {
       'operationId': queued.operation!['operationId'],
@@ -189,8 +203,11 @@ void main() {
     await repo.receive(snapshot([card(id, title: 'Remote edit')]));
     await service.reload();
     expect(service.entries.single.item.title, 'Local edit');
-    expect(service.entries.single.remote!.title, 'Remote edit');
-    await service.useObsidian(id);
+    expect(
+      (await service.exchange!.bindings())[localId]['conflicts']['title'],
+      'Remote edit',
+    );
+    await service.useObsidian(localId);
     expect(service.entries.single.item.title, 'Remote edit');
     expect(service.entries.single.operation, isNull);
   });

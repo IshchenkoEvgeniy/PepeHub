@@ -8,6 +8,7 @@ import '../data/repository.dart';
 import '../reader/reading_library.dart';
 import '../audio/audio_journal.dart' show dayKey;
 import 'library_repository.dart';
+import 'personal_library.dart';
 
 class _Equality {
   const _Equality();
@@ -89,7 +90,8 @@ bool validActivityValue(dynamic value) {
 class ActivityStore {
   final Repository local;
   final String namespace;
-  ActivityStore(this.local, this.namespace);
+  final LibraryRepository? catalog;
+  ActivityStore(this.local, this.namespace, {this.catalog});
   bool validEntry(dynamic value) => validActivityValue(value);
   String get key => 'obsidian-activity:$namespace';
   Future<Map<String, dynamic>> state() async =>
@@ -121,9 +123,16 @@ class ActivityStore {
     Repository local,
     String mediaType,
   ) async {
-    final namespace = await local.meta('obsidian-active-namespace');
+    final personal = await local.meta(personalLibraryKey) != null;
+    final namespace = personal
+        ? personalLibraryNamespace
+        : await local.meta('obsidian-active-namespace');
     if (namespace == null || namespace.isEmpty) return [];
-    final links = await LibraryRepository(local, namespace).entries();
+    final links = await LibraryRepository(
+      local,
+      namespace,
+      storageKey: personal ? personalLibraryKey : null,
+    ).entries();
     final rows = await ActivityStore(local, namespace).entries();
     // A native session may arrive both directly and through its Obsidian mirror.
     // Only the sources these slots name are looked up, by primary key, so the
@@ -141,7 +150,12 @@ class ActivityStore {
       if (ids == null || ids.isEmpty) return;
       for (final row
           in await local.db
-              .customSelect(sql, variables: [Variable(jsonEncode([...ids]))])
+              .customSelect(
+                sql,
+                variables: [
+                  Variable(jsonEncode([...ids])),
+                ],
+              )
               .get()) {
         native.add('$kind:${row.read<String>('id').substring(prefix.length)}');
       }
@@ -319,8 +333,10 @@ class ActivityStore {
 
   /// Only explicitly linked books enter this journal. Local book files never upload.
   Future<void> capture() => local.db.transaction(() async {
-    final links = (await LibraryRepository(local, namespace).entries()).values
-        .where((e) => e.sourceBookId != null && e.state == 'synced');
+    final links =
+        (await (catalog ?? LibraryRepository(local, namespace)).entries())
+            .values
+            .where((e) => e.sourceBookId != null && e.state == 'synced');
     final byBook = {for (final link in links) link.sourceBookId!: link.item};
     final values = <String, Map<String, dynamic>>{},
         sources = <String, Map<String, dynamic>>{};
@@ -624,10 +640,10 @@ class ActivityStore {
   ) async {
     final source = slot['source'] as Map?;
     if (source == null) return true;
-    final linked = (await LibraryRepository(
-      local,
-      namespace,
-    ).entries())[next['itemId']]?.sourceBookId;
+    final linked =
+        (await (catalog ?? LibraryRepository(local, namespace))
+                .entries())[next['itemId']]
+            ?.sourceBookId;
     if (linked != source['bookId']) {
       slot.remove('source');
       slot.remove('native');

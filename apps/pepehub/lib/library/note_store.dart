@@ -96,7 +96,7 @@ bool validNoteValue(dynamic v) {
 
 /// Uses the journal's durable operation/receipt queue with a separate namespace and feed.
 class NoteStore extends ActivityStore {
-  NoteStore(super.local, super.namespace);
+  NoteStore(super.local, super.namespace, {super.catalog});
   @override
   bool validEntry(dynamic value) => validNoteValue(value);
   @override
@@ -210,8 +210,10 @@ class NoteStore extends ActivityStore {
 
   @override
   Future<void> capture() => local.db.transaction(() async {
-    final links = (await LibraryRepository(local, namespace).entries()).values
-        .where((e) => e.state == 'synced' && e.sourceBookId != null);
+    final links =
+        (await (catalog ?? LibraryRepository(local, namespace)).entries())
+            .values
+            .where((e) => e.state == 'synced' && e.sourceBookId != null);
     final byBook = {for (final e in links) e.sourceBookId!: e.item};
     await mutate((state) async {
       final slots = state['slots'] as Map<String, dynamic>;
@@ -317,10 +319,8 @@ class NoteStore extends ActivityStore {
     Map<String, dynamic> slot,
     Map<String, dynamic> next,
   ) async {
-    final item = (await LibraryRepository(
-      local,
-      namespace,
-    ).entries())[next['itemId']];
+    final item = (await (catalog ?? LibraryRepository(local, namespace))
+        .entries())[next['itemId']];
     final book = item?.sourceBookId;
     if (book == null || item!.state == 'removed') return true;
     var source = slot['source'] as Map?;

@@ -20,13 +20,14 @@ import 'obsidian_sync_service.dart';
 class CoverSync {
   final AssetStore assets;
   final http.Client client;
-  final ObsidianConfig config;
+  final ObsidianConfig? config;
   CoverSync(this.assets, this.client, this.config);
+  CoverSync.local(this.assets, this.client) : config = null;
   Repository get local => assets.repository;
   String path(String hash) => p.join(
     assets.directory.path,
     'obsidian-covers',
-    config.namespace,
+    config?.namespace ?? 'personal',
     '$hash.png',
   );
   static String? referenceHash(dynamic value) =>
@@ -55,6 +56,10 @@ class CoverSync {
     String hash, [
     Uint8List? body,
   ]) async {
+    final config = this.config;
+    if (config == null) {
+      throw StateError('Подключите Obsidian для обмена обложками.');
+    }
     final request =
         http.Request(
             method,
@@ -130,7 +135,7 @@ class CoverSync {
   Future<String> upload(Uint8List original) async {
     final bytes = await normalize(original),
         hash = sha256.convert(bytes).toString();
-    if ((await request('HEAD', hash)).statusCode != 200) {
+    if (config != null && (await request('HEAD', hash)).statusCode != 200) {
       final response = await request('POST', hash, bytes);
       if (response.statusCode != 200) {
         throw StateError(
@@ -140,6 +145,22 @@ class CoverSync {
     }
     await _cache(hash, bytes);
     return hash;
+  }
+
+  Future<void> publishCached(String hash, String sourcePath) async {
+    final bytes = await File(sourcePath).readAsBytes();
+    if (!validPng(bytes) || sha256.convert(bytes).toString() != hash) {
+      throw StateError('Не удалось прочитать сохранённую обложку.');
+    }
+    if ((await request('HEAD', hash)).statusCode != 200) {
+      final response = await request('POST', hash, bytes);
+      if (response.statusCode != 200) {
+        throw StateError(
+          'Не удалось отправить обложку: HTTP ${response.statusCode}',
+        );
+      }
+    }
+    await _cache(hash, bytes);
   }
 
   Future<String?> choose() async {
@@ -223,6 +244,8 @@ class CoverSync {
 
   /// Returns true only when a new durable metadata operation was queued.
   Future<bool> run() async {
+    final config = this.config;
+    if (config == null) return false;
     final repo = LibraryRepository(local, config.namespace),
         stateKey = 'obsidian-cover-state:${config.namespace}';
     final state =

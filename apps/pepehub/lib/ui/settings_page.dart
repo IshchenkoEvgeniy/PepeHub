@@ -617,7 +617,7 @@ class _SettingsPageState extends State<SettingsPage> {
     children: [
       const SettingsHeading(
         'Obsidian',
-        'Отдельное подключение к каталогу и заметкам. Его расписание не меняет обмен между ПК и телефоном.',
+        'Один из способов импорта и экспорта. Библиотека, обложки и заметки доступны без подключения.',
       ),
       SettingsGroup(
         children: [
@@ -770,7 +770,7 @@ class _SettingsPageState extends State<SettingsPage> {
             onTap: () => _go('obsidian'),
           ),
           SettingsLink(
-            title: 'Заметки Obsidian',
+            title: 'Цитаты и заметки',
             subtitle: 'Открыть отдельный рабочий экран',
             icon: Icons.notes_outlined,
             onTap: widget.onNotes,

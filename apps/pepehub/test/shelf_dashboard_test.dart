@@ -151,13 +151,10 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        final summary = tester.widget<ShelfSummary>(find.byType(ShelfSummary));
-        expect(
-          [summary.total, summary.active, summary.finished, summary.planned],
-          [4, 1, 1, 1],
-        );
-        expect(find.text('Без статуса'), findsOneWidget);
-        expect(find.text('Прогресс не указан'), findsOneWidget);
+        expect(service.completed.length, 1);
+        expect(service.inbox.length, 3);
+        expect(find.text('В планах'), findsNothing);
+        expect(find.byType(Badge), findsOneWidget);
         expect(find.text('Задать цель'), findsOneWidget);
         expect(tester.takeException(), isNull);
         if (width != 1100 && scale == 1) {
@@ -180,7 +177,7 @@ void main() {
         await tester.enterText(query, 'Жюль');
         await tester.pumpAndSettle();
         expect(find.text('Дюна'), findsNothing);
-        expect(find.text('Показано 2 из 4'), findsOneWidget);
+        expect(find.text('Показано 1 из 1'), findsOneWidget);
         await tester.tap(
           find.byKey(const ValueKey('library-search-scope:all')),
         );
@@ -198,9 +195,9 @@ void main() {
         );
         await tester.ensureVisible(query);
         await tester.pumpAndSettle();
-        await tester.enterText(query, 'Хроники Дюны');
+        await tester.enterText(query, 'Путешествия');
         await tester.pumpAndSettle();
-        expect(find.text('Показано 1 из 4'), findsOneWidget);
+        expect(find.text('Показано 1 из 1'), findsOneWidget);
         // Covers are the default view; the list can be switched on and off.
         expect(find.byType(GridView), findsOneWidget);
         await tester.ensureVisible(find.byTooltip('Показать списком'));
@@ -212,7 +209,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byType(GridView), findsOneWidget);
         expect(requests, 0);
-        expect(await service.repository!.entries(), isEmpty);
+        expect(await service.repository.entries(), isEmpty);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());
         await tester.pumpAndSettle();

@@ -7,8 +7,9 @@ import 'models.dart';
 class LibraryRepository {
   final Repository repository;
   final String namespace;
-  LibraryRepository(this.repository, this.namespace);
-  String get _key => 'obsidian-library:$namespace';
+  final String? storageKey;
+  LibraryRepository(this.repository, this.namespace, {this.storageKey});
+  String get _key => storageKey ?? 'obsidian-library:$namespace';
   Future<Map<String, LibraryEntry>> entries() async {
     final raw = await repository.meta(_key);
     if (raw == null) return {};

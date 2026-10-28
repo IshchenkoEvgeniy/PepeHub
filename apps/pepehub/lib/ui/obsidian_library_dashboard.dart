@@ -6,6 +6,9 @@ import 'package:flutter/services.dart';
 
 import '../library/library_service.dart';
 import '../library/models.dart';
+import '../library/personal_library.dart';
+import 'library_exchange_page.dart';
+import 'obsidian_notes_page.dart';
 import 'activity_page.dart';
 import 'app_theme.dart';
 import 'obsidian_library_page.dart' show LibraryMetadataEditor, libraryState;
@@ -213,7 +216,7 @@ class ObsidianLibraryPage extends StatefulWidget {
 class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
   final search = TextEditingController();
   final searchFocus = FocusNode();
-  String type = 'all', scope = 'all', status = 'all', sort = 'recent';
+  String type = 'all', scope = 'all', year = 'all', sort = 'completed';
   String? selectedId;
   bool filters = false, grid = true;
   int? annualGoal;
@@ -231,12 +234,17 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     super.dispose();
   }
 
-  String get _goalKey =>
-      'library-year-goal:${widget.service.config?.namespace ?? 'unconnected'}:${DateTime.now().year}';
+  String get _goalKey => 'library-year-goal:personal:${DateTime.now().year}';
   Future<void> _loadGoal() async {
     final namespace = widget.service.config?.namespace;
-    final raw = await widget.service.local.meta(_goalKey);
+    final raw =
+        await widget.service.local.meta(_goalKey) ??
+        await widget.service.local.meta(
+          'library-year-goal:${namespace ?? 'unconnected'}:${DateTime.now().year}',
+        );
     if (mounted && namespace == widget.service.config?.namespace) {
+      if (raw != null) await widget.service.local.setMeta(_goalKey, raw);
+      if (!mounted) return;
       setState(() {
         goalNamespace = namespace;
         annualGoal = int.tryParse(raw ?? '');
@@ -281,6 +289,50 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     if (next == null || !mounted) return;
     await widget.service.local.setMeta(_goalKey, '$next');
     if (mounted) setState(() => annualGoal = next);
+  }
+
+  Future<void> _exchange() => Navigator.push<void>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => LibraryExchangePage(
+        service: widget.service,
+        onSettings: widget.onSettings,
+      ),
+    ),
+  );
+  Future<void> _add() async {
+    final audio = await showDialog<bool>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Добавить завершённую книгу'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Прочитал(а)'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Прослушал(а)'),
+          ),
+        ],
+      ),
+    );
+    if (audio == null || !mounted) return;
+    final draft = widget.service.emptyDraft(audio: audio);
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LibraryMetadataEditor(
+          item: draft,
+          collection: widget.service.collectionFor(draft),
+          suggestions: widget.service.suggestions,
+          onPickCover: widget.service.chooseCover,
+          coverResolver: widget.service.coverReferencePath,
+          saveLabel: 'Добавить в библиотеку',
+          onSave: (values) => widget.service.add(draft.withValues(values), ''),
+        ),
+      ),
+    );
   }
 
   Future<void> _open(LibraryEntry entry) => Navigator.push<void>(
@@ -329,7 +381,10 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
         .replaceAll('ё', 'е')
         .split(RegExp(r'\s+'));
     return (type == 'all' || item.mediaType == type) &&
-        (status == 'all' || metadataReadingStatus(item) == status) &&
+        (year == 'all' ||
+            (year == 'unknown'
+                ? libraryCompletionDate(item) == null
+                : '${libraryCompletionDate(item)?.year}' == year)) &&
         terms.every(haystack.contains);
   }
 
@@ -349,6 +404,9 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
         _number(left.value('rating')) ?? -1,
       ),
       'recent' => right.modifiedAt.compareTo(left.modifiedAt),
+      'completed' => (libraryCompletionDate(right) ?? DateTime(1)).compareTo(
+        libraryCompletionDate(left) ?? DateTime(1),
+      ),
       _ => left.title.toLowerCase().compareTo(right.title.toLowerCase()),
     };
     return compared == 0
@@ -371,15 +429,13 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           annualGoal = null;
           unawaited(_loadGoal());
         }
-        final all = service.entries;
+        final all = service.completed;
         final entries = all.where(_matches).toList()..sort(_compare);
         final selected =
             entries.where((e) => e.item.id == selectedId).firstOrNull ??
             entries.firstOrNull;
         final books = all.where((e) => e.item.mediaType == 'book').length,
             audio = all.length - books;
-        int count(String key) =>
-            all.where((e) => metadataReadingStatus(e.item) == key).length;
         return ShelfShell(
           title: 'Библиотека',
           navigation: widget.navigation,
@@ -395,9 +451,16 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
               ),
             ),
             IconButton(
-              tooltip: 'Подключение Obsidian',
-              onPressed: widget.onSettings,
-              icon: const Icon(Icons.link, size: 20),
+              tooltip: 'Импорт и экспорт',
+              onPressed: _exchange,
+              icon: Badge(
+                isLabelVisible:
+                    service.inbox.isNotEmpty || service.error != null,
+                label: Text(
+                  service.inbox.isEmpty ? '!' : '${service.inbox.length}',
+                ),
+                child: const Icon(Icons.import_export, size: 20),
+              ),
             ),
           ],
           body: LayoutBuilder(
@@ -410,85 +473,37 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                   children: [
                     ShelfIntro(
                       title: 'Библиотека',
-                      subtitle: 'Ваше чтение — в порядке.',
-                      action: OutlinedButton.icon(
-                        onPressed: service.syncing || service.config == null
-                            ? null
-                            : service.sync,
-                        icon: service.syncing
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.sync_rounded, size: 17),
-                        label: const Text('Синхронизировать'),
+                      subtitle: 'Прочитанное и прослушанное. Ваши оценки и впечатления.',
+                      action: FilledButton.icon(
+                        onPressed: _add,
+                        icon: const Icon(Icons.add, size: 17),
+                        label: const Text('Добавить книгу'),
                       ),
                     ),
                     const SizedBox(height: 22),
                     _goal(all),
                     const SizedBox(height: 18),
-                    ShelfSummary(
-                      total: all.length,
-                      books: books,
-                      audio: audio,
-                      active: count('active'),
-                      finished: count('finished'),
-                      planned: count('planned'),
-                      selected: status,
-                      onStatus: (next) => setState(() => status = next),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      children: [
+                        ShelfPill(label: 'Всего завершено', count: all.length),
+                        ShelfPill(label: 'Прочитано', count: books),
+                        ShelfPill(label: 'Прослушано', count: audio),
+                        OutlinedButton.icon(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  ObsidianNotesPage(library: service),
+                            ),
+                          ),
+                          icon: const Icon(Icons.format_quote),
+                          label: const Text('Цитаты и заметки'),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 24),
-                    if (service.config == null) ...[
-                      ShelfPanel(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Ваша библиотека Obsidian — здесь',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Подключите Obsidian, чтобы автоматически получать книги и аудиокниги из его библиотеки.',
-                              style: TextStyle(color: palette.muted),
-                            ),
-                            const SizedBox(height: 16),
-                            FilledButton.icon(
-                              onPressed: widget.onSettings,
-                              icon: const Icon(
-                                Icons.diamond_outlined,
-                                size: 16,
-                              ),
-                              label: const Text('Подключить Obsidian'),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-                    if (service.error != null) ...[
-                      ShelfPanel(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(child: Text(service.error!)),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
                     LayoutBuilder(
                       builder: (context, content) {
                         final details = content.maxWidth >= 1000;
@@ -618,7 +633,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 filters ? Icons.close : Icons.filter_list_rounded,
                 size: 15,
               ),
-              label: Text(status == 'all' ? 'Фильтры' : 'Фильтры · 1'),
+              label: Text(year == 'all' ? 'Фильтры' : 'Фильтры · 1'),
             ),
           ],
         ),
@@ -626,23 +641,27 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           Padding(
             padding: const EdgeInsets.only(top: 14),
             child: DropdownButtonFormField<String>(
-              key: ValueKey('library-status:$status'),
-              initialValue: status,
+              key: ValueKey('library-year:$year'),
+              initialValue: year,
               decoration: const InputDecoration(
-                labelText: 'Статус',
+                labelText: 'Год завершения',
                 isDense: true,
               ),
-              items: const [
-                DropdownMenuItem(value: 'all', child: Text('Любой статус')),
-                DropdownMenuItem(value: 'active', child: Text('В процессе')),
-                DropdownMenuItem(value: 'finished', child: Text('Завершено')),
-                DropdownMenuItem(value: 'planned', child: Text('В планах')),
-                DropdownMenuItem(
-                  value: 'other',
-                  child: Text('Другой / не указан'),
+              items: [
+                const DropdownMenuItem(value: 'all', child: Text('Все годы')),
+                const DropdownMenuItem(
+                  value: 'unknown',
+                  child: Text('Дата не указана'),
                 ),
+                for (final value in ({
+                  ...all
+                      .map((e) => libraryCompletionDate(e.item)?.year)
+                      .whereType<int>(),
+                  if (int.tryParse(year) != null) int.parse(year),
+                }.toList()..sort((a, b) => b.compareTo(a))))
+                  DropdownMenuItem(value: '$value', child: Text('$value')),
               ],
-              onChanged: (next) => setState(() => status = next ?? 'all'),
+              onChanged: (next) => setState(() => year = next ?? 'all'),
             ),
           ),
         const SizedBox(height: 8),
@@ -659,6 +678,10 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                   fontSize: 13,
                 ),
                 items: const [
+                  DropdownMenuItem(
+                    value: 'completed',
+                    child: Text('По дате завершения'),
+                  ),
                   DropdownMenuItem(
                     value: 'recent',
                     child: Text('Недавно изменённые'),
@@ -723,7 +746,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                   TextButton(
                     onPressed: () => setState(() {
                       search.clear();
-                      type = status = scope = 'all';
+                      type = year = scope = 'all';
                     }),
                     child: const Text('Сбросить фильтры'),
                   ),
@@ -1260,7 +1283,11 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.diamond_outlined, size: 12, color: palette.accent),
+              Icon(
+                Icons.local_library_outlined,
+                size: 12,
+                color: palette.accent,
+              ),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
@@ -1286,10 +1313,24 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       return parts.length == 3 && int.tryParse(parts.last) == year;
     }).length;
     final goal = annualGoal;
-    final ticks = goal == null ? 0 : goal.clamp(1, 60);
-    final done = goal == null
-        ? 0
-        : (finished * ticks / goal).floor().clamp(0, ticks);
+    if (goal == null) {
+      return ShelfPanel(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '$year · завершено $finished',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            TextButton(onPressed: _setGoal, child: const Text('Задать цель')),
+          ],
+        ),
+      );
+    }
+    final ticks = goal.clamp(1, 60);
+    final done = (finished * ticks / goal).floor().clamp(0, ticks);
     return ShelfPanel(
       padding: const EdgeInsets.fromLTRB(20, 16, 10, 18),
       child: Column(
@@ -1322,21 +1363,20 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                   text: '$finished',
                   style: AppFonts.title(palette.text, size: 34),
                   children: [
-                    if (goal != null)
-                      TextSpan(
-                        text: ' / $goal',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: palette.muted,
-                        ),
+                    TextSpan(
+                      text: ' / $goal',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: palette.muted,
                       ),
+                    ),
                   ],
                 ),
               ),
             ],
           ),
-          if (goal != null) ...[
+          ...[
             const SizedBox(height: 12),
             Padding(
               padding: const EdgeInsets.only(right: 10),
@@ -1360,7 +1400,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           TextButton(
             onPressed: _setGoal,
             style: TextButton.styleFrom(padding: EdgeInsets.zero),
-            child: Text(goal == null ? 'Задать цель' : 'Изменить цель'),
+            child: const Text('Изменить цель'),
           ),
         ],
       ),

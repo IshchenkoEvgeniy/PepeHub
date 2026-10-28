@@ -172,9 +172,7 @@ class _ActivityPageState extends State<ActivityPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Удалить запись журнала?'),
-        content: const Text(
-          'Удаление будет передано в Obsidian при синхронизации.',
-        ),
+        content: const Text('Запись будет удалена из журнала библиотеки.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -198,6 +196,7 @@ class _ActivityPageState extends State<ActivityPage> {
   }
 
   String _status(Map<String, dynamic> slot) {
+    if (slot['conflict'] == null) return 'В библиотеке';
     final v = slot['value'] as Map;
     return slot['conflict'] != null
         ? 'Конфликт'
@@ -506,19 +505,9 @@ class _ActivityPageState extends State<ActivityPage> {
         .where((s) => s['value']['deleted'] != true)
         .fold<int>(0, (sum, s) => sum + (s['value']['durationMs'] as int));
     final conflicts = slots.where((s) => s['conflict'] != null).length;
-    final waiting = slots
-        .where((s) => _status(s) == 'Ожидает обмена')
-        .length;
+    final waiting = slots.where((s) => _status(s) == 'Ожидает обмена').length;
 
     final notices = <Widget>[
-      if (widget.library.config == null)
-        PepePanel(
-          outlined: true,
-          child: Text(
-            'Подключите Obsidian в настройках. Журнал переносится для книг, связанных с карточками библиотеки.',
-            style: TextStyle(color: palette.muted),
-          ),
-        ),
       if (error != null || widget.library.error != null)
         PepePanel(
           outlined: true,
@@ -580,7 +569,7 @@ class _ActivityPageState extends State<ActivityPage> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 24),
           child: Text(
-            'За этот период записей нет. Для переноса локального журнала свяжите книгу с карточкой Obsidian.',
+            'За этот период записей нет. История появляется у книг, добавленных в библиотеку.',
             style: TextStyle(color: palette.muted),
           ),
         ),

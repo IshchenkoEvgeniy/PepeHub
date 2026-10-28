@@ -7,6 +7,7 @@ import 'audio_mini_player.dart';
 
 import '../library/models.dart';
 import '../library/metadata_values.dart';
+import '../library/personal_library.dart';
 import 'metadata_input.dart';
 import 'shelf_components.dart';
 
@@ -33,6 +34,7 @@ const libraryLabels = {
   'targetDate': 'Целевая дата',
   'unit': 'Единица прогресса',
   'readingTime': 'Время чтения / прослушивания',
+  'notes': 'Впечатления',
 };
 
 String libraryState(LibraryEntry entry) => switch (entry.state) {
@@ -87,7 +89,12 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
   bool saving = false;
   int editGeneration = 0;
   String? error;
-  bool get editable => widget.entry == null || widget.entry!.state == 'synced';
+  bool get personal =>
+      widget.item.fields == personalLibraryFields ||
+      widget.item.fields.any((f) => f.key == 'title' && f.field == 'title') &&
+          widget.item.path.isEmpty;
+  bool get editable =>
+      personal || widget.entry == null || widget.entry!.state == 'synced';
   Map<String, dynamic>? get selectedCollection {
     final key = fields.values
         .where((f) => f.field == 'libraryType')
@@ -330,7 +337,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
                 ),
                 DropdownMenuItem(
                   value: 'obsidian',
-                  child: Text('Оставлять значение Obsidian'),
+                  child: Text('Сохранять ручное значение'),
                 ),
               ],
               onChanged: !editable || saving
@@ -356,7 +363,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
         title: const Text('Дополнительное свойство'),
         content: TextField(
           onChanged: (value) => name = value,
-          decoration: const InputDecoration(labelText: 'Имя YAML-свойства'),
+          decoration: const InputDecoration(labelText: 'Название свойства'),
         ),
         actions: [
           TextButton(
@@ -457,6 +464,9 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
 
   Widget _field(String key) {
     final semantic = fields[key]?.field ?? key;
+    if (personal && ['status', 'libraryType'].contains(semantic)) {
+      return const SizedBox.shrink();
+    }
     final label =
         libraryLabels[semantic] ??
         {
@@ -819,7 +829,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
       (key) =>
           (fields.containsKey(key) &&
               !progressFields.contains(fields[key]!.field)) ||
-          ['narrator', 'language', 'publisher', 'tags'].contains(key),
+          ['narrator', 'language', 'publisher', 'tags', 'notes'].contains(key),
     );
     final progress = controllers.keys.where(
       (key) => progressFields.contains(fields[key]?.field),
@@ -833,6 +843,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
             'language',
             'publisher',
             'tags',
+            'notes',
             'embeddedMetadata',
           ].contains(key),
     );
@@ -941,7 +952,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
                       child: Row(
                         children: [
                           Icon(
-                            Icons.diamond_outlined,
+                            Icons.local_library_outlined,
                             size: 15,
                             color: palette.accent,
                           ),
@@ -1098,7 +1109,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
                           Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              'Изменено в Obsidian: ${DateTime.fromMillisecondsSinceEpoch(widget.item.modifiedAt).toLocal()}',
+                              'Изменено: ${DateTime.fromMillisecondsSinceEpoch(widget.item.modifiedAt).toLocal()}',
                               style: TextStyle(
                                 fontSize: 11,
                                 color: palette.muted,

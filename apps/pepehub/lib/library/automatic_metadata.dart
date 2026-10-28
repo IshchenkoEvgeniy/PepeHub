@@ -363,8 +363,9 @@ class AutomaticMetadata {
   /// Fill gaps and keep fields we previously filled current; a user's remote edit wins.
   Future<void> refresh(
     LibraryRepository repo,
-    Map<String, dynamic> snapshot,
-  ) async {
+    Map<String, dynamic> snapshot, {
+    bool localOnly = false,
+  }) async {
     for (final entry in (await repo.entries()).values) {
       if (entry.sourceBookId == null || entry.state != 'synced') continue;
       final book = await local.record(entry.sourceBookId!);
@@ -405,7 +406,16 @@ class AutomaticMetadata {
           continue;
         }
         final current = entry.item.values[field.key];
+        if (localOnly &&
+            semantic == 'status' &&
+            canonicalLibraryStatus(current) == 'finished' &&
+            canonicalLibraryStatus(field.value) != 'finished') {
+          continue;
+        }
         if (policy[semantic] == 'local' ||
+            (localOnly &&
+                semantic == 'status' &&
+                canonicalLibraryStatus(field.value) == 'finished') ||
             current == null ||
             current == '' ||
             (current == 0 &&
@@ -436,16 +446,20 @@ class AutomaticMetadata {
           entries[entry.item.id] = LibraryEntry(
             entry.item.withValues({...entry.item.values, ...changes}),
             sourceBookId: entry.sourceBookId,
-            state: 'pending',
-            operation: {
-              'operationId': uuid.v4(),
-              'itemId': entry.item.id,
-              'action': 'update',
-              'collectionId': entry.item.collectionId,
-              'mediaType': entry.item.mediaType,
-              'base': {for (final k in changes.keys) k: entry.item.values[k]},
-              'values': changes,
-            },
+            state: localOnly ? 'synced' : 'pending',
+            operation: localOnly
+                ? null
+                : {
+                    'operationId': uuid.v4(),
+                    'itemId': entry.item.id,
+                    'action': 'update',
+                    'collectionId': entry.item.collectionId,
+                    'mediaType': entry.item.mediaType,
+                    'base': {
+                      for (final k in changes.keys) k: entry.item.values[k],
+                    },
+                    'values': changes,
+                  },
           );
         }
         await local.setMeta(baselineKey, jsonEncode(baseline));

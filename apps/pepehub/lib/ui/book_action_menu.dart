@@ -30,7 +30,7 @@ const bookMenuActions = [
   BookMenuAction('active', 'Отметить начатой', BookActionGroup.progress),
   BookMenuAction('finished', 'Отметить завершённой', BookActionGroup.progress),
   BookMenuAction('session', 'Записать сессию', BookActionGroup.progress),
-  BookMenuAction('obsidian', 'Добавить в Obsidian', BookActionGroup.files),
+  BookMenuAction('obsidian', 'Добавить в библиотеку', BookActionGroup.files),
   BookMenuAction('share', 'Поделиться файлом книги', BookActionGroup.files),
   BookMenuAction('source', 'Источник и файл', BookActionGroup.files),
   BookMenuAction('reveal-book', 'Показать папку файла', BookActionGroup.files),

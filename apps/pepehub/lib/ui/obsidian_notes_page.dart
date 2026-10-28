@@ -28,6 +28,7 @@ class _ObsidianNotesPageState extends State<ObsidianNotesPage> {
   }
 
   Future<void> _load() async {
+    await widget.library.notes?.capture();
     final values =
         await widget.library.notes?.entries() ?? <Map<String, dynamic>>[];
     if (mounted) setState(() => notes = values);
@@ -57,7 +58,7 @@ class _ObsidianNotesPageState extends State<ObsidianNotesPage> {
     final conflicts = notes.where((n) => n['conflict'] != null).length;
     final pad = wide ? 28.0 : 16.0;
     return PepeSubpage(
-      title: 'Заметки Obsidian',
+      title: 'Цитаты и заметки',
       back: 'Библиотека',
       section: PepeSection.library,
       subtitle: notes.isEmpty
@@ -153,7 +154,8 @@ class _ObsidianNotesPageState extends State<ObsidianNotesPage> {
             .firstOrNull
             ?.item
             .title;
-    final tags = value['tags'] as List, characters = value['characters'] as List;
+    final tags = value['tags'] as List,
+        characters = value['characters'] as List;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -189,9 +191,10 @@ class _ObsidianNotesPageState extends State<ObsidianNotesPage> {
             padding: const EdgeInsets.only(top: 10),
             child: SelectableText(
               '${value['quote']}',
-              style: AppFonts.book(palette.text, size: 17).copyWith(
-                height: 1.45,
-              ),
+              style: AppFonts.book(
+                palette.text,
+                size: 17,
+              ).copyWith(height: 1.45),
             ),
           ),
         if ('${value['text']}'.isNotEmpty)
@@ -301,7 +304,7 @@ class _ObsidianNotesPageState extends State<ObsidianNotesPage> {
                     builder: (context) => AlertDialog(
                       title: const Text('Удалить заметку?'),
                       content: const Text(
-                        'Удаление синхронизируется с Obsidian.',
+                        'Заметка будет удалена из библиотеки и связанного источника.',
                       ),
                       actions: [
                         TextButton(

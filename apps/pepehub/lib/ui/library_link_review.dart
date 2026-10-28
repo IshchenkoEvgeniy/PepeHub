@@ -56,7 +56,7 @@ Future<Map<String, String>?> reviewLibraryLink(
                 Text(target.path, style: Theme.of(context).textTheme.bodySmall),
                 const SizedBox(height: 12),
                 const Text(
-                  'Выберите поля, которые приложение будет обновлять. Остальные значения останутся в Obsidian.',
+                  'Выберите поля, которые будут обновляться из файла и истории чтения. Остальные значения останутся в карточке библиотеки.',
                 ),
                 for (final field in fields)
                   if (source.values[sourceFields[field]] != null &&
@@ -65,7 +65,7 @@ Future<Map<String, String>?> reviewLibraryLink(
                       contentPadding: EdgeInsets.zero,
                       title: Text(libraryLabels[field] ?? field),
                       subtitle: Text(
-                        'Obsidian: ${text(target.value(field))}\nПриложение: ${text(source.value(field))}',
+                        'Библиотека: ${text(target.value(field))}\nИз файла: ${text(source.value(field))}',
                       ),
                       value: selected.contains(field),
                       onChanged: (value) => update(() {

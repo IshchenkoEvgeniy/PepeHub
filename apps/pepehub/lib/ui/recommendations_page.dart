@@ -14,11 +14,13 @@ class RecommendationsPage extends StatefulWidget {
   final RecommendationStore store;
   final BookCatalog catalog;
   final ShelfNavigation? navigation;
+  final Future<void> Function(RecommendedBook)? onCompleted;
   const RecommendationsPage({
     super.key,
     required this.store,
     required this.catalog,
     this.navigation,
+    this.onCompleted,
   });
   @override
   State<RecommendationsPage> createState() => _RecommendationsPageState();
@@ -319,7 +321,9 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
   }
 
   Future<void> _bookMenu(RecommendedBook book, String value) async {
-    if (value == 'view') {
+    if (value == 'finished') {
+      await widget.onCompleted?.call(book);
+    } else if (value == 'view') {
       await _view(book);
     } else if (value == 'edit') {
       await _edit(book: book);
@@ -348,6 +352,11 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
           const PopupMenuItem(value: 'view', child: Text('Посмотреть')),
           const PopupMenuItem(value: 'edit', child: Text('Редактировать')),
           const PopupMenuItem(value: 'categories', child: Text('В подборки')),
+          if (widget.onCompleted != null)
+            const PopupMenuItem(
+              value: 'finished',
+              child: Text('Уже прочитано / прослушано'),
+            ),
           if (canReorder) ...[
             PopupMenuItem(
               value: 'up',
