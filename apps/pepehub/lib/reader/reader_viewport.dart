@@ -631,19 +631,10 @@ class _ReaderViewportState extends State<ReaderViewport> {
                       .clamp(0.0, textHeight)
                       .toDouble()
                 : null;
-            final slices = await paginateReader(
-              widget.text.substring(paragraphStart, paragraphEnd),
-              widget.style,
-              _measuredTextWidth(paragraphStart),
-              textHeight,
-              widget.scaler,
-              cancelled: () => !mounted,
-              firstPageHeight: firstHeight,
-              widthAt: (start) => _measuredTextWidth(paragraphStart + start),
-              styledText: (a, b) =>
-                  _richText(paragraphStart + a, paragraphStart + b),
-            );
-            for (final slice in slices) {
+            // Each page is placed as soon as it is measured: a long chapter
+            // (or a book without chapters) shows its first screens and waits
+            // for the reader instead of laying out every page up front.
+            Future<bool> place(ReaderSlice slice) async {
               addSegment(
                 ReaderSlice(
                   paragraphStart + slice.start,
@@ -667,14 +658,30 @@ class _ReaderViewportState extends State<ReaderViewport> {
                   _publishLayout(result);
                   morePagesRequested ??= Completer<void>();
                   await morePagesRequested!.future;
-                  if (!mounted) return;
+                  if (!mounted) return false;
                 }
               }
               if (++laidOutSlices % 24 == 0) {
                 await Future<void>.delayed(Duration.zero);
-                if (!mounted) return;
+                if (!mounted) return false;
               }
+              return true;
             }
+
+            await paginateReader(
+              widget.text.substring(paragraphStart, paragraphEnd),
+              widget.style,
+              _measuredTextWidth(paragraphStart),
+              textHeight,
+              widget.scaler,
+              cancelled: () => !mounted,
+              firstPageHeight: firstHeight,
+              widthAt: (start) => _measuredTextWidth(paragraphStart + start),
+              styledText: (a, b) =>
+                  _richText(paragraphStart + a, paragraphStart + b),
+              onPage: place,
+            );
+            if (!mounted) return;
           }
         }
 
