@@ -20,6 +20,10 @@ import 'reader_rebase.dart';
 import 'text_book.dart';
 import 'pdf_support.dart';
 
+Future<String> _hashReadingFile(String path) => Isolate.run(
+  () async => (await sha256.bind(File(path).openRead()).first).toString(),
+);
+
 // Keep the isolate closure outside instance methods so it cannot capture a DB.
 Future<({EpubBook book, EpubBook? previous, EpubBook? legacy})>
 _parseIndexedText(
@@ -220,12 +224,7 @@ class ReadingLibrary {
           copiedHash = copied.hash;
         }
         final pdfPath = source.path;
-        final digest =
-            copiedHash ??
-            await Isolate.run(
-              () async => (await sha256.bind(File(pdfPath).openRead()).first)
-                  .toString(),
-            );
+        final digest = copiedHash ?? await _hashReadingFile(pdfPath);
         if (digest != asset.hash) {
           throw StateError('Файл изменился. Обновите папку книг.');
         }
