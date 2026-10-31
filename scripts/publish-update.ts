@@ -9,14 +9,14 @@ const owner = 'IshchenkoEvgeniy', repo = 'PepeHub-Releases';
 interface Delta {file: string; sha256: string; bytes: number; format: string; baseSha256: string; baseBytes: number; fromBuild: number}
 interface Artifact {file: string; sha256: string; bytes: number; versionCode: number; format: string; deltas?: Delta[]}
 type PublishedArtifact = Omit<Artifact, 'file' | 'deltas'> & {url: string; deltas?: Array<Omit<Delta, 'file'> & {url: string}>};
-export async function createUpdateManifest(directory: string, notes: string, now = new Date(), signingKey?: KeyObject) {
+export async function createUpdateManifest(directory: string, notes: string, now = new Date(), signingKey?: KeyObject, androidOnly = false) {
   if (!signingKey) initializeUpdateKey();
   const input = JSON.parse(readFileSync(path.join(directory, 'artifacts.json'), 'utf8')) as {version: string; build: number; artifacts: Record<string, Artifact>};
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(input.version) || !Number.isInteger(input.build) || input.build < 1 || input.build > 999999 || notes.length > 8000) throw new Error('Invalid release version/notes');
   const tag = `v${input.version}-${input.build}`;
   const artifacts: Record<string, PublishedArtifact> = {};
   const patchFiles: string[] = [];
-  if (Object.keys(input.artifacts).sort().join(',') !== 'android-arm64,windows-x64') throw new Error('Both verified platform packages are required');
+  if (Object.keys(input.artifacts).sort().join(',') !== (androidOnly ? 'android-arm64' : 'android-arm64,windows-x64')) throw new Error(androidOnly ? 'Expected only the Android ARM64 package' : 'Both verified platform packages are required');
   for (const [platform, item] of Object.entries(input.artifacts)) {
     const filename = platform === 'windows-x64' ? 'PepeHub-windows-x64.zip' : 'PepeHub-android-arm64.apk';
     if (item.file !== filename || item.format !== (platform === 'windows-x64' ? 'zip' : 'apk') ||
@@ -47,7 +47,7 @@ export async function createUpdateManifest(directory: string, notes: string, now
   const signature = sign(null, payload, signingKey ?? createPrivateKey(readFileSync(signingKeyPath)));
   const envelope = JSON.stringify({payload: payload.toString('base64'), signature: signature.toString('base64')});
   writeFileSync(path.join(directory, 'update.json'), envelope);
-  return {tag, version: input.version, build: input.build, files: ['PepeHub-windows-x64.zip', 'PepeHub-android-arm64.apk', ...patchFiles, 'update.json']};
+  return {tag, version: input.version, build: input.build, files: [...(androidOnly ? [] : ['PepeHub-windows-x64.zip']), 'PepeHub-android-arm64.apk', ...patchFiles, 'update.json']};
 }
 function githubCredential(): string {
   const output = execFileSync('git', ['credential', 'fill'], {input: 'protocol=https\nhost=github.com\n\n', encoding: 'utf8',
@@ -106,7 +106,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (!version) throw new Error('Invalid pubspec version');
     const directory = path.join(projectRoot, 'dist', 'online', `${version[1]}-${version[2]}`);
     const notes = existsSync(path.join(directory, 'notes.md')) ? readFileSync(path.join(directory, 'notes.md'), 'utf8') : `Обновление PepeHub ${version[1]}, сборка ${version[2]}.`;
-    const release = await createUpdateManifest(directory, notes);
+    const release = await createUpdateManifest(directory, notes, new Date(), undefined, process.argv.includes('--android-only'));
     console.log(`Signed update manifest ready: ${directory}`);
     if (process.argv.includes('--publish')) await publish(directory, release, notes);
     else console.log('Nothing uploaded. Use --publish after reviewing the packages and notes.');
