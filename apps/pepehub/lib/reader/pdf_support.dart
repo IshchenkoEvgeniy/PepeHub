@@ -7,7 +7,8 @@ import 'epub.dart';
 import 'reader_layout.dart';
 
 Future<void> validatePdf(String path) async {
-  final document = await openLocalPdf(path);
+  // Only the header and page count are checked; do not parse every page.
+  final document = await openLocalPdf(path, progressive: true);
   await document.dispose();
 }
 
@@ -51,8 +52,9 @@ Future<ReaderDocument> pdfReadingDocument(
   }
   final chapters = <EpubChapter>[];
   var length = 0;
-  for (final page in document.pages) {
+  for (var n = 1; n <= document.pages.length; n++) {
     if (cancelled?.call() == true) throw StateError('Просмотрщик закрыт');
+    final page = await loadedPdfPage(document, n);
     final text = (await page.loadStructuredText()).fullText;
     length += text.length;
     if (length > maxCharacters) {
@@ -119,11 +121,12 @@ Future<Map<String, dynamic>?> pdfStatisticsIndex(
     checkpointPages = lengths.length;
   }
 
-  for (final page in document.pages.skip(lengths.length)) {
+  for (var n = lengths.length + 1; n <= document.pages.length; n++) {
     if (cancelled()) {
       await checkpoint();
       return null;
     }
+    final page = await loadedPdfPage(document, n);
     final length = (await page.loadStructuredText()).fullText.length;
     starts.add(total);
     lengths.add(length);
@@ -138,11 +141,21 @@ Future<Map<String, dynamic>?> pdfStatisticsIndex(
   return snapshot();
 }
 
-Future<PdfDocument> openLocalPdf(String path) async {
+/// Opens a local PDF.
+///
+/// With [progressive], PDFium parses only the first page while opening; other
+/// pages keep estimated sizes until the viewer (or [loadedPdfPage]) measures
+/// them. Without it, every page of the book is parsed before this returns,
+/// which takes seconds for large books.
+Future<PdfDocument> openLocalPdf(
+  String path, {
+  bool progressive = false,
+}) async {
   await pdfrxFlutterInitialize();
   final document = await PdfDocument.openFile(
     path,
     passwordProvider: () async => null,
+    useProgressiveLoading: progressive,
   );
   try {
     if (document.pages.isEmpty || document.pages.length > 20000) {
@@ -153,4 +166,19 @@ Future<PdfDocument> openLocalPdf(String path) async {
     await document.dispose();
     rethrow;
   }
+}
+
+/// The measured page [pageNumber] (1-based) of a progressively opened PDF.
+///
+/// An unmeasured placeholder page silently returns empty text and no image,
+/// so text, search and rendering code must read pages through this function.
+Future<PdfPage> loadedPdfPage(PdfDocument document, int pageNumber) async {
+  final page = document.pages[pageNumber - 1];
+  if (page.isLoaded) return page;
+  await document.reloadPages(pageNumbersToReload: [pageNumber]);
+  final loaded = document.pages[pageNumber - 1];
+  if (!loaded.isLoaded) {
+    throw StateError('Страница PDF $pageNumber не загружена');
+  }
+  return loaded;
 }

@@ -229,7 +229,8 @@ class ReadingLibrary {
         if (digest != asset.hash) {
           throw StateError('Файл изменился. Обновите папку книг.');
         }
-        final pdf = await openLocalPdf(source.path);
+        // The cover needs only the first page and the page count.
+        final pdf = await openLocalPdf(source.path, progressive: true);
         try {
           await _storePdfCover(
             store,
