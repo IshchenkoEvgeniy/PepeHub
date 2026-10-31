@@ -1695,13 +1695,6 @@ class _LibraryPageState extends State<LibraryPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _statusTabs(),
-                        if (reading && books.any(_remoteOnly))
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            child: Text(
-                              'Карточки синхронизации без локального файла находятся во вкладке «Без файла» и не входят в счётчик «Все». Их можно скрыть без удаления истории.',
-                            ),
-                          ),
                         if (reading && statusFilter == 'deleted') ...[
                           const SizedBox(height: 12),
                           const Text(
