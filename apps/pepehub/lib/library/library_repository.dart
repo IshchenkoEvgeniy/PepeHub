@@ -1,35 +1,84 @@
 import 'dart:convert';
+import 'dart:isolate';
+
+import 'package:drift/drift.dart' show Variable;
 
 import '../data/repository.dart';
 import 'models.dart';
 
-/// Uses the existing transactional SQLite metadata store, outside the legacy sync outbox.
-class LibraryRepository {
-  final Repository repository;
-  final String namespace;
-  final String? storageKey;
-  LibraryRepository(this.repository, this.namespace, {this.storageKey});
-  String get _key => storageKey ?? 'obsidian-library:$namespace';
-  Future<Map<String, LibraryEntry>> entries() async {
-    final raw = await repository.meta(_key);
-    if (raw == null) return {};
-    final data = jsonDecode(raw) as Map<String, dynamic>;
-    return data.map(
+Map<String, LibraryEntry> _decodeCatalog(String raw) =>
+    (jsonDecode(raw) as Map<String, dynamic>).map(
       (id, value) => MapEntry(
         id,
         LibraryEntry.fromJson(Map<String, dynamic>.from(value as Map)),
       ),
     );
+String _encodeCatalog(Map<String, LibraryEntry> entries) =>
+    jsonEncode(entries.map((id, entry) => MapEntry(id, entry.toJson())));
+Future<T> _catalogWork<T, P>(T Function(P) task, P input) =>
+    Isolate.run(() => task(input));
+
+class _CatalogCache {
+  final String raw;
+  final Map<String, LibraryEntry> entries;
+  final String revision;
+  _CatalogCache(this.raw, this.entries, this.revision);
+}
+
+/// Uses the existing transactional SQLite metadata store, outside the legacy sync outbox.
+class LibraryRepository {
+  static final _cache = Expando<Map<String, _CatalogCache>>();
+  final Repository repository;
+  final String namespace;
+  final String? storageKey;
+  LibraryRepository(this.repository, this.namespace, {this.storageKey});
+  String get _key => storageKey ?? 'obsidian-library:$namespace';
+  Future<String> _revision() async {
+    final row = await repository.db
+        .customSelect(
+          'SELECT revision FROM library_catalog_revisions_v1 WHERE key=?',
+          variables: [Variable(_key)],
+        )
+        .getSingleOrNull();
+    if (row != null) return row.read<String>('revision');
+    await repository.db.customStatement(
+      'INSERT OR IGNORE INTO library_catalog_revisions_v1 VALUES(?,lower(hex(randomblob(16))))',
+      [_key],
+    );
+    return _revision();
+  }
+
+  Future<Map<String, LibraryEntry>> entries() async {
+    final revision = await _revision();
+    final cache = _cache[repository.db] ??= {};
+    final hit = cache[_key];
+    if (hit?.revision == revision) {
+      return Map.of(hit!.entries);
+    }
+    final raw = await repository.meta(_key) ?? '{}';
+    final data = raw.length < 131072
+        ? _decodeCatalog(raw)
+        : await _catalogWork(_decodeCatalog, raw);
+    cache[_key] = _CatalogCache(raw, Map.of(data), revision);
+    return data;
   }
 
   Future<void> mutate(
     Future<void> Function(Map<String, LibraryEntry>) action,
   ) => repository.db.transaction(() async {
     final data = await entries();
+    final previous = _cache[repository.db]![_key]!.raw;
     await action(data);
-    await repository.setMeta(
-      _key,
-      jsonEncode(data.map((id, entry) => MapEntry(id, entry.toJson()))),
+    final encoded = data.length < 100
+        ? _encodeCatalog(data)
+        : await _catalogWork(_encodeCatalog, data);
+    if (previous != encoded) {
+      await repository.setMeta(_key, encoded);
+    }
+    (_cache[repository.db] ??= {})[_key] = _CatalogCache(
+      encoded,
+      Map.of(data),
+      await _revision(),
     );
   });
   Future<Map<String, dynamic>?> snapshot() async {

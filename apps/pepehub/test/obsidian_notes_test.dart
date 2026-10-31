@@ -298,6 +298,16 @@ void main() {
     },
   );
   test('HTTP exchange uploads native quotes and imports Markdown using the active credentials', () async {
+    // This exercises the personal archive journal; a file/unknown-status draft
+    // must not enter that archive merely because it has a source book.
+    item = ObsidianLibraryItem(
+      id: item.id,
+      path: item.path,
+      collectionId: item.collectionId,
+      mediaType: item.mediaType,
+      fields: [...item.fields, const LibraryField('Status', 'status', 'text')],
+      values: {...item.values, 'Status': 'finished'},
+    );
     final config = ObsidianConfig('https://example.test', 'test-token');
     await LibraryRepository(local, config.namespace).mutate((entries) async {
       entries[item.id] = LibraryEntry(item, sourceBookId: book);
@@ -384,6 +394,7 @@ void main() {
     expect(service.error, isNull);
     expect(changes.first['entry']['quote'], 'Цитата');
     expect((await ReadingLibrary(local).notes()).length, 2);
-    expect((await service.notes!.state())['cursor'], 2);
+    expect((await NoteStore(local, config.namespace).state())['cursor'], 2);
+    expect(await service.notes!.entries(), hasLength(2));
   });
 }

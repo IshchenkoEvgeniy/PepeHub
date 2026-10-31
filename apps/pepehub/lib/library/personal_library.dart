@@ -21,6 +21,8 @@ const personalLibraryFields = <LibraryField>[
   LibraryField('endDate', 'endDate', 'date'),
   LibraryField('unit', 'unit', 'text'),
   LibraryField('readingTime', 'readingTime', 'text'),
+  LibraryField('rereadCount', 'rereadCount', 'number'),
+  LibraryField('notes', 'notes', 'text'),
 ];
 
 Map<String, dynamic> get personalLibrarySchema => {
@@ -32,7 +34,11 @@ Map<String, dynamic> get personalLibrarySchema => {
       {
         'id': type,
         'mediaType': type,
-        'statuses': {'finished': 'finished'},
+        'statuses': {
+          'paused': 'paused',
+          'abandoned': 'abandoned',
+          'finished': 'finished',
+        },
         'progressUnits': ['pages', 'minutes', 'hours', 'percent', 'characters'],
       },
   ],
@@ -72,8 +78,19 @@ Map<String, dynamic> personalValues(
       statuses.entries.where((e) => e.value == status).firstOrNull?.key ??
       canonicalLibraryStatus(status);
   result['libraryType'] = remote.mediaType;
+  final hash = remote.coverAsset?['hash'];
+  if (hash is String && RegExp(r'^[a-f0-9]{64}$').hasMatch(hash)) {
+    result['pepehub_cover_asset'] = remote.coverAsset;
+    final cover = '${result['cover'] ?? ''}';
+    if (!cover.startsWith('https://') && !cover.startsWith('pepehub-cover:')) {
+      result['cover'] = 'pepehub-cover:$hash';
+    }
+  }
   return result;
 }
+
+bool isLibraryDeleted(ObsidianLibraryItem item) =>
+    item.values['pepehub_deleted_at'] != null;
 
 bool isFinishedLibraryItem(ObsidianLibraryItem item) =>
     canonicalLibraryStatus(item.value('status')) == 'finished';

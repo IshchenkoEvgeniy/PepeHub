@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
-import 'package:drift/drift.dart' show Variable;
 
 import '../data/repository.dart';
 import '../reader/reading_library.dart';
@@ -22,6 +21,7 @@ import 'cover_sync.dart';
 import 'automatic_metadata.dart';
 import 'note_store.dart';
 import 'metadata_values.dart';
+import 'library_features.dart';
 
 class LibraryService extends ChangeNotifier {
   final Repository local;
@@ -52,9 +52,18 @@ class LibraryService extends ChangeNotifier {
   final Set<String> _uploadedCovers = {};
   bool _migrated = false;
   Future<void> _reloadTail = Future.value();
-  final Map<String, int> _discoveredRevisions = {};
-  String? coverPath(ObsidianLibraryItem item) =>
-      coverReferencePath('${item.value('cover') ?? ''}');
+  Future<void>? _refresh;
+  bool _refreshAgain = false;
+  Future<void> get idle => _reloadTail;
+  String? coverPath(ObsidianLibraryItem item) {
+    final cover = '${item.value('cover') ?? ''}';
+    final stored = item.values['pepehub_cover_asset'];
+    final hash =
+        item.coverAsset?['hash'] ?? (stored is Map ? stored['hash'] : null);
+    return coverReferencePath(cover) ??
+        coverReferencePath('pepehub-cover:$hash');
+  }
+
   String? coverReferencePath(String value) {
     final hash = CoverSync.referenceHash(value);
     if (hash == null || covers == null) return null;
@@ -69,22 +78,199 @@ class LibraryService extends ChangeNotifier {
     return null;
   }
 
-  List<LibraryEntry> entries = [];
-  List<LibraryEntry> get completed => entries
-      .where(
-        (e) =>
-            isFinishedLibraryItem(e.item) &&
-            e.item.values['pepehub_recommendation_only'] != true,
-      )
-      .toList();
-  List<LibraryEntry> get inbox => entries
-      .where(
-        (e) =>
-            !isFinishedLibraryItem(e.item) &&
-            e.item.values['pepehub_recommendation_only'] != true,
-      )
-      .toList();
+  List<LibraryEntry> _entries = [];
+  List<LibraryEntry> _visible = [], _completed = [], _inbox = [], _trash = [];
+  final Map<String, LibraryEntry> _bySource = {};
+  List<LibraryEntry> get entries => _entries;
+  set entries(List<LibraryEntry> value) {
+    _entries = List.unmodifiable(value);
+    final archive = value.where((e) => isLibraryArchiveItem(e.item)).toList();
+    _visible = List.unmodifiable(
+      archive.where((e) => !isLibraryDeleted(e.item)),
+    );
+    _completed = List.unmodifiable(
+      _visible.where((e) => isFinishedLibraryItem(e.item)),
+    );
+    _inbox = List.unmodifiable(
+      _visible.where((e) => !isFinishedLibraryItem(e.item)),
+    );
+    _trash = List.unmodifiable(archive.where((e) => isLibraryDeleted(e.item)));
+    _bySource.clear();
+    for (final e in value) {
+      if (e.sourceBookId != null) _bySource[e.sourceBookId!] = e;
+    }
+  }
+
+  List<LibraryEntry> get completed => _completed;
+  List<LibraryEntry> get inbox => _inbox;
+  List<LibraryEntry> get trash => _trash;
+  List<LibraryEntry> get visibleEntries => _visible;
+  Future<void> deleteCards(Iterable<String> ids) async {
+    final selected = ids.toSet();
+    await repository.mutate((cards) async {
+      for (final id in selected) {
+        final card = cards[id];
+        if (card == null || isLibraryDeleted(card.item)) continue;
+        cards[id] = LibraryEntry(
+          personalLibraryItem(id, card.item.mediaType, {
+            ...card.item.values,
+            'pepehub_deleted_at': DateTime.now().toUtc().toIso8601String(),
+          }),
+          sourceBookId: card.sourceBookId,
+        );
+      }
+    });
+    await loadCached();
+  }
+
+  Future<void> restoreCard(String id) async {
+    final card = (await repository.entries())[id];
+    if (card != null) {
+      await save(id, {
+        ...card.item.values,
+        'pepehub_deleted_at': null,
+      }, original: card.item.values);
+    }
+  }
+
+  Future<void> favorite(String id) async {
+    final card = (await repository.entries())[id];
+    if (card != null) {
+      await save(id, {
+        ...card.item.values,
+        'pepehub_favorite': card.item.values['pepehub_favorite'] != true,
+      }, original: card.item.values);
+    }
+  }
+
+  /// A single transaction for the current selection; unrelated card fields stay intact.
+  Future<void> editCards(
+    Iterable<String> ids,
+    Map<String, dynamic> changes, {
+    String? addCollection,
+    bool reread = false,
+  }) async {
+    final selected = ids.toSet();
+    if (changes.keys.any(
+      (key) => ![
+        'author',
+        'series',
+        'status',
+        'rereadCount',
+        'endDate',
+        'notes',
+        'pepehub_favorite',
+        'pepehub_hidden',
+      ].contains(key),
+    )) {
+      throw ArgumentError('Неизвестное поле массового изменения');
+    }
+    final status = changes['status'];
+    final rereads = changes['rereadCount'];
+    if (rereads != null &&
+        (rereads is! num ||
+            !rereads.isFinite ||
+            rereads < 0 ||
+            rereads > 99999 ||
+            rereads != rereads.round())) {
+      throw ArgumentError('Введите целое число перечитываний от 0 до 99999');
+    }
+    if (status != null && !libraryStatusesLocal.containsKey(status)) {
+      throw ArgumentError('Неизвестный статус');
+    }
+    await local.db.transaction(() async {
+      await repository.mutate((cards) async {
+        for (final id in selected) {
+          final card = cards[id];
+          if (card == null || isLibraryDeleted(card.item)) continue;
+          final values = {...card.item.values, ...changes};
+          if (status == 'finished' &&
+              libraryStatus(card.item) != 'finished' &&
+              '${values['endDate'] ?? ''}'.isEmpty) {
+            values['endDate'] = DateTime.now().toIso8601String().substring(
+              0,
+              10,
+            );
+          }
+          if (reread) {
+            if (libraryRereads(card.item) >= 99999) {
+              throw StateError('Достигнут предел счётчика перечитываний');
+            }
+            values['rereadCount'] = libraryRereads(card.item) + 1;
+            values['status'] = 'finished';
+            values['endDate'] = DateTime.now().toIso8601String().substring(
+              0,
+              10,
+            );
+            final old = card.item.values['pepehub_completions'];
+            values['pepehub_completions'] = [
+              if (old is List) ...old,
+              if ((old is! List || old.isEmpty) &&
+                  card.item.value('endDate') != null)
+                {
+                  'date': card.item.value('endDate'),
+                  'rating': card.item.value('rating'),
+                },
+              {'date': values['endDate'], 'rating': values['rating']},
+            ];
+          }
+          if (addCollection?.trim().isNotEmpty == true) {
+            values['pepehub_collections'] = metadataStrings([
+              ...libraryCollections(card.item),
+              addCollection!.trim(),
+            ]);
+          }
+          if (status != null || reread) {
+            final key = 'obsidian-policy:$personalLibraryNamespace:$id';
+            final policy = await ReadingLibrary(local).value(key);
+            policy['status'] =
+                ['paused', 'abandoned', 'planned'].contains(status)
+                ? 'obsidian'
+                : 'auto';
+            await local.setMeta(key, jsonEncode(policy));
+          }
+          cards[id] = LibraryEntry(
+            personalLibraryItem(id, card.item.mediaType, values),
+            sourceBookId: card.sourceBookId,
+          );
+          if (status != null || reread) {
+            await _sourceStatus(card, values['status'] as String);
+          }
+        }
+      });
+    });
+    await loadCached();
+  }
+
   Map<String, dynamic>? snapshot = personalLibrarySchema;
+  Future<void> _sourceStatus(LibraryEntry card, String status) async {
+    final source = card.sourceBookId == null
+        ? null
+        : await local.record(card.sourceBookId!);
+    if (source == null || source.deleted) return;
+    final finished = status == 'finished'
+        ? DateTime.now().toUtc().toIso8601String()
+        : null;
+    await local.put('book', source.id, {
+      ...?source.payload,
+      'status': status,
+      'finishedAt': finished,
+    });
+    if (card.item.mediaType == 'audiobook') {
+      await local.setMeta('audio-status-override:${source.id}', status);
+    } else {
+      final reading = ReadingLibrary(local), key = 'reading-book:${source.id}';
+      final prefs = await reading.value(key);
+      await reading.update(key, {
+        'overrides': {
+          ...Map<String, dynamic>.from(prefs['overrides'] as Map? ?? {}),
+          'status': status,
+          'finishedAt': finished,
+        },
+      });
+    }
+  }
+
   final Map<String, Map<String, String>> policies = {};
   Map<String, List<String>> get suggestions => metadataSuggestions(entries);
   Map<String, dynamic>? collectionFor(ObsidianLibraryItem item) =>
@@ -101,6 +287,7 @@ class LibraryService extends ChangeNotifier {
   }
 
   bool syncing = false, _syncAgain = false, _disposed = false;
+  bool loading = false;
   String? error;
   Timer? _timer;
   int _generation = 0;
@@ -138,48 +325,100 @@ class LibraryService extends ChangeNotifier {
   }
 
   Future<void> reload() {
-    final task = _reloadTail.then((_) => _reload());
+    _refreshAgain = true;
+    if (_refresh != null) return _refresh!;
+    final task = _reloadTail.then((_) async {
+      try {
+        do {
+          _refreshAgain = false;
+          await _reload();
+        } while (_refreshAgain && !_disposed);
+      } finally {
+        _refresh = null;
+      }
+    });
+    _refresh = task;
     _reloadTail = task.catchError((Object _) {});
     return task;
   }
 
   Future<void> _reload() async {
+    if (_disposed) return;
     final generation = _generation;
-    if (!_migrated) {
-      // Old connector stores and outboxes remain intact as a migration source.
-      final cached = await ReadingLibrary(local).entries('obsidian-library:');
-      for (final ns in cached.keys.where(
-        (key) => RegExp(r'^[a-f0-9]{64}$').hasMatch(key),
-      )) {
-        _knownNamespaces.add(ns);
-        await LibraryExchange(local, repository, ns).importCached();
-        await LibraryExchange(local, repository, ns).journals();
+    loading = true;
+    error = null;
+    // Show the durable catalog before inspecting any connected files.
+    await loadCached();
+    try {
+      if (!_migrated) {
+        // Old connector stores and outboxes remain intact as a migration source.
+        final cached = await ReadingLibrary(local).entries('obsidian-library:');
+        final migrated = await local.meta('library-legacy-migration-v1') == '1';
+        for (final ns in cached.keys.where(
+          (key) => RegExp(r'^[a-f0-9]{64}$').hasMatch(key),
+        )) {
+          _knownNamespaces.add(ns);
+          if (!migrated) {
+            await LibraryExchange(local, repository, ns).importCached();
+            await loadCached();
+            await LibraryExchange(local, repository, ns).journals();
+          }
+        }
+        await local.setMeta('library-legacy-migration-v1', '1');
+        _migrated = true;
       }
-      _migrated = true;
-    }
-    if (config != null) {
-      _knownNamespaces.add(config!.namespace);
-      await exchange!.importCached();
-      await exchange!.journals();
-    }
-    await _captureCompleted();
-    if (assets != null) {
-      await AutomaticMetadata(assets!)
-          .refresh(repository, personalLibrarySchema, localOnly: true);
-    }
-    final values = await repository.entries();
-    final loadedPolicies = <String, Map<String, String>>{};
-    for (final entry in values.values) {
-      final raw = await local.meta(
-        'obsidian-policy:$personalLibraryNamespace:${entry.item.id}',
-      );
-      if (raw != null) {
-        loadedPolicies[entry.item.id] = Map<String, String>.from(
-          jsonDecode(raw) as Map,
+      if (config != null) {
+        _knownNamespaces.add(config!.namespace);
+        await exchange!.importCached();
+        await exchange!.journals();
+      }
+      if (_disposed) return;
+      if (assets != null) {
+        await AutomaticMetadata(assets!).refresh(
+          repository,
+          personalLibrarySchema,
+          localOnly: true,
+          cancelled: () => _disposed,
+          onProgress: loadCached,
+          onError: (_) => error = 'Не удалось прочитать сведения о некоторых файлах. Сохранённые карточки доступны.',
         );
       }
+    } catch (e) {
+      error = 'Не удалось обновить сведения о некоторых файлах: $e';
+    } finally {
+      loading = false;
+      if (generation == _generation && !_disposed) await loadCached();
     }
-    if (generation != _generation || _disposed) return;
+  }
+
+  /// Reading the catalog never waits for audio tags, artwork or source scans.
+  Future<void> loadCached() async {
+    if (_disposed) return;
+    var values = await repository.entries();
+    if (await local.meta('library-manual-archive-v1') != '1') {
+      if (values.values.any(
+        (e) => e.item.values['pepehub_auto_discovered'] == true,
+      )) {
+        await repository.mutate((cards) async {
+          for (final e in cards.entries.toList()) {
+            if (e.value.item.values['pepehub_auto_discovered'] == true) {
+              cards[e.key] = LibraryEntry(
+                e.value.item.withValues({
+                  ...e.value.item.values,
+                  'pepehub_source_only': true,
+                }),
+                sourceBookId: e.value.sourceBookId,
+              );
+            }
+          }
+        });
+        values = await repository.entries();
+      }
+      await local.setMeta('library-manual-archive-v1', '1');
+    }
+    final loadedPolicies = await ReadingLibrary(local)
+        .entries('obsidian-policy:$personalLibraryNamespace:');
+    if (_disposed) return;
     entries = values.values.toList()
       ..sort(
         (a, b) =>
@@ -187,66 +426,12 @@ class LibraryService extends ChangeNotifier {
       );
     policies
       ..clear()
-      ..addAll(loadedPolicies);
-    _notify();
-  }
-
-  Future<void> _captureCompleted() async {
-    final cards = await repository.entries();
-    final reading = ReadingLibrary(local);
-    final rows = await local.db
-        .customSelect(
-          "SELECT b.id,coalesce(s.revision,0) AS revision FROM records b LEFT JOIN library_source_revisions_v1 s ON s.book_id=b.id WHERE b.type='book' AND b.deleted=0 AND json_valid(b.payload)",
-        )
-        .get();
-    final linked = cards.values.map((e) => e.sourceBookId).toSet();
-    for (final row in rows) {
-      final id = row.read<String>('id'), revision = row.read<int>('revision');
-      if (linked.contains(id) || _discoveredRevisions[id] == revision) {
-        continue;
-      }
-      final book = await local.record(id);
-      if (book == null || book.deleted) continue;
-      final audio = book.payload?['format'] == 'audio';
-      final prefs = await reading.value(
-        '${audio ? 'audio' : 'reading'}-book:${book.id}',
+      ..addAll(
+        loadedPolicies.map(
+          (id, value) => MapEntry(id, Map<String, String>.from(value)),
+        ),
       );
-      final status = audio
-          ? (await local.meta('audio-status-override:${book.id}') ??
-                book.payload?['status'])
-          : ((prefs['overrides'] as Map?)?['status'] ??
-                book.payload?['status']);
-      final overrides = prefs['overrides'] as Map? ?? {};
-      final ended =
-          overrides['finishedAt'] ??
-          prefs['finishedAt'] ??
-          book.payload?['finishedAt'];
-      final audioCompleted =
-          audio &&
-          !['planned', 'paused'].contains(
-            canonicalLibraryStatus(
-              await local.meta('audio-status-override:${book.id}'),
-            ),
-          ) &&
-          (await local.db
-                  .customSelect(
-                    r"SELECT 1 FROM records r WHERE r.type='audio_event' AND r.deleted=0 AND json_valid(r.payload) AND json_extract(r.payload,'$.bookId')=? AND json_extract(r.payload,'$.kind')='completed' AND EXISTS(SELECT 1 FROM audio_tracks t JOIN audio_editions e ON e.id=t.edition_id WHERE t.id=json_extract(r.payload,'$.trackId') AND e.book_id=? AND NOT EXISTS(SELECT 1 FROM audio_tracks later WHERE later.edition_id=t.edition_id AND later.ordinal>t.ordinal)) LIMIT 1",
-                    variables: [Variable(book.id), Variable(book.id)],
-                  )
-                  .getSingleOrNull()) !=
-              null;
-      if (canonicalLibraryStatus(status) != 'finished' &&
-          ended == null &&
-          !audioCompleted) {
-        _discoveredRevisions[id] = revision;
-        continue;
-      }
-      final draft = await prepareDraft(book);
-      if (isFinishedLibraryItem(draft)) {
-        await _store(draft, book.id);
-      }
-      _discoveredRevisions[id] = revision;
-    }
+    _notify();
   }
 
   Future<void> sync() async {
@@ -295,8 +480,12 @@ class LibraryService extends ChangeNotifier {
     }
   }
 
-  LibraryEntry? forBook(String id) =>
-      entries.where((e) => e.sourceBookId == id).firstOrNull;
+  LibraryEntry? sourceDraft(String id) => _bySource[id];
+  LibraryEntry? forBook(String id) {
+    final entry = _bySource[id];
+    return entry != null && isLibraryArchiveItem(entry.item) ? entry : null;
+  }
+
   ObsidianLibraryItem draft(LibraryRecord book, Map<String, dynamic> details) =>
       LibraryMapper.fromBook(
         book,
@@ -338,7 +527,12 @@ class LibraryService extends ChangeNotifier {
           return;
         }
         cards[item.id] = LibraryEntry(
-          personalLibraryItem(item.id, item.mediaType, item.values),
+          personalLibraryItem(item.id, item.mediaType, {
+            ...item.values,
+            'pepehub_added_at':
+                item.values['pepehub_added_at'] ??
+                DateTime.now().toUtc().toIso8601String(),
+          }),
           sourceBookId: sourceBookId,
         );
       });
@@ -347,9 +541,59 @@ class LibraryService extends ChangeNotifier {
     String sourceBookId, {
     Map<String, dynamic>? original,
   }) async {
-    if (original != null) await _protectCleared(item.id, item.values, original);
-    await _store(item, sourceBookId.isEmpty ? null : sourceBookId);
-    await reload();
+    if (!libraryStatusesLocal.containsKey(
+      canonicalLibraryStatus(item.value('status')),
+    )) {
+      throw ArgumentError(
+        'В библиотеке доступны только завершённые, отложенные и брошенные произведения',
+      );
+    }
+    final existing = (await repository.entries()).values
+        .where(
+          (e) =>
+              e.item.id == item.id ||
+              sourceBookId.isNotEmpty && e.sourceBookId == sourceBookId,
+        )
+        .firstOrNull;
+    final values = {
+      ...?existing?.item.values,
+      ...item.values,
+      'pepehub_auto_discovered': false,
+      'pepehub_source_only': false,
+      'pepehub_deleted_at': null,
+      'pepehub_recommendation_only': false,
+      if (isFinishedLibraryItem(item) &&
+          '${item.value('endDate') ?? ''}'.isEmpty)
+        'endDate': DateTime.now().toIso8601String().substring(0, 10),
+    };
+    if (existing != null) {
+      await save(
+        existing.item.id,
+        values,
+        original: isLibraryArchiveItem(existing.item)
+            ? original ?? existing.item.values
+            : existing.item.values,
+      );
+    } else {
+      if (original != null) await _protectCleared(item.id, values, original);
+      await _store(
+        item.withValues(values),
+        sourceBookId.isEmpty ? null : sourceBookId,
+      );
+      if (sourceBookId.isNotEmpty) {
+        await _sourceStatus(
+          LibraryEntry(item, sourceBookId: sourceBookId),
+          canonicalLibraryStatus(values['status']),
+        );
+        final excluded = metadataStrings(
+          jsonDecode(await local.meta('library-auto-excluded') ?? '[]'),
+        );
+        if (excluded.remove(sourceBookId)) {
+          await local.setMeta('library-auto-excluded', jsonEncode(excluded));
+        }
+      }
+      await loadCached();
+    }
   }
 
   Future<ObsidianLibraryItem> previewLink(
@@ -410,6 +654,25 @@ class LibraryService extends ChangeNotifier {
           );
         }
       }
+      if (changed.containsKey('status')) {
+        final status = canonicalLibraryStatus(changed['status']);
+        if (!libraryStatusesLocal.containsKey(status)) {
+          throw ArgumentError('Неизвестный статус');
+        }
+        changed['status'] = status;
+        if (status == 'finished' && '${next['endDate'] ?? ''}'.isEmpty) {
+          changed['endDate'] = DateTime.now().toIso8601String().substring(
+            0,
+            10,
+          );
+        }
+        final key = 'obsidian-policy:$personalLibraryNamespace:$id';
+        final policy = await ReadingLibrary(local).value(key);
+        policy['status'] = ['paused', 'abandoned', 'planned'].contains(status)
+            ? 'obsidian'
+            : 'auto';
+        await local.setMeta(key, jsonEncode(policy));
+      }
       data[id] = LibraryEntry(
         personalLibraryItem(id, entry.item.mediaType, {
           ...entry.item.values,
@@ -417,8 +680,11 @@ class LibraryService extends ChangeNotifier {
         }),
         sourceBookId: entry.sourceBookId,
       );
+      if (changed.containsKey('status')) {
+        await _sourceStatus(entry, changed['status'] as String);
+      }
     });
-    await reload();
+    await loadCached();
   }
 
   Future<void> _protectCleared(
@@ -537,7 +803,7 @@ class LibraryService extends ChangeNotifier {
     if (existing != null &&
         isFinishedLibraryItem(item) &&
         item.values['pepehub_recommendation_only'] != true) {
-      return item;
+      return item.withValues({...item.values, 'pepehub_deleted_at': null});
     }
     return personalLibraryItem(item.id, item.mediaType, {
       ...item.values,

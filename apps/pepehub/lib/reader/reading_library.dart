@@ -12,10 +12,54 @@ import '../audio/audio_folder.dart';
 import '../data/database_schema.dart';
 import '../data/repository.dart';
 import '../media/asset_store.dart';
+import '../media/verified_stream_copy.dart';
 import 'book_formats.dart';
+import 'epub.dart' show EpubBook;
 import 'reader_layout.dart';
+import 'reader_rebase.dart';
 import 'text_book.dart';
 import 'pdf_support.dart';
+
+// Keep the isolate closure outside instance methods so it cannot capture a DB.
+Future<({EpubBook book, EpubBook? previous, EpubBook? legacy})>
+_parseIndexedText(
+  String sourcePath,
+  String name,
+  String hash,
+  TransferableTypedData? transferred,
+  bool refreshTxt,
+  int sourceLayout,
+) => Isolate.run(() {
+  final Uint8List bytes;
+  if (transferred != null) {
+    bytes = transferred.materialize().asUint8List();
+  } else {
+    final file = File(sourcePath);
+    if (file.lengthSync() > 64 * 1024 * 1024) {
+      throw const FormatException('Книга превышает 64 МБ');
+    }
+    bytes = file.readAsBytesSync();
+  }
+  if (bytes.length > 64 * 1024 * 1024) {
+    throw const FormatException('Книга превышает 64 МБ');
+  }
+  if (sha256.convert(bytes).toString() != hash) {
+    throw StateError('Файл изменился. Обновите папку книг.');
+  }
+  return (
+    book: parseTextBook(bytes, name),
+    previous: refreshTxt && sourceLayout != currentBookLayout
+        ? parseTextBook(
+            bytes,
+            name,
+            layout: sourceLayout == 1 ? 2 : sourceLayout,
+          )
+        : null,
+    legacy: refreshTxt && sourceLayout == 1
+        ? parseTextBook(bytes, name, legacyProjection: true, layout: 2)
+        : null,
+  );
+});
 
 class ReadingLibrary {
   // Must match the reading_notes_* expression indexes in the schema.
@@ -52,6 +96,61 @@ class ReadingLibrary {
     return result;
   }
 
+  /// Reads the compact projection; full paragraph indexes are reader-only.
+  Future<Map<String, Map<String, dynamic>>> shelfIndex(
+    Map<String, Map<String, dynamic>> positions,
+  ) async {
+    final rows = await repository.db
+        .customSelect('SELECT key,value,text_offset FROM reading_shelf_v1')
+        .get();
+    final result = <String, Map<String, dynamic>>{};
+    for (final row in rows) {
+      final hash = row.read<String>('key').substring('reading-index:'.length);
+      final value = jsonDecode(row.read<String>('value'));
+      if (value is! Map<String, dynamic>) continue;
+      result[hash] = value;
+      final saved = positions[hash];
+      if (saved != null && saved.isNotEmpty && saved['textOffset'] == null) {
+        saved['textOffset'] = row.read<int>('text_offset');
+      }
+    }
+    return result;
+  }
+
+  Future<Map<String, dynamic>> shelfInfo(String hash) async {
+    final row = await repository.db
+        .customSelect(
+          'SELECT value FROM reading_shelf_v1 WHERE key=?',
+          variables: [Variable('reading-index:$hash')],
+        )
+        .getSingleOrNull();
+    return row == null
+        ? {}
+        : jsonDecode(row.read<String>('value')) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, Map<String, dynamic>>> statisticsSessions({
+    String? bookId,
+  }) async {
+    final rows = await repository.db
+        .customSelect(
+          'SELECT key,value FROM reading_statistics_sessions_v1 ${bookId == null ? '' : 'WHERE book_id=?'}',
+          variables: [if (bookId != null) Variable(bookId)],
+        )
+        .get();
+    final values = [
+      for (final row in rows)
+        (row.read<String>('key'), row.read<String>('value')),
+    ];
+    return Isolate.run(
+      () => {
+        for (final (key, raw) in values)
+          key.substring('reading-session:'.length):
+              jsonDecode(raw) as Map<String, dynamic>,
+      },
+    );
+  }
+
   Future<void> update(String key, Map<String, dynamic> changes) =>
       repository.db.transaction(() async {
         await repository.setMeta(
@@ -67,10 +166,12 @@ class ReadingLibrary {
     bool retry = false,
   }) async {
     final key = 'reading-index:${asset.hash}';
-    final oldIndex = await value(key);
+    final oldIndex = await shelfInfo(asset.hash);
     if (!retry &&
         oldIndex.isNotEmpty &&
         oldIndex['needsCoverRefresh'] != true &&
+        (bookFormat(asset.filename) != 'txt' ||
+            oldIndex['layoutVersion'] == currentBookLayout) &&
         (bookFormat(asset.filename) == 'pdf' ||
             oldIndex['metadataVersion'] == 2) &&
         (bookFormat(asset.filename) != 'pdf' ||
@@ -82,74 +183,69 @@ class ReadingLibrary {
     try {
       if (bookFormat(asset.filename) == 'pdf') {
         var source = File(asset.path);
+        String? copiedHash;
         if (asset.bytes <= 0 || asset.bytes > 256 * 1024 * 1024) {
           throw const FormatException('PDF превышает 256 МБ');
         }
         if (asset.path.startsWith('content:')) {
+          Map<String, dynamic>? preview;
+          try {
+            preview = await audioFolderChannel.invokeMapMethod<String, dynamic>(
+              'pdfPreview',
+              {'uri': asset.path, 'hash': asset.hash, 'bytes': asset.bytes},
+            );
+          } catch (_) {
+            /* Non-seekable providers use the verified copy below. */
+          }
+          final png = preview?['png'], pages = preview?['pages'];
+          if (png is Uint8List &&
+              png.length <= 2 * 1024 * 1024 &&
+              pages is int &&
+              pages > 0 &&
+              pages <= 20000) {
+            await _storePdfCover(store, asset, png, pages);
+            return;
+          }
           // SAF is sequential. Use one temporary seekable file for PDFium,
           // then keep only the thumbnail, not a second copy of the library.
           await store.directory.create(recursive: true);
           source = temporaryPdf = File(
             p.join(store.directory.path, 'pdf-cover-${uuid.v4()}.partial'),
           );
-          final sink = source.openWrite();
-          var received = 0;
-          try {
-            await for (final chunk in SafAudioFile(
-              asset.path,
-              asset.filename,
-              asset.bytes,
-            ).openRead()) {
-              received += chunk.length;
-              if (received > asset.bytes) {
-                throw StateError('Размер PDF изменился');
-              }
-              sink.add(chunk);
-            }
-          } finally {
-            await sink.close();
-          }
-          if (received != asset.bytes) {
-            throw StateError('PDF прочитан не полностью');
-          }
+          final copied = await copyVerifiedStream(
+            SafAudioFile(asset.path, asset.filename, asset.bytes).openRead(),
+            source,
+            expectedBytes: asset.bytes,
+          );
+          copiedHash = copied.hash;
         }
-        final digest = await sha256.bind(source.openRead()).first;
-        if (digest.toString() != asset.hash) {
+        final pdfPath = source.path;
+        final digest =
+            copiedHash ??
+            await Isolate.run(
+              () async => (await sha256.bind(File(pdfPath).openRead()).first)
+                  .toString(),
+            );
+        if (digest != asset.hash) {
           throw StateError('Файл изменился. Обновите папку книг.');
         }
         final pdf = await openLocalPdf(source.path);
         try {
-          final bytes = await pdfCover(pdf);
-          final dir = Directory(p.join(store.directory.path, 'reading-covers'));
-          await dir.create(recursive: true);
-          final cover = File(p.join(dir.path, '${asset.hash}.png'));
-          await cover.writeAsBytes(bytes, flush: true);
-          await update(key, {
-            'title': p.basenameWithoutExtension(asset.filename),
-            'cover': cover.path,
-            'pdfPages': pdf.pages.length,
-            'pdfCoverVersion': 1,
-            'needsCoverRefresh': false,
-            'error': null,
-          });
-          // Migrate the original PDF viewer's page-only bookmark once.
-          if (await repository.meta('reader:${asset.hash}') == null) {
-            final old = int.tryParse(
-              await repository.meta('pdf:${asset.hash}') ?? '',
-            );
-            if (old != null) {
-              await update('reader:${asset.hash}', {
-                'chapter': old.clamp(1, pdf.pages.length) - 1,
-                'textOffset': 0,
-              });
-            }
-          }
+          await _storePdfCover(
+            store,
+            asset,
+            await pdfCover(pdf),
+            pdf.pages.length,
+          );
         } finally {
           await pdf.dispose();
         }
         return;
       }
-      final Uint8List bytes;
+      final name = asset.filename, hash = asset.hash, sourcePath = asset.path;
+      // Platform channels must stay in the root isolate. Transfer their bytes
+      // without copying; regular files are read directly by the parsing worker.
+      TransferableTypedData? transferred;
       if (asset.path.startsWith('content:')) {
         final buffer = BytesBuilder(copy: false);
         await for (final chunk in SafAudioFile(
@@ -162,19 +258,29 @@ class ReadingLibrary {
           }
           buffer.add(chunk);
         }
-        bytes = buffer.takeBytes();
-      } else {
-        final file = File(asset.path);
-        if (await file.length() > 64 * 1024 * 1024) {
-          throw const FormatException('Книга превышает 64 МБ');
-        }
-        bytes = await file.readAsBytes();
+        transferred = TransferableTypedData.fromList([buffer.takeBytes()]);
       }
-      final name = asset.filename;
-      if (sha256.convert(bytes).toString() != asset.hash) {
-        throw StateError('Файл изменился. Обновите папку книг.');
-      }
-      final book = await Isolate.run(() => parseTextBook(bytes, name));
+      // Refresh stale TXT navigation in the existing sequential indexing worker.
+      // Rebase saved anchors before replacing starts; shelf reads stay compact.
+      final refreshTxt =
+          bookFormat(name) == 'txt' &&
+          oldIndex.isNotEmpty &&
+          oldIndex['layoutVersion'] != currentBookLayout;
+      final sourceLayout = refreshTxt
+          ? int.tryParse(
+                  await repository.meta('reader-layout-version:$hash') ?? '',
+                ) ??
+                ((await value('reader:$hash'))['layoutVersion'] == 2 ? 2 : 1)
+          : currentBookLayout;
+      final parsed = await _parseIndexedText(
+        sourcePath,
+        name,
+        hash,
+        transferred,
+        refreshTxt,
+        sourceLayout,
+      );
+      final book = parsed.book;
       String? coverPath;
       if (book.cover != null && book.cover!.isNotEmpty) {
         final dir = Directory(p.join(store.directory.path, 'reading-covers'));
@@ -184,42 +290,63 @@ class ReadingLibrary {
         coverPath = cover.path;
       }
       final document = ReaderDocument(book);
-      if (await repository.meta('reader:${asset.hash}') == null) {
-        final recovered = await value(
-          'reading-recovered-position:${asset.hash}',
-        );
-        final absolute = (recovered['position'] as num?)?.toInt();
-        if (absolute != null && document.length > 0) {
-          final place = document.locate(
-            (absolute / document.length).clamp(0.0, 1.0),
+      await repository.db.transaction(() async {
+        if (refreshTxt) {
+          final previous = parsed.previous == null
+              ? document
+              : ReaderDocument(parsed.previous!);
+          await migrateReaderLayout(
+            this,
+            hash,
+            document,
+            () async => parsed.legacy == null
+                ? previous
+                : ReaderDocument(parsed.legacy!),
+            previous: () async => previous,
+            sourceLayout: (_) async => previous,
           );
-          await update('reader:${asset.hash}', {
-            'chapter': place.chapter,
-            'textOffset': place.offset,
-          });
         }
-      }
-      await repository.setMeta(
-        key,
-        jsonEncode({
-          ...book.metadata,
-          'metadataVersion': 2,
-          'title': book.title,
-          'authors': book.authors,
-          'series': book.series,
-          'seriesNumber': book.seriesNumber,
-          'description': book.description,
-          'cover': coverPath,
-          'chapters': [for (final c in book.chapters) c.title],
-          'starts': document.starts,
-          'lengths': [for (final t in document.texts) t.length],
-          'paragraphStarts': [
-            for (final chapter in book.chapters)
-              paragraphOffsets(chapter.paragraphs),
-          ],
-          'length': document.length,
-        }),
-      );
+        if (await repository.meta('reader:${asset.hash}') == null) {
+          final recovered = await value(
+            'reading-recovered-position:${asset.hash}',
+          );
+          final absolute = (recovered['position'] as num?)?.toInt();
+          if (absolute != null && document.length > 0) {
+            final place = document.locate(
+              (absolute / document.length).clamp(0.0, 1.0),
+            );
+            await update('reader:${asset.hash}', {
+              'chapter': place.chapter,
+              'textOffset': place.offset,
+            });
+          }
+        }
+        await repository.setMeta(
+          key,
+          jsonEncode({
+            ...book.metadata,
+            'metadataVersion': 2,
+            'layoutVersion': currentBookLayout,
+            'title': book.title,
+            'authors': book.authors,
+            'series': book.series,
+            'seriesNumber': book.seriesNumber,
+            'description': book.description,
+            'cover': coverPath ?? oldIndex['cover'],
+            'chapters': [for (final c in book.chapters) c.title],
+            'starts': document.starts,
+            'lengths': [for (final t in document.texts) t.length],
+            'paragraphStarts': [
+              for (final chapter in book.chapters)
+                paragraphOffsets(
+                  chapter.paragraphs,
+                  separator: chapter.paragraphSeparator,
+                ),
+            ],
+            'length': document.length,
+          }),
+        );
+      });
     } catch (e) {
       // Retain a usable index when a disconnected folder makes a retry fail.
       await update(key, {'error': '$e'});
@@ -227,6 +354,37 @@ class ReadingLibrary {
     } finally {
       if (temporaryPdf != null && await temporaryPdf.exists()) {
         await temporaryPdf.delete();
+      }
+    }
+  }
+
+  Future<void> _storePdfCover(
+    AssetStore store,
+    LocalAsset asset,
+    Uint8List bytes,
+    int pages,
+  ) async {
+    final dir = Directory(p.join(store.directory.path, 'reading-covers'));
+    await dir.create(recursive: true);
+    final cover = File(p.join(dir.path, '${asset.hash}.png'));
+    await cover.writeAsBytes(bytes, flush: true);
+    await update('reading-index:${asset.hash}', {
+      'title': p.basenameWithoutExtension(asset.filename),
+      'cover': cover.path,
+      'pdfPages': pages,
+      'pdfCoverVersion': 1,
+      'needsCoverRefresh': false,
+      'error': null,
+    });
+    if (await repository.meta('reader:${asset.hash}') == null) {
+      final old = int.tryParse(
+        await repository.meta('pdf:${asset.hash}') ?? '',
+      );
+      if (old != null) {
+        await update('reader:${asset.hash}', {
+          'chapter': old.clamp(1, pages) - 1,
+          'textOffset': 0,
+        });
       }
     }
   }
@@ -269,7 +427,7 @@ class ReadingLibrary {
     LibraryRecord book,
     String? hash,
   ) async => effective(
-    {...?book.payload, if (hash != null) ...await value('reading-index:$hash')},
+    {...?book.payload, if (hash != null) ...await shelfInfo(hash)},
     await value('reading-book:${book.id}'),
     await value('reading-dates:${book.id}'),
   );
@@ -307,13 +465,16 @@ class ReadingLibrary {
   );
 }
 
-List<int> paragraphOffsets(List<String> paragraphs) {
+List<int> paragraphOffsets(
+  List<String> paragraphs, {
+  String separator = '\n\n',
+}) {
   var offset = 0;
   return [
     for (final text in paragraphs)
       (() {
         final start = offset;
-        offset += text.length + 2;
+        offset += text.length + separator.length;
         return start;
       })(),
   ];

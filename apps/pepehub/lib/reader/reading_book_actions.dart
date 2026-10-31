@@ -173,12 +173,7 @@ class ReadingBookActions {
 
   Future<void> deleteForever(String id) async {
     final selected = await sources(id);
-    for (final source in selected) {
-      await _delete(source, checkOnly: true);
-    }
-    for (final source in selected) {
-      await _delete(source, checkOnly: false);
-    }
+    await deleteFiles(selected);
     // Only generated files under the application's own cache directories.
     for (final hash in selected.map((s) => s.hash).toSet()) {
       if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(hash)) continue;
@@ -197,6 +192,15 @@ class ReadingBookActions {
       () => ReadingBookVisibility(assets.repository).deleted(id, byUser: true),
     );
     assets.repository.notifyExternalChange();
+  }
+
+  Future<void> deleteFiles(List<ReadingBookSource> selected) async {
+    for (final source in selected) {
+      await _delete(source, checkOnly: true);
+    }
+    for (final source in selected) {
+      await _delete(source, checkOnly: false);
+    }
   }
 
   Future<void> reveal(String id) async {

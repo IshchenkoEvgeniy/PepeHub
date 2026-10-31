@@ -21,6 +21,9 @@ import 'audio_statistics_page.dart';
 import 'audio_cover.dart';
 
 import 'dart:async';
+
+import 'package:flutter/foundation.dart' show listEquals;
+
 import 'dart:convert';
 
 import '../media/android_book_files.dart';
@@ -49,6 +52,7 @@ import 'audio_catalog_dialog.dart';
 import 'audio_roots_page.dart';
 import '../reader/reader_page.dart';
 import '../reader/book_formats.dart';
+import '../reader/text_book.dart' show currentBookLayout;
 import '../reader/pdf_reader_page.dart';
 import '../reader/reading_roots.dart';
 import '../reader/reading_shelf_sources.dart';
@@ -56,6 +60,7 @@ import '../reader/reading_shelf_sources.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../reader/reading_book_actions.dart';
+import '../audio/audio_book_actions.dart';
 import '../reader/reading_book_visibility.dart';
 import '../sync/peer/peer_service.dart';
 import 'reading_roots_page.dart';
@@ -67,7 +72,10 @@ import '../reader/reading_library.dart';
 import '../reader/reading_notes_page.dart';
 import '../reader/reading_collections.dart';
 import '../library/library_service.dart';
-import '../library/obsidian_sync_service.dart';
+import '../library/personal_library.dart';
+import '../library/library_features.dart';
+import 'library_data_page.dart';
+import 'library_work_page.dart';
 import 'obsidian_library_page.dart';
 
 class LibraryPage extends StatefulWidget {
@@ -151,26 +159,26 @@ class _LibraryPageState extends State<LibraryPage> {
 
   void _libraryChanged() {
     if (mounted) setState(() {});
-    if (!obsidianLibrary.syncing && mounted) unawaited(_reload());
+    if (!obsidianLibrary.syncing &&
+        !obsidianLibrary.loading &&
+        mounted &&
+        !metadataSection &&
+        !recommendationsSection &&
+        !statisticsSection &&
+        !videoSection) {
+      unawaited(_reload());
+    }
   }
 
   Future<void> _loadObsidian() async {
-    await obsidianLibrary.reload();
-    if (await widget.repository.meta('obsidian-library-enabled') == 'false') {
-      return;
-    }
-    final url = await widget.repository.meta('obsidian-library-url');
-    if (url == null) return;
+    // Local migration only. Old connection settings never start network traffic.
     try {
-      final token = await storage.read(key: 'obsidian-library-token');
-      if (token != null && mounted) {
-        await obsidianLibrary.connect(ObsidianConfig(url, token));
-      }
-    } catch (error) {
+      await widget.repository.setMeta('obsidian-library-enabled', 'false');
+      await obsidianLibrary.reload();
+    } catch (e) {
       if (mounted) {
         setState(
-          () =>
-              obsidianLibrary.error = 'Не удалось подключить Obsidian: $error',
+          () => obsidianLibrary.error = 'Не удалось загрузить библиотеку: $e',
         );
       }
     }
@@ -240,6 +248,7 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void dispose() {
     widget.repository.externalChanges.removeListener(_remoteChanged);
+    _searchDebounce?.cancel();
     incomingBooks?.dispose();
     obsidianLibrary.removeListener(_libraryChanged);
     obsidianLibrary.dispose();
@@ -286,11 +295,37 @@ class _LibraryPageState extends State<LibraryPage> {
     await _reload();
   }
 
-  int coverRevision = 0;
-  Future<void> _reload({bool restoreDefault = false}) async {
-    final readingSection = reading;
-    coverRevision++;
+  Map<String, String> _coverVersions = {};
+  Future<void>? _pdfModeMigration;
+  Future<void>? _shelfReload;
+  bool _reloadAgain = false, _restoreRoot = false;
+  Future<void> _reload({bool restoreDefault = false}) {
+    _reloadAgain = true;
+    _restoreRoot |= restoreDefault;
+    return _shelfReload ??= _drainShelfReload();
+  }
+
+  Future<void> _drainShelfReload() async {
     try {
+      do {
+        _reloadAgain = false;
+        final restore = _restoreRoot;
+        _restoreRoot = false;
+        await _reloadOnce(restoreDefault: restore);
+      } while (_reloadAgain && mounted);
+    } finally {
+      _shelfReload = null;
+    }
+  }
+
+  Future<void> _reloadOnce({bool restoreDefault = false}) async {
+    final readingSection = reading;
+
+    try {
+      final coverMetadata = await widget.repository.metadataPrefixes([
+        'audio-cover:',
+        'audio-cover-hidden:',
+      ]);
       final allBooks = await widget.repository.shelfBooks(
         audio: !readingSection,
       );
@@ -306,6 +341,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 'audio-status-override:',
                 'audio-library-superseded:',
                 'audio-library-hidden:',
+                'audio-user-hidden:',
               ],
       );
       for (final book in allBooks) {
@@ -320,6 +356,7 @@ class _LibraryPageState extends State<LibraryPage> {
         final override = flags['audio-status-override:${book.id}'];
         if (override != null) overrides[book.id] = override;
         if (flags['audio-library-superseded:${book.id}'] != '1' &&
+            flags['audio-user-hidden:${book.id}'] != '1' &&
             flags['audio-library-hidden:${book.id}'] != '1') {
           b.add(book);
         }
@@ -327,7 +364,9 @@ class _LibraryPageState extends State<LibraryPage> {
       final c = showSync
           ? (await widget.repository.conflicts()).map((r) => r.data).toList()
           : <Map<String, dynamic>>[];
-      final files = await widget.assets?.list() ?? <LocalAsset>[];
+      final files =
+          await widget.assets?.shelfAssets(audio: !readingSection) ??
+          <LocalAsset>[];
       final sources = ReadingShelfSources(files);
       if (readingSection) await sources.load(widget.repository);
       final rootList = widget.assets == null
@@ -351,13 +390,13 @@ class _LibraryPageState extends State<LibraryPage> {
           ? <String, ({int? total, int? position, double speed})>{}
           : await AudioLibraryRepository(widget.repository.db).bookSummaries();
       if (readingSection) {
-        final index = await readingLibrary.entries('reading-index:');
         try {
-          await migrateLegacyPdfMode(widget.repository);
+          await (_pdfModeMigration ??= migrateLegacyPdfMode(widget.repository));
         } catch (_) {
           /* The listing below tolerates the legacy value anyway. */
         }
         final positions = await readingLibrary.entries('reader:');
+        final index = await readingLibrary.shelfIndex(positions);
         final prefs = await readingLibrary.entries('reading-book:');
         final sourcePaths = await readingLibrary.entries(
           'reading-source-path:',
@@ -398,6 +437,11 @@ class _LibraryPageState extends State<LibraryPage> {
       }
       if (mounted && reading == readingSection) {
         setState(() {
+          _coverVersions = {
+            for (final book in b)
+              book.id:
+                  '${coverMetadata['audio-cover:${book.id}'] ?? ''}:${coverMetadata['audio-cover-hidden:${book.id}'] ?? ''}',
+          };
           books = b;
           deletedReadingBooks = deleted;
           statusOverrides = overrides;
@@ -431,6 +475,10 @@ class _LibraryPageState extends State<LibraryPage> {
               (a) =>
                   ids.contains(a.bookId) &&
                   (!readingIndex.containsKey(a.hash) ||
+                      bookFormat(a.filename) == 'txt' &&
+                          readingIndex[a.hash]?['layoutVersion'] !=
+                              currentBookLayout &&
+                          readingIndex[a.hash]?['error'] == null ||
                       bookFormat(a.filename) == 'pdf' &&
                           readingIndex[a.hash]?['pdfCoverVersion'] == null &&
                           readingIndex[a.hash]?['error'] == null),
@@ -477,15 +525,15 @@ class _LibraryPageState extends State<LibraryPage> {
       shelfSources.first(book.id)?.filename ??
       '';
 
+  static final _filenamePrefix = RegExp(r'^\s*(\d+(?:[._-]\d+)*[.)]?)\s+');
+  static final _titlePrefix = RegExp(r'^\s*\d+[.)\s]');
   String _title(LibraryRecord b) {
     if (!reading) return b.title;
     final title = _textInfo(b)['title'] as String? ?? b.title;
     if (readingPrefs[b.id]?['title'] != null) return title;
     final filename = p.posix.basename(_sourcePath(b));
-    final prefix = RegExp(r'^\s*(\d+(?:[._-]\d+)*[.)]?)\s+')
-        .firstMatch(filename)
-        ?.group(1);
-    if (prefix == null || RegExp(r'^\s*\d+[.)\s]').hasMatch(title)) {
+    final prefix = _filenamePrefix.firstMatch(filename)?.group(1);
+    if (prefix == null || _titlePrefix.hasMatch(title)) {
       return title;
     }
     return '$prefix $title';
@@ -930,7 +978,7 @@ class _LibraryPageState extends State<LibraryPage> {
       await showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Markdown для Obsidian'),
+          title: const Text('Экспорт Markdown'),
           content: SizedBox(
             width: 600,
             height: 400,
@@ -1028,7 +1076,6 @@ class _LibraryPageState extends State<LibraryPage> {
     });
     await widget.repository.setMeta('library-section', 'metadata');
     await obsidianLibrary.reload();
-    unawaited(obsidianLibrary.sync());
   }
 
   PepeSection get _section => videoSection
@@ -1110,94 +1157,45 @@ class _LibraryPageState extends State<LibraryPage> {
     ),
   );
 
-  Future<void> _obsidianSettings() async {
-    var url = obsidianLibrary.config?.url ?? '';
-    var token = obsidianLibrary.config?.token ?? '';
-    String? error;
-    final config = await showDialog<ObsidianConfig>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, update) => AlertDialog(
-          title: const Text('Подключение Obsidian'),
-          content: SizedBox(
-            width: 480,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'Укажите адрес и API-токен Cloudflare Companion из настроек плагина. Карточки Obsidian будут импортированы в локальную библиотеку. Новые книги PepeHub экспортируются по вашему выбору.',
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    initialValue: url,
-                    onChanged: (v) => url = v,
-                    decoration: const InputDecoration(
-                      labelText: 'Адрес Companion',
-                      hintText: 'https://…workers.dev',
-                    ),
-                  ),
-                  TextFormField(
-                    initialValue: token,
-                    onChanged: (v) => token = v,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'API-токен Companion',
-                    ),
-                  ),
-                  if (error != null)
-                    Text(
-                      error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () {
-                try {
-                  Navigator.pop(context, ObsidianConfig(url, token.trim()));
-                } catch (e) {
-                  update(() => error = '$e');
-                }
-              },
-              child: const Text('Подключить'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (config == null || !mounted) return;
-    try {
-      await storage.write(key: 'obsidian-library-token', value: config.token);
-      await widget.repository.setMeta('obsidian-library-url', config.url);
-      if (mounted) await obsidianLibrary.connect(config);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось сохранить подключение: $e')),
-        );
-      }
-    }
-  }
+  Future<void> _obsidianSettings() => Navigator.push<void>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => LibraryDataPage(library: obsidianLibrary),
+    ),
+  );
 
   Future<void> _addToObsidian(LibraryRecord book) async {
-    await obsidianLibrary.reload();
+    await obsidianLibrary.loadCached();
     if (!mounted) return;
-    final linked = obsidianLibrary.forBook(book.id);
+    final linked =
+        obsidianLibrary.forBook(book.id) ??
+        obsidianLibrary.sourceDraft(book.id);
+    if (linked != null &&
+        isLibraryArchiveItem(linked.item) &&
+        !isLibraryDeleted(linked.item) &&
+        (isFinishedLibraryItem(linked.item) ||
+            linked.item.values['pepehub_auto_discovered'] == false)) {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              LibraryWorkPage(library: obsidianLibrary, itemId: linked.item.id),
+        ),
+      );
+      return;
+    }
     if (linked != null && linked.state != 'removed') {
+      final editableItem = linked.item.withValues({
+        ...linked.item.values,
+        'status': 'finished',
+        'pepehub_deleted_at': null,
+        'pepehub_recommendation_only': false,
+      });
       await Navigator.push<void>(
         context,
         MaterialPageRoute(
           builder: (_) => LibraryMetadataEditor(
+            saveLabel: 'Добавить в библиотеку',
             coverResolver: obsidianLibrary.coverReferencePath,
             suggestions: obsidianLibrary.suggestions,
             collection: obsidianLibrary.collectionFor(linked.item),
@@ -1209,14 +1207,13 @@ class _LibraryPageState extends State<LibraryPage> {
             onSavePolicy: (policy) =>
                 obsidianLibrary.savePolicy(linked.item.id, policy),
             onPickCover: obsidianLibrary.chooseCover,
-            item: linked.item,
+            item: editableItem,
             entry: linked,
-            onSave: (values) => obsidianLibrary.save(
-              linked.item.id,
-              values,
+            onSave: (values) => obsidianLibrary.add(
+              linked.item.withValues(values),
+              book.id,
               original: linked.item.values,
             ),
-            onUseObsidian: () => obsidianLibrary.useObsidian(linked.item.id),
           ),
         ),
       );
@@ -1350,50 +1347,46 @@ class _LibraryPageState extends State<LibraryPage> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    PepeRoot.navigation = _navigation;
-    if (videoSection) {
-      return VideoLibraryPage(
-        repository: videoLibrary,
-        navigation: _navigation,
-        audio: widget.audio,
-      );
-    }
-    if (statisticsSection) {
-      return StatisticsHubPage(
-        repository: widget.repository,
-        audio: widget.audio,
-        navigation: _navigation,
-        onJournal: _journal,
-      );
-    }
-    if (recommendationsSection) {
-      return RecommendationsPage(
-        store: recommendations,
-        catalog: bookCatalog,
-        navigation: _navigation,
-        onCompleted: _archiveRecommendation,
-      );
-    }
-    if (metadataSection) {
-      return ObsidianLibraryPage(
-        service: obsidianLibrary,
-        navigation: _navigation,
-        onSettings: () => unawaited(_obsidianSettings()),
-      );
-    }
-    final liveCount = books
-        .where((b) => !deletedReadingBooks.contains(b.id) && !_remoteOnly(b))
-        .length;
+  List<Object?>? _visibleInputs;
+  List<LibraryRecord> _visibleCache = [];
+  Timer? _searchDebounce;
+  List<LibraryRecord> _visibleBooks() {
+    final inputs = <Object?>[
+      books,
+      roots,
+      selectedRoot,
+      reading,
+      statusFilter,
+      filter,
+      favoritesOnly,
+      collectionFilter,
+      query,
+      readingSort,
+      audioSort,
+      bookPrefs,
+      audioSummaries,
+      audioRecent,
+      audioSourcePaths,
+      readingSourcePaths,
+      readingPositions,
+      effectiveReadingInfo,
+      shelfSources,
+      deletedReadingBooks,
+      statusOverrides,
+    ];
+    if (listEquals(inputs, _visibleInputs)) return _visibleCache;
+    final rootIds = selectedRoot == null
+        ? null
+        : roots
+              .where((r) => r.key == selectedRoot)
+              .firstOrNull
+              ?.bookIds
+              .toSet();
+    final search = query.toLowerCase();
     final visible = books
         .where(
           (b) =>
-              (selectedRoot == null ||
-                  roots
-                      .firstWhere((r) => r.key == selectedRoot)
-                      .bookIds
-                      .contains(b.id)) &&
+              (rootIds == null || rootIds.contains(b.id)) &&
               (!reading ||
                   (statusFilter == 'deleted') ==
                       deletedReadingBooks.contains(b.id)) &&
@@ -1415,7 +1408,7 @@ class _LibraryPageState extends State<LibraryPage> {
                   )) &&
               ('${_title(b)} ${_authors(b)} ${reading ? _textInfo(b)['series'] ?? '' : ''}'
                   .toLowerCase()
-                  .contains(query.toLowerCase())),
+                  .contains(search)),
         )
         .toList();
     if (reading) {
@@ -1462,6 +1455,48 @@ class _LibraryPageState extends State<LibraryPage> {
         );
       });
     }
+    _visibleInputs = inputs;
+    return _visibleCache = visible;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    PepeRoot.navigation = _navigation;
+    if (videoSection) {
+      return VideoLibraryPage(
+        repository: videoLibrary,
+        navigation: _navigation,
+        audio: widget.audio,
+      );
+    }
+    if (statisticsSection) {
+      return StatisticsHubPage(
+        repository: widget.repository,
+        library: obsidianLibrary,
+        audio: widget.audio,
+        navigation: _navigation,
+        onJournal: _journal,
+      );
+    }
+    if (recommendationsSection) {
+      return RecommendationsPage(
+        store: recommendations,
+        catalog: bookCatalog,
+        navigation: _navigation,
+        onCompleted: _archiveRecommendation,
+      );
+    }
+    if (metadataSection) {
+      return ObsidianLibraryPage(
+        service: obsidianLibrary,
+        navigation: _navigation,
+        onSettings: () => unawaited(_obsidianSettings()),
+      );
+    }
+    final liveCount = books
+        .where((b) => !deletedReadingBooks.contains(b.id) && !_remoteOnly(b))
+        .length;
+    final visible = _visibleBooks();
     final heroCandidate =
         statusFilter == 'all' &&
             filter == 'all' &&
@@ -1596,8 +1631,10 @@ class _LibraryPageState extends State<LibraryPage> {
                     Navigator.push<void>(
                       context,
                       MaterialPageRoute(
-                        builder: (_) =>
-                            ReadingHiddenBooksPage(assets: widget.assets!),
+                        builder: (_) => ReadingHiddenBooksPage(
+                          assets: widget.assets!,
+                          audio: !reading,
+                        ),
                       ),
                     ).then((_) => _reload());
                   }
@@ -1618,10 +1655,12 @@ class _LibraryPageState extends State<LibraryPage> {
                       value: 'deleted',
                       child: Text('Удалённые книги'),
                     ),
-                  if (reading && widget.assets != null)
-                    const PopupMenuItem(
+                  if (widget.assets != null)
+                    PopupMenuItem(
                       value: 'hidden',
-                      child: Text('Убранные книги'),
+                      child: Text(
+                        reading ? 'Убранные книги' : 'Убранные аудиокниги',
+                      ),
                     ),
                   if (!reading)
                     const PopupMenuItem(
@@ -1795,7 +1834,17 @@ class _LibraryPageState extends State<LibraryPage> {
                         const SizedBox(height: 8),
                         if (showSearch)
                           TextField(
-                            onChanged: (v) => setState(() => query = v),
+                            onChanged: (v) {
+                              _searchDebounce?.cancel();
+                              _searchDebounce = Timer(
+                                const Duration(milliseconds: 200),
+                                () {
+                                  if (mounted && showSearch) {
+                                    setState(() => query = v);
+                                  }
+                                },
+                              );
+                            },
                             decoration: const InputDecoration(
                               hintText: 'Название или автор',
                               prefixIcon: Icon(Icons.search),
@@ -2000,7 +2049,7 @@ class _LibraryPageState extends State<LibraryPage> {
     }
     if (statusOverrides.containsKey(book.id)) return statusOverrides[book.id]!;
     final status = book.payload!['status'] as String;
-    if (status == 'finished') return status;
+    if (['finished', 'paused', 'abandoned'].contains(status)) return status;
     if (book.payload!['format'] != 'audio') {
       final progress = _fraction(book);
       return progress >= 1
@@ -2213,7 +2262,10 @@ class _LibraryPageState extends State<LibraryPage> {
         value == 'delete-book' ||
         value == 'reveal-book') {
       if (widget.assets == null) return;
-      final actions = ReadingBookActions(widget.assets!);
+      final audio = book.payload?['format'] == 'audio';
+      final actions = audio
+          ? AudioBookActions(widget.assets!)
+          : ReadingBookActions(widget.assets!);
       if (value == 'reveal-book') {
         await _action(() => actions.reveal(book.id));
         return;
@@ -2222,10 +2274,14 @@ class _LibraryPageState extends State<LibraryPage> {
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Удалить книгу навсегда?'),
+            title: Text(
+              audio ? 'Удалить файлы аудиокниги?' : 'Удалить книгу навсегда?',
+            ),
             content: SingleChildScrollView(
               child: Text(
-                '«${book.title}»\n\nЛокальный файл в подключённой папке, импортированная копия и кеш чтения будут удалены. Прогресс, заметки и статистика сохранятся.\n\nЕсли папка общая, удаление на другом устройстве потребует отдельного подтверждения.',
+                audio
+                    ? '«${book.title}»\n\nАудиофайлы этой книги будут удалены с устройства. Карточка в библиотеке, обложка, прогресс, заметки и история сохранятся. Для прослушивания файлы понадобится добавить заново.'
+                    : '«${book.title}»\n\nЛокальный файл в подключённой папке, импортированная копия и кеш чтения будут удалены. Прогресс, заметки и статистика сохранятся.\n\nЕсли папка общая, удаление на другом устройстве потребует отдельного подтверждения.',
               ),
             ),
             actions: [
@@ -2244,6 +2300,9 @@ class _LibraryPageState extends State<LibraryPage> {
       }
       final peer = PeerSyncScope.of(context);
       await _action(() async {
+        if (audio && widget.audio?.current?.bookId == book.id) {
+          await widget.audio!.stop();
+        }
         if (openReaderHashes.any(
           (hash) =>
               localAssets.any((a) => a.hash == hash && a.bookId == book.id),
@@ -2445,7 +2504,9 @@ class _LibraryPageState extends State<LibraryPage> {
                       Positioned.fill(
                         child: audio && widget.assets != null
                             ? AudioCover(
-                                key: ValueKey('${book.id}:$coverRevision'),
+                                key: ValueKey(
+                                  '${book.id}:${_coverVersions[book.id]}',
+                                ),
                                 assets: widget.assets!,
                                 bookId: book.id,
                               )
@@ -2586,8 +2647,18 @@ class _LibraryPageState extends State<LibraryPage> {
               'restore-deleted': 'Добавить файл заново',
             'obsidian':
                 obsidianLibrary.forBook(book.id) == null ||
-                    obsidianLibrary.forBook(book.id)!.state == 'removed'
+                    obsidianLibrary.forBook(book.id)!.state == 'removed' ||
+                    (!isFinishedLibraryItem(
+                          obsidianLibrary.forBook(book.id)!.item,
+                        ) &&
+                        obsidianLibrary
+                                .forBook(book.id)!
+                                .item
+                                .values['pepehub_auto_discovered'] !=
+                            false)
                 ? 'Добавить в библиотеку'
+                : isLibraryDeleted(obsidianLibrary.forBook(book.id)!.item)
+                ? 'Вернуть в библиотеку'
                 : libraryState(obsidianLibrary.forBook(book.id)!),
             if (!deleted &&
                 Platform.isAndroid &&
@@ -2619,9 +2690,15 @@ class _LibraryPageState extends State<LibraryPage> {
             },
             'planned': 'Отметить новой',
             'active': 'Отметить начатой',
+            'paused': 'Отложить',
+            'abandoned': 'Отметить брошенной',
             'finished': 'Отметить завершённой',
             'session': 'Записать сессию',
             if (audio) ...{
+              if (widget.assets != null) ...{
+                'hide-book': 'Убрать из списка',
+                if (asset != null) 'delete-book': 'Удалить файлы аудиокниги…',
+              },
               'folder': 'Переименовать / переместить папку',
               'reconnect': 'Указать папку заново',
             },
@@ -2645,27 +2722,49 @@ class _LibraryPageState extends State<LibraryPage> {
     String recency(LibraryRecord b) => reading
         ? '${_textPosition(b)['updatedAt'] ?? ''}'
         : audioRecent[b.id]?.toIso8601String() ?? '';
-    active.sort((a, b) => recency(b).compareTo(recency(a)));
-    return active.first;
+    return active.reduce(
+      (a, b) => recency(a).compareTo(recency(b)) >= 0 ? a : b,
+    );
+  }
+
+  List<Object?>? _countInputs;
+  Map<String, int> _counts = {};
+  Map<String, int> _statusCounts() {
+    final inputs = <Object?>[
+      books,
+      reading,
+      deletedReadingBooks,
+      shelfSources,
+      statusOverrides,
+      readingPrefs,
+    ];
+    if (listEquals(inputs, _countInputs)) return _counts;
+    final counts = <String, int>{};
+    void add(String key) => counts[key] = (counts[key] ?? 0) + 1;
+    for (final book in books) {
+      if (deletedReadingBooks.contains(book.id)) {
+        add('deleted');
+      } else if (_remoteOnly(book)) {
+        add('remote');
+      } else {
+        add('all');
+        add(_status(book));
+      }
+    }
+    _countInputs = inputs;
+    return _counts = counts;
   }
 
   Widget _statusTabs() {
     final colors = PepeColors.of(context);
-    int count(String key) => books
-        .where(
-          (b) => key == 'deleted'
-              ? deletedReadingBooks.contains(b.id)
-              : key == 'remote'
-              ? _remoteOnly(b) && !deletedReadingBooks.contains(b.id)
-              : !_remoteOnly(b) &&
-                    !deletedReadingBooks.contains(b.id) &&
-                    (key == 'all' || _status(b) == key),
-        )
-        .length;
+    final counts = _statusCounts();
+    int count(String key) => counts[key] ?? 0;
     final labels = {
       'all': 'Все',
       'active': reading ? 'Читаю' : 'Слушаю',
       'planned': 'В планах',
+      'paused': 'Отложены',
+      'abandoned': 'Брошены',
       'finished': reading ? 'Прочитано' : 'Прослушано',
       if (reading) 'remote': 'Без файла',
       if (reading) 'deleted': 'Удалённые',
@@ -2748,7 +2847,7 @@ class _LibraryPageState extends State<LibraryPage> {
         borderRadius: BorderRadius.circular(8),
         child: audio && widget.assets != null
             ? AudioCover(
-                key: ValueKey('hero:${book.id}:$coverRevision'),
+                key: ValueKey('hero:${book.id}:${_coverVersions[book.id]}'),
                 assets: widget.assets!,
                 bookId: book.id,
               )
@@ -2916,7 +3015,9 @@ class _LibraryPageState extends State<LibraryPage> {
                 children: [
                   audio && widget.assets != null
                       ? AudioCover(
-                          key: ValueKey('tile:${book.id}:$coverRevision'),
+                          key: ValueKey(
+                            'tile:${book.id}:${_coverVersions[book.id]}',
+                          ),
                           assets: widget.assets!,
                           bookId: book.id,
                         )

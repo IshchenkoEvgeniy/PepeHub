@@ -35,7 +35,7 @@ List<LibraryEntry> fixtures() => [
       'Фрэнк Герберт',
       'Хроники Дюны',
       'book',
-      'Чтение',
+      'paused',
       180,
       600,
     ],
@@ -55,11 +55,11 @@ List<LibraryEntry> fixtures() => [
       'Жюль Верн',
       'Путешествия',
       'book',
-      'planned',
+      'abandoned',
       0,
       500,
     ],
-    ['unknown', 'Новая запись', 'Автор', '', 'book', '', null, null],
+    ['unknown', 'Новая запись', 'Автор', '', 'book', 'paused', null, null],
   ])
     LibraryEntry(
       ObsidianLibraryItem(
@@ -114,6 +114,14 @@ void main() {
         addTearDown(service.dispose);
         final key = GlobalKey();
         await tester.runAsync(() async {
+          for (final name in ['Onest', 'Oswald', 'CormorantGaramond']) {
+            await (FontLoader(name)..addFont(
+                  File('assets/fonts/$name.ttf')
+                      .readAsBytes()
+                      .then(ByteData.sublistView),
+                ))
+                .load();
+          }
           await (FontLoader('Manrope')..addFont(
                 File('assets/fonts/Manrope.ttf')
                     .readAsBytes()
@@ -154,8 +162,8 @@ void main() {
         expect(service.completed.length, 1);
         expect(service.inbox.length, 3);
         expect(find.text('В планах'), findsNothing);
-        expect(find.byType(Badge), findsOneWidget);
-        expect(find.text('Задать цель'), findsOneWidget);
+        expect(find.byType(Badge), findsNothing);
+        expect(find.textContaining('Итоги и цель'), findsOneWidget);
         expect(tester.takeException(), isNull);
         if (width != 1100 && scale == 1) {
           await tester.runAsync(() async {
@@ -177,7 +185,19 @@ void main() {
         await tester.enterText(query, 'Жюль');
         await tester.pumpAndSettle();
         expect(find.text('Дюна'), findsNothing);
-        expect(find.text('Показано 1 из 1'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('library-work:ocean')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('library-work:island')),
+          findsOneWidget,
+        );
+        await tester.tap(find.byTooltip('Фильтры библиотеки'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('library-search-scope:all')),
+        );
         await tester.tap(
           find.byKey(const ValueKey('library-search-scope:all')),
         );
@@ -197,17 +217,28 @@ void main() {
         await tester.pumpAndSettle();
         await tester.enterText(query, 'Путешествия');
         await tester.pumpAndSettle();
-        expect(find.text('Показано 1 из 1'), findsOneWidget);
-        // Covers are the default view; the list can be switched on and off.
-        expect(find.byType(GridView), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('library-work:ocean')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('library-work:island')),
+          findsOneWidget,
+        );
+        // The archive starts with a lazy list; covers are an optional view.
+        expect(find.byType(SliverGrid), findsNothing);
+        await tester.ensureVisible(find.byTooltip('Показать карточками'));
+        await tester.tap(find.byTooltip('Показать карточками'));
+        await tester.pumpAndSettle();
+        expect(find.byType(SliverGrid), findsOneWidget);
         await tester.ensureVisible(find.byTooltip('Показать списком'));
         await tester.pumpAndSettle();
         await tester.tap(find.byTooltip('Показать списком'));
         await tester.pumpAndSettle();
-        expect(find.byType(GridView), findsNothing);
+        expect(find.byType(SliverGrid), findsNothing);
         await tester.tap(find.byTooltip('Показать карточками'));
         await tester.pumpAndSettle();
-        expect(find.byType(GridView), findsOneWidget);
+        expect(find.byType(SliverGrid), findsOneWidget);
         expect(requests, 0);
         expect(await service.repository.entries(), isEmpty);
         expect(tester.takeException(), isNull);

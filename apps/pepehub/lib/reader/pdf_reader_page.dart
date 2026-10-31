@@ -75,7 +75,21 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   Timer? indexDelay;
   ReadingActivity? activity;
   ReaderPreferences preferences = const ReaderPreferences(mode: 'scroll');
-  List<ReadingNote> notes = [];
+  List<ReadingNote> _pageNotes = [];
+  final notesByPage = <int, List<ReadingNote>>{};
+  List<ReadingNote> get notes => _pageNotes;
+  set notes(List<ReadingNote> value) {
+    _pageNotes = value;
+    notesByPage.clear();
+    for (final note in value) {
+      if (note.end > note.start) {
+        (notesByPage[note.chapter + 1] ??= []).add(note);
+      }
+    }
+  }
+
+  Timer? positionDelay;
+  String? _lastQueuedPosition;
   List<PdfOutlineNode> outline = [];
   final history = <int>[];
   final glyphs = <int, PdfPageText>{};
@@ -140,9 +154,12 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         : (await library.bookInfo(card, widget.asset.hash))['title'] as String?;
     // Opening must not materialize the text and glyphs of every page.
     textIndex = await library.value('reading-index:${widget.asset.hash}');
-    await library.update('reading-index:${widget.asset.hash}', {
-      'pdfPages': count,
-    });
+    if (textIndex['pdfPages'] != count) {
+      await library.update('reading-index:${widget.asset.hash}', {
+        'pdfPages': count,
+      });
+      textIndex['pdfPages'] = count;
+    }
     final view = await library.value('pdf-view:${widget.asset.hash}');
     cropMargins = view['cropMargins'] == true;
     axisLocked = view['locked'] == true;
@@ -227,6 +244,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
       activity?.resume();
       _prepareIndex();
     } else {
+      if (ready) unawaited(_save());
       activity?.pause('background');
     }
   }
@@ -256,6 +274,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
 
   @override
   void dispose() {
+    positionDelay?.cancel();
+    final savedPosition = ready ? _save() : writes;
     indexDelay?.cancel();
     imageRegions.close();
     readerRoutes.unsubscribe(this);
@@ -263,10 +283,11 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     if (fullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
-    Future.wait<void>([writes, if (activity != null) activity!.close()]).then(
-      (_) => _releaseSync?.call(),
-      onError: (Object _, StackTrace _) => _releaseSync?.call(),
-    );
+    Future.wait<void>([savedPosition, if (activity != null) activity!.close()])
+        .then(
+          (_) => _releaseSync?.call(),
+          onError: (Object _, StackTrace _) => _releaseSync?.call(),
+        );
     // Wait for text extraction before releasing the native document.
     initial
         .then<void>((_) {}, onError: (Object _, StackTrace _) {})
@@ -277,12 +298,20 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   }
 
   Future<void> _save() {
+    positionDelay?.cancel();
+    positionDelay = null;
     final value = page;
-    final json = jsonEncode({
+    final snapshot = <String, dynamic>{
       'chapter': value - 1,
       'textOffset': finished ? _lastLength : 0,
       'pdfFinished': finished,
       'pdfHistory': history.toList(),
+    };
+    final signature = jsonEncode(snapshot);
+    if (signature == _lastQueuedPosition) return writes;
+    _lastQueuedPosition = signature;
+    final json = jsonEncode({
+      ...snapshot,
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     });
     writes = writes
@@ -296,6 +325,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
           }),
         )
         .catchError((Object e) {
+          _lastQueuedPosition = null;
           if (mounted) setState(() => saveError = 'Позиция не сохранена: $e');
         });
     return writes;
@@ -308,13 +338,15 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         _absolute(value),
         jump: (value - page).abs() != 1,
         chapterEnded: value == page + 1,
+        deferCheckpoint: true,
       );
     }
     setState(() {
       page = value;
       finished = false;
     });
-    _save();
+    positionDelay?.cancel();
+    positionDelay = Timer(const Duration(seconds: 1), () => unawaited(_save()));
     if (cropMargins &&
         !axisLocked &&
         !navigating &&
@@ -858,7 +890,17 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     );
   }
 
+  void _trimGlyphs() {
+    if (!ready || glyphs.length <= 8) return;
+    final visible = controller.visibleRect;
+    trimPdfGlyphCache(glyphs, {
+      for (final n in glyphs.keys)
+        if (controller.layout.pageLayouts[n - 1].overlaps(visible)) n,
+    });
+  }
+
   void _paint(Canvas canvas, Rect rect, PdfPage pdfPage) {
+    _trimGlyphs();
     if (darkPages) {
       // Undo the page inversion over photos and illustrations.
       final regions = imageRegions.regions(pdfPage.pageNumber, () {
@@ -866,10 +908,9 @@ class _PdfReaderPageState extends State<PdfReaderPage>
       });
       if (regions != null) PdfImageRegions.restore(canvas, rect, regions);
     }
-    final relevant =
-        (preferences.showHighlights ? notes : const <ReadingNote>[]).where(
-          (n) => n.chapter == pdfPage.pageNumber - 1 && n.end > n.start,
-        );
+    final relevant = preferences.showHighlights
+        ? notesByPage[pdfPage.pageNumber] ?? const <ReadingNote>[]
+        : const <ReadingNote>[];
     final hit = highlighted?.page == pdfPage.pageNumber ? highlighted : null;
     if (relevant.isEmpty && hit == null) return;
     final text = glyphs[pdfPage.pageNumber];
@@ -879,8 +920,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
             .loadStructuredText()
             .then((value) {
               if (!mounted) return;
-              if (glyphs.length >= 8) glyphs.remove(glyphs.keys.first);
               glyphs[pdfPage.pageNumber] = value;
+              _trimGlyphs();
               controller.invalidate();
             })
             .catchError((Object e) {

@@ -8,7 +8,9 @@ import '../audio/audio_journal.dart';
 import '../media/asset_store.dart';
 import 'activity_store.dart';
 import 'library_repository.dart';
+import 'personal_library.dart';
 import 'models.dart';
+import 'library_features.dart';
 
 bool validNoteValue(dynamic v) {
   if (v is! Map) return false;
@@ -213,13 +215,21 @@ class NoteStore extends ActivityStore {
     final links =
         (await (catalog ?? LibraryRepository(local, namespace)).entries())
             .values
-            .where((e) => e.state == 'synced' && e.sourceBookId != null);
+            .where(
+              (e) =>
+                  e.state == 'synced' &&
+                  e.sourceBookId != null &&
+                  (catalog == null || isLibraryArchiveItem(e.item)) &&
+                  !isLibraryDeleted(e.item),
+            );
     final byBook = {for (final e in links) e.sourceBookId!: e.item};
     await mutate((state) async {
       final slots = state['slots'] as Map<String, dynamic>;
       // Materialize notes first when a file was linked after its remote notes arrived.
       for (final slot in slots.values.toList()) {
-        if (slot['source'] == null && slot['conflict'] == null) {
+        if (slot['source'] == null &&
+            slot['conflict'] == null &&
+            slot['portable'] != true) {
           await _apply(slot, Map<String, dynamic>.from(slot['value']));
         }
       }

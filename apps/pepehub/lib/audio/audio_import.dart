@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
@@ -7,18 +8,35 @@ import 'package:file_selector/file_selector.dart';
 import 'package:path/path.dart' as p;
 
 import '../data/repository.dart';
+import '../media/verified_stream_copy.dart';
 import '../reader/book_formats.dart';
 import 'audio_folder.dart';
 
+final _naturalPattern = RegExp(r'\d+|\D+');
+Future<String> _hashLocalAudio(String path) => Isolate.run(
+  () async => (await sha256.bind(File(path).openRead()).first).toString(),
+);
+final _naturalKeys = <String, List<({String text, BigInt? number})>>{};
+List<({String text, BigInt? number})> _naturalKey(String value) {
+  final key = value.toLowerCase();
+  final cached = _naturalKeys[key];
+  if (cached != null) return cached;
+  final result = [
+    for (final m in _naturalPattern.allMatches(key))
+      (text: m[0]!, number: BigInt.tryParse(m[0]!)),
+  ];
+  if (_naturalKeys.length >= 8192) _naturalKeys.remove(_naturalKeys.keys.first);
+  _naturalKeys[key] = result;
+  return result;
+}
+
 int naturalAudioOrder(String a, String b) {
-  final pattern = RegExp(r'\d+|\D+');
-  final left = pattern.allMatches(a.toLowerCase()).map((m) => m[0]!).toList();
-  final right = pattern.allMatches(b.toLowerCase()).map((m) => m[0]!).toList();
+  final left = _naturalKey(a), right = _naturalKey(b);
   for (var i = 0; i < left.length && i < right.length; i++) {
-    final x = BigInt.tryParse(left[i]), y = BigInt.tryParse(right[i]);
-    final order = x != null && y != null
-        ? x.compareTo(y)
-        : left[i].compareTo(right[i]);
+    final x = left[i], y = right[i];
+    final order = x.number != null && y.number != null
+        ? x.number!.compareTo(y.number!)
+        : x.text.compareTo(y.text);
     if (order != 0) return order;
   }
   final order = left.length.compareTo(right.length);
@@ -35,14 +53,6 @@ class AudioImportControl {
   void check() {
     if (cancelled) throw ImportCancelled();
   }
-}
-
-class _DigestSink implements Sink<Digest> {
-  Digest? value;
-  @override
-  void add(Digest data) => value = data;
-  @override
-  void close() {}
 }
 
 bool validAudioHeader(String extension, List<int> bytes) {
@@ -114,34 +124,30 @@ class AudioImportService {
       staging = await Directory(p.join(directory.path, '.imports', uuid.v4()))
           .create(recursive: true);
       final staged = <_StagedAudio>[];
-      var copied = 0;
+      var copied = 0, lastReport = -100, reported = -1;
+      final progressClock = Stopwatch()..start();
+      void report(int done) {
+        if (done != reported &&
+            (progressClock.elapsedMilliseconds - lastReport >= 100 ||
+                done == total)) {
+          lastReport = progressClock.elapsedMilliseconds;
+          reported = done;
+          onProgress?.call(done, total);
+        }
+      }
+
       for (var index = 0; index < files.length; index++) {
         final selected = files[index];
         final temporary = File(p.join(staging.path, '$index.part'));
-        final digest = _DigestSink(), header = <int>[];
-        final hasher = sha256.startChunkedConversion(digest);
-        final sink = temporary.openWrite();
-        var count = 0;
-        try {
-          await for (final chunk in selected.openRead()) {
-            control?.check();
-            count += chunk.length;
-            if (count > sizes[index]) {
-              throw StateError('Файл изменился: ${selected.name}');
-            }
-            if (header.length < 12) {
-              header.addAll(chunk.take(12 - header.length));
-            }
-            hasher.add(chunk);
-            sink.add(chunk);
-            await sink.flush();
-            copied += chunk.length;
-            onProgress?.call(copied, total);
-          }
-        } finally {
-          await sink.close();
-          hasher.close();
-        }
+        final copiedFile = await copyVerifiedStream(
+          selected.openRead(),
+          temporary,
+          expectedBytes: sizes[index],
+          check: control?.check,
+          onProgress: (count) => report(copied + count),
+        );
+        final count = copiedFile.bytes, header = copiedFile.header;
+        copied += count;
         final extension = p.extension(selected.name).toLowerCase();
         if (count != sizes[index] || !validAudioHeader(extension, header)) {
           throw ArgumentError(
@@ -153,7 +159,7 @@ class AudioImportService {
             selected is FolderAudioFile
                 ? selected.name
                 : p.basename(selected.name),
-            digest.value!.toString(),
+            copiedFile.hash,
             extension,
             count,
             temporary,
@@ -181,15 +187,13 @@ class AudioImportService {
               p.join(directory.path, '${entry.hash}${entry.extension}'),
         );
         if (await target.exists()) {
-          final actual = await sha256
-              .bind(
-                target.openRead().map((chunk) {
-                  control?.check();
-                  return chunk;
-                }),
-              )
-              .first;
-          if (actual.toString() != entry.hash) {
+          if (await target.length() != entry.bytes) {
+            throw StateError('Повреждена локальная копия: ${entry.name}');
+          }
+          final targetPath = target.path;
+          final actual = await _hashLocalAudio(targetPath);
+          control?.check();
+          if (actual != entry.hash) {
             throw StateError('Повреждена локальная копия: ${entry.name}');
           }
         } else {

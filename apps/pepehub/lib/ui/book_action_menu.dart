@@ -23,14 +23,16 @@ class BookMenuAction {
 
 const bookMenuActions = [
   BookMenuAction('details', 'Карточка книги', BookActionGroup.library),
+  BookMenuAction('obsidian', 'Добавить в библиотеку', BookActionGroup.library),
   BookMenuAction('favorite', 'В избранное', BookActionGroup.library),
   BookMenuAction('collections', 'Коллекции книги', BookActionGroup.library),
   BookMenuAction('reading-plan', 'План чтения', BookActionGroup.progress),
   BookMenuAction('planned', 'Отметить новой', BookActionGroup.progress),
   BookMenuAction('active', 'Отметить начатой', BookActionGroup.progress),
+  BookMenuAction('paused', 'Отложить', BookActionGroup.progress),
+  BookMenuAction('abandoned', 'Отметить брошенной', BookActionGroup.progress),
   BookMenuAction('finished', 'Отметить завершённой', BookActionGroup.progress),
   BookMenuAction('session', 'Записать сессию', BookActionGroup.progress),
-  BookMenuAction('obsidian', 'Добавить в библиотеку', BookActionGroup.files),
   BookMenuAction('share', 'Поделиться файлом книги', BookActionGroup.files),
   BookMenuAction('source', 'Источник и файл', BookActionGroup.files),
   BookMenuAction('reveal-book', 'Показать папку файла', BookActionGroup.files),

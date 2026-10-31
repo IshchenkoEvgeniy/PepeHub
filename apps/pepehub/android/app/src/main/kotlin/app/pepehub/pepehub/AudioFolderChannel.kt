@@ -32,6 +32,7 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
     private var pendingWriteRoot: Uri? = null
     private val bookAccess = BookFileAccess(context)
     private var exportText: String? = null
+    private var exportFile: java.io.File? = null
     @Volatile private var disposed = false
     private val extensions = setOf("mp3", "m4a", "m4b", "aac", "ogg", "opus", "flac", "wav")
 
@@ -54,16 +55,23 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
             } else if (call.method == "exportStatistics") {
                 if (pending != null) result.error("busy", "Закройте текущий выбор файла", null)
                 else try {
-                    val text = call.argument<String>("text") ?: error("Нет данных")
-                    check(text.toByteArray(Charsets.UTF_8).size <= 16 * 1024 * 1024) { "Экспорт больше 16 МиБ. Выберите меньший период." }
+                    val text = call.argument<String>("text")
+                    val path = call.argument<String>("path")
+                    val file = path?.let { java.io.File(it).canonicalFile }
+                    if (file != null) {
+                        check(file.path.startsWith(context.cacheDir.canonicalPath + java.io.File.separator) && file.isFile && file.length() <= 128L * 1024 * 1024) { "Недопустимый файл экспорта" }
+                    } else {
+                        check(text != null && text.toByteArray(Charsets.UTF_8).size <= 16 * 1024 * 1024) { "Нет данных или экспорт больше 16 МиБ" }
+                    }
                     pending = result
                     exportText = text
+                    exportFile = file
                     (owner.get() ?: error("Откройте приложение")).startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                         addCategory(Intent.CATEGORY_OPENABLE)
                         type = call.argument<String>("mime") ?: "application/json"
                         putExtra(Intent.EXTRA_TITLE, call.argument<String>("name") ?: "statistics.json")
                     }, 4713)
-                } catch (e: Exception) { pending = null; exportText = null; result.error("export", e.message, null) }
+                } catch (e: Exception) { pending = null; exportText = null; exportFile = null; result.error("export", e.message, null) }
             } else if (call.method == "pick") {
                 if (pending != null) {
                     result.error("busy", "Выбор папки уже открыт", null)
@@ -89,7 +97,7 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
                     pending = result
                     onActivityResult(4712, Activity.RESULT_OK, Intent().setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or (if (permission.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)))
                 }
-            } else if (call.method in listOf("deleteBookFile", "supportFiles", "open", "read", "close", "exists", "snapshot", "cover", "artwork", "metadata", "readRange", "journal", "readingJournal", "report", "relocate")) {
+            } else if (call.method in listOf("deleteBookFile", "supportFiles", "open", "read", "close", "exists", "snapshot", "cover", "artwork", "metadata", "readRange", "journal", "readingJournal", "report", "relocate", "pdfPreview")) {
                 work(result, if (call.method == "exists") playbackChecks else worker) {
                     when (call.method) {
                         "deleteBookFile" -> {
@@ -196,6 +204,10 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
                                 values
                             } finally { retriever.release() }
                         }
+                        "pdfPreview" -> PdfPreview.render(context,
+                            Uri.parse(call.argument<String>("uri") ?: error("Нет URI")),
+                            call.argument<Number>("bytes")?.toLong() ?: error("Нет размера PDF"),
+                            call.argument<String>("hash") ?: error("Нет хеша PDF"))
                         "artwork" -> {
                             val source = Uri.parse(call.argument<String>("uri") ?: error("Нет URI"))
                             var id = Docs.getDocumentId(source).substringBeforeLast('/', "")
@@ -451,12 +463,19 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
         if (request == 4713) {
             val result = pending ?: return true
             val text = exportText
+            val file = exportFile
+            exportFile = null
             pending = null
             exportText = null
             val uri = data?.data
-            if (code != Activity.RESULT_OK || uri == null || text == null) result.success(false)
+            if (code != Activity.RESULT_OK || uri == null || (text == null && file == null)) result.success(false)
             else work(result) {
-                (context.contentResolver.openOutputStream(uri, "wt") ?: error("Не удалось открыть экспорт")).use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                (context.contentResolver.openOutputStream(uri, "wt") ?: error("Не удалось открыть экспорт")).use { output ->
+                    if (file != null) {
+                        check(file.canonicalPath.startsWith(context.cacheDir.canonicalPath + java.io.File.separator) && file.length() <= 128L * 1024 * 1024) { "Файл экспорта изменился" }
+                        file.inputStream().use { it.copyTo(output) }
+                    } else output.write(text!!.toByteArray(Charsets.UTF_8))
+                }
                 true
             }
             return true

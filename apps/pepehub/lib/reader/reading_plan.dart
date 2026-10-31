@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:drift/drift.dart';
@@ -6,6 +7,27 @@ import 'package:drift/drift.dart';
 import '../data/repository.dart';
 import 'reading_activity.dart';
 import 'reading_library.dart';
+import 'reading_statistics_data.dart' show prepareReadingSessions;
+
+Future<({ReadingForecast forecast, ReadingTotals totals})> analyzeReadingPlan(
+  ReadingPlanData data,
+  String bookId,
+  DateTime now,
+) => Isolate.run(() {
+  final sessions = prepareReadingSessions(data.sessions);
+  return (
+    forecast: forecastReading(
+      plan: data.saved ?? const ReadingPlan(),
+      bookId: bookId,
+      hash: data.hash,
+      length: data.length,
+      coverage: data.coverage,
+      sessions: sessions,
+      now: now,
+    ),
+    totals: readingTotals(sessions, bookId: bookId),
+  );
+});
 
 class ReadingPlan {
   final int dailyMinutes, targetPercent;
@@ -197,7 +219,7 @@ class ReadingPlans {
     final hash = asset?.read<String>('sha256');
     final index = hash == null
         ? <String, dynamic>{}
-        : await library.value('reading-index:$hash');
+        : await library.shelfInfo(hash);
     final info = await library.bookInfo(book, hash);
     final raw = await repository.meta('reading-plan:$bookId');
     final ranges = hash == null
@@ -214,8 +236,7 @@ class ReadingPlans {
         for (final r in ranges['ranges'] as List? ?? [])
           [(r[0] as num).toInt(), (r[1] as num).toInt()],
       ],
-      sessions: (await library.entries('reading-session:')).values
-          .where((s) => s['bookId'] == bookId)
+      sessions: (await library.statisticsSessions(bookId: bookId)).values
           .toList(),
     );
   }

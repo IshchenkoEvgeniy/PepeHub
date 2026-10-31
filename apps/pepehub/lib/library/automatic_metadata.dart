@@ -15,6 +15,7 @@ import 'library_mapper.dart';
 import 'library_repository.dart';
 import 'models.dart';
 import 'metadata_values.dart';
+import 'library_features.dart';
 
 /// Reads actual source data. Missing duration/pages stay unknown rather than zero.
 class AutomaticMetadata {
@@ -25,8 +26,9 @@ class AutomaticMetadata {
 
   Future<Map<String, dynamic>> _cachedDetails(
     LibraryRecord book,
-    String namespace,
-  ) async {
+    String namespace, {
+    bool localOnly = false,
+  }) async {
     final revision =
         (await local.db
                 .customSelect(
@@ -46,7 +48,7 @@ class AutomaticMetadata {
         DateTime.now().difference(captured) < const Duration(minutes: 10)) {
       return Map<String, dynamic>.from(cached['details'] as Map);
     }
-    final result = await details(book);
+    final result = await details(book, probeFiles: !localOnly);
     final exported = Map<String, dynamic>.from(result)
       ..removeWhere(
         (key, _) => [
@@ -70,11 +72,14 @@ class AutomaticMetadata {
     return result;
   }
 
-  Future<Map<String, dynamic>> details(LibraryRecord book) async {
+  Future<Map<String, dynamic>> details(
+    LibraryRecord book, {
+    bool probeFiles = true,
+  }) async {
     final reading = ReadingLibrary(local);
     final audio = book.payload?['format'] == 'audio';
     final files = audio
-        ? await assets.audioTracks(book.id)
+        ? await assets.audioTracks(book.id, firstOnly: !probeFiles)
         : [
             for (final row
                 in await local.db
@@ -94,7 +99,8 @@ class AutomaticMetadata {
       final trackRows = await local.db
           .customSelect(
             'SELECT t.id,t.duration_ms,NOT EXISTS(SELECT 1 FROM audio_tracks later WHERE later.edition_id=t.edition_id AND later.ordinal>t.ordinal) AS is_last '
-            'FROM audio_tracks t JOIN audio_editions e ON e.id=t.edition_id WHERE e.book_id=?',
+            'FROM audio_tracks t JOIN audio_editions e ON e.id=t.edition_id WHERE e.book_id=? '
+            '${probeFiles ? '' : 'AND NOT EXISTS(SELECT 1 FROM audio_tracks later WHERE later.edition_id=t.edition_id AND later.ordinal>t.ordinal)'}',
             variables: [Variable(book.id)],
           )
           .get();
@@ -110,7 +116,7 @@ class AutomaticMetadata {
       for (final track in files) {
         final key = 'audio-metadata:${track.hash}';
         var meta = await reading.value(key);
-        if (meta.isEmpty) {
+        if (meta.isEmpty && probeFiles) {
           try {
             meta = Map<String, dynamic>.from(
               await const MethodChannel('app.pepehub/audio_folder')
@@ -129,7 +135,8 @@ class AutomaticMetadata {
           }
         }
         final duration = meta['durationMs'];
-        if (duration is num &&
+        if (probeFiles &&
+            duration is num &&
             duration > 0 &&
             knownDurations[track.id] != duration.toInt()) {
           await AudioLibraryRepository(local.db)
@@ -172,7 +179,14 @@ class AutomaticMetadata {
       result['listenedMinutes'] = summary?.position == null
           ? null
           : summary!.position! / 60000;
-      final cover = await ArtworkStore(assets).load(book.id);
+      final savedCover = !probeFiles
+          ? await local.meta('audio-cover:${book.id}')
+          : null;
+      final cover = probeFiles
+          ? await ArtworkStore(assets).load(book.id)
+          : savedCover == null
+          ? null
+          : Uri.file(savedCover);
       if (cover?.scheme == 'file') result['cover'] = File.fromUri(cover!).path;
       result['unit'] = 'minutes';
       explicitStatus = await local.meta('audio-status-override:${book.id}');
@@ -181,7 +195,7 @@ class AutomaticMetadata {
       }
     } else {
       final asset = files.firstOrNull;
-      if (asset != null) await reading.index(assets, asset);
+      if (asset != null && probeFiles) await reading.index(assets, asset);
       result = await reading.bookInfo(book, asset?.hash);
       explicitStatus =
           ((await reading.value('reading-book:${book.id}'))['overrides']
@@ -365,105 +379,179 @@ class AutomaticMetadata {
     LibraryRepository repo,
     Map<String, dynamic> snapshot, {
     bool localOnly = false,
+    bool Function()? cancelled,
+    Future<void> Function()? onProgress,
+    void Function(Object)? onError,
   }) async {
-    for (final entry in (await repo.entries()).values) {
-      if (entry.sourceBookId == null || entry.state != 'synced') continue;
-      final book = await local.record(entry.sourceBookId!);
-      if (book == null || book.deleted) continue;
-      final policy = await ReadingLibrary(local)
-          .value('obsidian-policy:${repo.namespace}:${entry.item.id}');
-      final source = matchLibraryProgress(
-        await _cachedDetails(book, repo.namespace),
-        entry.item,
-      );
-      final generated = LibraryMapper.fromBook(
-        book,
-        {
-          ...snapshot,
-          'fields': entry.item.fields.map((f) => f.toJson()).toList(),
-          'collections': (snapshot['collections'] as List)
-              .where((c) => (c as Map)['id'] == entry.item.collectionId)
-              .toList(),
-        },
-        source,
-        entry.item.id,
-      );
-      final baselineKey = 'obsidian-auto:${repo.namespace}:${entry.item.id}';
-      final baseline = await ReadingLibrary(local).value(baselineKey);
-      final changes = <String, dynamic>{};
-      for (final field in generated.values.entries) {
-        if (field.key == 'pepehub_time_from_journal') continue;
-        final semantic =
-            generated.fields
-                .where((f) => f.key == field.key)
-                .firstOrNull
-                ?.field ??
-            field.key;
-        if (policy[semantic] == 'obsidian') continue;
-        if (field.value == null ||
-            field.value == '' ||
-            (field.value is List && (field.value as List).isEmpty)) {
-          continue;
-        }
-        final current = entry.item.values[field.key];
-        if (localOnly &&
-            semantic == 'status' &&
-            canonicalLibraryStatus(current) == 'finished' &&
-            canonicalLibraryStatus(field.value) != 'finished') {
-          continue;
-        }
-        if (policy[semantic] == 'local' ||
-            (localOnly &&
-                semantic == 'status' &&
-                canonicalLibraryStatus(field.value) == 'finished') ||
-            current == null ||
-            current == '' ||
-            (current == 0 &&
-                !baseline.containsKey(field.key) &&
-                generated.fields.any(
-                  (f) => f.key == field.key && f.field == 'progress',
-                )) ||
-            (baseline.containsKey(field.key) &&
-                sameMetadataValue(current, baseline[field.key]))) {
-          if (!sameMetadataValue(current, field.value)) {
-            changes[field.key] = field.value;
+    final revisions = localOnly
+        ? {
+            for (final row
+                in await local.db
+                    .customSelect(
+                      'SELECT book_id,revision FROM library_source_revisions_v1',
+                    )
+                    .get())
+              row.read<String>('book_id'): row.read<int>('revision'),
           }
-          baseline[field.key] = field.value;
-        }
-      }
-      if (generated.fields.any(
-        (f) => f.field == 'readingTime' && changes.containsKey(f.key),
-      )) {
-        changes['pepehub_time_from_journal'] = true;
-      }
+        : <String, int>{};
+    final pending =
+        <
+          ({
+            LibraryEntry before,
+            Map<String, dynamic> changes,
+            String baselineKey,
+            Map<String, dynamic> baseline,
+          })
+        >[];
+    Future<void> flush() async {
+      if (pending.isEmpty || cancelled?.call() == true) return;
       await repo.mutate((entries) async {
-        final live = entries[entry.item.id];
-        if (live?.state != 'synced' ||
-            !sameMetadataValue(live!.item.values, entry.item.values)) {
-          return;
-        }
-        if (changes.isNotEmpty) {
-          entries[entry.item.id] = LibraryEntry(
-            entry.item.withValues({...entry.item.values, ...changes}),
-            sourceBookId: entry.sourceBookId,
-            state: localOnly ? 'synced' : 'pending',
-            operation: localOnly
-                ? null
-                : {
-                    'operationId': uuid.v4(),
-                    'itemId': entry.item.id,
-                    'action': 'update',
-                    'collectionId': entry.item.collectionId,
-                    'mediaType': entry.item.mediaType,
-                    'base': {
-                      for (final k in changes.keys) k: entry.item.values[k],
-                    },
-                    'values': changes,
-                  },
+        for (final change in pending) {
+          final live = entries[change.before.item.id];
+          if (live?.state != 'synced' ||
+              !sameMetadataValue(
+                live!.item.values,
+                change.before.item.values,
+              )) {
+            continue;
+          }
+          entries[live.item.id] = LibraryEntry(
+            live.item.withValues({...live.item.values, ...change.changes}),
+            sourceBookId: live.sourceBookId,
           );
+          await local.setMeta(change.baselineKey, jsonEncode(change.baseline));
         }
-        await local.setMeta(baselineKey, jsonEncode(baseline));
       });
+      pending.clear();
+      await onProgress?.call();
     }
+
+    for (final entry in (await repo.entries()).values) {
+      if (cancelled?.call() == true) return;
+      try {
+        if (localOnly && !isLibraryArchiveItem(entry.item)) continue;
+        if (entry.sourceBookId == null || entry.state != 'synced') continue;
+        final revision = revisions[entry.sourceBookId] ?? 0;
+        if (localOnly &&
+            entry.item.values['pepehub_source_revision_v1'] == revision) {
+          continue;
+        }
+        final book = await local.record(entry.sourceBookId!);
+        if (book == null || book.deleted) continue;
+        final policy = await ReadingLibrary(local)
+            .value('obsidian-policy:${repo.namespace}:${entry.item.id}');
+        final source = matchLibraryProgress(
+          await _cachedDetails(book, repo.namespace, localOnly: localOnly),
+          entry.item,
+        );
+        if (cancelled?.call() == true) return;
+        final generated = LibraryMapper.fromBook(
+          book,
+          {
+            ...snapshot,
+            'fields': entry.item.fields.map((f) => f.toJson()).toList(),
+            'collections': (snapshot['collections'] as List)
+                .where((c) => (c as Map)['id'] == entry.item.collectionId)
+                .toList(),
+          },
+          source,
+          entry.item.id,
+        );
+        final baselineKey = 'obsidian-auto:${repo.namespace}:${entry.item.id}';
+        final baseline = await ReadingLibrary(local).value(baselineKey);
+        final changes = <String, dynamic>{};
+        if (localOnly) changes['pepehub_source_revision_v1'] = revision;
+        for (final field in generated.values.entries) {
+          if (field.key == 'pepehub_time_from_journal') continue;
+          final semantic =
+              generated.fields
+                  .where((f) => f.key == field.key)
+                  .firstOrNull
+                  ?.field ??
+              field.key;
+          if (policy[semantic] == 'obsidian') continue;
+          if (field.value == null ||
+              field.value == '' ||
+              (field.value is List && (field.value as List).isEmpty)) {
+            continue;
+          }
+          final current = entry.item.values[field.key];
+          if (localOnly &&
+              semantic == 'status' &&
+              (!libraryStatusesLocal.containsKey(
+                    canonicalLibraryStatus(field.value),
+                  ) ||
+                  canonicalLibraryStatus(current) == 'finished' &&
+                      canonicalLibraryStatus(field.value) != 'finished')) {
+            continue;
+          }
+          if (policy[semantic] == 'local' ||
+              (localOnly &&
+                  semantic == 'status' &&
+                  canonicalLibraryStatus(field.value) == 'finished') ||
+              current == null ||
+              current == '' ||
+              (current == 0 &&
+                  !baseline.containsKey(field.key) &&
+                  generated.fields.any(
+                    (f) => f.key == field.key && f.field == 'progress',
+                  )) ||
+              (baseline.containsKey(field.key) &&
+                  sameMetadataValue(current, baseline[field.key]))) {
+            if (!sameMetadataValue(current, field.value)) {
+              changes[field.key] = field.value;
+            }
+            baseline[field.key] = field.value;
+          }
+        }
+        if (generated.fields.any(
+          (f) => f.field == 'readingTime' && changes.containsKey(f.key),
+        )) {
+          changes['pepehub_time_from_journal'] = true;
+        }
+        if (localOnly) {
+          pending.add((
+            before: entry,
+            changes: changes,
+            baselineKey: baselineKey,
+            baseline: baseline,
+          ));
+          if (pending.length >= 16) await flush();
+          continue;
+        }
+        await repo.mutate((entries) async {
+          final live = entries[entry.item.id];
+          if (live?.state != 'synced' ||
+              !sameMetadataValue(live!.item.values, entry.item.values)) {
+            return;
+          }
+          if (changes.isNotEmpty) {
+            entries[entry.item.id] = LibraryEntry(
+              entry.item.withValues({...entry.item.values, ...changes}),
+              sourceBookId: entry.sourceBookId,
+              state: localOnly ? 'synced' : 'pending',
+              operation: localOnly
+                  ? null
+                  : {
+                      'operationId': uuid.v4(),
+                      'itemId': entry.item.id,
+                      'action': 'update',
+                      'collectionId': entry.item.collectionId,
+                      'mediaType': entry.item.mediaType,
+                      'base': {
+                        for (final k in changes.keys) k: entry.item.values[k],
+                      },
+                      'values': changes,
+                    },
+            );
+          }
+          await local.setMeta(baselineKey, jsonEncode(baseline));
+        });
+      } catch (e) {
+        if (!localOnly) rethrow;
+        onError?.call(e);
+      }
+    }
+    await flush();
   }
 }

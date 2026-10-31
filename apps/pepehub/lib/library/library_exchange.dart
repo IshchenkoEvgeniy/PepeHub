@@ -160,6 +160,7 @@ class LibraryExchange {
           entry.state == 'conflict' ? entry.remote ?? entry.item : entry.item,
           collection: collection,
         );
+        final waiting = entry.operation != null && entry.state != 'conflict';
         final old = cards[id];
         final merged = Map<String, dynamic>.from(
           old?.item.values ??
@@ -168,12 +169,27 @@ class LibraryExchange {
         final conflicts = Map<String, dynamic>.from(
           link['conflicts'] as Map? ?? {},
         );
+        final sent = link['sent'] as Map?;
         for (final field in values.entries) {
+          if (waiting) continue;
           final current = merged[field.key];
           if (entry.state == 'conflict' &&
               !sameMetadataValue(current, field.value)) {
             conflicts[field.key] = field.value;
             continue;
+          }
+          if (entry.state == 'synced' &&
+              sent != null &&
+              sent.containsKey(field.key)) {
+            if (sameMetadataValue(current, sent[field.key])) {
+              merged[field.key] = field.value;
+              conflicts.remove(field.key);
+              continue;
+            }
+            if (sameMetadataValue(field.value, sent[field.key])) {
+              conflicts.remove(field.key);
+              continue;
+            }
           }
           if (old == null ||
               sameMetadataValue(current, base[field.key]) ||
@@ -205,7 +221,12 @@ class LibraryExchange {
         links[id] = {
           ...link,
           'remoteId': remoteId,
-          'base': values,
+          'base': waiting
+              ? (entry.remote == null
+                    ? base
+                    : personalValues(entry.remote!, collection: collection))
+              : values,
+          'sent': waiting ? sent : null,
           'conflicts': conflicts,
           'state': entry.state,
           'message': entry.message,
@@ -286,12 +307,19 @@ class LibraryExchange {
     bool includeCover = true,
   }) => local.db.transaction(() async {
     final card = (await catalog.entries())[id];
-    if (card == null) return;
+    if (card == null ||
+        isLibraryDeleted(card.item) ||
+        card.item.values['pepehub_recommendation_only'] == true) {
+      return;
+    }
     final links = await bindings();
     final link = Map<String, dynamic>.from(links[id] as Map? ?? {});
     if (!explicit && (link.isEmpty || link['detached'] == true)) return;
     final schema = await remote.snapshot();
     if (schema == null) {
+      // A migrated cached card can precede the first downloaded schema.
+      // Automatic exchange must fetch it before trying to queue local edits.
+      if (!explicit) return;
       throw StateError('Сначала получите библиотеку Obsidian.');
     }
     var remoteId = link['detached'] == true
@@ -335,6 +363,16 @@ class LibraryExchange {
       }
     }
     final base = existing?.item.values ?? {};
+    final canonicalBase = Map<String, dynamic>.from(link['base'] as Map? ?? {});
+    bool locallyChanged(String key) {
+      final semantic =
+          fields.where((f) => f.key == key).firstOrNull?.field ?? key;
+      return !sameMetadataValue(
+        card.item.values[semantic],
+        canonicalBase[semantic],
+      );
+    }
+
     if (existing != null && existing.sourceBookId != card.sourceBookId) {
       await remote.mutate((data) async {
         data[remoteId!] = LibraryEntry(
@@ -350,6 +388,7 @@ class LibraryExchange {
                 field.value != '' &&
                 !(field.value is List && (field.value as List).isEmpty)) ||
             (existing != null &&
+                locallyChanged(field.key) &&
                 !sameMetadataValue(base[field.key], field.value)))
           field.key: field.value,
     };
@@ -362,6 +401,12 @@ class LibraryExchange {
             collectionId: collection['id'] as String,
             mediaType: card.item.mediaType,
             fields: fields,
+            coverAsset:
+                fields.any(
+                  (f) => f.field == 'cover' && changes.containsKey(f.key),
+                )
+                ? null
+                : existing?.item.coverAsset,
             values: {...base, ...changes},
           ),
           sourceBookId: card.sourceBookId,
@@ -385,17 +430,28 @@ class LibraryExchange {
       ...link,
       'remoteId': remoteId,
       'detached': false,
-      'base': personalValues(
-        ObsidianLibraryItem(
-          id: remoteId,
-          path: '',
-          collectionId: collection['id'] as String,
-          mediaType: card.item.mediaType,
-          fields: fields,
-          values: {...base, ...changes},
-        ),
-        collection: collection,
-      ),
+      'base': existing == null
+          ? <String, dynamic>{}
+          : personalValues(existing.item, collection: collection),
+      'sent': changes.isEmpty
+          ? null
+          : personalValues(
+              ObsidianLibraryItem(
+                id: remoteId,
+                path: '',
+                collectionId: collection['id'] as String,
+                mediaType: card.item.mediaType,
+                fields: fields,
+                values: {...base, ...changes},
+                coverAsset:
+                    fields.any(
+                      (f) => f.field == 'cover' && changes.containsKey(f.key),
+                    )
+                    ? null
+                    : existing?.item.coverAsset,
+              ),
+              collection: collection,
+            ),
       'conflicts': <String, dynamic>{},
     };
     await local.setMeta(key, jsonEncode(links));

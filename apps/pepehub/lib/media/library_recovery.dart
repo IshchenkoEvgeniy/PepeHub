@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../data/database_schema.dart';
+
 import '../audio/audio_roots.dart';
 import '../audio/audio_sidecar.dart';
 import '../reader/reading_library.dart';
@@ -32,11 +34,16 @@ Future<void> recoverAudioRoot(AssetStore assets, AudioRoot root) async {
     }
   }
   // A deliberate rewind to zero is still protected when local listening exists.
-  for (final record in await assets.repository.records('audio_event')) {
-    final data = record.payload;
-    if (data?['kind'] == 'listen' && (data?['wallMs'] as num? ?? 0) > 0) {
-      protectedPositions.add(data!['bookId'] as String);
-    }
+  for (final row
+      in await assets.repository.db
+          .customSelect(
+            "SELECT DISTINCT ${SchemaSql.audioEventBook} AS book_id FROM records "
+            "WHERE ${SchemaSql.audioEventRows} AND deleted=0 "
+            "AND json_extract(payload,'\$.kind')='listen' "
+            "AND json_extract(payload,'\$.wallMs')>0",
+          )
+          .get()) {
+    protectedPositions.add(row.read<String>('book_id'));
   }
   // Snapshot names contain creation time. Restore newest available position
   // first, then merge older journals without rewinding existing progress.

@@ -173,7 +173,8 @@ class Repository {
   Future<List<LibraryRecord>> records(String type) async =>
       (await db
               .customSelect(
-                r"SELECT * FROM records WHERE type=? AND deleted=0 ORDER BY json_extract(payload,'$.title'), id",
+                "SELECT * FROM records WHERE type=? AND deleted=0 "
+                "${type == 'book' ? r"ORDER BY json_extract(payload,'$.title'), id" : ''}",
                 variables: [Variable(type)],
               )
               .get())
@@ -184,6 +185,16 @@ class Repository {
               .customSelect(
                 "SELECT * FROM records WHERE type='book' AND deleted=0 AND (IFNULL(json_extract(payload,'\$.format'),'')='audio')=? ORDER BY json_extract(payload,'\$.title'),id",
                 variables: [Variable(audio ? 1 : 0)],
+              )
+              .get())
+          .map(LibraryRecord.fromRow)
+          .toList();
+
+  Future<List<LibraryRecord>> bookHeaders() async =>
+      (await db
+              .customSelect(
+                "SELECT id,type,revision,deleted,json_object('title',json_extract(payload,'\$.title'),'format',json_extract(payload,'\$.format')) AS payload "
+                "FROM records WHERE type='book' AND deleted=0 AND json_valid(payload) ORDER BY json_extract(payload,'\$.title'),id",
               )
               .get())
           .map(LibraryRecord.fromRow)

@@ -38,7 +38,7 @@ class AudioRoots {
     for (final row
         in await assets.repository.db
             .customSelect(
-              "SELECT key,value FROM metadata WHERE key LIKE 'audio-library-root:%' ORDER BY key",
+              "SELECT key,value FROM metadata WHERE key>='audio-library-root:' AND key<'audio-library-root;' ORDER BY key",
             )
             .get())
       AudioRoot(
@@ -92,7 +92,7 @@ class AudioRoots {
     if (!root.data.containsKey('mode')) {
       final bindings = await assets.repository.db
           .customSelect(
-            "SELECT key,value FROM metadata WHERE key LIKE 'audio-folder:%'",
+            "SELECT key,value FROM metadata WHERE key>='audio-folder:' AND key<'audio-folder;'",
           )
           .get();
       final known = {
@@ -156,7 +156,12 @@ class AudioRoots {
             'audio-source-path:${asset.bookId}',
             jsonEncode({'relativePath': draft.relativeFolder}),
           );
-          await repo.setMeta('audio-library-hidden:${asset.bookId}', '0');
+          await repo.setMeta(
+            'audio-library-hidden:${asset.bookId}',
+            await repo.meta('audio-user-hidden:${asset.bookId}') == '1'
+                ? '1'
+                : '0',
+          );
           if (oldId == null) {
             added++;
           } else {

@@ -25,14 +25,14 @@ class PeerSyncPage extends StatefulWidget {
   final bool embedded;
   final String section;
   final ValueChanged<String>? onNavigate;
-  final VoidCallback? onObsidian;
+  final VoidCallback? onData;
   const PeerSyncPage({
     super.key,
     required this.service,
     this.embedded = false,
     this.section = 'overview',
     this.onNavigate,
-    this.onObsidian,
+    this.onData,
   });
   @override
   State<PeerSyncPage> createState() => _PeerSyncPageState();
@@ -487,7 +487,7 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
         builder: (_) => PeerSyncPage(
           service: service,
           section: part,
-          onObsidian: widget.onObsidian,
+          onData: widget.onData,
         ),
       ),
     );
@@ -504,7 +504,7 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
     children: [
       const SettingsHeading(
         'Синхронизация',
-        'Прямой обмен файлами и данными приложения между ПК и телефоном. Obsidian подключается отдельно.',
+        'Прямой обмен файлами и данными приложения между ПК и телефоном. Экспорт и резервные копии доступны в библиотеке.',
       ),
       SettingsGroup(
         children: [
@@ -553,12 +553,12 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
             icon: Icons.schedule,
             onTap: () => _navigate('rules'),
           ),
-          if (widget.onObsidian != null)
+          if (widget.onData != null)
             SettingsLink(
-              title: 'Obsidian',
+              title: 'Экспорт и резервные копии',
               subtitle: 'Каталог, журнал, обложки и заметки',
               icon: Icons.link,
-              onTap: widget.onObsidian,
+              onTap: widget.onData,
             ),
         ],
       ),

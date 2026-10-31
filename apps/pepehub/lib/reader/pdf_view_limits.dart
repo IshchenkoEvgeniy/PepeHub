@@ -44,3 +44,16 @@ Matrix4 lockedPdfMatrix(
       viewport.height / 2 - clamp(y, viewport.height, document.height) * zoom,
     );
 }
+
+/// A small inactive cache plus every visible annotated page. Visible glyphs
+/// must not evict each other while the viewer is zoomed out.
+void trimPdfGlyphCache<T>(
+  Map<int, T> cache,
+  Set<int> visible, {
+  int maxPages = 8,
+}) {
+  for (final page in cache.keys.toList()) {
+    if (cache.length <= maxPages) break;
+    if (!visible.contains(page)) cache.remove(page);
+  }
+}

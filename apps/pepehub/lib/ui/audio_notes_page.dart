@@ -238,59 +238,59 @@ class _AudioNotesPageState extends State<AudioNotesPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('Заметки к книге'),
-      actions: [
-        IconButton(
-          tooltip: 'Добавить заметку',
-          onPressed: busy ? null : () => _edit(),
-          icon: const Icon(Icons.add),
-        ),
-      ],
-    ),
-    bottomNavigationBar: AudioMiniPlayer(
-      controller: audio,
-      onOpen: () => Navigator.pop(context),
-    ),
-    body: Column(
-      children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              for (final entry in {'all': 'Все', ...audioNoteLabels}.entries)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(entry.value),
-                    selected: filter == entry.key,
-                    onSelected: (_) => setState(() => filter = entry.key),
-                  ),
-                ),
-            ],
+  Widget build(BuildContext context) {
+    final visible = notes
+        .where((n) => filter == 'all' || n.payload!['kind'] == filter)
+        .toList();
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Заметки к книге'),
+        actions: [
+          IconButton(
+            tooltip: 'Добавить заметку',
+            onPressed: busy ? null : () => _edit(),
+            icon: const Icon(Icons.add),
           ),
-        ),
-        if (busy) const LinearProgressIndicator(),
-        if (error.isNotEmpty) Text(error),
-        Expanded(
-          child:
-              notes
-                  .where((n) => filter == 'all' || n.payload!['kind'] == filter)
-                  .isEmpty
-              ? const Center(
-                  child: Text(
-                    'Сохраните мысль, цитату или персонажа\nк текущему моменту книги.',
-                    textAlign: TextAlign.center,
+        ],
+      ),
+      bottomNavigationBar: AudioMiniPlayer(
+        controller: audio,
+        onOpen: () => Navigator.pop(context),
+      ),
+      body: Column(
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                for (final entry in {'all': 'Все', ...audioNoteLabels}.entries)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(entry.value),
+                      selected: filter == entry.key,
+                      onSelected: (_) => setState(() => filter = entry.key),
+                    ),
                   ),
-                )
-              : ListView(
-                  children: [
-                    for (final note in notes.where(
-                      (n) => filter == 'all' || n.payload!['kind'] == filter,
-                    ))
-                      Card(
+              ],
+            ),
+          ),
+          if (busy) const LinearProgressIndicator(),
+          if (error.isNotEmpty) Text(error),
+          Expanded(
+            child: visible.isEmpty
+                ? const Center(
+                    child: Text(
+                      'Сохраните мысль, цитату или персонажа\nк текущему моменту книги.',
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: visible.length,
+                    itemBuilder: (context, index) {
+                      final note = visible[index];
+                      return Card(
                         margin: const EdgeInsets.symmetric(
                           horizontal: 12,
                           vertical: 6,
@@ -338,11 +338,12 @@ class _AudioNotesPageState extends State<AudioNotesPage> {
                             ],
                           ),
                         ),
-                      ),
-                  ],
-                ),
-        ),
-      ],
-    ),
-  );
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
 }

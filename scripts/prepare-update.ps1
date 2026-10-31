@@ -50,5 +50,7 @@ $pepeArtifacts = @{
     }
 }
 [IO.File]::WriteAllText((Join-Path $pepeOutput 'artifacts.json'), ($pepeArtifacts | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+& node (Join-Path $PSScriptRoot 'prepare-update-deltas.ts') $pepeOutput
+if ($LASTEXITCODE -ne 0) { throw 'Delta package generation/verification failed.' }
 if ($NotesFile) { [IO.File]::Copy([IO.Path]::GetFullPath($NotesFile), (Join-Path $pepeOutput 'notes.md'), $true) }
 Write-Output "Verified update packages: $pepeOutput"

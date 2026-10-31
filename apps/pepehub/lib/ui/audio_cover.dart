@@ -24,7 +24,9 @@ class _AudioCoverState extends State<AudioCover> {
   @override
   void didUpdateWidget(AudioCover old) {
     super.didUpdateWidget(old);
-    image = ArtworkStore(widget.assets).load(widget.bookId);
+    if (old.bookId != widget.bookId || old.assets != widget.assets) {
+      image = ArtworkStore(widget.assets).load(widget.bookId);
+    }
   }
 
   @override
@@ -39,6 +41,7 @@ class _AudioCoverState extends State<AudioCover> {
         : Image.file(
             File.fromUri(snapshot.data!),
             fit: BoxFit.contain,
+            cacheWidth: 384,
             errorBuilder: (_, error, stack) => const Icon(Icons.headphones),
           ),
   );

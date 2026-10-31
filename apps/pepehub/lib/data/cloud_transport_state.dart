@@ -22,6 +22,12 @@ class CloudTransportState {
   /// Tables come from the schema migration; this only archives the queue.
   Future<void> initialize() async {
     if (await enabled) return;
+    if (await db
+            .customSelect('SELECT 1 FROM outbox LIMIT 1')
+            .getSingleOrNull() ==
+        null) {
+      return;
+    }
     // Retain exact operations, receipts and attempt flags before removing them
     // from the active queue. Repeating this migration is safe.
     await db.customStatement(

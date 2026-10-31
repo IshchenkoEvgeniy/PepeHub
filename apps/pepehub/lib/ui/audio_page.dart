@@ -385,29 +385,31 @@ class _AudioPageState extends State<AudioPage> {
                 subtitle: Text('Нажмите, чтобы вернуться к исходной позиции'),
               ),
               Expanded(
-                child: ListView(
-                  children: [
-                    for (final row in rows)
-                      ListTile(
-                        leading: const Icon(Icons.undo),
-                        title: Text(
-                          '${audioTime(Duration(milliseconds: row.payload!['fromMs'] as int))} → ${audioTime(Duration(milliseconds: row.payload!['positionMs'] as int))}',
-                        ),
-                        subtitle: Text(
-                          '${row.payload!['at']} · ${audioSeekReasonLabel(row.payload!['reason'])}',
-                        ),
-                        onTap: () {
-                          Navigator.pop(context);
-                          controller.goToLocation(
-                            row.payload!['fromTrackId'] as String,
-                            row.payload!['fromMs'] as int,
-                            reason: 'history',
-                          );
-                        },
+                child: ListView.builder(
+                  itemCount: rows.isEmpty ? 1 : rows.length,
+                  itemBuilder: (context, index) {
+                    if (rows.isEmpty) {
+                      return const ListTile(title: Text('Перемоток пока нет'));
+                    }
+                    final row = rows[index];
+                    return ListTile(
+                      leading: const Icon(Icons.undo),
+                      title: Text(
+                        '${audioTime(Duration(milliseconds: row.payload!['fromMs'] as int))} → ${audioTime(Duration(milliseconds: row.payload!['positionMs'] as int))}',
                       ),
-                    if (rows.isEmpty)
-                      const ListTile(title: Text('Перемоток пока нет')),
-                  ],
+                      subtitle: Text(
+                        '${row.payload!['at']} · ${audioSeekReasonLabel(row.payload!['reason'])}',
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        controller.goToLocation(
+                          row.payload!['fromTrackId'] as String,
+                          row.payload!['fromMs'] as int,
+                          reason: 'history',
+                        );
+                      },
+                    );
+                  },
                 ),
               ),
             ],
@@ -431,52 +433,9 @@ class _AudioPageState extends State<AudioPage> {
                 subtitle: Text('Каждый аудиофайл — отдельная глава'),
               ),
               Expanded(
-                child: ListView(
-                  children: [
-                    for (var i = 0; i < controller.tracks.length; i++)
-                      ListTile(
-                        leading: Text('${i + 1}'),
-                        selected: i == controller.trackIndex,
-                        title: Text(controller.tracks[i].filename),
-                        subtitle: Text(
-                          controller.trackDuration(controller.tracks[i].id) ==
-                                  null
-                              ? 'Длительность пока неизвестна'
-                              : audioTime(
-                                  controller.trackDuration(
-                                    controller.tracks[i].id,
-                                  )!,
-                                ),
-                        ),
-                        onTap: () {
-                          Navigator.pop(context);
-                          controller.skipToQueueItem(i);
-                        },
-                      ),
-                    if (controller.chapters.isNotEmpty)
-                      const ListTile(
-                        title: Text('Встроенные главы текущего файла'),
-                      ),
-                    for (final chapter in controller.chapters)
-                      ListTile(
-                        title: Text(chapter.title),
-                        subtitle: Text(
-                          audioTime(Duration(milliseconds: chapter.startMs)),
-                        ),
-                        onTap: () {
-                          Navigator.pop(context);
-                          controller.goToChapter(chapter);
-                        },
-                      ),
-                    if (controller.chapterError.isNotEmpty)
-                      ListTile(
-                        title: Text(
-                          controller.chapterError.isEmpty
-                              ? 'Встроенные главы не найдены'
-                              : controller.chapterError,
-                        ),
-                      ),
-                  ],
+                child: _chapterList(
+                  ShelfPalette.of(context),
+                  closeOnSelect: true,
                 ),
               ),
             ],
@@ -802,41 +761,43 @@ class _AudioPageState extends State<AudioPage> {
     ],
   );
 
-  Widget _progress(ShelfPalette palette, double maxTrack) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      if (controller.loading) const LinearProgressIndicator(),
-      Slider(
-        value: (dragPosition ?? controller.position.inMilliseconds.toDouble())
-            .clamp(0, maxTrack),
-        max: maxTrack,
-        onChanged: controller.canPlay && controller.duration > Duration.zero
-            ? (v) => setState(() => dragPosition = v)
-            : null,
-        onChangeEnd: (v) async {
-          await controller.seek(Duration(milliseconds: v.round()));
-          if (mounted) setState(() => dragPosition = null);
-        },
-      ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              audioTime(controller.position),
-              style: TextStyle(fontSize: 12.5, color: palette.muted),
-            ),
-            Text(
-              '−${audioTime(Duration(milliseconds: (controller.duration - controller.position).inMilliseconds.clamp(0, 1 << 53)))}',
-              style: TextStyle(fontSize: 12.5, color: palette.muted),
-            ),
-          ],
+  Widget _progress(ShelfPalette palette, double maxTrack) => ListenableBuilder(
+    listenable: controller.playbackPosition,
+    builder: (context, _) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (controller.loading) const LinearProgressIndicator(),
+        Slider(
+          value: (dragPosition ?? controller.position.inMilliseconds.toDouble())
+              .clamp(0, maxTrack),
+          max: maxTrack,
+          onChanged: controller.canPlay && controller.duration > Duration.zero
+              ? (v) => setState(() => dragPosition = v)
+              : null,
+          onChangeEnd: (v) async {
+            await controller.seek(Duration(milliseconds: v.round()));
+            if (mounted) setState(() => dragPosition = null);
+          },
         ),
-      ),
-    ],
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                audioTime(controller.position),
+                style: TextStyle(fontSize: 12.5, color: palette.muted),
+              ),
+              Text(
+                '−${audioTime(Duration(milliseconds: (controller.duration - controller.position).inMilliseconds.clamp(0, 1 << 53)))}',
+                style: TextStyle(fontSize: 12.5, color: palette.muted),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
   );
-
   Widget _controls(ShelfPalette palette, {required bool wide}) => FittedBox(
     fit: BoxFit.scaleDown,
     child: Row(
@@ -870,7 +831,12 @@ class _AudioPageState extends State<AudioPage> {
     ),
   );
 
-  Widget _bookProgress(ShelfPalette palette) {
+  Widget _bookProgress(ShelfPalette palette) => ListenableBuilder(
+    listenable: controller.playbackPosition,
+    builder: (context, _) => _bookProgressContent(palette),
+  );
+
+  Widget _bookProgressContent(ShelfPalette palette) {
     if (controller.bookFraction == null) {
       return Column(
         children: [
@@ -993,52 +959,66 @@ class _AudioPageState extends State<AudioPage> {
       ),
   ];
 
-  Widget _chapterList(ShelfPalette palette) => ListView(
-    padding: const EdgeInsets.symmetric(vertical: 8),
-    children: [
-      for (var i = 0; i < controller.tracks.length; i++)
-        ListTile(
-          dense: true,
-          selected: i == controller.trackIndex,
-          selectedTileColor: palette.selected,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          leading: Text(
-            '${i + 1}',
-            style: AppFonts.title(
-              i == controller.trackIndex ? palette.accent : palette.muted,
-              size: 18,
-            ),
-          ),
-          title: Text(
-            controller.tracks[i].filename,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: Text(
-            controller.trackDuration(controller.tracks[i].id) == null
-                ? ''
-                : audioTime(controller.trackDuration(controller.tracks[i].id)!),
-            style: TextStyle(fontSize: 12, color: palette.muted),
-          ),
-          onTap: () => controller.skipToQueueItem(i),
-        ),
-      if (controller.chapters.isNotEmpty) ...[
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: PepeCaption('Главы текущего файла'),
-        ),
-        for (final chapter in controller.chapters)
-          ListTile(
+  Widget _chapterList(ShelfPalette palette, {bool closeOnSelect = false}) =>
+      ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount:
+            controller.tracks.length +
+            (controller.chapters.isEmpty ? 0 : controller.chapters.length + 1),
+        itemBuilder: (context, i) {
+          if (i < controller.tracks.length) {
+            return ListTile(
+              dense: true,
+              selected: i == controller.trackIndex,
+              selectedTileColor: palette.selected,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              leading: Text(
+                '${i + 1}',
+                style: AppFonts.title(
+                  i == controller.trackIndex ? palette.accent : palette.muted,
+                  size: 18,
+                ),
+              ),
+              title: Text(
+                controller.tracks[i].filename,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: Text(
+                controller.trackDuration(controller.tracks[i].id) == null
+                    ? ''
+                    : audioTime(
+                        controller.trackDuration(controller.tracks[i].id)!,
+                      ),
+                style: TextStyle(fontSize: 12, color: palette.muted),
+              ),
+              onTap: () {
+                if (closeOnSelect) Navigator.pop(context);
+                controller.skipToQueueItem(i);
+              },
+            );
+          }
+          final chapterIndex = i - controller.tracks.length - 1;
+          if (chapterIndex < 0) {
+            return const Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: PepeCaption('Главы текущего файла'),
+            );
+          }
+          final chapter = controller.chapters[chapterIndex];
+          return ListTile(
             dense: true,
             title: Text(chapter.title),
             trailing: Text(audioTime(Duration(milliseconds: chapter.startMs))),
-            onTap: () => controller.goToChapter(chapter),
-          ),
-      ],
-    ],
-  );
+            onTap: () {
+              if (closeOnSelect) Navigator.pop(context);
+              controller.goToChapter(chapter);
+            },
+          );
+        },
+      );
 
   Widget _rows(
     ShelfPalette palette,
@@ -1059,9 +1039,10 @@ class _AudioPageState extends State<AudioPage> {
           child: Text(empty, style: TextStyle(color: palette.muted)),
         );
       }
-      return ListView(
+      return ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        children: [for (final row in rows) build(row)],
+        itemCount: rows.length,
+        itemBuilder: (context, index) => build(rows[index]),
       );
     },
   );

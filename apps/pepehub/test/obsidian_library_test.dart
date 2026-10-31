@@ -61,87 +61,68 @@ void main() {
     await local.setMeta('obsidian-sync-notes', 'false');
   });
   tearDown(() => db.close());
-  test('120 Obsidian cards are automatic, 300 local books never leave the app, and repeated pulls deduplicate', () async {
+  test('cached legacy cards migrate once without automatically adding local sources', () async {
     for (var i = 0; i < 300; i++) {
       await local.addBook('Local $i', 'Автор', 'epub');
     }
-    final data = snapshot([
-      for (var i = 0; i < 120; i++)
-        card(const Uuid().v5(Namespace.url.value, 'remote:$i')),
-    ]);
-    final requests = <String>[];
-    final client = MockClient((request) async {
-      requests.add(request.method);
-      return jsonResponse(data);
+    final cached = LibraryRepository(local, config.namespace);
+    await cached.receive(
+      snapshot([
+        for (var i = 0; i < 120; i++)
+          card(const Uuid().v5(Namespace.url.value, 'remote:$i')),
+      ]),
+    );
+    var requests = 0;
+    final client = MockClient((_) async {
+      requests++;
+      throw StateError('Unexpected network');
     });
     final service = LibraryService(local, client);
     addTearDown(service.dispose);
     addTearDown(client.close);
-    await service.connect(config);
-    await service.sync();
-    expect(service.error, isNull);
-    expect(service.entries.length, 120);
-    expect((await local.records('book')).length, 300);
-    expect(requests, ['GET', 'GET']);
-    expect(service.entries.first.item.value('endDate'), isNull);
-    expect(service.inbox.length, 120);
+    await service.reload();
+    await service.reload();
+    expect(service.entries, hasLength(120));
+    expect(service.config, isNull);
+    expect(requests, 0);
     expect(service.completed, isEmpty);
-    expect(service.entries.first.item.values['Custom'], {
+    final imported = service.entries.where(
+      (e) => e.item.values['Custom'] != null,
+    );
+    expect(imported, hasLength(120));
+    expect(imported.first.item.values['Custom'], {
       'tags': ['a'],
       'favorite': false,
     });
   });
-  test('manual creation survives network failure and restart; one UUID is retried without files', () async {
-    final repo = LibraryRepository(local, config.namespace);
-    await repo.receive(snapshot([]));
-    await local.addBook('Local', 'Автор', 'audio');
-    final book = (await local.records('book')).single;
-    final client = MockClient(
-      (_) async => throw http.ClientException('offline'),
-    );
+  test('manual cards survive restart without files, a connector or a network queue', () async {
+    var requests = 0;
+    final client = MockClient((_) async {
+      requests++;
+      throw StateError('Unexpected network');
+    });
+    addTearDown(client.close);
     final service = LibraryService(local, client);
-    await service.connect(config);
-    final draft = service.draft(book, {
-      'durationMinutes': 120,
-      'listenedMinutes': 3,
-      'cover': 'C:/private/cover.png',
+    await service.reload();
+    final draft = service.emptyDraft(audio: true).withValues({
+      ...service.emptyDraft(audio: true).values,
+      'title': 'Аудиокнига',
       'status': 'finished',
+      'unit': 'minutes',
+      'total': 120,
+      'progress': 120,
     });
-    await service.add(draft, book.id);
-    await service.add(draft, book.id);
-    expect(await repo.entries(), isEmpty);
+    await service.add(draft, '');
+    await service.add(draft, '');
     expect(service.completed.single.item.id, draft.id);
-    await service.exportToObsidian(draft.id);
-    expect((await repo.entries()).length, 1);
-    final pending = (await repo.entries()).values.single;
-    expect(pending.pending, isTrue);
-    expect(
-      pending.operation!['values'].toString(),
-      isNot(contains('C:/private/')),
-    );
-    final operationId = pending.operation!['operationId'];
+    expect(await LibraryRepository(local, config.namespace).entries(), isEmpty);
     service.dispose();
-    client.close();
-    final received = <Map<String, dynamic>>[];
-    final online = MockClient((request) async {
-      if (request.method == 'POST') {
-        received.add(jsonDecode(request.body) as Map<String, dynamic>);
-      }
-      return jsonResponse(
-        request.url.path.endsWith('/library')
-            ? snapshot([])
-            : {'operationId': operationId, 'status': 'pending'},
-      );
-    });
-    final resumed = LibraryService(local, online);
+    final resumed = LibraryService(local, client);
     addTearDown(resumed.dispose);
-    addTearDown(online.close);
-    await resumed.connect(config);
-    await resumed.sync();
-    expect(received.length, 2);
-    expect(received.map((op) => op['operationId']).toSet(), {operationId});
-    expect(received.map((op) => op['itemId']).toSet(), {pending.item.id});
-    expect(resumed.entries.single.item.mediaType, 'audiobook');
+    await resumed.reload();
+    expect(resumed.completed.single.item.id, draft.id);
+    expect(resumed.completed.single.item.mediaType, 'audiobook');
+    expect(requests, 0);
   });
   test('blank finish date is editable and only changed fields go back; stale editor bases are retained', () async {
     final id = const Uuid().v4(), data = snapshot([card(const Uuid().v4())]);

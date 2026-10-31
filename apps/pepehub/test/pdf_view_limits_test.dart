@@ -4,6 +4,14 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:pepehub/reader/pdf_view_limits.dart';
 
 void main() {
+  test('zoomed out annotated pages retain all visible glyphs and trim after leaving view', () {
+    final cache = {for (var n = 1; n <= 16; n++) n: 'glyphs-$n'};
+    trimPdfGlyphCache(cache, {for (var n = 1; n <= 12; n++) n});
+    expect(cache.keys.toSet(), {for (var n = 1; n <= 12; n++) n});
+    trimPdfGlyphCache(cache, {1, 2});
+    expect(cache.length, 8);
+    expect(cache.keys, containsAll([1, 2]));
+  });
   test('large page raster allocation is bounded by area and longest edge', () {
     for (final size in [
       const Size(10000, 20000),

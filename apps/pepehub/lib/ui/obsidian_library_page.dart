@@ -9,6 +9,8 @@ import '../library/models.dart';
 import '../library/metadata_values.dart';
 import '../library/personal_library.dart';
 import 'metadata_input.dart';
+import '../library/library_features.dart';
+import 'library_duration_input.dart';
 import 'shelf_components.dart';
 
 export 'obsidian_library_dashboard.dart' show ObsidianLibraryPage;
@@ -34,14 +36,15 @@ const libraryLabels = {
   'targetDate': 'Целевая дата',
   'unit': 'Единица прогресса',
   'readingTime': 'Время чтения / прослушивания',
+  'rereadCount': 'Счётчик перечитываний',
   'notes': 'Впечатления',
 };
 
 String libraryState(LibraryEntry entry) => switch (entry.state) {
-  'pending' => 'Ожидает Obsidian',
+  'pending' => 'Сохранена локально',
   'conflict' => 'Конфликт изменений',
   'error' => 'Не удалось сохранить',
-  'removed' => 'Удалена из Obsidian',
+  'removed' => 'Архивная карточка',
   _ => 'В библиотеке',
 };
 
@@ -51,13 +54,14 @@ class LibraryMetadataEditor extends StatefulWidget {
   final Future<void> Function(Map<String, dynamic>) onSave;
   final Future<void> Function()? onUseObsidian;
   final String saveLabel;
-  final Future<String?> Function()? onPickCover;
+  final Future<String?> Function()? onPickCover, onSearchCover;
   final Map<String, List<String>> suggestions;
   final Map<String, dynamic>? collection;
   final List<Map<String, dynamic>> collections;
   final Map<String, String> syncPolicy;
   final Future<void> Function(Map<String, String>)? onSavePolicy;
   final String? Function(String)? coverResolver;
+  final Future<bool> Function()? onDelete;
   const LibraryMetadataEditor({
     super.key,
     required this.item,
@@ -66,12 +70,14 @@ class LibraryMetadataEditor extends StatefulWidget {
     this.onUseObsidian,
     this.saveLabel = 'Сохранить',
     this.onPickCover,
+    this.onSearchCover,
     this.suggestions = const {},
     this.collection,
     this.collections = const [],
     this.syncPolicy = const {},
     this.onSavePolicy,
     this.coverResolver,
+    this.onDelete,
   });
   @override
   State<LibraryMetadataEditor> createState() => _LibraryMetadataEditorState();
@@ -123,6 +129,16 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
           values[key],
           widget.collection,
         );
+      }
+    }
+    if (personal) {
+      final key = fields.values
+          .where((f) => f.field == 'status')
+          .firstOrNull
+          ?.key;
+      if (key != null &&
+          !libraryStatusesLocal.containsKey(controllers[key]!.text)) {
+        controllers[key]!.text = 'finished';
       }
     }
   }
@@ -393,6 +409,15 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
     try {
       final parsed = _parse(key, text ?? '');
       final field = fields[key]?.field ?? key;
+      if (field == 'rereadCount' &&
+          parsed != null &&
+          (parsed is! num ||
+              !parsed.isFinite ||
+              parsed < 0 ||
+              parsed > 99999 ||
+              parsed != parsed.round())) {
+        return 'Введите целое число от 0 до 99999';
+      }
       if (field == 'title' && '${parsed ?? ''}'.trim().isEmpty) {
         return 'Укажите название';
       }
@@ -433,6 +458,93 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
     }
   }
 
+  Future<void> _audioPercent(String key) async {
+    final totalKey = fields.values
+        .where((f) => f.field == 'total')
+        .firstOrNull
+        ?.key;
+    final total = num.tryParse(controllers[totalKey]?.text ?? '');
+    if (total == null || !total.isFinite || total <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Сначала укажите общую длительность аудиокниги.'),
+        ),
+      );
+      return;
+    }
+    final controller = TextEditingController(
+      text:
+          '${(((num.tryParse(controllers[key]!.text) ?? 0) / total) * 100).clamp(0, 100).round()}',
+    );
+    final formKey = GlobalKey<FormState>();
+    final percent = await showDialog<num>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Сколько прослушано?'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: controller,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Процент аудиокниги',
+                    suffixText: '%',
+                  ),
+                  onChanged: (_) => update(() {}),
+                  validator: (text) {
+                    final n = num.tryParse((text ?? '').replaceAll(',', '.'));
+                    return n == null || !n.isFinite || n < 0 || n > 100
+                        ? 'Укажите от 0 до 100'
+                        : null;
+                  },
+                ),
+                Slider(
+                  value:
+                      (double.tryParse(controller.text.replaceAll(',', '.')) ??
+                              0)
+                          .clamp(0, 100),
+                  min: 0,
+                  max: 100,
+                  divisions: 1000,
+                  onChanged: (value) =>
+                      update(() => controller.text = value.toStringAsFixed(1)),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  Navigator.pop(
+                    context,
+                    num.parse(controller.text.replaceAll(',', '.')),
+                  );
+                }
+              },
+              child: const Text('Применить'),
+            ),
+          ],
+        ),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    controller.dispose();
+    if (percent != null && mounted) {
+      controllers[key]!.text = '${total * percent / 100}';
+    }
+  }
+
   Future<void> _rating(String key) async {
     final selected = await showDialog<int>(
       context: context,
@@ -464,7 +576,43 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
 
   Widget _field(String key) {
     final semantic = fields[key]?.field ?? key;
-    if (personal && ['status', 'libraryType'].contains(semantic)) {
+    final unitKey = fields.values
+        .where((f) => f.field == 'unit')
+        .firstOrNull
+        ?.key;
+    final unit = controllers[unitKey]?.text ?? 'minutes';
+    final timedAudio =
+        widget.item.mediaType == 'audiobook' &&
+        ['minutes', 'hours'].contains(unit);
+    if (timedAudio && semantic == 'unit') return const SizedBox.shrink();
+    if (timedAudio && ['total', 'progress'].contains(semantic)) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LibraryDurationInput(
+            key: ValueKey('duration:$key:$unit:$editGeneration'),
+            controller: controllers[key]!,
+            label: semantic == 'total'
+                ? 'Общая длительность аудиокниги'
+                : 'Прослушано',
+            unit: unit,
+            enabled: editable && !saving,
+          ),
+          if (semantic == 'progress')
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: OutlinedButton.icon(
+                onPressed: editable && !saving
+                    ? () => _audioPercent(key)
+                    : null,
+                icon: const Icon(Icons.percent),
+                label: const Text('Указать прослушанный процент'),
+              ),
+            ),
+        ],
+      );
+    }
+    if (personal && semantic == 'libraryType') {
       return const SizedBox.shrink();
     }
     final label =
@@ -495,15 +643,19 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
         semantic == 'unit' ||
         semantic == 'format' ||
         semantic == 'libraryType') {
-      final statuses = libraryStatuses(selectedCollection);
+      final statuses = personal
+          ? libraryStatusesLocal
+          : libraryStatuses(selectedCollection);
       final options = <String>{
         if (controllers[key]!.text.isNotEmpty) controllers[key]!.text,
         ...suggestions.map(
           (s) => semantic == 'status'
-              ? statuses[canonicalLibraryStatus(s)] ?? s
+              ? (personal
+                    ? canonicalLibraryStatus(s)
+                    : statuses[canonicalLibraryStatus(s)] ?? s)
               : s,
         ),
-        if (semantic == 'status') ...statuses.values,
+        if (semantic == 'status') ...personal ? statuses.keys : statuses.values,
         if (semantic == 'unit')
           ...((selectedCollection?['progressUnits'] as List?)?.cast<String>() ??
                   ['pages', 'minutes', 'hours', 'characters'])
@@ -522,6 +674,11 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
               )
               .map((c) => '${c['id']}'),
       };
+      if (personal && semantic == 'status') {
+        options.removeWhere(
+          (status) => !libraryStatusesLocal.containsKey(status),
+        );
+      }
       const unitLabels = {
         'pages': 'Страницы',
         'minutes': 'Минуты',
@@ -750,7 +907,23 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [field, if (semantic == 'cover') _coverPreview(key)],
+        children: [
+          field,
+          if (semantic == 'cover') _coverPreview(key),
+          if (semantic == 'cover' && widget.onSearchCover != null)
+            TextButton.icon(
+              onPressed: enabled
+                  ? () async {
+                      final cover = await widget.onSearchCover!();
+                      if (cover != null && mounted) {
+                        setState(() => controllers[key]!.text = cover);
+                      }
+                    }
+                  : null,
+              icon: const Icon(Icons.travel_explore),
+              label: const Text('Найти обложку в интернете'),
+            ),
+        ],
       ),
     );
   }
@@ -824,6 +997,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
       'targetDate',
       'unit',
       'readingTime',
+      'rereadCount',
     };
     final main = controllers.keys.where(
       (key) =>
@@ -848,7 +1022,23 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
           ].contains(key),
     );
     return Scaffold(
-      appBar: AppBar(title: const Text('Метаданные книги')),
+      appBar: AppBar(
+        title: const Text('Метаданные книги'),
+        actions: [
+          if (widget.onDelete != null)
+            IconButton(
+              tooltip: 'В корзину',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (await widget.onDelete!() && context.mounted) {
+                        Navigator.pop(context);
+                      }
+                    },
+            ),
+        ],
+      ),
       bottomNavigationBar: AudioPlayerFooter(
         child: editable
             ? SafeArea(

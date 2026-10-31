@@ -40,6 +40,14 @@ import 'package:pepehub/ui/statistics_hub_page.dart';
 
 class DocumentationPlayer extends ChangeNotifier implements AudioController {
   @override
+  late final playbackPosition = ValueNotifier(position);
+  @override
+  void dispose() {
+    playbackPosition.dispose();
+    super.dispose();
+  }
+
+  @override
   final AssetStore assets;
   @override
   final List<LocalAsset> tracks;

@@ -19,13 +19,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Библиотека'));
     await tester.pumpAndSettle();
-    expect(find.text('Добавить книгу'), findsOneWidget);
+    expect(find.text('Добавить'), findsOneWidget);
     expect(await repo.meta('library-section'), 'metadata');
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
     await tester.pumpWidget(PepeHubApp(repository: repo));
     await tester.pumpAndSettle();
-    expect(find.text('Добавить книгу'), findsOneWidget);
+    expect(find.text('Добавить'), findsOneWidget);
     await tester.tap(find.byTooltip('Книги'));
     await tester.pumpAndSettle();
     expect(await repo.meta('library-section'), 'reading');
@@ -62,11 +62,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.byKey(const ValueKey('metadata:Author')),
+        find.widgetWithText(TextFormField, 'Авторы'),
         'Кирилл Клеванский',
       );
       await tester.enterText(
-        find.byKey(const ValueKey('metadata:Genre')),
+        find.widgetWithText(TextFormField, 'Жанры'),
         'Фэнтези; Приключения',
       );
       await tester.ensureVisible(find.text('Сохранить'));

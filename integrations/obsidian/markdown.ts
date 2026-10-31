@@ -8,7 +8,7 @@ export function updateBookBlock(existing: string,book: Entity,sessions: Entity[]
   const b=book.payload as Book;
   const eol=existing.includes('\r\n')?'\r\n':'\n';
   const start=`<!-- pepehub:${book.entityId}:start -->`,end=`<!-- pepehub:${book.entityId}:end -->`;
-  const lines=[start,`## ${cell(b.title)}`,'',`Авторы: ${b.authors.map(cell).join(', ') || '—'}`,`Формат: ${b.format === 'audio' ? 'Аудиокнига' : b.format.toUpperCase()}`,`Статус: ${{planned:'В планах',active:'В процессе',finished:'Завершено'}[b.status]}`,'','### Сессии','','| Начало (UTC) | Активность | Минуты | ID |','| --- | --- | ---: | --- |'];
+  const lines=[start,`## ${cell(b.title)}`,'',`Авторы: ${b.authors.map(cell).join(', ') || '—'}`,`Формат: ${b.format === 'audio' ? 'Аудиокнига' : b.format.toUpperCase()}`,`Статус: ${{planned:'В планах',active:'В процессе',paused:'Отложена',abandoned:'Брошена',finished:'Завершено'}[b.status]}`,'','### Сессии','','| Начало (UTC) | Активность | Минуты | ID |','| --- | --- | ---: | --- |'];
   const unique=new Map<string,Entity>();
   for(const entity of sessions) if(entity.entityType==='session'&&!entity.deleted&&entity.payload&&(entity.payload as Session).bookId===book.entityId) {
     const previous=unique.get(entity.entityId);

@@ -6,13 +6,16 @@ import { fileURLToPath } from 'node:url';
 import { initializeUpdateKey, projectRoot, signingKeyPath } from './update-key.ts';
 
 const owner = 'IshchenkoEvgeniy', repo = 'PepeHub-Releases';
-interface Artifact {file: string; sha256: string; bytes: number; versionCode: number; format: string}
+interface Delta {file: string; sha256: string; bytes: number; format: string; baseSha256: string; baseBytes: number; fromBuild: number}
+interface Artifact {file: string; sha256: string; bytes: number; versionCode: number; format: string; deltas?: Delta[]}
+type PublishedArtifact = Omit<Artifact, 'file' | 'deltas'> & {url: string; deltas?: Array<Omit<Delta, 'file'> & {url: string}>};
 export async function createUpdateManifest(directory: string, notes: string, now = new Date(), signingKey?: KeyObject) {
   if (!signingKey) initializeUpdateKey();
   const input = JSON.parse(readFileSync(path.join(directory, 'artifacts.json'), 'utf8')) as {version: string; build: number; artifacts: Record<string, Artifact>};
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(input.version) || !Number.isInteger(input.build) || input.build < 1 || input.build > 999999 || notes.length > 8000) throw new Error('Invalid release version/notes');
   const tag = `v${input.version}-${input.build}`;
-  const artifacts: Record<string, Omit<Artifact, 'file'> & {url: string}> = {};
+  const artifacts: Record<string, PublishedArtifact> = {};
+  const patchFiles: string[] = [];
   if (Object.keys(input.artifacts).sort().join(',') !== 'android-arm64,windows-x64') throw new Error('Both verified platform packages are required');
   for (const [platform, item] of Object.entries(input.artifacts)) {
     const filename = platform === 'windows-x64' ? 'PepeHub-windows-x64.zip' : 'PepeHub-android-arm64.apk';
@@ -23,6 +26,20 @@ export async function createUpdateManifest(directory: string, notes: string, now
     if (hash.digest('hex') !== item.sha256 || statSync(file).size !== item.bytes || item.bytes < 1 || item.bytes > 2147483648) throw new Error('Package changed after verification');
     artifacts[platform] = {url: `https://github.com/${owner}/${repo}/releases/download/${tag}/${filename}`,
       sha256: item.sha256, bytes: item.bytes, versionCode: item.versionCode, format: item.format};
+    if (item.deltas?.length) {
+      if (item.deltas.length > 3 || new Set(item.deltas.map(d => d.fromBuild)).size !== item.deltas.length) throw new Error('Too many or duplicate delta bases');
+      artifacts[platform].deltas = [];
+      for (const delta of item.deltas) {
+        const name = `PepeHub-${platform}-from-${delta.fromBuild}.pdelta`;
+        if (delta.file !== name || delta.format !== 'pepe-delta-v1' || !Number.isInteger(delta.fromBuild) || delta.fromBuild < 1 || delta.fromBuild >= input.build || !Number.isInteger(delta.bytes) || delta.bytes < 1 || delta.bytes >= item.bytes || !Number.isInteger(delta.baseBytes) || delta.baseBytes < 1 || delta.baseBytes > 2147483648 || !/^[a-f0-9]{64}$/.test(delta.baseSha256) || !/^[a-f0-9]{64}$/.test(delta.sha256)) throw new Error('Invalid delta package metadata');
+        const patch = path.join(directory, name), checksum = createHash('sha256');
+        for await (const chunk of createReadStream(patch)) checksum.update(chunk);
+        if (checksum.digest('hex') !== delta.sha256 || statSync(patch).size !== delta.bytes) throw new Error('Delta changed after verification');
+        const {file: _localFile, ...metadata} = delta;
+        artifacts[platform].deltas!.push({...metadata, url: `https://github.com/${owner}/${repo}/releases/download/${tag}/${name}`});
+        patchFiles.push(name);
+      }
+    }
   }
   const payload = Buffer.from(JSON.stringify({schema: 1, appId: 'app.pepehub.pepehub', channel: 'stable',
     version: input.version, build: input.build, publishedAt: now.toISOString(),
@@ -30,7 +47,7 @@ export async function createUpdateManifest(directory: string, notes: string, now
   const signature = sign(null, payload, signingKey ?? createPrivateKey(readFileSync(signingKeyPath)));
   const envelope = JSON.stringify({payload: payload.toString('base64'), signature: signature.toString('base64')});
   writeFileSync(path.join(directory, 'update.json'), envelope);
-  return {tag, version: input.version, build: input.build, files: ['PepeHub-windows-x64.zip', 'PepeHub-android-arm64.apk', 'update.json']};
+  return {tag, version: input.version, build: input.build, files: ['PepeHub-windows-x64.zip', 'PepeHub-android-arm64.apk', ...patchFiles, 'update.json']};
 }
 function githubCredential(): string {
   const output = execFileSync('git', ['credential', 'fill'], {input: 'protocol=https\nhost=github.com\n\n', encoding: 'utf8',

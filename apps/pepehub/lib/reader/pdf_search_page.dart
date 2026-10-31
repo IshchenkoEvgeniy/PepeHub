@@ -5,7 +5,42 @@ import 'package:pdfrx/pdfrx.dart';
 
 import 'reader_layout.dart';
 
-/// No whole-document text/glyph cache. A new query cancels the preceding scan.
+/// Retains bounded plain text, never native glyph arrays, across query edits.
+class PdfSearchTextCache {
+  final int maxCharacters, maxPages;
+  final _pages = <int,String>{};
+  int _characters = 0;
+  bool _closed = false;
+  PdfSearchTextCache({
+    this.maxCharacters = 8 * 1024 * 1024,
+    this.maxPages = 4096,
+  });
+  int get cachedPages => _pages.length;
+  Future<String> page(int number, Future<String> Function() load) async {
+    final hit = _pages.remove(number);
+    if (hit != null) {
+      _pages[number] = hit;
+      return hit;
+    }
+    final text = await load();
+    if (_closed || text.length > maxCharacters) return text;
+    while (_pages.isNotEmpty &&
+        (_characters + text.length > maxCharacters ||
+            _pages.length >= maxPages)) {
+      _characters -= _pages.remove(_pages.keys.first)!.length;
+    }
+    _pages[number] = text;
+    _characters += text.length;
+    return text;
+  }
+
+  void close() {
+    _closed = true;
+    _pages.clear();
+    _characters = 0;
+  }
+}
+
 class PdfSearchPage extends StatefulWidget {
   final PdfDocument document;
   const PdfSearchPage({super.key, required this.document});
@@ -20,11 +55,13 @@ class _PdfSearchPageState extends State<PdfSearchPage> {
   String query = '', error = '';
   final results = <Map<String, dynamic>>[];
   Future<void> pending = Future.value();
+  final textCache = PdfSearchTextCache();
 
   @override
   void dispose() {
     generation++;
     debounce?.cancel();
+    textCache.close();
     super.dispose();
   }
 
@@ -56,7 +93,10 @@ class _PdfSearchPageState extends State<PdfSearchPage> {
       final pattern = readerSearchPattern(needle);
       for (final page in widget.document.pages) {
         if (cancelled()) return;
-        final text = (await page.loadStructuredText()).fullText;
+        final text = await textCache.page(
+          page.pageNumber,
+          () async => (await page.loadStructuredText()).fullText,
+        );
         if (cancelled()) return;
         for (final match in pattern.allMatches(text)) {
           results.add({

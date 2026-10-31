@@ -194,7 +194,7 @@ class _AppSyncReviewPageState extends State<AppSyncReviewPage> {
     if (chapter < 0 || chapter >= book.chapters.length) {
       return 'Эта глава отсутствует в локальном файле.';
     }
-    final text = book.chapters[chapter].paragraphs.join('\n\n');
+    final text = book.chapters[chapter].text;
     return '${book.chapters[chapter].title}\n\n${readerPositionContext(text, version.value!['textOffset'] as int)}';
   }
 

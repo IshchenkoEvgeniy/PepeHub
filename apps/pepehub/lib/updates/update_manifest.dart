@@ -43,17 +43,55 @@ int compareVersions(String a, String b) {
   return 0;
 }
 
+class UpdateDelta {
+  final Uri url;
+  final String hash, baseHash;
+  final int bytes, baseBytes, fromBuild;
+  const UpdateDelta(
+    this.url,
+    this.hash,
+    this.bytes,
+    this.baseHash,
+    this.baseBytes,
+    this.fromBuild,
+  );
+  factory UpdateDelta.fromJson(Map<String, dynamic> value) {
+    final result = UpdateDelta(
+      updateUrl(value['url'] as String),
+      value['sha256'] as String,
+      value['bytes'] as int,
+      value['baseSha256'] as String,
+      value['baseBytes'] as int,
+      value['fromBuild'] as int,
+    );
+    if (value['format'] != 'pepe-delta-v1' ||
+        !RegExp(r'^[a-f0-9]{64}$').hasMatch(result.hash) ||
+        !RegExp(r'^[a-f0-9]{64}$').hasMatch(result.baseHash) ||
+        result.bytes < 1 ||
+        result.bytes > 2147483648 ||
+        result.baseBytes < 1 ||
+        result.baseBytes > 2147483648 ||
+        result.fromBuild < 1 ||
+        result.fromBuild > 999999) {
+      throw const UpdateException('Некорректный дельта-пакет');
+    }
+    return result;
+  }
+}
+
 class UpdateArtifact {
   final Uri url;
   final String hash, format;
   final int bytes, versionCode;
+  final List<UpdateDelta> deltas;
   const UpdateArtifact(
     this.url,
     this.hash,
     this.format,
     this.bytes,
-    this.versionCode,
-  );
+    this.versionCode, {
+    this.deltas = const [],
+  });
   factory UpdateArtifact.fromJson(Map<String, dynamic> value) {
     final result = UpdateArtifact(
       updateUrl(value['url'] as String),
@@ -61,13 +99,21 @@ class UpdateArtifact {
       value['format'] as String,
       value['bytes'] as int,
       value['versionCode'] as int,
+      deltas: [
+        for (final delta in value['deltas'] as List? ?? [])
+          UpdateDelta.fromJson(Map<String, dynamic>.from(delta as Map)),
+      ],
     );
     if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(result.hash) ||
         !['zip', 'apk'].contains(result.format) ||
         result.bytes < 1 ||
         result.bytes > 2147483648 ||
         result.versionCode < 1 ||
-        result.versionCode > 2100000000) {
+        result.versionCode > 2100000000 ||
+        result.deltas.length > 3 ||
+        result.deltas.any((d) => d.bytes >= result.bytes) ||
+        result.deltas.map((d) => d.fromBuild).toSet().length !=
+            result.deltas.length) {
       throw const UpdateException('Некорректные параметры файла обновления');
     }
     return result;
@@ -156,6 +202,7 @@ class UpdateRelease {
       };
       for (final item in artifacts.entries) {
         if (item.value.format != (item.key == 'windows-x64' ? 'zip' : 'apk') ||
+            item.value.deltas.any((d) => d.fromBuild >= build) ||
             item.value.versionCode !=
                 build + (item.key == 'android-arm64' ? 2000 : 0)) {
           throw const UpdateException('Неверная версия пакета обновления');

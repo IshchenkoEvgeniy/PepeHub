@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import '../audio/audio_journal.dart';
 import '../data/repository.dart';
 import '../media/audio_controller.dart';
 import '../reader/reading_library.dart';
+import '../reader/statistics_history.dart';
 import '../reader/reading_log.dart';
 
 /// CRUD for the source records behind both statistics screens.
@@ -37,6 +39,9 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
   void Function()? _releaseSync;
   late final TabController tabs;
   bool loading = true;
+  bool _moreReading = false, _moreAudio = false;
+  int _loadRequest = 0, _activeTab = 0;
+  Timer? _searchTimer;
   List<_ReadingEntry> reading = [];
   List<LibraryRecord> audioEvents = [], legacyListening = [];
   List<LibraryRecord> readingBooks = [], audioBooks = [];
@@ -59,34 +64,38 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
       vsync: this,
       initialIndex: widget.initialTab.clamp(0, 1).toInt(),
     );
+    _activeTab = tabs.index;
     tabs.addListener(_tabChanged);
     _load();
   }
 
   void _tabChanged() {
-    if (mounted && !tabs.indexIsChanging) {
+    if (mounted && !tabs.indexIsChanging && tabs.index != _activeTab) {
+      _activeTab = tabs.index;
       setState(() {
         selectedBookId = null;
         typeFilter = 'all';
         selectedEntries.clear();
       });
+      _load();
     }
   }
 
   @override
   void dispose() {
     _releaseSync?.call();
+    _searchTimer?.cancel();
     search.dispose();
     tabs.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool append = false}) async {
+    final request = ++_loadRequest;
     if (mounted) setState(() => loading = true);
     try {
       final repository = widget.repository;
-      final library = ReadingLibrary(repository);
-      final allBooks = await repository.records('book');
+      final allBooks = await repository.bookHeaders();
       final nextReadingBooks = allBooks
           .where((b) => b.payload?['format'] != 'audio')
           .toList();
@@ -94,57 +103,106 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
           .where((b) => b.payload?['format'] == 'audio')
           .toList();
       final names = {for (final b in allBooks) b.id: b.title};
-      final automatic = await library.entries('reading-session:');
-      final nextReading = <_ReadingEntry>[
-        for (final e in automatic.entries)
-          _ReadingEntry(id: e.key, payload: e.value, automatic: true),
-        for (final e in await repository.records('session'))
-          if (e.payload?['kind'] == 'reading')
-            _ReadingEntry(id: e.id, payload: e.payload!, automatic: false),
-      ]..sort((a, b) => _dateOf(b.payload).compareTo(_dateOf(a.payload)));
-      final nextEvents = await repository.records('audio_event');
-      nextEvents.sort(
-        (a, b) => _dateOf(b.payload ?? {}).compareTo(_dateOf(a.payload ?? {})),
+      final history = StatisticsHistory(repository);
+      final nextReadingPage = await history.page(
+        reading: true,
+        titles: names,
+        bookId: selectedBookId,
+        filter: tabs.index == 0 ? typeFilter : 'all',
+        days: periodDays,
+        newest: newestFirst,
+        search: search.text,
+        offset: append ? reading.length : 0,
       );
-      final nextLegacy =
-          (await repository.records('session'))
-              .where((e) => e.payload?['kind'] == 'listening')
-              .toList()
-            ..sort(
-              (a, b) =>
-                  _dateOf(b.payload ?? {}).compareTo(_dateOf(a.payload ?? {})),
-            );
-      final trackRows = await repository.db
-          .customSelect(
-            'SELECT e.book_id,t.id,t.title FROM audio_tracks t JOIN audio_editions e ON e.id=t.edition_id ORDER BY e.book_id,t.ordinal',
-          )
-          .get();
-      final nextTracks = <String, List<MapEntry<String, String>>>{};
-      for (final row in trackRows) {
-        nextTracks
-            .putIfAbsent(row.read<String>('book_id'), () => [])
-            .add(MapEntry(row.read<String>('id'), row.read<String>('title')));
-      }
-      if (!mounted) return;
+      final nextAudioPage = await history.page(
+        reading: false,
+        titles: names,
+        bookId: selectedBookId,
+        filter: tabs.index == 1 ? typeFilter : 'all',
+        days: periodDays,
+        newest: newestFirst,
+        search: search.text,
+        offset: append ? audioEvents.length + legacyListening.length : 0,
+      );
+      final nextReading = [
+        for (final row in nextReadingPage.rows)
+          _ReadingEntry(
+            id: row.id,
+            payload: row.data,
+            automatic: row.source == 'automatic',
+          ),
+      ];
+      final nextEvents = [
+        for (final row in nextAudioPage.rows)
+          if (row.source == 'audio')
+            LibraryRecord(row.id, 'audio_event', 1, false, row.data),
+      ];
+      final nextLegacy = [
+        for (final row in nextAudioPage.rows)
+          if (row.source == 'legacy')
+            LibraryRecord(row.id, 'session', 1, false, row.data),
+      ];
+      if (!mounted || request != _loadRequest) return;
       setState(() {
-        reading = nextReading;
-        audioEvents = nextEvents;
-        legacyListening = nextLegacy;
+        reading =
+            (append
+                  ? {
+                      for (final entry in [...reading, ...nextReading])
+                        '${entry.automatic}:${entry.id}': entry,
+                    }.values.toList()
+                  : nextReading)
+              ..sort(
+                (a, b) => _dateOf(b.payload).compareTo(_dateOf(a.payload)),
+              );
+        audioEvents = append
+            ? {
+                for (final entry in [...audioEvents, ...nextEvents])
+                  entry.id: entry,
+              }.values.toList()
+            : nextEvents;
+        legacyListening = append
+            ? {
+                for (final entry in [...legacyListening, ...nextLegacy])
+                  entry.id: entry,
+              }.values.toList()
+            : nextLegacy;
+        _moreReading = nextReadingPage.hasMore;
+        _moreAudio = nextAudioPage.hasMore;
         readingBooks = nextReadingBooks;
         audioBooks = nextAudioBooks;
         titles = names;
-        tracks = nextTracks;
+        if (!append) tracks = {};
         loadError = null;
         loading = false;
       });
     } catch (e) {
-      if (mounted) {
+      if (mounted && request == _loadRequest) {
         setState(() {
           loadError = '$e';
           loading = false;
         });
       }
     }
+  }
+
+  Future<void> _ensureTracks() async {
+    if (tracks.isNotEmpty) return;
+    final rows = await widget.repository.db
+        .customSelect(
+          'SELECT e.book_id,t.id,t.title FROM audio_tracks t JOIN audio_editions e ON e.id=t.edition_id ORDER BY e.book_id,t.ordinal',
+        )
+        .get();
+    tracks = {};
+    for (final row in rows) {
+      (tracks[row.read<String>('book_id')] ??= []).add(
+        MapEntry(row.read<String>('id'), row.read<String>('title')),
+      );
+    }
+  }
+
+  void _filterChanged() {
+    selectedEntries.clear();
+    unawaited(_load());
   }
 
   Future<void> _report(String message) async {
@@ -203,6 +261,8 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     }
     final initialBook = audioBooks.first.id;
     final now = DateTime.now();
+    await _ensureTracks();
+    if (!mounted) return;
     final value = await _audioEventDialog(
       context,
       titles: titles,
@@ -238,7 +298,11 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
   }
 
   Future<void> _editReading(_ReadingEntry entry) async {
-    final before = entry.payload;
+    final before = entry.automatic
+        ? await ReadingLibrary(widget.repository)
+              .value('reading-session:${entry.id}')
+        : entry.payload;
+    if (!mounted) return;
     final edited = await _jsonEditor(
       context,
       title: entry.automatic
@@ -933,7 +997,12 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
         children: [
           TextField(
             controller: search,
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) {
+              _searchTimer?.cancel();
+              _searchTimer = Timer(const Duration(milliseconds: 200), () {
+                if (mounted) _filterChanged();
+              });
+            },
             decoration: InputDecoration(
               isDense: true,
               prefixIcon: const Icon(Icons.search),
@@ -942,7 +1011,10 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
                   ? null
                   : IconButton(
                       tooltip: 'Очистить поиск',
-                      onPressed: () => setState(search.clear),
+                      onPressed: () {
+                        search.clear();
+                        _filterChanged();
+                      },
                       icon: const Icon(Icons.close),
                     ),
               border: const OutlineInputBorder(),
@@ -973,7 +1045,10 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
                         ),
                       ),
                   ],
-                  onChanged: (value) => setState(() => selectedBookId = value),
+                  onChanged: (value) {
+                    selectedBookId = value;
+                    _filterChanged();
+                  },
                 ),
                 const SizedBox(width: 10),
                 DropdownButton<String>(
@@ -985,8 +1060,10 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
                         child: Text(entry.value),
                       ),
                   ],
-                  onChanged: (value) =>
-                      setState(() => typeFilter = value ?? 'all'),
+                  onChanged: (value) {
+                    typeFilter = value ?? 'all';
+                    _filterChanged();
+                  },
                 ),
                 const SizedBox(width: 10),
                 DropdownButton<int>(
@@ -997,11 +1074,17 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
                     DropdownMenuItem(value: 30, child: Text('30 дней')),
                     DropdownMenuItem(value: 365, child: Text('Год')),
                   ],
-                  onChanged: (value) => setState(() => periodDays = value ?? 0),
+                  onChanged: (value) {
+                    periodDays = value ?? 0;
+                    _filterChanged();
+                  },
                 ),
                 IconButton(
                   tooltip: newestFirst ? 'Сначала старые' : 'Сначала новые',
-                  onPressed: () => setState(() => newestFirst = !newestFirst),
+                  onPressed: () {
+                    newestFirst = !newestFirst;
+                    _filterChanged();
+                  },
                   icon: Icon(
                     newestFirst ? Icons.arrow_downward : Icons.arrow_upward,
                   ),
@@ -1195,8 +1278,15 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
-                    itemCount: visible.length,
-                    itemBuilder: (_, index) => _readingItem(visible[index]),
+                    itemCount: visible.length + (_moreReading ? 1 : 0),
+                    itemBuilder: (_, index) => index == visible.length
+                        ? TextButton(
+                            onPressed: loading
+                                ? null
+                                : () => _load(append: true),
+                            child: const Text('Показать ещё'),
+                          )
+                        : _readingItem(visible[index]),
                   );
           },
         );
@@ -1217,8 +1307,13 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
             }
             return ListView.builder(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
-              itemCount: rows.length,
-              itemBuilder: (_, index) => rows[index].legacy
+              itemCount: rows.length + (_moreAudio ? 1 : 0),
+              itemBuilder: (_, index) => index == rows.length
+                  ? TextButton(
+                      onPressed: loading ? null : () => _load(append: true),
+                      child: const Text('Показать ещё'),
+                    )
+                  : rows[index].legacy
                   ? _legacyItem(rows[index].record)
                   : _audioItem(rows[index].record),
             );
@@ -1280,7 +1375,8 @@ String? _validateSyncedSession(Map<String, dynamic> data, String kind) {
   return null;
 }
 
-DateTime _dateOf(Map<String, dynamic> data) =>
+final _historyDates = Expando<DateTime>();
+DateTime _dateOf(Map<String, dynamic> data) => _historyDates[data] ??=
     DateTime.tryParse(
       data['startedAt'] as String? ?? data['at'] as String? ?? '',
     ) ??
@@ -1312,26 +1408,7 @@ IconData _eventIcon(String kind) => switch (kind) {
   _ => Icons.history,
 };
 
-String _eventName(String kind) =>
-    const {
-      'listen': 'Прослушивание',
-      'chapter_completed': 'Завершена глава',
-      'play': 'Воспроизведение',
-      'pause': 'Пауза',
-      'stop': 'Остановка',
-      'seek': 'Перемотка',
-      'speed': 'Скорость',
-      'bookmark': 'Закладка',
-      'sleep_set': 'Таймер установлен',
-      'sleep_fired': 'Таймер сработал',
-      'sleep_extended': 'Таймер продлён',
-      'sleep_cancelled': 'Таймер отменён',
-      'completed': 'Конец книги',
-      'track_changed': 'Смена трека',
-      'buffering': 'Буферизация',
-      'error': 'Ошибка',
-    }[kind] ??
-    kind;
+String _eventName(String kind) => historyEventName(kind);
 
 const _eventKinds = [
   'listen',

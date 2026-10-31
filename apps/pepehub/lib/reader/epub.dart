@@ -18,6 +18,8 @@ class EpubChapter {
   final List<BookFootnote> footnotes;
   final List<BookIllustration> illustrations;
   final List<BookMarkup> markup;
+  final String paragraphSeparator;
+  String get text => paragraphs.join(paragraphSeparator);
   const EpubChapter(
     this.path,
     this.title,
@@ -25,6 +27,7 @@ class EpubChapter {
     this.footnotes = const [],
     this.illustrations = const [],
     this.markup = const [],
+    this.paragraphSeparator = '\n\n',
   });
 }
 

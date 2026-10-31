@@ -100,9 +100,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('settings-entry:sync')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Obsidian'));
+      expect(find.text('Obsidian'), findsNothing);
+      await tester.tap(find.text('Экспорт и резервные копии'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Обменять с Obsidian'));
+      await tester.ensureVisible(find.text('Данные библиотеки'));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       appearance.dispose();

@@ -84,6 +84,44 @@ class BookFileAccessTest {
         access.delete(document.toString(), hash, false)
         assertFalse(book.file.exists())
     }
+    @Test fun linkedAudioUsesTheExactDocumentAndSizeWithoutOpeningItsPayload() {
+        val audio = provider.add("chapter.mp3", original, "root"); grant()
+        provider.failOpen = true
+        access.delete(uri(audio.id).toString(), "external:3", true)
+        assertTrue(audio.file.exists())
+        access.delete(uri(audio.id).toString(), "external:3", false)
+        assertFalse(audio.file.exists())
+    }
+    @Test fun aChangedLinkedAudioSizeStopsDeletion() {
+        val audio = provider.add("chapter.mp3", original, "root"); grant()
+        val error = assertThrows(BookFileAccessFailure::class.java) {
+            access.delete(uri(audio.id).toString(), "external:4", false)
+        }
+        assertEquals("book_file", error.code)
+        assertArrayEquals(original, audio.file.readBytes())
+    }
+    @Test fun linkedAudioStillRequiresWritePermission() {
+        val audio = provider.add("chapter.mp3", original, "root")
+        grant(flags = Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val error = assertThrows(BookFileAccessFailure::class.java) {
+            access.delete(uri(audio.id).toString(), "external:3", false)
+        }
+        assertEquals("book_write_permission", error.code)
+        assertEquals(tree, error.root)
+        assertTrue(audio.file.exists())
+    }
+    @Test fun linkedAudioNeverAuthorizesDeletingADirectoryOrAnUnknownSize() {
+        val audio = provider.add("chapter.mp3", original, "root"); grant()
+        val folder = provider.add("Audio", directory = true)
+        assertThrows(BookFileAccessFailure::class.java) {
+            access.delete(uri(folder.id).toString(), "external:3", false)
+        }
+        assertThrows(IllegalStateException::class.java) {
+            access.delete(uri(audio.id).toString(), "external:0", false)
+        }
+        assertTrue(audio.file.exists())
+        assertTrue(provider.entries.containsKey(folder.id))
+    }
     @Test fun aNewAncestorGrantRebindsAnOldReadOnlyTreeUri() {
         val folder = provider.add("Subfolder", directory = true)
         val book = book(folder.id)

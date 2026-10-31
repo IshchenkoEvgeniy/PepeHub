@@ -330,6 +330,8 @@ void main() {
         await tester.pumpAndSettle();
       }
       expect(find.text('Показать в проводнике'), findsOneWidget);
+      await tester.tap(find.text('Файлы и обмен'));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Удалить навсегда…'));
       await tester.tap(find.text('Удалить навсегда…'));
       await tester.pumpAndSettle();

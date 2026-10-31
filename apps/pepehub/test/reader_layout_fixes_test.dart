@@ -345,8 +345,14 @@ void main() {
           after.texts[chapter].substring(moved.offset),
           startsWith('Четыре'),
         );
-        expect(await repo.meta('reader-layout-backup-5:book'), isNotNull);
-        expect(await repo.meta('reader-layout-version:book'), '5');
+        expect(
+          await repo.meta('reader-layout-backup-$currentBookLayout:book'),
+          isNotNull,
+        );
+        expect(
+          await repo.meta('reader-layout-version:book'),
+          '$currentBookLayout',
+        );
 
         // Runs once.
         await migrateReaderLayout(

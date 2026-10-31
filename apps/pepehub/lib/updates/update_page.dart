@@ -203,7 +203,11 @@ class UpdatePage extends StatelessWidget {
                 'Доступна версия ${release.version}',
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
-              subtitle: Text(_size(asset.bytes)),
+              subtitle: Text(
+                service.delta == null
+                    ? _size(asset.bytes)
+                    : 'Скачать изменения: ${_size(service.delta!.bytes)}',
+              ),
             ),
             if (release.notes.isNotEmpty)
               ExpansionTile(
@@ -222,6 +226,7 @@ class UpdatePage extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 12),
             child: Semantics(liveRegion: true, child: Text(step)),
           ),
+        if (service.downloadNotice case final notice?) SettingsNotice(notice),
         if (phase == UpdatePhase.downloading) ...[
           LinearProgressIndicator(
             value: service.total == 0 ? null : service.received / service.total,
@@ -261,10 +266,18 @@ class UpdatePage extends StatelessWidget {
           ),
         ] else
           FilledButton.icon(
-            onPressed: service.busy ? null : service.download,
+            onPressed: service.busy
+                ? null
+                : () => service.download(
+                    fullPackage: service.fullPackageRequired,
+                  ),
             icon: const Icon(Icons.download_outlined),
             label: Text(
-              service.received > 0
+              service.fullPackageRequired
+                  ? 'Скачать полный пакет · ${_size(asset.bytes)}'
+                  : service.delta != null
+                  ? 'Скачать изменения · ${_size(service.delta!.bytes)}'
+                  : service.received > 0
                   ? 'Продолжить загрузку'
                   : 'Скачать обновление',
             ),
@@ -278,6 +291,12 @@ class UpdatePage extends StatelessWidget {
               icon: const Icon(Icons.open_in_browser),
               label: const Text('Скачать APK через браузер'),
             ),
+          ),
+        if (service.delta != null && service.package == null && !service.busy)
+          TextButton.icon(
+            onPressed: () => service.download(fullPackage: true),
+            icon: const Icon(Icons.download),
+            label: const Text('Скачать полный пакет'),
           ),
       ] else
         FilledButton.icon(

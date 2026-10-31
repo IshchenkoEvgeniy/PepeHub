@@ -4,7 +4,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:uuid/uuid.dart';
 
-const currentDatabaseVersion = 4;
+const currentDatabaseVersion = 6;
 
 /// Frozen at the name introduced by schema 3: later versions migrate in place.
 const currentDatabaseFilename = 'pepehub-v3.sqlite';

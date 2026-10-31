@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import 'database_files.dart';
 import 'database_schema.dart';
+import 'performance_projections.dart';
 
 class AppDatabase extends GeneratedDatabase {
   AppDatabase(super.executor);
@@ -52,6 +53,7 @@ class AppDatabase extends GeneratedDatabase {
       await _addAudioSchema();
       await _addEditionSchema();
       await createFeatureSchema(this);
+      await ensurePerformanceProjections(this);
       await customStatement('PRAGMA user_version = $currentDatabaseVersion');
     }),
     onUpgrade: (_, from, to) async {
@@ -60,10 +62,15 @@ class AppDatabase extends GeneratedDatabase {
         if (from < 2) await _addAudioSchema();
         if (from < 3) await _addEditionSchema();
         if (from < 4) await createFeatureSchema(this);
+        if (from < 5) await ensurePerformanceProjections(this);
+        if (from < 6) await ensureReadingSessionBookIndex(this);
         await customStatement('PRAGMA user_version = $currentDatabaseVersion');
       });
     },
     beforeOpen: (_) async {
+      await customStatement('PRAGMA journal_mode = WAL');
+      // Keep FULL durability: NORMAL can lose the latest committed progress
+      // on power loss. WAL alone removes rollback-journal reader blocking.
       await customStatement('PRAGMA foreign_keys = ON');
     },
   );

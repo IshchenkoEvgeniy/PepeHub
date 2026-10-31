@@ -143,7 +143,10 @@ void main() {
     expect((await library.value('reading-coverage:h'))['ranges'], [
       [0, at],
     ]);
-    expect(await repo.meta('reader-layout-backup-5:h'), isNotNull);
+    expect(
+      await repo.meta('reader-layout-backup-$currentBookLayout:h'),
+      isNotNull,
+    );
     await migrateReaderLayout(library, 'h', after, noLegacy, prior: noLegacy);
     expect(await library.entries('reading-note:'), hasLength(2));
   });

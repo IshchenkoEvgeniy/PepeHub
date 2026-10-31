@@ -47,6 +47,8 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
   bool loading = true, saving = false;
   bool startEdited = false, endEdited = false, statusEdited = false;
   ReadingPlanData? plan;
+  ReadingForecast? _forecast;
+  ReadingTotals _totals = ReadingTotals();
   @override
   void initState() {
     super.initState();
@@ -72,8 +74,13 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
       } catch (_) {
         planData = null;
       }
+      final analysis = planData == null
+          ? null
+          : await analyzeReadingPlan(planData, widget.book.id, DateTime.now());
       if (!mounted) return;
       setState(() {
+        _forecast = analysis?.forecast;
+        _totals = analysis?.totals ?? ReadingTotals();
         title.text = info['title'] as String? ?? widget.book.title;
         authors.text = (info['authors'] as List? ?? []).join('; ');
         series.text = info['series'] as String? ?? '';
@@ -223,7 +230,18 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
     if (!mounted) return;
     try {
       final data = await ReadingPlans(widget.repository).load(widget.book.id);
-      if (mounted) setState(() => plan = data);
+      final analysis = await analyzeReadingPlan(
+        data,
+        widget.book.id,
+        DateTime.now(),
+      );
+      if (mounted) {
+        setState(() {
+          plan = data;
+          _forecast = analysis.forecast;
+          _totals = analysis.totals;
+        });
+      }
     } catch (_) {}
   }
 
@@ -450,21 +468,7 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
     final palette = ShelfPalette.of(context);
     final wide = pepeWide(context);
     final data = plan;
-    final forecast = data == null
-        ? null
-        : forecastReading(
-            plan: data.saved ?? const ReadingPlan(),
-            bookId: widget.book.id,
-            hash: data.hash,
-            length: data.length,
-            coverage: data.coverage,
-            sessions: data.sessions,
-            now: DateTime.now(),
-          );
-    final totals = readingTotals(
-      data?.sessions ?? const [],
-      bookId: widget.book.id,
-    );
+    final forecast = _forecast, totals = _totals;
     final now = DateTime.now();
     final fortnight = [
       for (var i = 13; i >= 0; i--) DateTime(now.year, now.month, now.day - i),

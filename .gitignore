@@ -16,3 +16,4 @@ android/local.properties
 *.keystore
 *.iml
 .idea/
+.codex-remote-attachments/

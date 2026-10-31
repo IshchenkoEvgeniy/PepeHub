@@ -9,6 +9,7 @@ import '../reader/reading_library.dart';
 import '../audio/audio_journal.dart' show dayKey;
 import 'library_repository.dart';
 import 'personal_library.dart';
+import 'library_features.dart';
 
 class _Equality {
   const _Equality();
@@ -336,7 +337,13 @@ class ActivityStore {
     final links =
         (await (catalog ?? LibraryRepository(local, namespace)).entries())
             .values
-            .where((e) => e.sourceBookId != null && e.state == 'synced');
+            .where(
+              (e) =>
+                  e.sourceBookId != null &&
+                  (catalog == null || isLibraryArchiveItem(e.item)) &&
+                  e.state == 'synced' &&
+                  !isLibraryDeleted(e.item),
+            );
     final byBook = {for (final link in links) link.sourceBookId!: link.item};
     final values = <String, Map<String, dynamic>>{},
         sources = <String, Map<String, dynamic>>{};

@@ -679,9 +679,6 @@ Future<void> exportLibraryTable(
       now.difference(previous).inMinutes < 60) {
     return;
   }
-  final all = (await repo.records('audio_event'))
-      .map((r) => r.payload!)
-      .toList();
   final rows = <List<Object?>>[
     [
       'ID',
@@ -706,8 +703,13 @@ Future<void> exportLibraryTable(
     final card = await repo.record(id);
     final tracks = await assets.audioTracks(id);
     if (tracks.isEmpty) continue;
-    final events = all.where((e) => e['bookId'] == id).toList()
-      ..sort((a, b) => (a['at'] as String).compareTo(b['at'] as String));
+    final events =
+        (await AudioJournal(repo).list(
+            'audio_event',
+            bookId: id,
+            limit: -1,
+          )).map((record) => record.payload!).toList()
+          ..sort((a, b) => (a['at'] as String).compareTo(b['at'] as String));
     final stats = AudioStats(events);
     final progress = await AudioLibraryRepository(repo.db)
         .progressForTrack(tracks.first.id);

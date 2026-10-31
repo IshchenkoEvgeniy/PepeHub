@@ -4,7 +4,7 @@ export interface Book {
   title: string;
   authors: string[];
   format: typeof bookFormats[number];
-  status: 'planned' | 'active' | 'finished';
+  status: 'planned' | 'active' | 'paused' | 'abandoned' | 'finished';
 }
 export interface Session {
   bookId: string;
@@ -73,7 +73,7 @@ export function parseOperation(input: unknown): Operation {
     const p = record(o.payload);
     exactKeys(p, ['title','authors','format','status']);
     if (!Array.isArray(p.authors) || p.authors.length > 30) throw new InputError('Invalid authors');
-    payload = { title: text(p.title, 500), authors: p.authors.map(a => text(a, 200)), format: choice(p.format, bookFormats), status: choice(p.status, ['planned', 'active', 'finished']) };
+    payload = { title: text(p.title, 500), authors: p.authors.map(a => text(a, 200)), format: choice(p.format, bookFormats), status: choice(p.status, ['planned', 'active', 'paused', 'abandoned', 'finished']) };
   } else {
     const p = record(o.payload);
     exactKeys(p, ['bookId','kind','startedAt','endedAt','activeSeconds','timezone','source','offsetMinutes']);

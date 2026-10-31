@@ -3,6 +3,9 @@ import 'dart:typed_data';
 
 import 'package:enough_convert/enough_convert.dart';
 
+bool _rtfLetter(int code) =>
+    code >= 65 && code <= 90 || code >= 97 && code <= 122;
+
 /// Text projection with emphasis ranges; pictures and embedded objects are ignored.
 String rtfText(
   Uint8List bytes, {
@@ -100,7 +103,7 @@ String rtfText(
       emit(decode(byte));
       continue;
     }
-    if (!RegExp('[a-zA-Z]').hasMatch(symbol)) {
+    if (!_rtfLetter(symbol.codeUnitAt(0))) {
       i++;
       if (symbol == '*') skip = true;
       if (symbol == '~') emit(' ');
@@ -108,13 +111,15 @@ String rtfText(
       continue;
     }
     final start = i;
-    while (i < source.length && RegExp('[a-zA-Z]').hasMatch(source[i])) {
+    while (i < source.length && _rtfLetter(source.codeUnitAt(i))) {
       i++;
     }
     final word = source.substring(start, i);
     final paramStart = i;
     if (i < source.length && source[i] == '-') i++;
-    while (i < source.length && RegExp('[0-9]').hasMatch(source[i])) {
+    while (i < source.length &&
+        source.codeUnitAt(i) >= 48 &&
+        source.codeUnitAt(i) <= 57) {
       i++;
     }
     final number = i > paramStart

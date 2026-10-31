@@ -73,7 +73,7 @@ void main() {
       'rating': 9,
     });
     await service.add(draft, '');
-    expect(service.completed.single.item.value('endDate'), isNull);
+    expect(service.completed.single.item.value('endDate'), isNotNull);
     expect(service.completed.single.item.value('rating'), 9);
     final client = MockClient((_) => throw StateError('No network'));
     addTearDown(client.close);
@@ -125,7 +125,8 @@ void main() {
     await remote.receive(snapshot(id, status: 'В планах'));
     await service.reload();
     expect(service.completed, isEmpty);
-    final personalId = service.inbox.single.item.id;
+    expect(service.visibleEntries, isEmpty);
+    final personalId = service.entries.single.item.id;
     await service.toRecommendations(personalId);
     await service.toRecommendations(personalId);
     expect(service.inbox, isEmpty);

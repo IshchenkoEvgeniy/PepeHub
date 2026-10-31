@@ -39,7 +39,8 @@ class ReaderRebase implements ReaderAnchorMap {
         offset: offset.clamp(0, after.texts[target].length),
       );
     }
-    final next = after.book.chapters[target].paragraphs;
+    final nextChapter = after.book.chapters[target];
+    final next = nextChapter.paragraphs;
     var oldStart = 0, newStart = 0, cursor = 0;
     for (final paragraph in old.paragraphs) {
       final normalized = paragraph.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -54,7 +55,8 @@ class ReaderRebase implements ReaderAnchorMap {
         );
       }
       while (cursor < match) {
-        newStart += next[cursor++].length + 2;
+        newStart +=
+            next[cursor++].length + nextChapter.paragraphSeparator.length;
       }
       if (offset <= oldStart + paragraph.length) {
         final within = (offset - oldStart).clamp(0, paragraph.length);
@@ -75,8 +77,8 @@ class ReaderRebase implements ReaderAnchorMap {
             : positions[normalizedOffset];
         return (chapter: target, offset: newStart + mapped);
       }
-      oldStart += paragraph.length + 2;
-      newStart += next[cursor++].length + 2;
+      oldStart += paragraph.length + old.paragraphSeparator.length;
+      newStart += next[cursor++].length + nextChapter.paragraphSeparator.length;
     }
     return (chapter: target, offset: after.texts[target].length);
   }
@@ -395,12 +397,14 @@ Future<void> migrateReaderLayout(
       }
     }
     await library.update('reading-index:$hash', {
+      'layoutVersion': currentBookLayout,
       'starts': next.starts,
       'length': next.length,
       'lengths': [for (final t in next.texts) t.length],
       'chapters': [for (final c in next.book.chapters) c.title],
       'paragraphStarts': [
-        for (final c in next.book.chapters) paragraphOffsets(c.paragraphs),
+        for (final c in next.book.chapters)
+          paragraphOffsets(c.paragraphs, separator: c.paragraphSeparator),
       ],
     });
     await repo.setMeta('reader-layout-version:$hash', '$currentBookLayout');

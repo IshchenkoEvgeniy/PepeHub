@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import '../data/repository.dart';
 import 'update_manifest.dart';
 import 'update_package.dart';
+import 'update_delta.dart';
 import 'update_trust.dart';
 
 class UpdateAppInfo {
@@ -37,9 +38,20 @@ abstract class UpdatePlatform {
   Future<void> exitForUpdate();
 }
 
-class NativeUpdatePlatform implements UpdatePlatform {
+abstract interface class UpdateBaseProvider {
+  Future<File?> installedPackage();
+}
+
+class NativeUpdatePlatform implements UpdatePlatform, UpdateBaseProvider {
   const NativeUpdatePlatform();
   static const channel = MethodChannel('pepehub/updates');
+  @override
+  Future<File?> installedPackage() async {
+    if (!Platform.isAndroid) return null;
+    final path = await channel.invokeMethod<String>('getInstalledPackage');
+    return path == null ? null : File(path);
+  }
+
   @override
   Future<UpdateAppInfo> info() async => UpdateAppInfo.fromJson(
     (await channel.invokeMapMethod<Object?, Object?>('getInfo'))!,
@@ -126,6 +138,21 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
   bool automatic = true, loaded = false, _disposed = false, _cancelled = false;
   int received = 0, total = 0;
   File? package;
+  String? downloadNotice;
+  bool usingDelta = false;
+  bool fullPackageRequired = false;
+  final Set<String> _failedDeltas = {};
+  UpdateDelta? get delta {
+    final installed = app;
+    if (installed == null) return null;
+    final build =
+        installed.versionCode -
+        (installed.platform == 'android-arm64' ? 2000 : 0);
+    return artifact?.deltas
+        .where((d) => d.fromBuild == build && !_failedDeltas.contains(d.hash))
+        .firstOrNull;
+  }
+
   String? installStep;
   bool _waitingForInstallSettings = false;
   http.Client? _downloader;
@@ -289,7 +316,12 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
         final changed = artifact?.hash != candidate.hash;
         release = latest;
         artifact = candidate;
-        if (changed) package = null;
+        if (changed) {
+          package = null;
+          fullPackageRequired = false;
+          downloadNotice = null;
+          _failedDeltas.clear();
+        }
         // Settings can recreate the Android process. Reuse a verified download
         // after a restart rather than asking the user to fetch the APK again.
         if (package == null) {
@@ -345,49 +377,32 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
   String _packageName(UpdateRelease value, UpdateArtifact asset) =>
       '${value.build}-${app!.platform}-${asset.hash}.${asset.format}';
 
-  Future<void> download() async {
-    if (!available || busy || _disposed) return;
-    final selected = artifact!, selectedRelease = release!;
-    phase = UpdatePhase.downloading;
-    _cancelled = false;
-    error = null;
-    total = selected.bytes;
-    received = 0;
-    package = null;
-    _notify();
+  Future<File> _fetchPackage(
+    http.Client connection,
+    Directory root,
+    String name,
+    UpdateArtifact selected,
+  ) async {
+    final ready = File(p.join(root.path, name)),
+        partial = File(p.join(root.path, '$name.part'));
+    if (_cancelled || _disposed) {
+      throw const UpdateException('Загрузка отменена');
+    }
+    if (await _verified(ready, selected)) {
+      received = selected.bytes;
+      return ready;
+    }
+    if (await FileSystemEntity.type(partial.path, followLinks: false) ==
+        FileSystemEntityType.link) {
+      throw const UpdateException('Неверный файл загрузки');
+    }
+    var offset = await partial.exists() ? await partial.length() : 0;
+    if (offset > selected.bytes) {
+      await partial.delete();
+      offset = 0;
+    }
     IOSink? output;
-    final connection = downloadClient();
-    _downloader = connection;
     try {
-      final root = await _cache();
-      final name = _packageName(selectedRelease, selected);
-      final ready = File(p.join(root.path, name)),
-          partial = File(p.join(root.path, '$name.part'));
-      await for (final old in root.list(followLinks: false)) {
-        final base = p.basename(old.path);
-        if (old is File &&
-            base != name &&
-            base != '$name.part' &&
-            RegExp(
-              r'^\d+-(windows-x64|android-arm64|android-universal)-[a-f0-9]{64}\.(zip|apk)(\.part)?$',
-            ).hasMatch(base)) {
-          await old.delete();
-        }
-      }
-      if (await _verified(ready, selected)) {
-        package = ready;
-        phase = UpdatePhase.ready;
-        return;
-      }
-      if (await FileSystemEntity.type(partial.path, followLinks: false) ==
-          FileSystemEntityType.link) {
-        throw const UpdateException('Неверный файл загрузки');
-      }
-      var offset = await partial.exists() ? await partial.length() : 0;
-      if (offset > selected.bytes) {
-        await partial.delete();
-        offset = 0;
-      }
       if (offset < selected.bytes) {
         final response = await _get(
           connection,
@@ -440,7 +455,6 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
             throw const UpdateException('Сервер прислал лишние данные');
           }
           output.add(chunk);
-          // Flush applies backpressure: a slow disk cannot accumulate the ZIP in RAM.
           await output.flush();
           if (now().millisecondsSinceEpoch - lastNotice > 100) {
             lastNotice = now().millisecondsSinceEpoch;
@@ -450,7 +464,9 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
         await output.close();
         output = null;
       }
-      if (_cancelled) throw const UpdateException('Загрузка отменена');
+      if (_cancelled || _disposed) {
+        throw const UpdateException('Загрузка отменена');
+      }
       if (!await _verified(partial, selected)) {
         if (await partial.exists()) await partial.delete();
         throw const UpdateException(
@@ -458,8 +474,171 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
         );
       }
       if (await ready.exists()) await ready.delete();
-      package = await partial.rename(ready.path);
-      received = selected.bytes;
+      return await partial.rename(ready.path);
+    } finally {
+      await output?.close();
+    }
+  }
+
+  Future<File?> _deltaBase(Directory root, UpdateDelta patch) async {
+    final expected = UpdateArtifact(
+      patch.url,
+      patch.baseHash,
+      'base',
+      patch.baseBytes,
+      app!.versionCode,
+    );
+    if (platform case final UpdateBaseProvider native) {
+      try {
+        final installed = await native.installedPackage();
+        if (installed != null && await _verified(installed, expected)) {
+          return installed;
+        }
+      } on MissingPluginException {
+        /* A previous native host can still use the full package. */
+      } on PlatformException {
+        /* Installed package is unavailable; use the cache/full update. */
+      } on FileSystemException {
+        /* An inaccessible base is never used. */
+      }
+    }
+    await for (final entry in root.list(followLinks: false)) {
+      if (entry is File &&
+          p
+              .basename(entry.path)
+              .startsWith('${patch.fromBuild}-${app!.platform}-') &&
+          ['.apk', '.zip'].contains(p.extension(entry.path)) &&
+          await _verified(entry, expected)) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  Future<void> download({bool fullPackage = false}) async {
+    if (!available || busy || _disposed) return;
+    final selected = artifact!, selectedRelease = release!;
+    phase = UpdatePhase.downloading;
+    _cancelled = false;
+    error = null;
+    total = fullPackage ? selected.bytes : delta?.bytes ?? selected.bytes;
+    received = 0;
+    package = null;
+    usingDelta = false;
+    downloadNotice = null;
+    _notify();
+    final connection = downloadClient();
+    _downloader = connection;
+    try {
+      final root = await _cache(),
+          name = _packageName(selectedRelease, selected);
+      final ready = File(p.join(root.path, name));
+      if (await _verified(ready, selected)) {
+        package = ready;
+        received = total;
+        phase = UpdatePhase.ready;
+        return;
+      }
+      final patch = fullPackage ? null : delta;
+      if (patch != null) {
+        installStep = 'Проверяем исходную версию для дельта-обновления…';
+        _notify();
+        final base = await _deltaBase(root, patch);
+        if (base != null) {
+          final reconstructed = File(p.join(root.path, '$name.rebuilding'));
+          try {
+            usingDelta = true;
+            total = patch.bytes;
+            installStep = 'Скачиваем изменения приложения…';
+            _notify();
+            final downloaded = await _fetchPackage(
+              connection,
+              root,
+              '${selectedRelease.build}-${app!.platform}-${patch.hash}.pdelta',
+              UpdateArtifact(
+                patch.url,
+                patch.hash,
+                'pdelta',
+                patch.bytes,
+                selected.versionCode,
+              ),
+            );
+            received = total;
+            installStep = 'Восстанавливаем пакет обновления…';
+            _notify();
+            var lastNotice = 0;
+            await applyUpdateDelta(
+              base: base,
+              patch: downloaded,
+              output: reconstructed,
+              delta: patch,
+              target: selected,
+              cancelled: () => _cancelled || _disposed,
+              onProgress: (bytes) {
+                if (now().millisecondsSinceEpoch - lastNotice > 100) {
+                  lastNotice = now().millisecondsSinceEpoch;
+                  installStep =
+                      'Восстанавливаем пакет: ${(bytes * 100 / selected.bytes).floor()}%';
+                  _notify();
+                }
+              },
+            );
+            if (_cancelled || _disposed) {
+              throw const UpdateException('Загрузка отменена');
+            }
+            if (await ready.exists()) await ready.delete();
+            package = await reconstructed.rename(ready.path);
+          } catch (failure) {
+            if (await reconstructed.exists()) await reconstructed.delete();
+            if (_cancelled ||
+                _disposed ||
+                failure is SocketException ||
+                failure is TimeoutException ||
+                failure is http.ClientException ||
+                failure is FileSystemException) {
+              rethrow;
+            }
+            _failedDeltas.add(patch.hash);
+            fullPackageRequired = true;
+            downloadNotice = 'Не удалось восстановить обновление из изменений. Можно отдельно скачать полный пакет.';
+            usingDelta = false;
+            received = 0;
+            total = selected.bytes;
+            installStep = null;
+            throw const UpdateException(
+              'Дельта-обновление не применилось. Полный пакет автоматически не скачивался.',
+            );
+          }
+        } else {
+          _failedDeltas.add(patch.hash);
+          fullPackageRequired = true;
+          total = selected.bytes;
+          downloadNotice = 'Установленный пакет отличается от исходного или недоступен. Для этой установки нужен полный пакет.';
+          throw const UpdateException(
+            'Не найдена подходящая основа для дельта-обновления. Полный пакет автоматически не скачивался.',
+          );
+        }
+      }
+      installStep = null;
+      package ??= await _fetchPackage(connection, root, name, selected);
+      if (_cancelled || _disposed) {
+        throw const UpdateException('Загрузка отменена');
+      }
+      // Keep the installed version's full package as a Windows delta base.
+      // Unknown files and links are never part of this cleanup.
+      final currentBuild =
+          app!.versionCode - (app!.platform == 'android-arm64' ? 2000 : 0);
+      await for (final old in root.list(followLinks: false)) {
+        final filename = p.basename(old.path);
+        if (old is File &&
+            !filename.startsWith('${selectedRelease.build}-') &&
+            !filename.startsWith('$currentBuild-') &&
+            RegExp(
+              r'^\d+-(windows-x64|android-arm64|android-universal)-[a-f0-9]{64}\.(zip|apk|pdelta)(\.part)?$',
+            ).hasMatch(filename)) {
+          await old.delete();
+        }
+      }
       phase = UpdatePhase.ready;
     } catch (e) {
       phase = UpdatePhase.idle;
@@ -469,13 +648,7 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
           ? e.message
           : 'Загрузка прервана. Её можно продолжить.';
     } finally {
-      try {
-        await output?.close();
-      } catch (_) {
-        phase = UpdatePhase.idle;
-        error ??=
-            'Не удалось сохранить скачанный файл. Проверьте свободное место.';
-      }
+      installStep = null;
       connection.close();
       _downloader = null;
       _notify();

@@ -114,6 +114,59 @@ void main() {
   );
 
   test(
+    'version 5 adds the book/time index without changing source metadata',
+    () async {
+      await populated();
+      final raw = sqlite.sqlite3.open(file.path);
+      raw.execute('DROP INDEX reading_statistics_book_time_v1');
+      raw.execute('PRAGMA user_version=5');
+      final before = raw
+          .select('SELECT key,value FROM metadata ORDER BY key')
+          .map((row) => [row['key'], row['value']])
+          .toList();
+      raw.close();
+
+      final prepared = prepareDatabaseFiles(root.path);
+      final db = AppDatabase(NativeDatabase(File(prepared)));
+      try {
+        final rows = await db
+            .customSelect('SELECT key,value FROM metadata ORDER BY key')
+            .get();
+        expect(
+          rows.map((row) => [row.data['key'], row.data['value']]).toList(),
+          before,
+        );
+        final plan = await db
+            .customSelect(
+              "EXPLAIN QUERY PLAN SELECT value FROM reading_statistics_sessions_v1 "
+              "WHERE book_id='book' AND start_ms>=0 AND start_ms<1000",
+            )
+            .get();
+        expect(
+          plan.map((row) => row.read<String>('detail')).join('\n'),
+          contains('reading_statistics_book_time_v1'),
+        );
+        final backups = Directory('${root.path}/backups')
+            .listSync()
+            .whereType<File>();
+        expect(backups, hasLength(1));
+        final backup = sqlite.sqlite3.open(backups.single.path);
+        try {
+          expect(backup.select('PRAGMA user_version').single.values.first, 5);
+          expect(
+            _names(backup, 'index'),
+            isNot(contains('reading_statistics_book_time_v1')),
+          );
+        } finally {
+          backup.close();
+        }
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
+  test(
     'version 3 with existing read models upgrades without double counting',
     () async {
       await populated();
@@ -146,7 +199,10 @@ void main() {
       }
       final check = sqlite.sqlite3.open(file.path);
       try {
-        expect(check.select('PRAGMA user_version').single.values.first, 4);
+        expect(
+          check.select('PRAGMA user_version').single.values.first,
+          currentDatabaseVersion,
+        );
         expect(_names(check, 'index'), contains('records_audio_day_v2'));
         expect(_names(check, 'index'), isNot(contains('records_audio_day')));
         for (final name in _legacyVideoIndexes.keys) {

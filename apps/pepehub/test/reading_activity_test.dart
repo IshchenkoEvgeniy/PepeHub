@@ -17,6 +17,8 @@ import 'package:pepehub/reader/reading_log.dart';
 import 'package:pepehub/ui/reading_statistics_page.dart';
 import 'package:pepehub/ui/reading_book_page.dart';
 
+import 'video_player_tools_widget_test.dart' show ready;
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test('idle, panels and background excluded; jumps excluded; rereads persist across sessions', () async {
@@ -304,7 +306,8 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(ReadingStatisticsPage));
+    await ready(tester, () => !state.loading);
     await tester.runAsync(() async {
       final image =
           await (screen.currentContext!.findRenderObject()
@@ -342,7 +345,8 @@ void main() {
         home: ReadingBookPage(repository: repo, book: book),
       ),
     );
-    await tester.pumpAndSettle();
+    final dynamic bookState = tester.state(find.byType(ReadingBookPage));
+    await ready(tester, () => !bookState.loading);
     await tester.enterText(
       find.widgetWithText(TextField, 'Название'),
       'Название вручную',

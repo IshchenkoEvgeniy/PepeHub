@@ -192,17 +192,10 @@ void main() {
         await tester.pageBack();
         await tester.pumpAndSettle();
         expect(find.text('Прямая синхронизация'), findsOneWidget);
-        await tap('Obsidian');
-        expect(find.text('Синхронизировать устройства'), findsNothing);
-        await tester.ensureVisible(
-          find.byKey(const ValueKey('obsidian-interval')),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('obsidian-interval')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Раз в час').last);
-        await tester.pumpAndSettle();
-        expect(await f.repo.meta('obsidian-sync-seconds'), '3600');
+        expect(find.text('Obsidian'), findsNothing);
+        await tap('Экспорт и резервные копии');
+        expect(find.text('Создать резервную копию'), findsOneWidget);
+        expect(find.text('Обменять с Obsidian'), findsNothing);
         expect(await f.repo.meta('peer-sync-interval'), '180');
         await tester.pageBack();
         await tester.pumpAndSettle();

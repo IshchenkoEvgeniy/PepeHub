@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PepeHub — концепты статистики</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Onest:wght@400;500;600&family=Cormorant+Garamond:ital,wght@0,700;1,500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#111a2b;--surface:#18233a;--raised:#22304d;--line:#2a3856;--strong:#3a4a6e;--accent:#f2a36b;--soft:#f7c39b;--on:#1a1208;--text:#eef0f5;--muted:#9fa9bf;--nav:#0b1220;--audio:#7fb3d8}
+*{box-sizing:border-box;margin:0}
+body{background:#0a0f1a;color:var(--text);font-family:Onest,system-ui,sans-serif;padding:32px 20px 60px}
+h1{font-family:Oswald;font-size:34px;letter-spacing:.3px}
+.lead{color:var(--muted);max-width:760px;margin:8px 0 28px;line-height:1.5}
+.row{display:flex;gap:28px;flex-wrap:wrap;justify-content:center}
+.cap{font-family:Oswald;color:var(--accent);font-size:14px;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px}
+.phone{width:360px;height:760px;background:var(--bg);border:1px solid var(--strong);border-radius:34px;overflow:hidden;display:flex;flex-direction:column;position:relative}
+.bar{display:flex;align-items:center;gap:10px;padding:18px 18px 6px}
+.bar h2{font-family:Oswald;font-size:26px;flex:1}
+.ic{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:var(--muted);border:1px solid var(--line);font-size:15px}
+.scroll{flex:1;overflow-y:auto;padding:4px 18px 90px;scrollbar-width:none}
+.tabs{display:flex;gap:8px;padding:6px 18px 10px}
+.chip{padding:7px 14px;border-radius:16px;border:1px solid var(--line);font-size:13px;color:var(--muted)}
+.chip.on{background:var(--accent);color:var(--on);border-color:var(--accent);font-weight:600}
+.pill{padding:5px 12px;border-radius:14px;background:var(--surface);font-size:12px;color:var(--muted)}
+.pill.on{background:var(--raised);color:var(--text);box-shadow:inset 0 0 0 1px var(--strong)}
+.yr{display:flex;align-items:center;margin:12px 0 10px}
+.yr i{font-family:'Cormorant Garamond';font-size:21px;color:var(--muted);flex:1}
+.yr span{color:var(--muted);padding:0 8px}
+.figs{display:flex;border-top:1px solid var(--accent);border-bottom:1px solid var(--line)}
+.figs div{flex:1;padding:12px 6px;text-align:center}
+.figs div+div{border-left:1px solid var(--line)}
+.figs b{font-family:Oswald;font-size:24px;display:block}
+.figs small{font-size:11px;color:var(--muted)}
+.card{background:var(--surface);border-radius:18px;padding:14px;margin-top:14px;border:1px solid var(--line)}
+.card h3{font-family:Oswald;font-size:16px;font-weight:500;letter-spacing:.3px;display:flex;justify-content:space-between;align-items:baseline}
+.card h3 em{font-family:Onest;font-style:normal;font-size:11px;color:var(--muted);font-weight:400}
+.new{font-family:Onest;font-size:10px;background:var(--accent);color:var(--on);padding:2px 7px;border-radius:8px;margin-left:6px;vertical-align:middle;font-weight:600;letter-spacing:.3px}
+.heat{display:grid;grid-template-columns:repeat(18,1fr);grid-template-rows:repeat(7,1fr);grid-auto-flow:column;gap:3px;margin-top:10px}
+.heat i{aspect-ratio:1;border-radius:3px;background:var(--raised)}
+.legend{display:flex;gap:12px;font-size:11px;color:var(--muted);margin-top:8px}
+.legend b{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.bars{display:flex;align-items:flex-end;gap:5px;height:110px;margin-top:12px}
+.bars div{flex:1;display:flex;flex-direction:column-reverse;gap:2px;height:100%}
+.bars s{display:block;border-radius:4px 4px 2px 2px;text-decoration:none}
+.axis{display:flex;gap:5px;font-size:10px;color:var(--muted);margin-top:4px}
+.axis span{flex:1;text-align:center}
+.top{display:flex;gap:10px;align-items:center;margin-top:10px}
+.cov{width:34px;height:48px;border-radius:5px;flex:none}
+.top p{font-family:'Cormorant Garamond';font-weight:700;font-size:17px;line-height:1.1}
+.top small{font-size:11px;color:var(--muted)}
+.track{height:5px;border-radius:3px;background:var(--raised);margin-top:5px}
+.track s{display:block;height:100%;border-radius:3px;background:var(--accent)}
+.hint{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.45;color:var(--muted)}
+.hint b{color:var(--text);font-weight:500}
+.glyph{width:30px;height:30px;border-radius:10px;background:var(--raised);display:grid;place-items:center;color:var(--accent);flex:none}
+.goal{display:flex;gap:16px;align-items:center;margin-top:10px}
+.goal p{font-size:13px;color:var(--muted);line-height:1.5}
+.goal p b{color:var(--text);font-family:Oswald;font-size:22px;font-weight:500}
+.cmp{display:grid;grid-template-columns:1fr auto auto auto;gap:6px 12px;font-size:13px;margin-top:10px;align-items:center}
+.cmp .h{font-size:11px;color:var(--muted)}
+.up{color:#8fd19e}.dn{color:#ff7a70}
+.stars{display:grid;grid-template-columns:28px 1fr 20px;gap:6px 8px;align-items:center;font-size:12px;margin-top:10px;color:var(--muted)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.tags span{font-size:12px;padding:5px 10px;border-radius:12px;background:var(--raised)}
+.nav{position:absolute;bottom:0;left:0;right:0;height:66px;background:var(--nav);display:flex;justify-content:space-around;align-items:center;border-top:1px solid var(--line);font-size:10px;color:var(--muted)}
+.nav div{text-align:center}.nav div.on{color:var(--accent)}
+.nav i{display:block;font-style:normal;font-size:18px;margin-bottom:2px}
+.story{margin:14px 0 0;border-radius:22px;padding:22px 20px;background:linear-gradient(160deg,#2b2440 0%,#22304d 45%,#18233a 100%);border:1px solid var(--strong);position:relative;overflow:hidden}
+.story:after{content:"";position:absolute;right:-60px;top:-60px;width:200px;height:200px;border-radius:50%;background:radial-gradient(var(--accent),transparent 70%);opacity:.25}
+.story .k{font-size:11px;color:var(--soft);letter-spacing:2px;text-transform:uppercase}
+.story .big{font-family:Oswald;font-size:64px;line-height:1;margin-top:10px}
+.story .big small{font-size:18px;color:var(--muted);font-family:Onest;margin-left:6px}
+.story .ser{font-family:'Cormorant Garamond';font-style:italic;font-size:20px;color:var(--soft);margin-top:6px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.grid2 div{background:rgba(17,26,43,.55);border-radius:14px;padding:10px}
+.grid2 b{font-family:Oswald;font-size:22px;display:block}
+.grid2 small{font-size:11px;color:var(--muted)}
+.covers{display:flex;margin-top:16px}
+.covers div{width:52px;height:74px;border-radius:6px;margin-right:-12px;border:2px solid var(--surface);box-shadow:0 4px 10px #0006}
+.dots{display:flex;gap:5px;justify-content:center;margin-top:12px}
+.dots i{width:18px;height:3px;border-radius:2px;background:var(--strong)}.dots i.on{background:var(--accent)}
+.btn{display:flex;gap:8px;margin-top:14px}
+.btn span{flex:1;text-align:center;padding:11px;border-radius:16px;font-size:13px;font-weight:600}
+.notes{max-width:1140px;margin:40px auto 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.notes div{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px}
+.notes h4{font-family:Oswald;font-weight:500;font-size:17px;margin-bottom:8px;color:var(--soft)}
+.notes li{font-size:13px;line-height:1.55;color:var(--muted);margin-left:16px}
+.notes li b{color:var(--text);font-weight:500}
+.wrap{max-width:1180px;margin:0 auto}
+</style></head><body><div class="wrap">
+<h1>Статистика · концепты</h1>
+<p class="lead">Палитра «Сумерки», Oswald для заголовков, Onest для интерфейса, Cormorant Garamond для названий книг — как в app_theme.dart. Сохранены текущие элементы (вкладки «Обзор / Годовая», фильтр «Всё / Книги / Аудио», «Летопись года», полоса с итоговыми цифрами). Метка <span class="new">НОВОЕ</span> отмечает предлагаемые функции. Цифры иллюстративные.</p>
+
+<div class="row">
+<!-- ===== 1. ОБЗОР ===== -->
+<div><div class="cap">01 · Обзор</div>
+<div class="phone">
+ <div class="bar"><h2>Статистика</h2><div class="ic">⇅</div><div class="ic">↻</div></div>
+ <div class="tabs"><span class="chip on">Обзор</span><span class="chip">Годовая статистика</span></div>
+ <div class="scroll">
+  <div style="display:flex;gap:6px"><span class="pill on">Всё</span><span class="pill">Книги</span><span class="pill">Аудио</span><span class="pill" style="margin-left:auto">Месяц ▾</span></div>
+  <div class="yr"><i>Летопись 2026 года</i><span>‹</span><span style="opacity:.35">›</span></div>
+  <div class="figs"><div><b>214 ч</b><small>всего за год</small></div><div><b>187</b><small>дней с книгой</small></div><div><b>23</b><small>подряд · рекорд 41</small></div></div>
+
+  <div class="card"><h3><span>Карта активности<span class="new">НОВОЕ</span></span><em>18 недель</em></h3>
+   <div class="heat" id="heat"></div>
+   <div class="legend"><span><b style="background:var(--accent)"></b>чтение</span><span><b style="background:var(--audio)"></b>аудио</span><span><b style="background:linear-gradient(90deg,var(--accent) 50%,var(--audio) 50%)"></b>оба</span></div>
+  </div>
+
+  <div class="card"><h3><span>Эта неделя</span><em>12 ч 40 мин · +18%</em></h3>
+   <div class="bars" id="week"></div>
+   <div class="axis"><span>пн</span><span>вт</span><span>ср</span><span>чт</span><span>пт</span><span>сб</span><span>вс</span></div>
+  </div>
+
+  <div class="card"><div class="hint"><div class="glyph">☾</div><div><b>Привычное время — 21:00–23:00.</b> Здесь 46% чтения. Аудио чаще утром в дороге, 8:10–8:50.<span class="new">НОВОЕ</span></div></div></div>
+
+  <div class="card"><h3><span>Больше всего времени</span><em>за неделю</em></h3>
+   <div class="top"><div class="cov" style="background:linear-gradient(#8a4b3a,#3b1f1a)"></div><div style="flex:1"><p>Тень ветра</p><small>4 ч 10 мин · книга · 62%</small><div class="track"><s style="width:100%"></s></div></div></div>
+   <div class="top"><div class="cov" style="background:linear-gradient(#3e6a8a,#1b2f40)"></div><div style="flex:1"><p>Дюна</p><small>3 ч 05 мин · аудио · 1,6×</small><div class="track"><s style="width:74%;background:var(--audio)"></s></div></div></div>
+   <div class="top"><div class="cov" style="background:linear-gradient(#5c6b3a,#252c18)"></div><div style="flex:1"><p>Пикник на обочине</p><small>1 ч 50 мин · книга · дочитано</small><div class="track"><s style="width:44%"></s></div></div></div>
+  </div>
+
+  <div class="card"><h3><span>Темп<span class="new">НОВОЕ</span></span><em>последние 30 дней</em></h3>
+   <div class="figs" style="border:none;margin-top:6px"><div><b>38</b><small>стр./час</small></div><div><b>1,5×</b><small>скорость аудио</small></div><div><b>34 мин</b><small>средняя сессия</small></div></div>
+  </div>
+ </div>
+ <div class="nav"><div><i>▤</i>Книги</div><div><i>♪</i>Медиа</div><div><i>❝</i>Цитаты</div><div class="on"><i>▥</i>Статистика</div><div><i>⚙</i>Ещё</div></div>
+</div></div>
+
+<!-- ===== 2. ГОДОВАЯ ===== -->
+<div><div class="cap">02 · Годовая статистика</div>
+<div class="phone">
+ <div class="bar"><h2>Статистика</h2><div class="ic">⇪</div><div class="ic">↻</div></div>
+ <div class="tabs"><span class="chip">Обзор</span><span class="chip on">Годовая статистика</span></div>
+ <div class="scroll">
+  <div class="yr" style="margin-top:2px"><i>2026 год</i><span>‹ 2025</span><span style="opacity:.35">›</span></div>
+
+  <div class="card" style="margin-top:4px"><h3><span>Цель на год</span><em>Изменить</em></h3>
+   <div class="goal">
+    <svg width="96" height="96" viewBox="0 0 96 96"><circle cx="48" cy="48" r="40" fill="none" stroke="#22304d" stroke-width="9"/><circle cx="48" cy="48" r="40" fill="none" stroke="#f2a36b" stroke-width="9" stroke-linecap="round" stroke-dasharray="183 251" transform="rotate(-90 48 48)"/><circle cx="48" cy="48" r="40" fill="none" stroke="#7fb3d8" stroke-width="9" stroke-linecap="round" stroke-dasharray="38 251" stroke-dashoffset="-185" transform="rotate(-90 48 48)"/><text x="48" y="53" text-anchor="middle" fill="#eef0f5" font-family="Oswald" font-size="20">29/36</text></svg>
+    <p><b>29</b> из 36<br>22 книги · 7 аудио<br><span class="up">Опережаете план на 1 книгу</span><br>Прогноз: <span style="color:var(--text)">35 к 31 дек.</span><span class="new">НОВОЕ</span></p>
+   </div>
+  </div>
+
+  <div class="card"><h3><span>По месяцам</span><em>завершено</em></h3>
+   <div class="bars" id="months" style="height:96px"></div>
+   <div class="axis"><span>я</span><span>ф</span><span>м</span><span>а</span><span>м</span><span>и</span><span>и</span><span>а</span><span>с</span><span>о</span><span>н</span><span>д</span></div>
+  </div>
+
+  <div class="card"><h3><span>Сравнение с 2025<span class="new">НОВОЕ</span></span><em>на 30 октября</em></h3>
+   <div class="cmp"><span class="h"></span><span class="h">2025</span><span class="h">2026</span><span class="h"></span>
+    <span>Завершено</span><span>24</span><span>29</span><span class="up">+21%</span>
+    <span>Часов</span><span>231</span><span>214</span><span class="dn">−7%</span>
+    <span>Страниц</span><span>7 410</span><span>8 960</span><span class="up">+21%</span>
+    <span>Средняя оценка</span><span>3,8</span><span>4,1</span><span class="up">+0,3</span></div>
+  </div>
+
+  <div class="card"><h3><span>Оценки</span><em>оценено 26</em></h3>
+   <div class="stars">
+    <span>5★</span><div class="track"><s style="width:58%"></s></div><span>9</span>
+    <span>4★</span><div class="track"><s style="width:72%"></s></div><span>11</span>
+    <span>3★</span><div class="track"><s style="width:30%"></s></div><span>4</span>
+    <span>2★</span><div class="track"><s style="width:12%"></s></div><span>2</span>
+    <span>1★</span><div class="track"><s style="width:0"></s></div><span>0</span></div>
+  </div>
+
+  <div class="card"><h3><span>Жанры и авторы<span class="new">НОВОЕ</span></span><em>из карточек</em></h3>
+   <div class="tags"><span style="background:var(--accent);color:var(--on)">Фантастика 9</span><span>Классика 6</span><span>Нон-фикшн 5</span><span>Детектив 4</span><span>Фэнтези 3</span></div>
+   <div class="hint" style="margin-top:12px"><div class="glyph">✎</div><div><b>Стругацкие — 4 книги.</b> Автор года. Новых авторов: 17.</div></div>
+  </div>
+
+  <div class="card"><h3><span>Рекорды года<span class="new">НОВОЕ</span></span></h3>
+   <div class="hint" style="margin-top:10px"><div class="glyph">⇕</div><div><b>Самая длинная:</b> «Дюна» — 21 ч аудио</div></div>
+   <div class="hint" style="margin-top:8px"><div class="glyph">⚡</div><div><b>Быстрее всего:</b> «Пикник на обочине» — 3 дня</div></div>
+   <div class="hint" style="margin-top:8px"><div class="glyph">☀</div><div><b>Лучший день:</b> 14 августа — 5 ч 20 мин</div></div>
+  </div>
+
+  <div class="card" style="text-align:center;background:var(--raised)"><b style="font-family:Oswald;font-weight:500">Итоги 2026 →</b><div style="font-size:12px;color:var(--muted);margin-top:3px">Карточки для просмотра и отправки</div></div>
+ </div>
+ <div class="nav"><div><i>▤</i>Книги</div><div><i>♪</i>Медиа</div><div><i>❝</i>Цитаты</div><div class="on"><i>▥</i>Статистика</div><div><i>⚙</i>Ещё</div></div>
+</div></div>
+
+<!-- ===== 3. ИТОГИ ГОДА ===== -->
+<div><div class="cap">03 · Итоги года <span class="new">НОВОЕ</span></div>
+<div class="phone">
+ <div class="bar"><div class="ic">✕</div><h2 style="font-size:20px">Итоги 2026</h2><div class="ic">⇪</div></div>
+ <div class="dots"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+ <div class="scroll" style="padding-top:0">
+  <div class="story">
+   <div class="k">Ваш год в книгах</div>
+   <div class="big">34<small>книги</small></div>
+   <div class="ser">и 248 часов наедине с историями</div>
+   <div class="covers"><div style="background:linear-gradient(#8a4b3a,#3b1f1a)"></div><div style="background:linear-gradient(#3e6a8a,#1b2f40)"></div><div style="background:linear-gradient(#5c6b3a,#252c18)"></div><div style="background:linear-gradient(#7a5a8f,#2c2038)"></div><div style="background:linear-gradient(#a07f3e,#3d2f14)"></div></div>
+   <div class="grid2">
+    <div><b>10 840</b><small>страниц прочитано</small></div>
+    <div><b>41 день</b><small>самая длинная серия</small></div>
+    <div><b>Фантастика</b><small>жанр года</small></div>
+    <div><b>Ноябрь</b><small>самый читающий месяц</small></div>
+   </div>
+  </div>
+
+  <div class="card"><h3><span>Книга года</span><em>по вашей оценке</em></h3>
+   <div class="top"><div class="cov" style="width:46px;height:66px;background:linear-gradient(#8a4b3a,#3b1f1a)"></div><div><p style="font-size:20px">Тень ветра</p><small>★★★★★ · «Город, где книги помнят читателей»</small></div></div>
+  </div>
+
+  <div class="card"><h3><span>Цитата года</span><em>из ваших цитат</em></h3>
+   <p style="font-family:'Cormorant Garamond';font-style:italic;font-size:18px;line-height:1.35;margin-top:8px">«Книги — это зеркала: в них видишь лишь то, что уже носишь в себе».</p>
+   <small style="color:var(--muted);font-size:11px">Тень ветра · сохранено 3 марта</small>
+  </div>
+
+  <div class="card"><h3><span>Читательский портрет</span></h3>
+   <div class="hint" style="margin-top:10px"><div class="glyph">☾</div><div><b>Вечерний читатель.</b> 61% времени после 20:00, аудио — в дороге.</div></div>
+  </div>
+
+  <div class="btn"><span style="background:var(--accent);color:var(--on)">Поделиться картинкой</span><span style="border:1px solid var(--strong)">В Obsidian</span></div>
+ </div>
+</div></div>
+</div>
+
+<div class="notes">
+ <div><h4>Обзор</h4><ul>
+  <li><b>Карта активности</b> — сетка дней вместо одного числа «дней с книгой»; цвет показывает чтение, аудио или оба. По нажатию на день — его сессии.</li>
+  <li><b>Период</b> «Неделя / Месяц / Год» рядом с фильтром «Всё / Книги / Аудио».</li>
+  <li><b>Привычное время</b> по часам начала сессий, отдельно для чтения и аудио.</li>
+  <li><b>Темп</b>: страниц в час, средняя скорость аудио, средняя длина сессии.</li></ul></div>
+ <div><h4>Годовая</h4><ul>
+  <li><b>Кольцо цели</b> с вкладом книг и аудио и прогнозом к концу года по текущему темпу.</li>
+  <li><b>Месяцы</b> — столбцы с разбивкой книги/аудио.</li>
+  <li><b>Сравнение с прошлым годом</b> на ту же дату, чтобы не сравнивать неполный год с полным.</li>
+  <li><b>Жанры, автор года, рекорды</b> — из карточек личной библиотеки.</li></ul></div>
+ <div><h4>Итоги года</h4><ul>
+  <li>Листаемые карточки: цифры, обложки, книга и цитата года, читательский портрет.</li>
+  <li>Экспорт карточки в PNG и заметкой в Obsidian, через существующий мост.</li>
+  <li>Открывается из годовой статистики; в декабре можно показывать напоминание.</li></ul></div>
+</div>
+</div>
+<script>
+const h=document.getElementById('heat');
+for(let i=0;i<126;i++){const e=document.createElement('i');const r=Math.random();const lv=r<.28?0:r<.5?.35:r<.75?.6:1;
+if(lv){const t=Math.random();e.style.background=t<.55?'var(--accent)':t<.8?'var(--audio)':'linear-gradient(135deg,var(--accent) 50%,var(--audio) 50%)';e.style.opacity=lv}h.appendChild(e)}
+const w=[[60,20],[90,0],[30,40],[110,25],[45,30],[140,60],[80,50]],W=document.getElementById('week');
+w.forEach(([a,b])=>{W.insertAdjacentHTML('beforeend',`<div><s style="height:${a/2.2}%;background:var(--accent)"></s><s style="height:${b/2.2}%;background:var(--audio)"></s></div>`)});
+const m=[[2,1],[3,0],[2,1],[1,1],[3,0],[2,1],[1,2],[4,1],[2,0],[2,0],[0,0],[0,0]],M=document.getElementById('months');
+m.forEach(([a,b],i)=>{M.insertAdjacentHTML('beforeend',`<div style="${i>9?'opacity:.35':''}"><s style="height:${a*19}%;background:var(--accent)"></s><s style="height:${b*19}%;background:var(--audio)"></s>${i>9?'<s style="height:30%;border:1px dashed var(--strong);background:none"></s>':''}</div>`)});
+</script>
+</body></html>

@@ -70,16 +70,27 @@ class ArtworkStore {
     }
     final saved = await assets.repository.meta('audio-cover:$bookId');
     if (saved != null && await File(saved).exists()) return File(saved).uri;
-    final tracks = await assets.audioTracks(bookId);
+    final missing = DateTime.tryParse(
+      await assets.repository.meta('audio-cover-missing:$bookId') ?? '',
+    );
+    if (missing != null &&
+        DateTime.now().difference(missing) < const Duration(days: 1)) {
+      return null;
+    }
+    final tracks = await assets.audioTracks(bookId, firstOnly: true);
     if (tracks.isEmpty) return null;
     final source = tracks.first.path;
+    var completeProbe = true;
     if (source.startsWith('content:')) {
       try {
         final bytes = await const MethodChannel('app.pepehub/audio_folder')
             .invokeMethod<Uint8List>('artwork', {'uri': source});
         if (bytes != null) return await save(bookId, bytes);
-      } catch (_) {}
+      } catch (_) {
+        completeProbe = false;
+      }
     } else {
+      if (!await File(source).exists()) return null;
       var current = source;
       for (var i = 0; i < 5; i++) {
         final found = await findAudioArtwork(current);
@@ -102,6 +113,12 @@ class ArtworkStore {
     if (!source.startsWith('content:')) {
       final bytes = await embeddedArtwork(source);
       if (bytes != null) return save(bookId, bytes);
+    }
+    if (completeProbe) {
+      await assets.repository.setMeta(
+        'audio-cover-missing:$bookId',
+        DateTime.now().toUtc().toIso8601String(),
+      );
     }
     return null;
   }
@@ -145,6 +162,10 @@ class ArtworkStore {
         await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
         await assets.repository.setMeta('audio-cover:$bookId', file.path);
         await assets.repository.setMeta('audio-cover-hidden:$bookId', 'false');
+        await assets.repository.db.customStatement(
+          'DELETE FROM metadata WHERE key=?',
+          ['audio-cover-missing:$bookId'],
+        );
         return file.uri;
       } finally {
         frame.image.dispose();

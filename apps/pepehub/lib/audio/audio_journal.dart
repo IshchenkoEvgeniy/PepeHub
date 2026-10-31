@@ -1,11 +1,28 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 
 import '../data/repository.dart';
+import '../data/database_schema.dart';
+
+class _JournalChanges extends ValueNotifier<int> {
+  _JournalChanges() : super(0);
+  String? id;
+}
 
 /// Local records intentionally bypass the deferred remote outbox.
 class AudioJournal {
+  static final _changes = Expando<_JournalChanges>();
+  ValueListenable<int> get changes =>
+      _changes[repository.db] ??= _JournalChanges();
+  String? get lastChangedId => _changes[repository.db]?.id;
+  void _changed(String id) {
+    final value = _changes[repository.db] ??= _JournalChanges();
+    value.id = id;
+    value.value++;
+  }
+
   final Repository repository;
   AudioJournal(this.repository);
   static const noteKinds = ['thought', 'quote', 'character'];
@@ -122,11 +139,13 @@ class AudioJournal {
         _listenData = data;
       });
 
-  Future<void> put(String type, String id, Map<String, dynamic> data) =>
-      repository.db.customStatement(
-        'INSERT INTO records(id,type,revision,deleted,payload) VALUES(?,?,1,0,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,deleted=0,revision=records.revision+1',
-        [id, type, jsonEncode(data)],
-      );
+  Future<void> put(String type, String id, Map<String, dynamic> data) async {
+    await repository.db.customStatement(
+      'INSERT INTO records(id,type,revision,deleted,payload) VALUES(?,?,1,0,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,deleted=0,revision=records.revision+1',
+      [id, type, jsonEncode(data)],
+    );
+    if (type == 'audio_event') _changed(id);
+  }
 
   Future<void> deleteEvent(String id) async {
     final record = await repository.record(id);
@@ -137,6 +156,7 @@ class AudioJournal {
       "UPDATE records SET deleted=1,revision=revision+1 WHERE id=? AND type='audio_event' AND deleted=0",
       [id],
     );
+    _changed(id);
   }
 
   Future<void> event(
@@ -170,9 +190,9 @@ class AudioJournal {
   }) async =>
       (await repository.db
               .customSelect(
-                "SELECT * FROM records WHERE type=? AND deleted=0 ${bookId == null ? '' : "AND json_extract(payload,'\$.bookId')=?"} ${kind == null ? '' : "AND json_extract(payload,'\$.kind')=?"} ORDER BY json_extract(payload,'\$.at') DESC,id DESC LIMIT ?",
+                "SELECT * FROM records WHERE ${type == 'audio_event' ? SchemaSql.audioEventRows : 'type=? AND json_valid(payload)'} AND deleted=0 ${bookId == null ? '' : 'AND ${SchemaSql.audioEventBook}=?'} ${kind == null ? '' : "AND json_extract(payload,'\$.kind')=?"} ORDER BY json_extract(payload,'\$.at') DESC,id DESC LIMIT ?",
                 variables: [
-                  Variable(type),
+                  if (type != 'audio_event') Variable(type),
                   if (bookId != null) Variable(bookId),
                   if (kind != null) Variable(kind),
                   Variable(limit),

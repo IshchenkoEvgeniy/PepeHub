@@ -111,6 +111,22 @@ Future<int> connectAudioCatalog(
         ? <String, dynamic>{}
         : jsonDecode(previousRoot) as Map<String, dynamic>;
     final priorIds = (priorRoot['bookIds'] as List? ?? []).cast<String>();
+    final priorPaths = <String, Set<String>>{},
+        booksByPath = <String, Set<String>>{};
+    if (mode == 'parts' && priorIds.isNotEmpty) {
+      final rows = await repository.db
+          .customSelect(
+            'SELECT e.book_id,r.path FROM audio_tracks t JOIN audio_editions e ON e.id=t.edition_id '
+            'JOIN audio_resources r ON r.sha256=t.asset_hash WHERE e.book_id IN (SELECT value FROM json_each(?))',
+            variables: [Variable(jsonEncode(priorIds.toList()))],
+          )
+          .get();
+      for (final row in rows) {
+        final id = row.read<String>('book_id'), path = row.read<String>('path');
+        (priorPaths[id] ??= {}).add(path);
+        (booksByPath[path] ??= {}).add(id);
+      }
+    }
     final absorbed = <String>{};
     final oldId = await repository.meta(
       'audio-folder:${sha256.convert(utf8.encode(root.root!))}',
@@ -134,18 +150,22 @@ Future<int> connectAudioCatalog(
         jsonEncode({'relativePath': draft.relativeFolder}),
       );
       ids.add(asset.bookId);
-      await repository.setMeta('audio-library-hidden:${asset.bookId}', '0');
-      createdTracks.addAll(await assets.audioTracks(asset.bookId));
+      await repository.setMeta(
+        'audio-library-hidden:${asset.bookId}',
+        await repository.meta('audio-user-hidden:${asset.bookId}') == '1'
+            ? '1'
+            : '0',
+      );
+      final connectedTracks = await assets.audioTracks(asset.bookId);
+      createdTracks.addAll(connectedTracks);
       if (mode == 'parts') {
-        final newPaths = (await assets.audioTracks(asset.bookId))
-            .map((track) => track.path)
-            .toSet();
+        final newPaths = connectedTracks.map((track) => track.path).toSet();
         final oldParts = <String>[];
-        for (final oldId in priorIds) {
+        final candidates = {for (final path in newPaths) ...?booksByPath[path]};
+        for (final oldId in candidates) {
           if (oldId == asset.bookId || absorbed.contains(oldId)) continue;
-          final oldTracks = await assets.audioTracks(oldId);
-          if (oldTracks.isNotEmpty &&
-              oldTracks.every((track) => newPaths.contains(track.path))) {
+          final oldPaths = priorPaths[oldId]!;
+          if (oldPaths.isNotEmpty && oldPaths.every(newPaths.contains)) {
             oldParts.add(oldId);
           }
         }

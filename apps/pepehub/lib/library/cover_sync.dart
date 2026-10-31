@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -18,6 +19,16 @@ import 'models.dart';
 import 'obsidian_sync_service.dart';
 
 class CoverSync {
+  static Future<String> _fileHash(String path) => Isolate.run(
+    () async => (await sha256.bind(File(path).openRead()).first).toString(),
+  );
+  static Future<String> _bytesHash(Uint8List bytes) {
+    final data = TransferableTypedData.fromList([bytes]);
+    return Isolate.run(
+      () => sha256.convert(data.materialize().asUint8List()).toString(),
+    );
+  }
+
   final AssetStore assets;
   final http.Client client;
   final ObsidianConfig? config;
@@ -193,7 +204,7 @@ class CoverSync {
     final file = File(path(hash));
     if (await file.exists() &&
         await file.length() <= 2097152 &&
-        sha256.convert(await file.readAsBytes()).toString() == hash) {
+        await _fileHash(file.path) == hash) {
       return file.path;
     }
     final response = await request('GET', hash);
@@ -273,7 +284,7 @@ class CoverSync {
           );
         }
         final raw = file == null ? null : await file.readAsBytes();
-        final localHash = raw == null ? null : sha256.convert(raw).toString(),
+        final localHash = raw == null ? null : await _bytesHash(raw),
             previous = state[entry.item.id] as Map?;
         final localChanged =
             previous != null && previous['localHash'] != localHash;
@@ -349,7 +360,7 @@ class CoverSync {
         }
         final nextHash = nextFile == null
             ? null
-            : sha256.convert(await nextFile.readAsBytes()).toString();
+            : await _fileHash(nextFile.path);
         if (entry.state == 'synced') {
           state[entry.item.id] = {
             'localHash': nextHash,

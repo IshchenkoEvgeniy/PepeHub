@@ -1,5 +1,3 @@
-import 'book_timeline.dart';
-
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
@@ -14,44 +12,36 @@ class AudioLibraryRepository {
   bookSummaries({String? bookId}) async {
     final rows = await db
         .customSelect(
-          '''SELECT e.book_id,e.id AS edition_id,t.id,t.duration_ms,
-      p.track_id,p.position_ms,p.speed FROM audio_editions e
-      JOIN audio_tracks t ON t.edition_id=e.id
-      LEFT JOIN audio_progress p ON p.edition_id=e.id
-      ${bookId == null ? '' : 'WHERE e.book_id=?'} ORDER BY e.book_id,p.updated_at DESC,e.id,t.ordinal''',
+          '''
+      WITH choices AS (
+        SELECT e.id,e.book_id,p.track_id,p.position_ms,p.speed,
+          ROW_NUMBER() OVER(PARTITION BY e.book_id ORDER BY p.updated_at DESC,e.id) AS priority
+        FROM audio_editions e LEFT JOIN audio_progress p ON p.edition_id=e.id
+        ${bookId == null ? '' : 'WHERE e.book_id=?'}
+      )
+      SELECT c.book_id,c.speed,
+        CASE WHEN COUNT(*)=COUNT(CASE WHEN t.duration_ms>0 THEN 1 END)
+          THEN SUM(t.duration_ms) END AS total_ms,
+        CASE WHEN c.track_id IS NOT NULL AND current.id IS NULL THEN NULL
+          WHEN SUM(CASE WHEN t.ordinal<COALESCE(current.ordinal,0)
+            AND (t.duration_ms IS NULL OR t.duration_ms<=0) THEN 1 ELSE 0 END)>0 THEN NULL
+          ELSE SUM(CASE WHEN t.ordinal<COALESCE(current.ordinal,0) THEN t.duration_ms ELSE 0 END)
+            + MIN(MAX(COALESCE(c.position_ms,0),0),COALESCE(current.duration_ms,c.position_ms,0))
+          END AS position_ms
+      FROM choices c JOIN audio_tracks t ON t.edition_id=c.id
+      LEFT JOIN audio_tracks current ON current.id=c.track_id AND current.edition_id=c.id
+      WHERE c.priority=1 GROUP BY c.id,c.book_id
+    ''',
           variables: [if (bookId != null) Variable(bookId)],
         )
         .get();
-    final grouped = <String, List<QueryRow>>{};
-    final selectedEditions = <String, String>{};
-    for (final row in rows) {
-      final book = row.read<String>('book_id'),
-          edition = row.read<String>('edition_id');
-      // Different editions are alternatives, never consecutive chapters.
-      if (selectedEditions.putIfAbsent(book, () => edition) == edition) {
-        grouped.putIfAbsent(book, () => []).add(row);
-      }
-    }
     return {
-      for (final entry in grouped.entries)
-        entry.key: (() {
-          final tracks = entry.value;
-          final timeline = BookTimeline([
-            for (final t in tracks) t.readNullable<int>('duration_ms'),
-          ]);
-          final selected = tracks.first.readNullable<String>('track_id');
-          final index = selected == null
-              ? 0
-              : tracks.indexWhere((r) => r.read<String>('id') == selected);
-          return (
-            total: timeline.totalMs,
-            position: timeline.positionMs(
-              index,
-              tracks.first.readNullable<int>('position_ms') ?? 0,
-            ),
-            speed: tracks.first.readNullable<double>('speed') ?? 1.0,
-          );
-        })(),
+      for (final row in rows)
+        row.read<String>('book_id'): (
+          total: row.readNullable<int>('total_ms'),
+          position: row.readNullable<int>('position_ms'),
+          speed: row.readNullable<double>('speed') ?? 1.0,
+        ),
     };
   }
 

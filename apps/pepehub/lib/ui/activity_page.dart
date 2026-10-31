@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../library/library_service.dart';
 import '../library/models.dart';
 import '../audio/audio_journal.dart' show dayKey;
+import '../library/reading_insights.dart';
+import 'book_activity_summary.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
 
@@ -18,7 +20,13 @@ String activityTime(num ms) {
 class ActivityPage extends StatefulWidget {
   final LibraryService library;
   final String? itemId;
-  const ActivityPage({super.key, required this.library, this.itemId});
+  final String? initialDay;
+  const ActivityPage({
+    super.key,
+    required this.library,
+    this.itemId,
+    this.initialDay,
+  });
   @override
   State<ActivityPage> createState() => _ActivityPageState();
 }
@@ -27,6 +35,8 @@ class _ActivityPageState extends State<ActivityPage> {
   List<Map<String, dynamic>> slots = [];
   String type = 'all', search = '';
   int days = 0;
+  bool byDay = true;
+  late String? selectedDay = widget.initialDay;
   bool loading = true;
   String? error;
   @override
@@ -54,7 +64,12 @@ class _ActivityPageState extends State<ActivityPage> {
           <Map<String, dynamic>>[];
       if (mounted) {
         setState(() {
-          slots = values;
+          final visible = widget.library.visibleEntries
+              .map((e) => e.item.id)
+              .toSet();
+          slots = values
+              .where((s) => visible.contains((s['value'] as Map)['itemId']))
+              .toList();
           loading = false;
           error = null;
         });
@@ -72,7 +87,7 @@ class _ActivityPageState extends State<ActivityPage> {
   Future<void> _run(Future<void> Function() action) async {
     try {
       await action();
-      await widget.library.sync();
+      await widget.library.reload();
       await _load();
     } catch (e) {
       if (mounted) {
@@ -229,8 +244,9 @@ class _ActivityPageState extends State<ActivityPage> {
     ShelfPalette palette,
     Map<String, dynamic> slot,
     Map<String, String> titles,
-    bool wide,
-  ) {
+    bool wide, {
+    bool closeDetails = false,
+  }) {
     final v = slot['value'] as Map, conflict = slot['conflict'] as Map?;
     final unit =
         const {
@@ -246,9 +262,14 @@ class _ActivityPageState extends State<ActivityPage> {
     final menu = conflict == null
         ? PopupMenuButton<String>(
             tooltip: 'Действия с записью',
-            onSelected: (value) => value == 'edit'
-                ? _edit(slot)
-                : _delete(Map<String, dynamic>.from(v)),
+            onSelected: (value) async {
+              if (closeDetails) Navigator.pop(context);
+              if (value == 'edit') {
+                await _edit(slot);
+              } else {
+                await _delete(Map<String, dynamic>.from(v));
+              }
+            },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'edit', child: Text('Редактировать')),
               PopupMenuItem(value: 'delete', child: Text('Удалить')),
@@ -264,7 +285,7 @@ class _ActivityPageState extends State<ActivityPage> {
       ),
     );
     final progress = v['progress'] == 0 ? '—' : '${v['progress']} $unit';
-    final origin = v['origin'] == 'obsidian' ? 'Obsidian' : 'PepeHub';
+    final origin = v['origin'] == 'obsidian' ? 'Импорт' : 'PepeHub';
     final head = Row(
       children: [
         Icon(
@@ -492,6 +513,7 @@ class _ActivityPageState extends State<ActivityPage> {
     final visible = slots.where((s) {
       final v = s['value'];
       return (type == 'all' || v['mediaType'] == type) &&
+          (selectedDay == null || v['day'] == selectedDay) &&
           (days == 0 || (v['day'] as String).compareTo(cutoff) >= 0) &&
           '${titles[v['itemId']] ?? ''} ${v['note']}'.toLowerCase().contains(
             search.toLowerCase(),
@@ -528,7 +550,7 @@ class _ActivityPageState extends State<ActivityPage> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Конфликтов: $conflicts. Запись изменили и здесь, и в Obsidian — выберите, какую версию оставить.',
+                    'Конфликтов: $conflicts. Запись изменили и здесь, и в импортированных данных — выберите, какую версию оставить.',
                     style: TextStyle(
                       color: palette.onAccent,
                       fontWeight: FontWeight.w600,
@@ -541,71 +563,90 @@ class _ActivityPageState extends State<ActivityPage> {
         ),
     ];
 
-    final table = <Widget>[
-      if (wide)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: DefaultTextStyle(
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              letterSpacing: .6,
-              color: palette.muted,
-            ),
-            child: const Row(
-              children: [
-                SizedBox(width: 32),
-                Expanded(flex: 5, child: Text('КНИГА')),
-                SizedBox(width: 100, child: Text('ВРЕМЯ')),
-                SizedBox(width: 130, child: Text('ПРОГРЕСС')),
-                SizedBox(width: 90, child: Text('ИСТОЧНИК')),
-                SizedBox(width: 150, child: Text('СТАТУС')),
-                SizedBox(width: 48),
-              ],
-            ),
+    final daily = groupBookActivity(visible);
+    final entries = <Widget Function()>[
+      for (final n in notices) () => n,
+      () => Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          ChoiceChip(
+            label: const Text('По дням'),
+            selected: byDay,
+            onSelected: (_) => setState(() => byDay = true),
           ),
-        ),
+          ChoiceChip(
+            label: const Text('Отдельные записи'),
+            selected: !byDay,
+            onSelected: (_) => setState(() => byDay = false),
+          ),
+          if (selectedDay != null)
+            InputChip(
+              label: Text(bookDateLabel(selectedDay)),
+              onDeleted: () => setState(() => selectedDay = null),
+            ),
+        ],
+      ),
       if (visible.isEmpty)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 24),
-          child: Text(
-            'За этот период записей нет. История появляется у книг, добавленных в библиотеку.',
-            style: TextStyle(color: palette.muted),
-          ),
+        () => const Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('За этот период записей нет.'),
         ),
-      for (final group in groups.entries) ...[
-        Padding(
-          padding: const EdgeInsets.only(top: 18, bottom: 6),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _dayTitle(group.key),
-                  style: AppFonts.title(palette.text, size: 18),
-                ),
-              ),
-              Text(
-                activityTime(
-                  group.value
-                      .where((s) => s['value']['deleted'] != true)
-                      .fold<int>(
-                        0,
-                        (sum, s) => sum + (s['value']['durationMs'] as int),
+      if (byDay)
+        for (final day in daily)
+          () => BookActivityDayTile(
+            day: day,
+            title: widget.itemId == null ? titles[day.itemId] ?? 'Книга' : null,
+            onTap: () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              useSafeArea: true,
+              builder: (context) => SizedBox(
+                height: MediaQuery.sizeOf(context).height * .75,
+                child: Column(
+                  children: [
+                    ListTile(
+                      title: Text(bookDateLabel(day.day)),
+                      subtitle: Text(
+                        '${titles[day.itemId] ?? 'Книга'} · ${bookActivityTime(day.durationMs)}',
                       ),
-                ),
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: palette.muted,
+                      trailing: IconButton(
+                        tooltip: 'Закрыть',
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: day.slots.length,
+                        itemBuilder: (_, i) => _row(
+                          palette,
+                          day.slots[i],
+                          titles,
+                          false,
+                          closeDetails: true,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
+          )
+      else
+        for (final group in groups.entries) ...[
+          () => Padding(
+            padding: const EdgeInsets.only(top: 20, bottom: 6),
+            child: Text(
+              _dayTitle(group.key),
+              style: AppFonts.title(palette.text, size: 18),
+            ),
           ),
-        ),
-        for (final slot in group.value) _row(palette, slot, titles, wide),
-      ],
+          for (final slot in group.value)
+            () => _row(palette, slot, titles, wide),
+        ],
     ];
-
     final filters = _filters(
       palette,
       groups.length,
@@ -626,8 +667,8 @@ class _ActivityPageState extends State<ActivityPage> {
           : null,
       actions: [
         IconButton(
-          tooltip: 'Синхронизировать',
-          onPressed: widget.library.syncing ? null : widget.library.sync,
+          tooltip: 'Обновить',
+          onPressed: widget.library.syncing ? null : widget.library.reload,
           icon: widget.library.syncing
               ? const SizedBox.square(
                   dimension: 18,
@@ -636,41 +677,18 @@ class _ActivityPageState extends State<ActivityPage> {
               : const Icon(Icons.sync),
         ),
       ],
-      children: loading
-          ? const [
-              Padding(
-                padding: EdgeInsets.all(40),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            ]
-          : wide
-          ? [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(width: 300, child: filters),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (final n in notices) ...[
-                          n,
-                          const SizedBox(height: 12),
-                        ],
-                        ...table,
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ]
-          : [
-              for (final n in notices) ...[n, const SizedBox(height: 12)],
-              filters,
-              const SizedBox(height: 8),
-              ...table,
-            ],
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              itemCount: entries.length + 1,
+              itemBuilder: (_, index) => index == 0
+                  ? Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: filters,
+                    )
+                  : entries[index - 1](),
+            ),
     );
   }
 

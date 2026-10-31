@@ -46,7 +46,7 @@ test('installable library publisher reads only changed files and sends delta edi
     on:(name:string,fn:(file:TFile)=>void)=>{events.set(name,[...(events.get(name)??[]),fn]);return {name,fn};},
     offref:(ref:{name:string;fn:(file:TFile)=>void})=>events.set(ref.name,(events.get(ref.name)??[]).filter(fn=>fn!==ref.fn)),
     adapter:{},configDir:'.obsidian'};
-  const service=new PepeHubLibraryService({manifest:{id:'habit-timer'},settings:{cloudflareWorkerUrl:'https://test',cloudflareApiToken:'secret',pepehubLibrarySyncSeconds:30,libraryPropertyAliases:{},mediaCollections:[{id:'book',enabled:true,folder:'Books'}]},app:{vault}});
+  const service=new PepeHubLibraryService({manifest:{id:'habit-timer'},settings:{cloudflareWorkerUrl:'https://test',cloudflareApiToken:'secret',pepehubLibrarySyncSeconds:30,libraryPropertyAliases:{},mediaCollections:[{id:'book',enabled:true,folder:'Books',readingStatusName:'Reading',pausedStatusName:'Paused',finishedStatusName:'Finished'}]},app:{vault}});
   service.activity.sync=service.notes.sync=async()=>{};
   const globals=globalThis as unknown as {window:unknown};const previous=globals.window;globals.window=globalThis;
   const settle=async()=>{for(let n=0;service.syncing&&n<100;n++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(service.syncing,false);};

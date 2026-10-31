@@ -4,6 +4,7 @@ const libraryStatusLabels = {
   'planned': 'В планах',
   'active': 'Чтение',
   'paused': 'На паузе',
+  'abandoned': 'Брошена',
   'finished': 'Прочитано',
 };
 
@@ -25,6 +26,8 @@ String canonicalLibraryStatus(Object? value) {
     'слушаю' ||
     'прослушивание' => 'active',
     'paused' || 'pause' || 'на паузе' => 'paused',
+    'отложена' || 'отложено' || 'on hold' => 'paused',
+    'abandoned' || 'dropped' || 'dnf' || 'брошена' || 'брошено' => 'abandoned',
     'planned' || 'new' || 'в планах' || 'запланировано' => 'planned',
     _ => text,
   };

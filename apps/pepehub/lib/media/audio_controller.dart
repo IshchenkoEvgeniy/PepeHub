@@ -210,8 +210,12 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   String chapterError = '';
   bool _closed = false;
   Future<void>? _shutdownWork;
+  final ValueNotifier<Duration> playbackPosition = ValueNotifier(Duration.zero);
   void _notify() {
-    if (!_closed) notifyListeners();
+    if (!_closed) {
+      playbackPosition.value = position;
+      notifyListeners();
+    }
   }
 
   String? _loggedState;
@@ -277,7 +281,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         if (!currentPlayer()) return;
         _observePosition();
         _sampleTelemetry();
-        _notify();
+        playbackPosition.value = position;
       }),
     );
     _playerSubscriptions.add(
@@ -1798,6 +1802,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         .timeout(const Duration(seconds: 1))
         .catchError((Object _) {});
     await systemHandler.close();
+    playbackPosition.dispose();
     super.dispose();
   }
 }

@@ -98,7 +98,9 @@ void main() {
         } finally {
           connection.close();
         }
-        await service.download();
+        // This isolated test has no installed base archive. Exercise the full
+        // package explicitly, including resuming the prefix saved above.
+        await service.download(fullPackage: true);
         expect(service.error, null);
         expect(service.phase, UpdatePhase.ready);
         expect(await service.package!.length(), asset.bytes);

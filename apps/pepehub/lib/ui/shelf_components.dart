@@ -531,6 +531,8 @@ class ShelfStatus extends StatelessWidget {
           'active' => 'В процессе',
           'finished' => 'Завершено',
           'deleted' => 'Файл удалён',
+          'paused' => 'Отложена',
+          'abandoned' => 'Брошена',
           _ => 'В планах',
         },
         style: TextStyle(

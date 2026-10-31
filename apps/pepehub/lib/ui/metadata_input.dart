@@ -34,12 +34,15 @@ class _MetadataTokensFieldState extends State<MetadataTokensField> {
     super.dispose();
   }
 
-  void commit(String value) {
+  void commit(String value, {bool split = false}) {
     if (!widget.enabled) return;
     final text = value.trim();
     if (text.isEmpty) return;
     setState(() {
-      selected = metadataStrings([...selected, text]);
+      selected = metadataStrings([
+        ...selected,
+        ...split ? metadataStrings(text) : [text],
+      ]);
       input.clear();
       widget.controller.text = jsonEncode(selected);
     });
@@ -96,18 +99,22 @@ class _MetadataTokensFieldState extends State<MetadataTokensField> {
             hintText: 'Введите или выберите',
             suffixIcon: IconButton(
               tooltip: 'Добавить',
-              onPressed: widget.enabled ? () => commit(input.text) : null,
+              onPressed: widget.enabled
+                  ? () => commit(input.text, split: true)
+                  : null,
               icon: const Icon(Icons.add),
             ),
           ),
           textInputAction: TextInputAction.done,
           onFieldSubmitted: (_) {
             submit();
-            if (input.text.trim().isNotEmpty) commit(input.text);
+            if (input.text.trim().isNotEmpty) {
+              commit(input.text, split: true);
+            }
           },
           onChanged: (text) => widget.controller.text = jsonEncode([
             ...selected,
-            if (text.trim().isNotEmpty) text.trim(),
+            ...metadataStrings(text),
           ]),
         ),
       ),
@@ -128,7 +135,7 @@ class _MetadataTokensFieldState extends State<MetadataTokensField> {
                           selected.remove(value);
                           widget.controller.text = jsonEncode([
                             ...selected,
-                            if (input.text.trim().isNotEmpty) input.text.trim(),
+                            ...metadataStrings(input.text),
                           ]);
                         }),
                 ),

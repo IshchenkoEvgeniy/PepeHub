@@ -2,19 +2,32 @@ import 'dart:io';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 
 import '../library/library_service.dart';
 import '../library/models.dart';
 import '../library/personal_library.dart';
-import 'library_exchange_page.dart';
+import 'library_data_page.dart';
+import 'library_work_page.dart';
+import 'library_cover_search.dart';
+import 'library_groups_page.dart';
+import 'library_batch_actions.dart';
+import '../library/library_features.dart';
 import 'obsidian_notes_page.dart';
+import 'library_card_actions.dart';
+import 'library_trash_page.dart';
+import 'library_audio_time_sheet.dart';
 import 'activity_page.dart';
 import 'app_theme.dart';
 import 'obsidian_library_page.dart' show LibraryMetadataEditor, libraryState;
 import 'shelf_components.dart';
 
-num? _number(dynamic value) => value is num ? value : num.tryParse('$value');
+num? _number(dynamic value) {
+  final result = value is num ? value : num.tryParse('$value');
+  return result?.isFinite == true ? result : null;
+}
+
 String _text(dynamic value) =>
     value is List ? value.join(', ') : '${value ?? ''}';
 String _amount(num? value) => value == null
@@ -25,6 +38,8 @@ String _amount(num? value) => value == null
 
 String metadataReadingStatus(ObsidianLibraryItem item) {
   final status = _text(item.value('status')).toLowerCase().trim();
+  final canonical = libraryStatus(item);
+  if (['paused', 'abandoned'].contains(canonical)) return canonical;
   if ([
     'finished',
     'completed',
@@ -89,10 +104,16 @@ double? metadataProgress(ObsidianLibraryItem item) {
 }
 
 String _duration(num value) {
-  final minutes = value.round();
-  if (minutes < 60) return '$minutes мин';
-  final hours = minutes ~/ 60, remainder = minutes % 60;
-  return remainder == 0 ? '$hours ч' : '$hours ч $remainder мин';
+  final total = (value * 60).round(),
+      hours = total ~/ 3600,
+      minutes = total ~/ 60 % 60,
+      seconds = total % 60;
+  return [
+    if (hours > 0) '$hours ч',
+    if (minutes > 0) '$minutes мин',
+    if (seconds > 0) '$seconds с',
+    if (total == 0) '0 мин',
+  ].join(' ');
 }
 
 String metadataProgressLabel(ObsidianLibraryItem item) {
@@ -216,9 +237,21 @@ class ObsidianLibraryPage extends StatefulWidget {
 class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
   final search = TextEditingController();
   final searchFocus = FocusNode();
+  Timer? _searchTimer;
+  String _searchQuery = '';
+  static final _spaces = RegExp(r'\s+');
   String type = 'all', scope = 'all', year = 'all', sort = 'completed';
   String? selectedId;
-  bool filters = false, grid = true;
+  bool filters = false, grid = false;
+  bool selecting = false,
+      favoritesOnly = false,
+      descending = true,
+      hiddenOnly = false;
+  String statusFilter = 'all', collectionFilter = 'all';
+  final selectedBooks = <String>{};
+  List<LibraryEntry>? _filterInput;
+  Object? _filterKey;
+  List<LibraryEntry> _filtered = [];
   int? annualGoal;
   String? goalNamespace;
   @override
@@ -229,6 +262,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
 
   @override
   void dispose() {
+    _searchTimer?.cancel();
     search.dispose();
     searchFocus.dispose();
     super.dispose();
@@ -293,26 +327,21 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
 
   Future<void> _exchange() => Navigator.push<void>(
     context,
-    MaterialPageRoute(
-      builder: (_) => LibraryExchangePage(
-        service: widget.service,
-        onSettings: widget.onSettings,
-      ),
-    ),
+    MaterialPageRoute(builder: (_) => LibraryDataPage(library: widget.service)),
   );
   Future<void> _add() async {
     final audio = await showDialog<bool>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('Добавить завершённую книгу'),
+        title: const Text('Добавить произведение'),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Прочитал(а)'),
+            child: const Text('Книга'),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Прослушал(а)'),
+            child: const Text('Аудиокнига'),
           ),
         ],
       ),
@@ -327,6 +356,13 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           collection: widget.service.collectionFor(draft),
           suggestions: widget.service.suggestions,
           onPickCover: widget.service.chooseCover,
+          onSearchCover: () => Navigator.push<String>(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  LibraryCoverSearch(library: widget.service, item: draft),
+            ),
+          ),
           coverResolver: widget.service.coverReferencePath,
           saveLabel: 'Добавить в библиотеку',
           onSave: (values) => widget.service.add(draft.withValues(values), ''),
@@ -338,49 +374,41 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
   Future<void> _open(LibraryEntry entry) => Navigator.push<void>(
     context,
     MaterialPageRoute(
-      builder: (_) => LibraryMetadataEditor(
-        coverResolver: widget.service.coverReferencePath,
-        suggestions: widget.service.suggestions,
-        collection: widget.service.collectionFor(entry.item),
-        collections: (widget.service.snapshot?['collections'] as List? ?? [])
-            .map((c) => Map<String, dynamic>.from(c as Map))
-            .toList(),
-        syncPolicy: widget.service.policies[entry.item.id] ?? const {},
-        onSavePolicy: (policy) =>
-            widget.service.savePolicy(entry.item.id, policy),
-        onPickCover: widget.service.chooseCover,
-        item: entry.item,
-        entry: entry,
-        onSave: (values) => widget.service.save(
-          entry.item.id,
-          values,
-          original: entry.item.values,
-        ),
-        onUseObsidian: () => widget.service.useObsidian(entry.item.id),
-      ),
+      builder: (_) =>
+          LibraryWorkPage(library: widget.service, itemId: entry.item.id),
     ),
   );
-  bool _matches(LibraryEntry entry) {
+  Future<void> _edit(LibraryEntry entry) =>
+      editLibraryEntry(context, widget.service, entry);
+  Future<void> _groups(String kind) => Navigator.push<void>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => LibraryGroupsPage(library: widget.service, kind: kind),
+    ),
+  );
+  bool _matches(LibraryEntry entry, List<String> terms) {
     final item = entry.item;
-    final texts = {
-      'title': item.title,
-      'author': item.authors,
-      'series': _text(item.value('series')),
-      'all': [
-        item.title,
-        item.authors,
-        _text(item.value('series')),
-        _text(item.value('genre')),
-        _text(item.values['tags']),
-      ].join(' '),
-    };
-    final haystack = (texts[scope] ?? '').toLowerCase().replaceAll('ё', 'е');
-    final terms = search.text
-        .trim()
-        .toLowerCase()
-        .replaceAll('ё', 'е')
-        .split(RegExp(r'\s+'));
+    final text = terms.isEmpty
+        ? ''
+        : switch (scope) {
+            'title' => item.title,
+            'author' => item.authors,
+            'series' => _text(item.value('series')),
+            _ => [
+              item.title,
+              item.authors,
+              _text(item.value('series')),
+              _text(item.value('genre')),
+              _text(item.values['tags']),
+            ].join(' '),
+          };
+    final haystack = text.toLowerCase().replaceAll('ё', 'е');
     return (type == 'all' || item.mediaType == type) &&
+        (statusFilter == 'all' || libraryStatus(item) == statusFilter) &&
+        (collectionFilter == 'all' ||
+            libraryCollections(item).contains(collectionFilter)) &&
+        ((item.values['pepehub_hidden'] == true) == hiddenOnly) &&
+        (!favoritesOnly || item.values['pepehub_favorite'] == true) &&
         (year == 'all' ||
             (year == 'unknown'
                 ? libraryCompletionDate(item) == null
@@ -388,30 +416,31 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
         terms.every(haystack.contains);
   }
 
-  int _compare(LibraryEntry a, LibraryEntry b) {
-    final left = a.item, right = b.item;
-    final compared = switch (sort) {
-      'author' => left.authors.toLowerCase().compareTo(
-        right.authors.toLowerCase(),
-      ),
-      'series' => _text(
-        left.value('series'),
-      ).toLowerCase().compareTo(_text(right.value('series')).toLowerCase()),
-      'progress' => (metadataProgress(right) ?? -1).compareTo(
-        metadataProgress(left) ?? -1,
-      ),
-      'rating' => (_number(right.value('rating')) ?? -1).compareTo(
-        _number(left.value('rating')) ?? -1,
-      ),
-      'recent' => right.modifiedAt.compareTo(left.modifiedAt),
-      'completed' => (libraryCompletionDate(right) ?? DateTime(1)).compareTo(
-        libraryCompletionDate(left) ?? DateTime(1),
-      ),
-      _ => left.title.toLowerCase().compareTo(right.title.toLowerCase()),
-    };
-    return compared == 0
-        ? left.title.toLowerCase().compareTo(right.title.toLowerCase())
-        : compared;
+  int _compare(LibraryEntry a, LibraryEntry b) =>
+      compareLibraryEntries(a, b, sort, descending: descending);
+
+  List<LibraryEntry> _results(List<LibraryEntry> all) {
+    final key = (
+      _searchQuery,
+      type,
+      scope,
+      year,
+      sort,
+      descending,
+      hiddenOnly,
+      favoritesOnly,
+      statusFilter,
+      collectionFilter,
+    );
+    if (!identical(all, _filterInput) || key != _filterKey) {
+      _filterInput = all;
+      _filterKey = key;
+      final normalized = _searchQuery.trim().toLowerCase().replaceAll('ё', 'е');
+      final terms = normalized.isEmpty ? <String>[] : normalized.split(_spaces);
+      _filtered = all.where((entry) => _matches(entry, terms)).toList()
+        ..sort(_compare);
+    }
+    return _filtered;
   }
 
   @override
@@ -429,114 +458,277 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           annualGoal = null;
           unawaited(_loadGoal());
         }
-        final all = service.completed;
-        final entries = all.where(_matches).toList()..sort(_compare);
+        final all = service.visibleEntries;
+        final entries = _results(all);
         final selected =
             entries.where((e) => e.item.id == selectedId).firstOrNull ??
             entries.firstOrNull;
-        final books = all.where((e) => e.item.mediaType == 'book').length,
-            audio = all.length - books;
+        final books = service.completed
+                .where((e) => e.item.mediaType == 'book')
+                .length,
+            audio = service.completed.length - books;
         return ShelfShell(
           title: 'Библиотека',
           navigation: widget.navigation,
           actions: [
-            IconButton(
-              tooltip: 'Журнал чтения и прослушивания',
-              icon: const Icon(Icons.history),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ActivityPage(library: service),
+            PopupMenuButton<String>(
+              tooltip: 'Действия библиотеки',
+              onSelected: (action) async {
+                if (!mounted) return;
+                if (['author', 'series', 'collection'].contains(action)) {
+                  await _groups(action);
+                }
+                if (!context.mounted) return;
+                if (action == 'hidden') {
+                  setState(() => hiddenOnly = !hiddenOnly);
+                }
+                if (action == 'notes') {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ObsidianNotesPage(library: service),
+                    ),
+                  );
+                  return;
+                }
+                if (action == 'journal') {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ActivityPage(library: service),
+                    ),
+                  );
+                }
+                if (action == 'select') {
+                  setState(() {
+                    selecting = !selecting;
+                    selectedBooks.clear();
+                  });
+                }
+                if (action == 'favorites') {
+                  setState(() => favoritesOnly = !favoritesOnly);
+                }
+                if (action == 'trash') {
+                  if (!context.mounted) return;
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => LibraryTrashPage(service: service),
+                    ),
+                  );
+                }
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'notes',
+                  child: Text('Цитаты и заметки'),
                 ),
-              ),
+                const PopupMenuItem(value: 'author', child: Text('Авторы')),
+                const PopupMenuItem(value: 'series', child: Text('Серии')),
+                const PopupMenuItem(
+                  value: 'collection',
+                  child: Text('Коллекции'),
+                ),
+                PopupMenuItem(
+                  value: 'hidden',
+                  child: Text(
+                    hiddenOnly ? 'Вернуться к видимым' : 'Скрытые карточки',
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'journal',
+                  child: Text('Журнал чтения и прослушивания'),
+                ),
+                PopupMenuItem(
+                  value: 'select',
+                  child: Text(
+                    selecting ? 'Завершить выбор' : 'Выбрать несколько книг',
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'favorites',
+                  child: Text(
+                    favoritesOnly ? 'Показать все книги' : 'Только избранные',
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'trash',
+                  child: Text('Корзина · ${service.trash.length}'),
+                ),
+              ],
             ),
             IconButton(
-              tooltip: 'Импорт и экспорт',
+              tooltip: 'Экспорт и резервные копии',
               onPressed: _exchange,
-              icon: Badge(
-                isLabelVisible:
-                    service.inbox.isNotEmpty || service.error != null,
-                label: Text(
-                  service.inbox.isEmpty ? '!' : '${service.inbox.length}',
-                ),
-                child: const Icon(Icons.import_export, size: 20),
-              ),
+              icon: const Icon(Icons.backup_outlined, size: 20),
             ),
           ],
           body: LayoutBuilder(
             builder: (context, constraints) {
-              const inset = 20.0;
-              return SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(inset, 4, inset, 32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ShelfIntro(
-                      title: 'Библиотека',
-                      subtitle: 'Прочитанное и прослушанное. Ваши оценки и впечатления.',
-                      action: FilledButton.icon(
-                        onPressed: _add,
-                        icon: const Icon(Icons.add, size: 17),
-                        label: const Text('Добавить книгу'),
-                      ),
-                    ),
-                    const SizedBox(height: 22),
-                    _goal(all),
-                    const SizedBox(height: 18),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 8,
-                      children: [
-                        ShelfPill(label: 'Всего завершено', count: all.length),
-                        ShelfPill(label: 'Прочитано', count: books),
-                        ShelfPill(label: 'Прослушано', count: audio),
-                        OutlinedButton.icon(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  ObsidianNotesPage(library: service),
-                            ),
+              final details = constraints.maxWidth >= 1040;
+              final list = CustomScrollView(
+                key: const PageStorageKey('personal-library-list'),
+                scrollCacheExtent: const ScrollCacheExtent.pixels(300),
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                    sliver: SliverToBoxAdapter(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Записей: ${all.length}',
+                                  style: TextStyle(
+                                    color: palette.muted,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed: _add,
+                                icon: const Icon(Icons.add, size: 18),
+                                label: const Text('Добавить'),
+                              ),
+                            ],
                           ),
-                          icon: const Icon(Icons.format_quote),
-                          label: const Text('Цитаты и заметки'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    LayoutBuilder(
-                      builder: (context, content) {
-                        final details = content.maxWidth >= 1000;
-                        final collection = _collection(
-                          entries,
-                          all,
-                          selected,
-                          details,
-                        );
-                        if (!details) return collection;
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: collection),
-                            const SizedBox(width: 24),
-                            SizedBox(
-                              width: 300,
-                              child: selected != null
-                                  ? _detail(selected)
-                                  : ShelfPanel(
-                                      padding: const EdgeInsets.all(22),
-                                      child: Text(
-                                        'Выберите запись из коллекции',
-                                        style: TextStyle(color: palette.muted),
-                                      ),
-                                    ),
+                          if (service.loading) ...[
+                            const LinearProgressIndicator(minHeight: 2),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Обновляем сведения о файлах…',
+                              style: TextStyle(
+                                color: palette.muted,
+                                fontSize: 11,
+                              ),
                             ),
                           ],
-                        );
-                      },
+                          if (service.error != null)
+                            Text(
+                              service.error!,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                          ExpansionTile(
+                            key: const PageStorageKey('library-summary'),
+                            tilePadding: EdgeInsets.zero,
+                            minTileHeight: 40,
+                            dense: true,
+                            title: Text(
+                              'Итоги и цель · $books книг, $audio аудиокниг',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            children: [_goal(service.completed)],
+                          ),
+                          const SizedBox(height: 8),
+                          if (selecting)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text('Выбрано: ${selectedBooks.length}'),
+                                  TextButton(
+                                    onPressed: () => setState(() {
+                                      selectedBooks.clear();
+                                      selectedBooks.addAll(
+                                        entries.map((e) => e.item.id),
+                                      );
+                                    }),
+                                    child: const Text('Выбрать показанные'),
+                                  ),
+                                  PopupMenuButton<String>(
+                                    tooltip: 'Массовые действия',
+                                    enabled: selectedBooks.isNotEmpty,
+                                    onSelected: (action) => libraryBatchAction(
+                                      context,
+                                      service,
+                                      selectedBooks.toList(),
+                                      action,
+                                    ),
+                                    itemBuilder: (_) => [
+                                      for (final e
+                                          in libraryBatchLabels.entries)
+                                        PopupMenuItem(
+                                          value: e.key,
+                                          child: Text(e.value),
+                                        ),
+                                    ],
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(12),
+                                      child: Text('Действия с выбранными ▾'),
+                                    ),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: selectedBooks.isEmpty
+                                        ? null
+                                        : () async {
+                                            if (await deleteLibraryCards(
+                                                  context,
+                                                  service,
+                                                  selectedBooks.toList(),
+                                                ) &&
+                                                mounted) {
+                                              setState(() {
+                                                selectedBooks.clear();
+                                                selecting = false;
+                                              });
+                                            }
+                                          },
+                                    icon: const Icon(Icons.delete_outline),
+                                    label: const Text('В корзину'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => setState(() {
+                                      selectedBooks.clear();
+                                      selecting = false;
+                                    }),
+                                    child: const Text('Отмена'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          if (favoritesOnly)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: InputChip(
+                                label: const Text('Только избранные'),
+                                onDeleted: () =>
+                                    setState(() => favoritesOnly = false),
+                              ),
+                            ),
+                          _collectionControls(all),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+                    sliver: _collectionSliver(entries, all, selected, details),
+                  ),
+                ],
+              );
+              if (!details) return list;
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: list),
+                  const SizedBox(width: 4),
+                  SizedBox(
+                    width: 300,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.only(right: 20, bottom: 24),
+                      child: selected != null
+                          ? _detail(selected)
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
               );
             },
           ),
@@ -544,12 +736,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       },
     ),
   );
-  Widget _collection(
-    List<LibraryEntry> entries,
-    List<LibraryEntry> all,
-    LibraryEntry? selected,
-    bool details,
-  ) {
+  Widget _collectionControls(List<LibraryEntry> all) {
     final palette = ShelfPalette.of(context);
     final pill = OutlineInputBorder(
       borderRadius: BorderRadius.circular(26),
@@ -559,17 +746,37 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       key: const ValueKey('library-search'),
       controller: search,
       focusNode: searchFocus,
-      onChanged: (_) => setState(() {}),
+      onChanged: (_) {
+        _searchTimer?.cancel();
+        _searchTimer = Timer(const Duration(milliseconds: 200), () {
+          if (mounted) setState(() => _searchQuery = search.text);
+        });
+      },
       decoration: InputDecoration(
         hintText: 'Название, автор или серия…',
         prefixIcon: const Icon(Icons.search_rounded, size: 20),
-        suffixIcon: search.text.isEmpty
-            ? null
-            : IconButton(
+        suffixIcon: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (search.text.isNotEmpty)
+              IconButton(
                 tooltip: 'Очистить поиск',
-                onPressed: () => setState(search.clear),
+                onPressed: () {
+                  _searchTimer?.cancel();
+                  setState(() {
+                    search.clear();
+                    _searchQuery = '';
+                  });
+                },
                 icon: const Icon(Icons.close, size: 17),
               ),
+            IconButton(
+              tooltip: filters ? 'Скрыть фильтры' : 'Фильтры библиотеки',
+              onPressed: () => setState(() => filters = !filters),
+              icon: Icon(filters ? Icons.close : Icons.tune_rounded, size: 20),
+            ),
+          ],
+        ),
         isDense: true,
         border: pill,
         enabledBorder: pill,
@@ -601,12 +808,19 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       children: [
         LayoutBuilder(
           builder: (context, constraints) => constraints.maxWidth < 520
-              ? Column(children: [field, const SizedBox(height: 10), selector])
+              ? Column(
+                  children: [
+                    field,
+                    if (filters) ...[const SizedBox(height: 10), selector],
+                  ],
+                )
               : Row(
                   children: [
                     Expanded(child: field),
-                    const SizedBox(width: 10),
-                    SizedBox(width: 160, child: selector),
+                    if (filters) ...[
+                      const SizedBox(width: 10),
+                      SizedBox(width: 160, child: selector),
+                    ],
                   ],
                 ),
         ),
@@ -627,16 +841,61 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 showCheckmark: false,
                 onSelected: (_) => setState(() => type = option.key),
               ),
-            OutlinedButton.icon(
-              onPressed: () => setState(() => filters = !filters),
-              icon: Icon(
-                filters ? Icons.close : Icons.filter_list_rounded,
-                size: 15,
-              ),
-              label: Text(year == 'all' ? 'Фильтры' : 'Фильтры · 1'),
-            ),
           ],
         ),
+        if (!filters)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ActionChip(
+              label: Text(
+                statusFilter == 'all'
+                    ? 'Все статусы'
+                    : libraryStatusesLocal[statusFilter] ?? statusFilter,
+              ),
+              avatar: const Icon(Icons.filter_list, size: 16),
+              onPressed: () => setState(() => filters = true),
+            ),
+          ),
+        if (filters) ...[
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            key: ValueKey('library-status:$statusFilter'),
+            initialValue: statusFilter,
+            decoration: const InputDecoration(
+              labelText: 'Статус книги',
+              isDense: true,
+            ),
+            items: [
+              const DropdownMenuItem(value: 'all', child: Text('Все статусы')),
+              for (final e in libraryStatusesLocal.entries)
+                DropdownMenuItem(value: e.key, child: Text(e.value)),
+            ],
+            onChanged: (v) => setState(() => statusFilter = v ?? 'all'),
+          ),
+        ],
+        if (filters) ...[
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            key: ValueKey('library-collection:$collectionFilter'),
+            initialValue: collectionFilter,
+            decoration: const InputDecoration(
+              labelText: 'Коллекция',
+              isDense: true,
+            ),
+            items: [
+              const DropdownMenuItem(
+                value: 'all',
+                child: Text('Все коллекции'),
+              ),
+              for (final name in ({
+                ...all.expand((e) => libraryCollections(e.item)),
+                if (collectionFilter != 'all') collectionFilter,
+              }.toList()..sort()))
+                DropdownMenuItem(value: name, child: Text(name)),
+            ],
+            onChanged: (v) => setState(() => collectionFilter = v ?? 'all'),
+          ),
+        ],
         if (filters)
           Padding(
             padding: const EdgeInsets.only(top: 14),
@@ -679,6 +938,10 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 ),
                 items: const [
                   DropdownMenuItem(
+                    value: 'added',
+                    child: Text('Недавно добавленные'),
+                  ),
+                  DropdownMenuItem(
                     value: 'completed',
                     child: Text('По дате завершения'),
                   ),
@@ -704,13 +967,23 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                   ),
                   DropdownMenuItem(value: 'rating', child: Text('По оценке')),
                 ],
-                onChanged: (next) => setState(() => sort = next ?? 'recent'),
+                onChanged: (next) => setState(() {
+                  sort = next ?? 'added';
+                  if (sort == 'added') statusFilter = 'all';
+                  descending = [
+                    'added',
+                    'completed',
+                    'recent',
+                    'rating',
+                    'progress',
+                  ].contains(sort);
+                }),
               ),
             ),
-            const SizedBox(width: 8),
-            Text(
-              'Показано ${entries.length} из ${all.length}',
-              style: TextStyle(fontSize: 12, color: palette.muted),
+            IconButton(
+              tooltip: descending ? 'По убыванию' : 'По возрастанию',
+              onPressed: () => setState(() => descending = !descending),
+              icon: Icon(descending ? Icons.south : Icons.north, size: 20),
             ),
             IconButton(
               tooltip: grid ? 'Показать списком' : 'Показать карточками',
@@ -723,88 +996,100 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           ],
         ),
         const SizedBox(height: 8),
-        if (entries.isEmpty)
-          ShelfPanel(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
-            child: Column(
-              children: [
-                Icon(Icons.search_off_outlined, size: 36, color: palette.muted),
-                const SizedBox(height: 14),
-                Text(
-                  all.isEmpty
-                      ? 'В библиотеке пока нет записей'
-                      : 'Ничего не найдено',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                if (all.isNotEmpty) ...[
-                  const SizedBox(height: 7),
-                  Text(
-                    'Попробуйте другой запрос или сбросьте фильтры.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: palette.muted, fontSize: 12),
-                  ),
-                  TextButton(
-                    onPressed: () => setState(() {
-                      search.clear();
-                      type = year = scope = 'all';
-                    }),
-                    child: const Text('Сбросить фильтры'),
-                  ),
-                ],
-              ],
-            ),
-          )
-        else
-          LayoutBuilder(
-            builder: (context, constraints) {
-              if (grid) {
-                const gap = 16.0;
-                final columns = (constraints.maxWidth / 200).floor().clamp(
-                  2,
-                  8,
-                );
-                final width =
-                    (constraints.maxWidth - gap * (columns - 1)) / columns;
-                return GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: EdgeInsets.zero,
-                  itemCount: entries.length,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    crossAxisSpacing: gap,
-                    mainAxisSpacing: gap,
-                    mainAxisExtent:
-                        width * 1.5 +
-                        228 * MediaQuery.textScalerOf(context).scale(1) -
-                        64,
-                  ),
-                  itemBuilder: (_, i) => _gridCard(
-                    entries[i],
-                    selected?.item.id == entries[i].item.id,
-                    details,
-                    width,
-                  ),
-                );
-              }
-              final table = constraints.maxWidth >= 620;
-              return ShelfPanel(
-                child: Column(
-                  children: [
-                    if (table) _tableHeader(),
-                    for (final entry in entries)
-                      _row(
-                        entry,
-                        selected?.item.id == entry.item.id,
-                        details,
-                        table,
-                      ),
-                  ],
-                ),
-              );
-            },
-          ),
       ],
+    );
+  }
+
+  Widget _collectionSliver(
+    List<LibraryEntry> entries,
+    List<LibraryEntry> all,
+    LibraryEntry? selected,
+    bool details,
+  ) {
+    if (entries.isEmpty) {
+      return SliverToBoxAdapter(
+        child: ShelfPanel(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: Column(
+            children: [
+              Text(
+                all.isEmpty
+                    ? widget.service.loading
+                          ? 'Загружаем библиотеку…'
+                          : 'В библиотеке пока нет записей'
+                    : 'Ничего не найдено',
+              ),
+              if (all.isEmpty && !widget.service.loading)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Добавьте завершённую, отложенную или брошенную книгу из вкладки файлов или кнопкой «Добавить».',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              if (all.isNotEmpty)
+                TextButton(
+                  onPressed: () => setState(() {
+                    search.clear();
+                    type = year = scope = statusFilter = collectionFilter =
+                        'all';
+                    hiddenOnly = favoritesOnly = false;
+                  }),
+                  child: const Text('Сбросить фильтры'),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+    return SliverLayoutBuilder(
+      builder: (context, constraints) {
+        final available = constraints.crossAxisExtent;
+        if (grid) {
+          const gap = 16.0;
+          final columns = (available / 200).floor().clamp(2, 8);
+          final width = (available - gap * (columns - 1)) / columns;
+          return SliverGrid.builder(
+            itemCount: entries.length,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              crossAxisSpacing: gap,
+              mainAxisSpacing: gap,
+              mainAxisExtent:
+                  width * 1.5 +
+                  228 * MediaQuery.textScalerOf(context).scale(1) -
+                  64,
+            ),
+            itemBuilder: (_, i) => KeyedSubtree(
+              key: ValueKey('library-work:${entries[i].item.id}'),
+              child: _gridCard(
+                entries[i],
+                selected?.item.id == entries[i].item.id,
+                details,
+                width,
+              ),
+            ),
+          );
+        }
+        final table = available >= 620;
+        return SliverList.builder(
+          itemCount: entries.length + (table ? 1 : 0),
+          itemBuilder: (_, index) {
+            if (table && index == 0) return _tableHeader();
+            final entry = entries[index - (table ? 1 : 0)];
+            return Material(
+              key: ValueKey('library-work:${entry.item.id}'),
+              color: ShelfPalette.of(context).panel,
+              child: _row(
+                entry,
+                selected?.item.id == entry.item.id,
+                details,
+                table,
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -846,6 +1131,14 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
   }
 
   void _select(LibraryEntry entry, bool details) {
+    if (selecting) {
+      setState(() {
+        if (!selectedBooks.add(entry.item.id)) {
+          selectedBooks.remove(entry.item.id);
+        }
+      });
+      return;
+    }
     setState(() => selectedId = entry.item.id);
     if (!details) unawaited(_open(entry));
   }
@@ -923,6 +1216,58 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       ),
     ],
   );
+  Widget _menu(LibraryEntry entry) => PopupMenuButton<String>(
+    tooltip: 'Действия с книгой',
+    icon: const Icon(Icons.more_horiz, size: 20),
+    onSelected: (action) async {
+      try {
+        if (action == 'edit') await _edit(entry);
+        if (action == 'status' && mounted) {
+          await libraryBatchAction(context, widget.service, [
+            entry.item.id,
+          ], 'status');
+        }
+        if (action == 'collection' && mounted) {
+          await libraryBatchAction(context, widget.service, [
+            entry.item.id,
+          ], 'collection');
+        }
+        if (action == 'time' && mounted) {
+          await editLibraryAudioTime(context, widget.service, entry);
+        }
+        if (action == 'favorite') await widget.service.favorite(entry.item.id);
+        if (action == 'delete' && mounted) {
+          await deleteLibraryCards(context, widget.service, [entry.item.id]);
+        }
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('$error')));
+        }
+      }
+    },
+    itemBuilder: (_) => [
+      const PopupMenuItem(value: 'edit', child: Text('Редактировать карточку')),
+      const PopupMenuItem(value: 'status', child: Text('Изменить статус')),
+      const PopupMenuItem(
+        value: 'collection',
+        child: Text('Добавить в коллекцию'),
+      ),
+      if (entry.item.mediaType == 'audiobook' &&
+          ['', 'minutes', 'hours'].contains(entry.item.value('unit') ?? ''))
+        const PopupMenuItem(value: 'time', child: Text('Время прослушивания…')),
+      PopupMenuItem(
+        value: 'favorite',
+        child: Text(
+          entry.item.values['pepehub_favorite'] == true
+              ? 'Убрать из избранного'
+              : 'В избранное',
+        ),
+      ),
+      const PopupMenuItem(value: 'delete', child: Text('В корзину')),
+    ],
+  );
+
   Widget _row(LibraryEntry entry, bool selected, bool details, bool table) {
     final item = entry.item, palette = ShelfPalette.of(context);
     return Container(
@@ -940,6 +1285,10 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       ),
       child: InkWell(
         onTap: () => _select(entry, details),
+        onLongPress: () => setState(() {
+          selecting = true;
+          selectedBooks.add(entry.item.id);
+        }),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(13, 14, 12, 14),
           child: Row(
@@ -1038,12 +1387,12 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
               ],
               SizedBox(
                 width: 32,
-                child: IconButton(
-                  tooltip: 'Редактировать метаданные',
-                  onPressed: () => _open(entry),
-                  padding: EdgeInsets.zero,
-                  icon: const Icon(Icons.more_horiz, size: 18),
-                ),
+                child: selecting
+                    ? Checkbox(
+                        value: selectedBooks.contains(item.id),
+                        onChanged: (_) => _select(entry, details),
+                      )
+                    : _menu(entry),
               ),
             ],
           ),
@@ -1072,6 +1421,10 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _select(entry, details),
+        onLongPress: () => setState(() {
+          selecting = true;
+          selectedBooks.add(entry.item.id);
+        }),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1108,6 +1461,20 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                     ),
                   ),
                 ),
+                Positioned(
+                  right: 4,
+                  top: 4,
+                  child: Material(
+                    color: palette.panel.withValues(alpha: .92),
+                    borderRadius: BorderRadius.circular(24),
+                    child: selecting
+                        ? Checkbox(
+                            value: selectedBooks.contains(item.id),
+                            onChanged: (_) => _select(entry, details),
+                          )
+                        : _menu(entry),
+                  ),
+                ),
               ],
             ),
             Expanded(
@@ -1133,6 +1500,15 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                     Row(
                       children: [
                         Flexible(child: _status(entry)),
+                        if (item.values['pepehub_favorite'] == true)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: Icon(
+                              Icons.favorite,
+                              size: 14,
+                              color: palette.accent,
+                            ),
+                          ),
                         if (rating != null) ...[
                           const SizedBox(width: 8),
                           Text(
@@ -1190,7 +1566,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
               ),
               IconButton(
                 tooltip: 'Все метаданные',
-                onPressed: () => _open(entry),
+                onPressed: () => _edit(entry),
                 icon: Icon(Icons.edit_outlined, color: palette.muted, size: 17),
               ),
             ],
@@ -1265,7 +1641,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           FilledButton.icon(
             onPressed: () => _open(entry),
             icon: const Icon(Icons.edit_outlined, size: 15),
-            label: const Text('Редактировать метаданные'),
+            label: const Text('Открыть карточку произведения'),
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(

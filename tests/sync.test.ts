@@ -20,6 +20,17 @@ test('all supported book formats survive validation and the server change log',a
   } finally {db.close();}
 });
 
+test('paused and abandoned books retain their status through validation and the change log',async()=>{
+  const db=new SqliteDatabase();
+  try {
+    for (const status of ['paused','abandoned'] as const) {
+      const op=parseOperation(book({payload:{title:'Книга',authors:[],format:'epub',status}}));
+      assert.equal((await applyOperation(db,owner,op)).status,'accepted');
+    }
+    assert.deepEqual((await getChanges(db,owner,0,100)).changes.map(c=>(c.payload as Book).status),['paused','abandoned']);
+  } finally { db.close(); }
+});
+
 test('lost response and concurrent retries produce one entity revision and one log entry',async()=>{
   const db=new SqliteDatabase();try {
     const op=book(); const receipts=await Promise.all(Array.from({length:8},()=>applyOperation(db,owner,op)));

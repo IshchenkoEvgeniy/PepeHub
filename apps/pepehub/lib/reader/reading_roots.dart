@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 
 import '../audio/audio_folder.dart';
 import '../media/asset_store.dart';
+import '../media/verified_stream_copy.dart';
 import '../media/library_folder_preference.dart';
 import '../media/library_recovery.dart';
 import '../data/repository.dart';
@@ -32,7 +33,7 @@ class ReadingRoots {
   Future<List<ReadingRoot>> list() async {
     final rows = await assets.repository.db
         .customSelect(
-          "SELECT key,value FROM metadata WHERE key LIKE 'reading-library-root:%'",
+          "SELECT key,value FROM metadata WHERE key>='reading-library-root:' AND key<'reading-library-root;'",
         )
         .get();
     return [
@@ -247,27 +248,12 @@ class ReadingRoots {
     if (!await file.exists()) {
       final temporary = File('${file.path}.partial');
       try {
-        final sink = temporary.openWrite();
-        try {
-          var received = 0;
-          await for (final chunk in SafAudioFile(
-            asset.path,
-            asset.filename,
-            asset.bytes,
-          ).openRead()) {
-            received += chunk.length;
-            if (received > asset.bytes || received > maxBytes) {
-              throw StateError('Размер файла изменился. Обновите папку книг.');
-            }
-            sink.add(chunk);
-            await sink.flush();
-          }
-        } finally {
-          await sink.close();
-        }
-        if (await temporary.length() != asset.bytes ||
-            (await sha256.bind(temporary.openRead()).first).toString() !=
-                asset.hash) {
+        final copied = await copyVerifiedStream(
+          SafAudioFile(asset.path, asset.filename, asset.bytes).openRead(),
+          temporary,
+          expectedBytes: asset.bytes,
+        );
+        if (copied.hash != asset.hash) {
           throw StateError('Файл изменился. Обновите папку книг.');
         }
         await temporary.rename(file.path);

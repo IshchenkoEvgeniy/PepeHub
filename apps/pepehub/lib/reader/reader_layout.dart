@@ -136,9 +136,7 @@ class ReaderPreferences {
 
 class ReaderDocument {
   final EpubBook book;
-  late final List<String> texts = book.chapters
-      .map((c) => c.paragraphs.join('\n\n'))
-      .toList();
+  late final List<String> texts = book.chapters.map((c) => c.text).toList();
   late final List<int> starts = _starts();
   late final int length = texts.fold(0, (sum, text) => sum + text.length);
   late final _paragraphIndexes = List<List<int>?>.filled(
@@ -153,7 +151,9 @@ class ReaderDocument {
           for (final paragraph in book.chapters[chapter].paragraphs)
             (() {
               final value = start;
-              start += paragraph.length + 2;
+              start +=
+                  paragraph.length +
+                  book.chapters[chapter].paragraphSeparator.length;
               return value;
             })(),
         ];

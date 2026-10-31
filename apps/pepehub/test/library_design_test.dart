@@ -10,6 +10,8 @@ import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/main.dart';
+import 'package:pepehub/ui/library_page.dart';
+import 'package:pepehub/library/library_service.dart';
 
 Future<void> cover(
   WidgetTester tester,
@@ -236,10 +238,31 @@ void main() {
       await tester.pumpAndSettle();
       await capture('library-all');
       expect(tester.takeException(), isNull);
+      final dynamic page = tester.state(find.byType(LibraryPage));
+      final catalog = page.obsidianLibrary as LibraryService;
       await tester.pumpWidget(const SizedBox());
+      var settled = false;
+      catalog.idle.then((_) => settled = true);
+      for (var n = 0; n < 100 && !settled; n++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+      }
+      expect(settled, isTrue);
       await tester.runAsync(() async {
         await db.close();
-        await temp.delete(recursive: true);
+        // Windows image decoders may release their final file handle after
+        // the frame is removed; retry cleanup without touching other paths.
+        for (var n = 0; n < 20; n++) {
+          try {
+            await temp.delete(recursive: true);
+            break;
+          } on FileSystemException {
+            if (n == 19) rethrow;
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+          }
+        }
       });
     },
   );

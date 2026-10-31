@@ -111,7 +111,10 @@ void main() {
       after.starts[moved.chapter] + moved.offset,
       before.starts[oldChapter] + 5,
     );
-    expect(await repo.meta('reader-layout-backup-5:h'), isNotNull);
+    expect(
+      await repo.meta('reader-layout-backup-$currentBookLayout:h'),
+      isNotNull,
+    );
   });
 
   testWidgets(

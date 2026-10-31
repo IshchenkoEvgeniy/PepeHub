@@ -65,6 +65,143 @@ Future<void> loadFonts(WidgetTester tester) => tester.runAsync(() async {
 
 void main() {
   testWidgets(
+    'video continues during Anki input; save-next captures a new time and keeps deck and tags',
+    (tester) async {
+      phone(tester);
+      final db = AppDatabase(NativeDatabase.memory());
+      final repo = Repository(db), engine = TestVideoEngine();
+      final videos = VideoRepository(repo),
+          vocabulary = VocabularyRepository(repo);
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox());
+        await ready(tester, () => engine.closed);
+        await tester.runAsync(db.close);
+      });
+      final item = await videos.addSources(
+        title: 'Course',
+        sources: const [VideoSourceDraft('one.mp4', 'Lesson')],
+      );
+      final lessons = await videos.lessons(itemId: item.id);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.data(Brightness.dark, style: AppStyle.mono),
+          home: VideoPlayerPage(
+            repository: videos,
+            item: item,
+            lessons: lessons,
+            engineFactory: () => engine,
+          ),
+        ),
+      );
+      await ready(tester, () => engine.state.playing);
+      engine.tick(10000);
+      await tester.pump();
+      await tester.tap(find.byTooltip('Инструменты плеера'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('video-tool-anki')));
+      await ready(
+        tester,
+        () => find.byType(VocabularyEditor).evaluate().isNotEmpty,
+      );
+      expect(engine.state.playing, isTrue);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Детали карточки'));
+      await tester.pumpAndSettle();
+      for (final entry in {
+        'deck': 'English',
+        'tags': 'lesson grammar',
+      }.entries) {
+        final field = find.byKey(ValueKey('vocabulary-${entry.key}'));
+        await tester.ensureVisible(field);
+        await tester.enterText(field, entry.value);
+      }
+      await tester.tap(find.byTooltip('Скрыть детали карточки'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('vocabulary-front')),
+        'first',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('vocabulary-back')),
+        'первый',
+      );
+      await tester.tap(find.byKey(const ValueKey('annotation-playback')));
+      await ready(tester, () => !engine.state.playing);
+      expect(
+        tester
+            .widget<TextFormField>(
+              find.byKey(const ValueKey('vocabulary-front')),
+            )
+            .controller!
+            .text,
+        'first',
+      );
+      await tester.tap(find.byKey(const ValueKey('annotation-playback')));
+      await ready(tester, () => engine.state.playing);
+      // Transport buttons must preserve the input focus and work above the keyboard.
+      expect(
+        tester
+            .widget<EditableText>(
+              find.descendant(
+                of: find.byKey(const ValueKey('vocabulary-back')),
+                matching: find.byType(EditableText),
+              ),
+            )
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
+      await tester.tap(find.byTooltip('Вперёд на 10 секунд'));
+      await ready(tester, () => engine.seeks.contains(20000));
+      engine.tick(30000);
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('vocabulary-save-next')));
+      await ready(
+        tester,
+        () => tester
+            .widget<TextFormField>(
+              find.byKey(const ValueKey('vocabulary-front')),
+            )
+            .controller!
+            .text
+            .isEmpty,
+      );
+      final first = (await tester.runAsync(vocabulary.list))!.single;
+      expect(first.source!.positionMs, 10000);
+      expect(first.deck, 'English');
+      expect(first.tags, containsAll(['lesson', 'grammar']));
+      expect(engine.state.playing, isTrue);
+      expect(find.text('Anki · 0:30'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('vocabulary-front')),
+        'second',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('vocabulary-back')),
+        'второй',
+      );
+      engine.tick(50000);
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('vocabulary-save-next')));
+      await ready(tester, () => find.text('Anki · 0:50').evaluate().isNotEmpty);
+      final cards = (await tester.runAsync(vocabulary.list))!;
+      expect(cards, hasLength(2));
+      final second = cards.singleWhere((c) => c.front == 'second');
+      expect(second.source!.positionMs, 30000);
+      expect(second.deck, 'English');
+      expect(second.tags, containsAll(['lesson', 'grammar']));
+      // A freshly reset editor should close without a dirty-draft prompt.
+      await tester.tap(find.byTooltip('Закрыть карточку'));
+      await tester.pumpAndSettle();
+      expect(find.byType(VocabularyEditor), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(engine.state.playing, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'audio card captures chapter, file version and time and pauses the same queue',
     (tester) async {
       phone(tester);

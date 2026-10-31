@@ -433,8 +433,8 @@ ReadingTotals readingTotals(
     var included = false;
     for (final s in session['spans'] as List? ?? []) {
       if (s['pepehubDeleted'] == true) continue;
-      final a = DateTime.parse(s['start'] as String),
-          b = DateTime.parse(s['end'] as String);
+      final a = s['start'] is DateTime ? s['start'] as DateTime : DateTime.parse(s['start'] as String),
+          b = s['end'] is DateTime ? s['end'] as DateTime : DateTime.parse(s['end'] as String);
       final from = start != null && start.isAfter(a) ? start : a;
       final to = end != null && end.isBefore(b) ? end : b;
       if (!to.isAfter(from) || !b.isAfter(a)) continue;

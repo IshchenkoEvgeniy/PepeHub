@@ -62,6 +62,7 @@ class AssetStore {
   }) async {
     final id = await AudioLinkService(repository)
         .connect(files, root: root, title: title, replaceBookId: replaceBookId);
+    await repository.db.customStatement('DELETE FROM metadata WHERE key=?', ['audio-cover-missing:$id']);
     return (await audioTracks(id)).first;
   }
 
@@ -77,6 +78,34 @@ class AssetStore {
               .get())
           .map(LocalAsset.fromRow)
           .toList();
+
+  /// A shelf needs file choices for texts and one opener per audiobook,
+  /// not every track of every edition in the user's entire collection.
+  Future<List<LocalAsset>> shelfAssets({required bool audio}) async {
+    final sql = audio
+        ? '''
+      WITH choices AS (
+        SELECT e.id,e.book_id,ROW_NUMBER() OVER(
+          PARTITION BY e.book_id ORDER BY p.updated_at DESC,e.id) AS priority
+        FROM audio_editions e LEFT JOIN audio_progress p ON p.edition_id=e.id
+      )
+      SELECT t.id,c.book_id,t.title AS filename,r.path,r.sha256,r.bytes
+      FROM choices c JOIN audio_tracks t ON t.edition_id=c.id
+      JOIN audio_resources r ON r.sha256=t.asset_hash
+      WHERE c.priority=1 AND t.ordinal=(SELECT MIN(first.ordinal) FROM audio_tracks first WHERE first.edition_id=c.id)
+      ORDER BY filename,t.id
+    '''
+        : '''
+      SELECT a.* FROM local_assets a JOIN records b ON b.id=a.book_id
+      WHERE b.type='book' AND b.deleted=0
+        AND CASE WHEN json_valid(b.payload) THEN json_extract(b.payload,'\$.format') END <> 'audio'
+      ORDER BY a.filename,a.id
+    ''';
+    return (await repository.db.customSelect(sql).get())
+        .map(LocalAsset.fromRow)
+        .toList();
+  }
+
   Future<LocalAsset?> byHash(String hash) async {
     final row = await repository.db
         .customSelect(
@@ -185,10 +214,11 @@ class AssetStore {
   Future<List<LocalAsset>> audioTracks(
     String bookId, {
     String? editionId,
+    bool firstOnly = false,
   }) async =>
       (await repository.db
               .customSelect(
-                'SELECT t.id,e.book_id,t.title AS filename,r.path,r.sha256,r.bytes FROM audio_tracks t JOIN audio_editions e ON e.id=t.edition_id JOIN audio_resources r ON r.sha256=t.asset_hash WHERE e.book_id=? ${editionId == null ? '' : 'AND e.id=?'} ORDER BY e.id,t.ordinal',
+                'SELECT t.id,e.book_id,t.title AS filename,r.path,r.sha256,r.bytes FROM audio_tracks t JOIN audio_editions e ON e.id=t.edition_id JOIN audio_resources r ON r.sha256=t.asset_hash WHERE e.book_id=? ${editionId == null ? '' : 'AND e.id=?'} ORDER BY e.id,t.ordinal ${firstOnly ? 'LIMIT 1' : ''}',
                 variables: [
                   Variable(bookId),
                   if (editionId != null) Variable(editionId),

@@ -31,14 +31,21 @@ class _ObsidianNotesPageState extends State<ObsidianNotesPage> {
     await widget.library.notes?.capture();
     final values =
         await widget.library.notes?.entries() ?? <Map<String, dynamic>>[];
-    if (mounted) setState(() => notes = values);
+    final visible = widget.library.visibleEntries.map((e) => e.item.id).toSet();
+    if (mounted) {
+      setState(
+        () => notes = values
+            .where((s) => visible.contains((s['value'] as Map)['itemId']))
+            .toList(),
+      );
+    }
   }
 
   Future<void> _action(Future<void> Function() action) async {
     try {
       await action();
       await _load();
-      await widget.library.sync();
+      await widget.library.reload();
     } catch (e) {
       if (mounted) setState(() => error = '$e');
     }
@@ -66,8 +73,8 @@ class _ObsidianNotesPageState extends State<ObsidianNotesPage> {
           : '${notes.length} заметок${conflicts == 0 ? '' : ' · конфликтов: $conflicts'}',
       actions: [
         IconButton(
-          tooltip: 'Синхронизировать',
-          onPressed: () => _action(widget.library.sync),
+          tooltip: 'Обновить',
+          onPressed: () => _action(widget.library.reload),
           icon: const Icon(Icons.sync),
         ),
       ],
@@ -104,15 +111,13 @@ class _ObsidianNotesPageState extends State<ObsidianNotesPage> {
                       style: TextStyle(color: palette.muted),
                     ),
                   )
-                : ListView(
+                : ListView.builder(
                     padding: EdgeInsets.fromLTRB(pad, 0, pad, 28),
-                    children: [
-                      for (final slot in visible)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _card(palette, slot),
-                        ),
-                    ],
+                    itemCount: visible.length,
+                    itemBuilder: (context, index) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _card(palette, visible[index]),
+                    ),
                   ),
           ),
         ],
@@ -172,7 +177,7 @@ class _ObsidianNotesPageState extends State<ObsidianNotesPage> {
             Expanded(
               child: Text(
                 [
-                  book ?? 'Книга Obsidian',
+                  book ?? 'Импортированная книга',
                   if ('${value['title']}'.isNotEmpty) '${value['title']}',
                 ].join(' · '),
                 maxLines: 1,

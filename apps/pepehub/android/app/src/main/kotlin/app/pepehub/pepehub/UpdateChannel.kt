@@ -115,6 +115,7 @@ class UpdateChannel(
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         try {
             when (call.method) {
+                "getInstalledPackage" -> result.success(context.applicationInfo.sourceDir)
                 "getInfo" -> {
                     val current = installed()
                     result.success(mapOf("version" to current.versionName, "versionCode" to code(current),

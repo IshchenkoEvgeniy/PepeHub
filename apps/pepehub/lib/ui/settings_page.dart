@@ -18,6 +18,7 @@ import 'reading_hidden_books_page.dart';
 import 'reading_roots_page.dart';
 import 'recommendations_page.dart';
 import 'settings_components.dart';
+import 'library_data_page.dart';
 import 'shelf_components.dart';
 
 const _catalog = [
@@ -89,13 +90,9 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  int interval = 30, goal = 30;
+  int goal = 30;
   double? scaleDraft;
-  bool history = true,
-      covers = true,
-      notes = true,
-      loaded = false,
-      saving = false;
+  bool loaded = false, saving = false;
   ListeningGoals listening = const ListeningGoals();
   String page = 'home';
   String? error;
@@ -122,13 +119,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _load() async {
     try {
       final repo = widget.library.local;
-      final values = await Future.wait([
-        repo.meta('obsidian-sync-seconds'),
-        repo.meta('obsidian-sync-history'),
-        repo.meta('reading-daily-goal'),
-        repo.meta('obsidian-sync-covers'),
-        repo.meta('obsidian-sync-notes'),
-      ]);
+      final values = await Future.wait([repo.meta('reading-daily-goal')]);
       ListeningGoals goals;
       try {
         final saved = await ListeningGoals.load(repo);
@@ -147,14 +138,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ]);
       if (!mounted) return;
       setState(() {
-        final seconds = int.tryParse(values[0] ?? '');
-        interval = [0, 30, 60, 300, 900, 1800, 3600].contains(seconds)
-            ? seconds!
-            : 30;
-        history = values[1] != 'false';
-        covers = values[3] != 'false';
-        notes = values[4] != 'false';
-        goal = (int.tryParse(values[2] ?? '') ?? 30).clamp(0, 1440);
+        goal = (int.tryParse(values[0] ?? '') ?? 30).clamp(0, 1440);
         listening = goals;
         readingRoots = roots.keys
             .where((k) => k.startsWith('reading-library-root:'))
@@ -191,7 +175,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _save(String key, String value) async {
     await widget.library.local.setMeta(key, value);
-    if (key.startsWith('obsidian-sync-')) await widget.library.configureTimer();
   }
 
   Future<void> _setGoal(int value) => _change(() async {
@@ -612,121 +595,18 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _obsidian() => Column(
+  Widget _data() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       const SettingsHeading(
-        'Obsidian',
-        'Один из способов импорта и экспорта. Библиотека, обложки и заметки доступны без подключения.',
+        'Экспорт и резервные копии',
+        'Перенос библиотеки без подключения к сторонним приложениям.',
       ),
-      SettingsGroup(
-        children: [
-          SettingsLink(
-            title: 'Подключение',
-            subtitle: widget.library.config == null
-                ? 'Не настроено'
-                : 'Связь с каталогом настроена',
-            icon: Icons.link,
-            onTap: () async {
-              await widget.onConnection();
-              if (mounted) await _load();
-            },
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text('Автоматический обмен с Obsidian'),
-                const SizedBox(height: 8),
-                DropdownButton<int>(
-                  key: const ValueKey('obsidian-interval'),
-                  isExpanded: true,
-                  value: interval,
-                  items: const [
-                    DropdownMenuItem(value: 0, child: Text('Вручную')),
-                    DropdownMenuItem(value: 30, child: Text('Каждые 30 с')),
-                    DropdownMenuItem(value: 60, child: Text('Раз в минуту')),
-                    DropdownMenuItem(value: 300, child: Text('Раз в 5 минут')),
-                    DropdownMenuItem(value: 900, child: Text('Раз в 15 минут')),
-                    DropdownMenuItem(
-                      value: 1800,
-                      child: Text('Раз в 30 минут'),
-                    ),
-                    DropdownMenuItem(value: 3600, child: Text('Раз в час')),
-                  ],
-                  onChanged: saving
-                      ? null
-                      : (value) {
-                          if (value != null) {
-                            _change(() async {
-                              await _save('obsidian-sync-seconds', '$value');
-                              if (mounted) setState(() => interval = value);
-                            });
-                          }
-                        },
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _switch(
-              'Синхронизировать журнал',
-              'Дни, длительность и прогресс связанных книг',
-              history,
-              (value) => _change(() async {
-                await _save('obsidian-sync-history', value ? 'true' : 'false');
-                if (mounted) setState(() => history = value);
-              }),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _switch(
-              'Синхронизировать обложки',
-              'Обложки связанных книг и аудиокниг',
-              covers,
-              (value) => _change(() async {
-                await _save('obsidian-sync-covers', value ? 'true' : 'false');
-                if (mounted) setState(() => covers = value);
-              }),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _switch(
-              'Синхронизировать заметки',
-              'Цитаты, комментарии, теги и заметки Obsidian',
-              notes,
-              (value) => _change(() async {
-                await _save('obsidian-sync-notes', value ? 'true' : 'false');
-                if (mounted) setState(() => notes = value);
-              }),
-            ),
-          ),
-        ],
-      ),
-      if (widget.library.error != null) SettingsNotice(widget.library.error!),
-      FilledButton.icon(
-        onPressed:
-            widget.library.config == null || widget.library.syncing || saving
-            ? null
-            : () => _change(widget.library.sync),
-        icon: widget.library.syncing
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.sync),
-        label: Text(
-          widget.library.syncing ? 'Обмен с Obsidian…' : 'Обменять с Obsidian',
-        ),
-      ),
-      const SizedBox(height: 12),
-      const Text(
-        'Обмен с Obsidian и синхронизация устройств запускаются разными кнопками.',
+      SettingsLink(
+        title: 'Данные библиотеки',
+        subtitle: 'ZIP, JSON, CSV, Markdown и восстановление',
+        icon: Icons.backup_outlined,
+        onTap: () => _open(LibraryDataPage(library: widget.library)),
       ),
     ],
   );
@@ -764,10 +644,10 @@ class _SettingsPageState extends State<SettingsPage> {
       SettingsGroup(
         children: [
           SettingsLink(
-            title: 'Obsidian',
-            subtitle: 'Подключение, журнал, обложки и заметки',
+            title: 'Экспорт и резервные копии',
+            subtitle: 'Сохранить или восстановить библиотеку',
             icon: Icons.link,
-            onTap: () => _go('obsidian'),
+            onTap: () => _go('data'),
           ),
           SettingsLink(
             title: 'Цитаты и заметки',
@@ -857,10 +737,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 SettingsGroup(
                   children: [
                     SettingsLink(
-                      title: 'Obsidian',
-                      subtitle: 'Отдельное подключение к каталогу и заметкам',
+                      title: 'Экспорт и резервные копии',
+                      subtitle: 'ZIP, JSON, CSV и Markdown',
                       icon: Icons.link,
-                      onTap: () => _go('obsidian'),
+                      onTap: () => _go('data'),
                     ),
                   ],
                 ),
@@ -872,14 +752,14 @@ class _SettingsPageState extends State<SettingsPage> {
               section: part,
               onNavigate: (next) =>
                   _go(next == 'overview' ? 'sync' : 'sync-$next'),
-              onObsidian: () => _go('obsidian'),
+              onData: () => _open(LibraryDataPage(library: widget.library)),
             );
     }
     final child = switch (current) {
       'appearance' => _appearance(appearance),
       'reading' => _goals(),
       'files' => _files(),
-      'obsidian' => _obsidian(),
+      'data' => _data(),
       'integrations' => _integrations(),
       'help' => _help(),
       _ => _home(),
@@ -892,7 +772,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   String _area(String current) =>
-      current.startsWith('sync') || current == 'obsidian'
+      current.startsWith('sync') || current == 'data'
       ? 'sync'
       : current.startsWith('update')
       ? 'updates'

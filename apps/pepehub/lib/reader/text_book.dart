@@ -20,7 +20,9 @@ import 'rtf.dart';
 /// 3: FB2 nested sections become chapters; FB2 note bodies form one chapter.
 /// 4: TXT headings form chapters without changing a single source code unit.
 /// 5: TXT headings require paragraph boundaries; restore paragraphs and styling.
-const currentBookLayout = 5;
+/// 6: single-line TXT paragraphs keep their original separator and exact text.
+/// 7: require indentation to distinguish single-line paragraphs from hard wraps.
+const currentBookLayout = 7;
 
 Future<EpubBook> loadTextBook(
   String path,
@@ -34,12 +36,21 @@ Future<EpubBook> loadTextBook(
   }
   final bytes = file.readAsBytesSync();
   final localImages = <String, Uint8List>{};
+  dom.Document? preparedDocument;
+  String? preparedSource;
   final format = bookFormat(filename);
   if (format == 'html' || format == 'md') {
     var source = decodeBookText(bytes);
-    if (format == 'md') source = md.markdownToHtml(source);
+    if (format == 'md') {
+      source = md.markdownToHtml(
+        source,
+        extensionSet: md.ExtensionSet.gitHubFlavored,
+      );
+    }
+    preparedSource = source;
+    preparedDocument = html.parse(source);
     var total = 0;
-    for (final image in html.parse(source).querySelectorAll('img')) {
+    for (final image in preparedDocument.querySelectorAll('img')) {
       final href = image.attributes['src'] ?? '';
       final relative = bookResourcePath(p.basename(path), href);
       if (relative == null ||
@@ -61,6 +72,8 @@ Future<EpubBook> loadTextBook(
     localImages: localImages,
     legacyProjection: legacyProjection,
     layout: layout,
+    parsedHtml: preparedDocument,
+    preparedHtml: preparedSource,
   );
 });
 
@@ -127,8 +140,12 @@ String _utf8OrCyrillic(Uint8List bytes, {required bool allowFallback}) {
   }
 }
 
-List<String> htmlParagraphs(String source, {bool legacyProjection = false}) {
-  final document = html.parse(source);
+List<String> htmlParagraphs(
+  String source, {
+  bool legacyProjection = false,
+  dom.Document? parsed,
+}) {
+  final document = parsed ?? html.parse(source);
   if (legacyProjection) {
     for (final node in document.querySelectorAll('svg,nav')) {
       node.remove();
@@ -221,6 +238,8 @@ EpubBook parseTextBook(
   Map<String, Uint8List> localImages = const {},
   bool legacyProjection = false,
   int layout = currentBookLayout,
+  dom.Document? parsedHtml,
+  String? preparedHtml,
 }) {
   if (bytes.isEmpty || bytes.length > 64 * 1024 * 1024) {
     throw const FormatException('Недопустимый размер книги');
@@ -239,13 +258,19 @@ EpubBook parseTextBook(
   final extra = <String, dynamic>{};
   Uint8List? cover;
   final chapters = <EpubChapter>[];
-  void chapter(String label, List<String> paragraphs, {dom.Node? rich}) {
+  void chapter(
+    String label,
+    List<String> paragraphs, {
+    dom.Node? rich,
+    String separator = '\n\n',
+  }) {
     if (paragraphs.isNotEmpty) {
       chapters.add(
         EpubChapter(
           'section-${chapters.length}',
           label,
           paragraphs,
+          paragraphSeparator: separator,
           markup: rich == null
               ? const []
               : htmlMarkup(rich, paragraphs.join('\n\n')),
@@ -821,22 +846,21 @@ EpubBook parseTextBook(
       );
     }
   } else if (format == 'html' || format == 'md') {
-    var source = decodeBookText(bytes);
-    if (format == 'md') {
+    var source = preparedHtml ?? decodeBookText(bytes);
+    if (format == 'md' && preparedHtml == null) {
       source = md.markdownToHtml(
         source,
         extensionSet: md.ExtensionSet.gitHubFlavored,
       );
     }
-    final heading = html.parse(source).querySelector('title,h1')?.text.trim();
-    final author = html
-        .parse(source)
+    final richDocument = parsedHtml ?? html.parse(source);
+    final heading = richDocument.querySelector('title,h1')?.text.trim();
+    final author = richDocument
         .querySelector('meta[name="author"]')
         ?.attributes['content']
         ?.trim();
     if (author != null && author.isNotEmpty) authors.add(author);
     if (heading != null && heading.isNotEmpty) title = heading;
-    final richDocument = html.parse(source);
     final raw = <String, dynamic>{};
     for (final meta in richDocument.querySelectorAll(
       'meta[name],meta[property]',
@@ -871,7 +895,11 @@ EpubBook parseTextBook(
     );
     chapter(
       title,
-      htmlParagraphs(source, legacyProjection: legacyProjection),
+      htmlParagraphs(
+        source,
+        legacyProjection: legacyProjection,
+        parsed: richDocument.clone(true),
+      ),
       rich: richDocument,
     );
     if (chapters.isNotEmpty) {
@@ -917,7 +945,7 @@ EpubBook parseTextBook(
         }
       }
 
-      final body = html.parse(source).body;
+      final body = richDocument.body;
       if (body != null) visit(body);
       chapters.add(
         EpubChapter(
@@ -954,6 +982,16 @@ EpubBook parseTextBook(
         .toList();
     if (format == 'txt' && layout >= 4) {
       final text = paragraphs.join('\n\n');
+      final lineCount = '\n'.allMatches(text).length;
+      final singleLines =
+          layout >= 6 &&
+          lineCount >= 2 &&
+          RegExp(r'\n\s*\n').allMatches(text).length * 10 < lineCount &&
+          (layout == 6 ||
+              RegExp(r'^[ \t]+\S', multiLine: true).allMatches(text).length *
+                      2 >=
+                  lineCount + 1);
+      final separator = singleLines ? '\n' : '\n\n';
       final headings = <({int start, String title})>[];
       final heading = RegExp(
         r'^(?:глава|часть|chapter|part)\s+(?:[0-9]+|[ivxlcdm]+|'
@@ -972,6 +1010,7 @@ EpubBook parseTextBook(
       for (final line in RegExp(r'^[^\n]+', multiLine: true).allMatches(text)) {
         final label = line.group(0)!.trim();
         final boundary =
+            singleLines ||
             line.start == 0 ||
             line.start >= 2 &&
                 text.substring(line.start - 2, line.start) == '\n\n';
@@ -988,11 +1027,19 @@ EpubBook parseTextBook(
         }
       }
       if (headings.isEmpty) {
-        chapter(title, paragraphs);
+        chapter(
+          title,
+          singleLines ? text.split('\n') : paragraphs,
+          separator: separator,
+        );
       } else {
         if (headings.first.start > 0) {
           final intro = text.substring(0, headings.first.start);
-          chapter('Вступление', layout == 4 ? [intro] : intro.split('\n\n'));
+          chapter(
+            'Вступление',
+            layout == 4 ? [intro] : intro.split(separator),
+            separator: separator,
+          );
         }
         for (var i = 0; i < headings.length; i++) {
           final chunk = text.substring(
@@ -1001,7 +1048,8 @@ EpubBook parseTextBook(
           );
           chapter(
             headings[i].title,
-            layout == 4 ? [chunk] : chunk.split('\n\n'),
+            layout == 4 ? [chunk] : chunk.split(separator),
+            separator: separator,
           );
           if (layout >= 5) {
             final old = chapters.removeLast();
@@ -1010,7 +1058,16 @@ EpubBook parseTextBook(
                 old.path,
                 old.title,
                 old.paragraphs,
-                markup: [BookMarkup(0, headings[i].title.length, heading: 1)],
+                paragraphSeparator: old.paragraphSeparator,
+                markup: [
+                  BookMarkup(
+                    chunk.length - chunk.trimLeft().length,
+                    chunk.length -
+                        chunk.trimLeft().length +
+                        headings[i].title.length,
+                    heading: 1,
+                  ),
+                ],
               ),
             );
           }
@@ -1023,12 +1080,20 @@ EpubBook parseTextBook(
       final previous = chapters.removeLast();
       var sourceOffset = 0, targetOffset = 0;
       final mapped = <BookMarkup>[];
+      var styleCursor = 0;
       for (final paragraph in previous.paragraphs) {
         final at = source.indexOf(paragraph, sourceOffset);
         if (at >= 0) {
-          for (final style in styles.where(
-            (r) => r.start < at + paragraph.length && r.end > at,
-          )) {
+          while (styleCursor < styles.length && styles[styleCursor].end <= at) {
+            styleCursor++;
+          }
+          for (
+            var styleIndex = styleCursor;
+            styleIndex < styles.length &&
+                styles[styleIndex].start < at + paragraph.length;
+            styleIndex++
+          ) {
+            final style = styles[styleIndex];
             mapped.add(
               BookMarkup(
                 targetOffset + (style.start - at).clamp(0, paragraph.length),

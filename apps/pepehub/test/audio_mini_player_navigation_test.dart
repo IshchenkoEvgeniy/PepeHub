@@ -20,6 +20,14 @@ import 'video_player_tools_widget_test.dart' show ready;
 
 class QueuePlayer extends ChangeNotifier implements AudioController {
   @override
+  late final playbackPosition = ValueNotifier(position);
+  @override
+  void dispose() {
+    playbackPosition.dispose();
+    super.dispose();
+  }
+
+  @override
   Future<void> Function()? beforeBookPlayback;
   @override
   final AssetStore assets;
@@ -227,10 +235,16 @@ void main() {
         // Desktop sections replace the settings route instead of stacking it.
         // Back returns to the library; reopen settings for the next section.
         if (find.byType(SettingsPage).evaluate().isEmpty) {
-          tester.widget<ShelfShell>(find.byType(ShelfShell)).navigation.onSettings();
-          await ready(tester, () =>
-              find.byType(SettingsPage).evaluate().isNotEmpty &&
-              find.byType(CircularProgressIndicator).evaluate().isEmpty);
+          tester
+              .widget<ShelfShell>(find.byType(ShelfShell))
+              .navigation
+              .onSettings();
+          await ready(
+            tester,
+            () =>
+                find.byType(SettingsPage).evaluate().isNotEmpty &&
+                find.byType(CircularProgressIndicator).evaluate().isEmpty,
+          );
         }
         await openSetting('sync');
         expect(find.text('Прямая синхронизация'), findsOneWidget);

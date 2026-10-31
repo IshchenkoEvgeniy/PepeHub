@@ -1,7 +1,7 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-Preview or remove disposable files identified by the October 2026 disk audit.
+Preview or remove generated build caches and old local release packages.
 .EXAMPLE
 .\scripts\clean-project.ps1
 .EXAMPLE
@@ -10,7 +10,7 @@ Preview or remove disposable files identified by the October 2026 disk audit.
 .\scripts\clean-project.ps1 -Apply
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
-param([switch]$Apply)
+param([switch]$Apply, [ValidateRange(3, 10)][int]$KeepReleases = 3)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -20,18 +20,40 @@ if (-not (Test-Path -LiteralPath (Join-Path $cleanupRoot 'apps\pepehub\pubspec.y
     throw 'Run this script from the scripts directory of the PepeHub checkout.'
 }
 
-# This is a fixed audit allowlist. Releases created later are left alone.
-$cleanupOldVersions = @(
-    '0.2.0', '0.5.0', '0.10.0', '0.18.2', '0.19.0', '0.20.0',
-    '1.13', '1.13.3', '1.13.4', '1.13.5', '1.13.6', '1.13.11', '1.14.0',
-    '0.21.0', '0.21.1', '0.21.2', '0.21.3', '0.21.4', '0.21.5', '0.21.6', '0.21.7'
+# Preserve the newest known releases, even if pubspec has already been bumped.
+$cleanupVersionText = [IO.File]::ReadAllText((Join-Path $cleanupRoot 'apps\pepehub\pubspec.yaml'))
+$cleanupVersion = [regex]::Match($cleanupVersionText, '(?m)^version:\s*(\d+\.\d+\.\d+)\+(\d+)\s*$')
+if (-not $cleanupVersion.Success) { throw 'Cannot determine the application version.' }
+$cleanupCurrentVersion = $cleanupVersion.Groups[1].Value
+$cleanupCurrentBuild = [int]$cleanupVersion.Groups[2].Value
+$cleanupReleases = @(
+    $online = Join-Path $cleanupRoot 'dist\online'
+    if (Test-Path -LiteralPath $online -PathType Container) {
+        foreach ($entry in Get-ChildItem -LiteralPath $online -Directory -Force) {
+            if ($entry.Name -notmatch '^(?<Version>\d+\.\d+\.\d+)-(?<Build>\d+)$') { continue }
+            $version = $Matches['Version']; $buildNumber = [int]$Matches['Build']
+            if ($buildNumber -gt $cleanupCurrentBuild -or [version]$version -gt [version]$cleanupCurrentVersion) { continue }
+            if (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+            $catalogPath = Join-Path $entry.FullName 'artifacts.json'
+            if (-not (Test-Path -LiteralPath $catalogPath -PathType Leaf)) { continue }
+            $catalog = Get-Content -LiteralPath $catalogPath -Raw | ConvertFrom-Json
+            if ($catalog.version -ne $version -or $catalog.build -ne $buildNumber) { throw "Mismatched release catalog: $($entry.FullName)" }
+            [pscustomobject]@{ Path = $entry.FullName; Version = $version; Build = $buildNumber; Catalog = $catalog }
+        }
+    }
 )
+$cleanupReleases = @($cleanupReleases | Sort-Object Build -Descending)
+$cleanupRetained = @($cleanupReleases | Select-Object -First $KeepReleases)
+if ($cleanupRetained.Count -lt $KeepReleases) { throw "Need at least $KeepReleases verified release catalogs before pruning packages." }
+$cleanupRetainedPaths = @($cleanupRetained | ForEach-Object Path)
+$cleanupNewestVersion = $cleanupRetained[0].Version
 $cleanupProtected = @(
     '.git', '.local', '.tools\android-user', '.tools\android-sdk',
     '.tools\flutter', '.tools\jdk', '.tools\pub-cache', '.tools\gradle-cache',
     'apps\pepehub\lib', 'apps\pepehub\test',
-    'dist\online\0.21.8-60', 'dist\online\0.21.9-61'
+    'apps\pepehub\assets', 'apps\pepehub\integration_test', 'node_modules'
 ) | ForEach-Object { [IO.Path]::GetFullPath((Join-Path $cleanupRoot $_)).TrimEnd('\') }
+$cleanupProtected += $cleanupRetainedPaths
 
 function Assert-CleanupTarget([string]$LiteralPath) {
     $full = [IO.Path]::GetFullPath($LiteralPath).TrimEnd('\')
@@ -54,6 +76,14 @@ function Assert-CleanupTarget([string]$LiteralPath) {
         if ([string]::Equals($ancestor, $cleanupRoot, [StringComparison]::OrdinalIgnoreCase)) { break }
         $ancestor = [IO.Directory]::GetParent($ancestor).FullName
     }
+}
+
+function Get-CleanupHash([string]$LiteralPath) {
+    $stream = [IO.File]::OpenRead($LiteralPath)
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        [pscustomobject]@{ Path = [IO.Path]::GetFullPath($LiteralPath); Hash = ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-', '') }
+    } finally { $algorithm.Dispose(); $stream.Dispose() }
 }
 
 function Measure-CleanupTarget([string]$LiteralPath) {
@@ -100,20 +130,22 @@ function Remove-CleanupEntry([string]$LiteralPath, [string]$TargetRoot) {
 }
 
 $cleanupCandidates = [Collections.Generic.List[string]]::new()
-foreach ($relative in @('apps\pepehub\.dart_tool', 'apps\pepehub\build', '.tools\android-downloads', 'build')) {
+foreach ($relative in @('apps\pepehub\.dart_tool\flutter_build', 'apps\pepehub\.dart_tool\hooks_runner', 'apps\pepehub\build', '.tools\android-downloads', 'build')) {
     $cleanupCandidates.Add((Join-Path $cleanupRoot $relative))
 }
-foreach ($entry in Get-ChildItem -LiteralPath (Join-Path $cleanupRoot 'dist') -Force) {
-    if ($entry.Name -match '^PepeHub-(?<Release>[0-9]+\.[0-9]+(?:\.[0-9]+)?)(?:-|\.|$)' -and
-        $Matches['Release'] -in $cleanupOldVersions) {
-        $cleanupCandidates.Add($entry.FullName)
+$dist = Join-Path $cleanupRoot 'dist'
+if (Test-Path -LiteralPath $dist -PathType Container) {
+    foreach ($entry in Get-ChildItem -LiteralPath $dist -File -Force) {
+        if ($entry.Name -match '^PepeHub-(?<Release>\d+\.\d+\.\d+)-android-(arm64|universal)-test\.apk(\.sha256)?$') {
+            $release = $Matches['Release']
+            if ($release -ne $cleanupCurrentVersion -and $release -ne $cleanupNewestVersion -and [version]$release -lt [version]$cleanupCurrentVersion) {
+                $cleanupCandidates.Add($entry.FullName)
+            }
+        }
     }
 }
-foreach ($entry in Get-ChildItem -LiteralPath (Join-Path $cleanupRoot 'dist\online') -Force) {
-    if ($entry.Name -match '^(?<Release>[0-9]+\.[0-9]+\.[0-9]+)-[0-9]+$' -and
-        $Matches['Release'] -in $cleanupOldVersions) {
-        $cleanupCandidates.Add($entry.FullName)
-    }
+foreach ($release in $cleanupReleases) {
+    if ($release.Path -notin $cleanupRetainedPaths) { $cleanupCandidates.Add($release.Path) }
 }
 
 $cleanupPlan = @(
@@ -138,6 +170,7 @@ $cleanupTracked = @(& $cleanupGit --no-optional-locks --literal-pathspecs -C $cl
 if ($LASTEXITCODE -ne 0) { throw 'Cannot verify tracked files; cleanup was cancelled.' }
 if ($cleanupTracked.Count -gt 0) { throw "Cleanup targets contain tracked files: $($cleanupTracked -join ', ')" }
 
+Write-Host ('Retained releases: ' + (($cleanupRetained | ForEach-Object { $_.Version + '-' + $_.Build }) -join ', '))
 $cleanupPlan | Format-Table Relative, GiB, Links -AutoSize | Out-Host
 $cleanupTotal = ($cleanupPlan | Measure-Object Bytes -Sum).Sum
 Write-Host ('Selected file sizes: {0:N2} GiB. Link destinations are excluded.' -f ($cleanupTotal / 1GB))
@@ -150,6 +183,18 @@ $cleanupMutex = $null
 $cleanupOwnsMutex = $false
 $cleanupSnapshot = @()
 try {
+    # Direct Flutter invocations may not use the launcher mutex.
+    $cleanupOriginalWhatIf = $WhatIfPreference
+    try {
+    $WhatIfPreference = $false
+    $cleanupBusy = @(Get-CimInstance Win32_Process | Where-Object {
+        $_.Name -match '^(dart|dartvm|dartaotruntime|gen_snapshot|cmake|MSBuild|ninja|pepehub)\.exe$' -and
+        $_.CommandLine -and $_.CommandLine.IndexOf($cleanupRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+        ($_.Name -match '^(gen_snapshot|cmake|MSBuild|ninja|pepehub)\.exe$' -or
+         $_.CommandLine -match 'flutter_tools\.snapshot.*\b(build|run|test|assemble|analyze)\b|tool_backend\.dart|frontend_server')
+    })
+    } finally { $WhatIfPreference = $cleanupOriginalWhatIf }
+    if ($cleanupBusy.Count -gt 0) { throw 'An application or Flutter build is using this checkout. Close it before cleanup.' }
     # Same mutex as run-local-build.ps1: do not clean during a launcher build.
     $hash = [Security.Cryptography.SHA256]::Create()
     try {
@@ -163,13 +208,26 @@ try {
     # Require the retained artifacts and signing keys before deleting build outputs.
     $cleanupKeepFiles = @(
         '.tools\android-user\debug.keystore', '.local\update-signing\private.pem',
-        'dist\online\0.21.8-60\PepeHub-windows-x64.zip',
-        'dist\online\0.21.8-60\PepeHub-android-arm64.apk',
-        'dist\online\0.21.9-61\PepeHub-windows-x64.zip',
-        'dist\online\0.21.9-61\PepeHub-android-arm64.apk'
+        'apps\pepehub\.dart_tool\package_config.json'
     )
+    foreach ($release in $cleanupRetained) {
+        foreach ($platform in @('windows-x64', 'android-arm64')) {
+            $artifact = $release.Catalog.artifacts.$platform
+            $expectedName = if ($platform -eq 'windows-x64') { 'PepeHub-windows-x64.zip' } else { 'PepeHub-android-arm64.apk' }
+            if ($artifact.file -ne $expectedName) { throw 'Unexpected retained package path.' }
+            $file = Join-Path $release.Path $expectedName
+            $info = Get-Item -LiteralPath $file -Force
+            if (($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $info.Length -ne $artifact.bytes -or
+                (Get-CleanupHash -LiteralPath $file).Hash.ToLowerInvariant() -ne $artifact.sha256) {
+                throw "Retained package verification failed: $file"
+            }
+        }
+        foreach ($file in Get-ChildItem -LiteralPath $release.Path -File -Force) {
+            $cleanupKeepFiles += $file.FullName.Substring($cleanupPrefix.Length)
+        }
+    }
     $cleanupSnapshot = @($cleanupKeepFiles | ForEach-Object {
-        Get-FileHash -LiteralPath (Join-Path $cleanupRoot $_) -Algorithm SHA256 -ErrorAction Stop
+        Get-CleanupHash -LiteralPath (Join-Path $cleanupRoot $_)
     })
     $cleanupRemoved = 0L
     foreach ($target in $cleanupPlan) {
@@ -184,7 +242,7 @@ try {
 } finally {
     try {
         foreach ($saved in $cleanupSnapshot) {
-            $current = Get-FileHash -LiteralPath $saved.Path -Algorithm SHA256 -ErrorAction Stop
+            $current = Get-CleanupHash -LiteralPath $saved.Path
             if ($current.Hash -ne $saved.Hash) { throw "A protected file changed: $($saved.Path)" }
         }
     } finally {

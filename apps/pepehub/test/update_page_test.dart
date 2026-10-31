@@ -24,6 +24,8 @@ void main() {
         service = await f.service();
         await service.check();
       });
+      expect(service.error, isNull);
+      expect(service.available, isTrue);
       addTearDown(() async {
         service.dispose();
         await f.close();

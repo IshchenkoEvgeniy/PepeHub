@@ -13,6 +13,7 @@ import 'package:pepehub/reader/reading_roots.dart';
 import 'package:pepehub/ui/reading_hidden_books_page.dart';
 
 import 'peer_sync_test.dart' show ReplicaFixture, deviceA;
+import 'video_player_tools_widget_test.dart' show ready;
 
 Future<(ReplicaFixture, AssetStore, LocalAsset, File)> prepare() async {
   final fixture = ReplicaFixture(deviceA);
@@ -187,7 +188,11 @@ void main() {
         }
         await tester.ensureVisible(find.text('Карточка книги'));
         await tester.tap(find.text('Карточка книги'));
-        await tester.pumpAndSettle();
+        await tester.pump();
+        await ready(
+          tester,
+          () => find.text('Сохранить карточку').evaluate().isNotEmpty,
+        );
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(
           MaterialApp(home: ReadingHiddenBooksPage(assets: assets)),

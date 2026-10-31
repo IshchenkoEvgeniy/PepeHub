@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../data/repository.dart';
 import '../library/activity_store.dart';
 import '../reader/reading_activity.dart';
+import '../reader/reading_statistics_data.dart';
 import '../reader/reading_library.dart';
 import '../reader/reading_log.dart';
 import 'audio_statistics_page.dart' show statTime;
@@ -26,7 +29,9 @@ class ReadingStatisticsPage extends StatefulWidget {
 
 class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
   List<LibraryRecord> books = [];
-  List<Map<String, dynamic>> sessions = [];
+  final _worker = ReadingStatisticsWorker();
+  ReadingStatisticsData _stats = ReadingStatisticsData.empty();
+  int _calculation = 0;
   final titles = <String, String>{};
   int period = 30, goal = 30, sessionLimit = 20;
   DateTimeRange? range;
@@ -42,14 +47,51 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _worker.dispose();
+    super.dispose();
+  }
+
+  Future<void> _calculate({List<Map<String, dynamic>>? rows}) async {
+    final request = ++_calculation;
+    final now = DateTime.now();
+    if (mounted) setState(() => loading = true);
+    try {
+      final result = await _worker.analyze({
+        'sessions': ?rows,
+        'book': widget.bookId,
+        'now': now,
+        'start': period < 0
+            ? range?.start
+            : period == 0
+            ? null
+            : DateTime(now.year, now.month, now.day - period + 1),
+        'end': period < 0 ? range?.end : null,
+      });
+      if (mounted && request == _calculation) {
+        setState(() {
+          _stats = result;
+          loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted && request == _calculation) {
+        setState(() {
+          error = '$e';
+          loading = false;
+        });
+      }
+    }
+  }
+
   Future<void> _load() async {
     try {
       final library = ReadingLibrary(widget.repository);
       final b = (await widget.repository.records('book'))
           .where((b) => b.payload?['format'] != 'audio')
           .toList();
-      final automatic = (await library.entries('reading-session:')).values
-          .toList();
+      final automatic = (await library.statisticsSessions()).values.toList();
       final manual = (await widget.repository.records('session'))
           .where((s) => s.payload?['kind'] == 'reading');
       final rows = [
@@ -66,9 +108,11 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           },
       ];
       final prefs = await library.entries('reading-book:'),
-          index = await library.entries('reading-index:');
+          index = await library.shelfIndex({});
       final assets = await widget.repository.db
-          .customSelect('SELECT book_id,sha256 FROM local_assets')
+          .customSelect(
+            "SELECT a.book_id,a.sha256 FROM local_assets a JOIN records b ON b.id=a.book_id WHERE b.type='book' AND b.deleted=0 AND json_valid(b.payload) AND IFNULL(json_extract(b.payload,'\$.format'),'')!='audio'",
+          )
           .get();
       final hashes = {
         for (final a in assets)
@@ -101,12 +145,13 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
       final lastSave = widget.bookId == null
           ? null
           : await widget.repository.meta('reading-log-saved:${widget.bookId}');
+      final warnings = await widget.repository.metadataPrefixes([
+        'reading-log-error:',
+      ]);
       for (final book in b.where(
         (b) => widget.bookId == null || b.id == widget.bookId,
       )) {
-        final warning = await widget.repository.meta(
-          'reading-log-error:${book.id}',
-        );
+        final warning = warnings['reading-log-error:${book.id}'];
         if (warning != null && warning.isNotEmpty) {
           logWarnings.add('${names[book.id]}: $warning');
         }
@@ -114,7 +159,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
       if (mounted) {
         setState(() {
           books = b;
-          sessions = rows.where((s) => names.containsKey(s['bookId'])).toList();
+
           titles
             ..clear()
             ..addAll(names);
@@ -124,8 +169,10 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           error = logWarnings.isEmpty
               ? null
               : 'Данные в приложении сохранены, но журнал в папке не обновлён:\n${logWarnings.join('\n')}';
-          loading = false;
         });
+        await _calculate(
+          rows: rows.where((s) => names.containsKey(s['bookId'])).toList(),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -237,38 +284,11 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
             ? null
             : DateTime(now.year, now.month, now.day - period + 1),
         end = period < 0 ? range?.end : null;
-    final total = readingTotals(
-      sessions,
-      start: start,
-      end: end,
-      bookId: widget.bookId,
-    );
-    final all = readingTotals(sessions, bookId: widget.bookId);
-    final global = readingTotals(sessions);
-    final streak = readingStreak(all.days, now);
+    final total = _stats.total, all = _stats.all, global = _stats.global;
+    final streak = _stats.streak;
     final todayMs = global.days[readingDay(today)] ?? 0;
-    final shown =
-        groupReadingSessionsForDisplay(sessions)
-            .where((s) => widget.bookId == null || s['bookId'] == widget.bookId)
-            .where(
-              (s) => readingTotals([s], start: start, end: end).sessions > 0,
-            )
-            .toList()
-          ..sort(
-            (a, b) =>
-                (b['startedAt'] as String).compareTo(a['startedAt'] as String),
-          );
-    final week = readingTotals(
-      sessions,
-      start: DateTime(now.year, now.month, now.day - 6),
-      bookId: widget.bookId,
-    ).milliseconds;
-    final previous = readingTotals(
-      sessions,
-      start: DateTime(now.year, now.month, now.day - 13),
-      end: DateTime(now.year, now.month, now.day - 6),
-      bookId: widget.bookId,
-    ).milliseconds;
+    final shown = _stats.shown;
+    final week = _stats.week, previous = _stats.previous;
     final activeDays = total.days.values.where((v) => v > 0).length;
     final average = total.sessions == 0
         ? 0
@@ -460,13 +480,16 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
         onNext: () => setState(
           () => calendar = DateTime(calendar.year, calendar.month + 1),
         ),
-        onDay: (date) => setState(() {
-          period = -1;
-          range = DateTimeRange(
-            start: date,
-            end: DateTime(date.year, date.month, date.day + 1),
-          );
-        }),
+        onDay: (date) {
+          setState(() {
+            period = -1;
+            range = DateTimeRange(
+              start: date,
+              end: DateTime(date.year, date.month, date.day + 1),
+            );
+          });
+          unawaited(_calculate());
+        },
       ),
     );
     final perBook = books.where((b) => total.books.containsKey(b.id)).toList()
@@ -562,6 +585,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           onSelect: (p) async {
             if (p != -1) {
               setState(() => period = p);
+              await _calculate();
               return;
             }
             final v = await pickStatisticsRange(context, range);
@@ -570,6 +594,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                 range = v;
                 period = -1;
               });
+              await _calculate();
             }
           },
         ),
@@ -785,13 +810,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
               SizedBox(
                 width: 76,
                 child: Text(
-                  statTime(
-                    readingTotals(
-                      [session],
-                      start: start,
-                      end: end,
-                    ).milliseconds,
-                  ),
+                  statTime(session['_milliseconds'] as int),
                   textAlign: TextAlign.right,
                   style: const TextStyle(
                     fontSize: 13,

@@ -2,13 +2,14 @@ import '../audio/statistics_export.dart';
 import 'audio_mini_player.dart';
 import 'statistics_range.dart';
 import '../audio/listening_analytics.dart';
+import '../audio/listening_worker.dart';
 import '../audio/audio_library_repository.dart';
 
 import 'dart:async';
 
-import '../library/activity_store.dart';
+import 'package:drift/drift.dart' show Variable;
 
-import 'package:flutter/foundation.dart';
+import '../library/activity_store.dart';
 
 import 'dart:math' as math;
 
@@ -59,45 +60,153 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
   DateTimeRange? customRange;
   String? selectedBook, error;
   bool busy = false;
-  Timer? timer;
+  Timer? refresh;
+  late final journal = AudioJournal(widget.repository);
+  bool _historyDirty = true, _reloadPending = false;
+  final _worker = ListeningWorker();
+  bool _replaceHistory = true;
+  final _changedIds = <String>{};
+  List<Map<String, dynamic>> _foreignHistory = [];
+  AudioStats _global = AudioStats(const []);
+  late final Zone _uiZone;
   @override
   void initState() {
     super.initState();
+    _uiZone = Zone.current;
     selectedBook = widget.initialBookId;
-    load();
-    timer = Timer.periodic(const Duration(seconds: 15), (_) => load());
+    journal.changes.addListener(_historyChanged);
+    widget.repository.externalChanges.addListener(_externalChanged);
+    unawaited(_initialLoad());
+  }
+
+  Future<void> _initialLoad() async {
+    try {
+      await widget.controller?.flushJournal();
+    } catch (e) {
+      if (mounted) setState(() => error = '$e');
+    }
+    if (mounted) await load();
+  }
+
+  void _externalChanged() {
+    _replaceHistory = true;
+    _historyChanged();
+  }
+
+  void _historyChanged() {
+    final id = journal.lastChangedId;
+    if (id != null) _changedIds.add(id);
+    _historyDirty = true;
+    _reloadPending = true;
+    refresh?.cancel();
+    // A journal write can notify from Drift's transaction zone. Later reads
+    // must use the page's connection context, after the write has committed.
+    refresh = _uiZone.run(
+      () => Timer(const Duration(milliseconds: 300), () {
+        if (mounted) unawaited(load());
+      }),
+    );
   }
 
   @override
   void dispose() {
-    timer?.cancel();
+    refresh?.cancel();
+    _worker.dispose();
+    journal.changes.removeListener(_historyChanged);
+    widget.repository.externalChanges.removeListener(_externalChanged);
     super.dispose();
   }
 
   Future<void> load() async {
-    if (busy) return;
+    if (busy) {
+      _reloadPending = true;
+      return;
+    }
     busy = true;
+    _reloadPending = false;
     final requestedPeriod = period, requestedBook = selectedBook;
     final requestedRange = customRange;
     try {
-      await widget.controller?.flushJournal();
-      final books = (await widget.repository.records('book'))
-          .where((b) => b.payload?['format'] == 'audio')
-          .toList();
-      final sessions = await widget.repository.records('session');
-      final all = await widget.repository.records('audio_event');
-      final allEvents = [
-        ...all.map((r) => r.payload!),
-        ...await ActivityStore.foreignAudio(widget.repository),
-      ];
+      final books = await widget.repository.shelfBooks(audio: true);
+      final legacy = await widget.repository.db
+          .customSelect(
+            "SELECT COALESCE(SUM(CAST(json_extract(payload,'\$.activeSeconds') AS INTEGER)),0) AS seconds "
+            "FROM records WHERE type='session' AND deleted=0 AND json_valid(payload) "
+            "AND json_extract(payload,'\$.kind')='listening' "
+            "${requestedBook == null ? '' : "AND json_extract(payload,'\$.bookId')=?"}",
+            variables: [if (requestedBook != null) Variable(requestedBook)],
+          )
+          .getSingle();
+      var replace = false;
+      final updates = <String, String?>{};
+      if (_historyDirty) {
+        _historyDirty = false;
+        replace = _replaceHistory;
+        _replaceHistory = false;
+        final ids = _changedIds.toList();
+        _changedIds.clear();
+        try {
+          await widget.repository.db.transaction(() async {
+            if (replace) {
+              for (final row
+                  in await widget.repository.db
+                      .customSelect(
+                        "SELECT id,payload FROM records WHERE type='audio_event' AND deleted=0 AND json_valid(payload)",
+                      )
+                      .get()) {
+                updates[row.read<String>('id')] = row.read<String>('payload');
+              }
+              _foreignHistory = await ActivityStore.foreignAudio(
+                widget.repository,
+              );
+            } else {
+              for (var start = 0; start < ids.length; start += 400) {
+                final batch = ids.skip(start).take(400).toList();
+                updates.addAll({for (final id in batch) id: null});
+                for (final row
+                    in await widget.repository.db
+                        .customSelect(
+                          "SELECT id,CASE WHEN deleted=0 AND json_valid(payload) THEN payload ELSE NULL END AS payload "
+                          "FROM records WHERE type='audio_event' AND id IN (${List.filled(batch.length, '?').join(',')})",
+                          variables: [for (final id in batch) Variable(id)],
+                        )
+                        .get()) {
+                  updates[row.read<String>('id')] = row.readNullable<String>(
+                    'payload',
+                  );
+                }
+              }
+            }
+            _global = AudioStats(const []);
+            for (final row
+                in await widget.repository.db
+                    .customSelect(
+                      'SELECT day,SUM(wall_ms) AS total FROM audio_daily_totals_v1 GROUP BY day',
+                    )
+                    .get()) {
+              _global.days[row.read<String>('day')] = row.read<int>('total');
+            }
+            for (final event in _foreignHistory) {
+              final day = event['localDay'] as String;
+              _global.days[day] =
+                  (_global.days[day] ?? 0) + (event['wallMs'] as num).toInt();
+            }
+          });
+        } catch (_) {
+          _historyDirty = true;
+          rethrow;
+        }
+      }
       final now = DateTime.now();
       final cutoff = requestedPeriod <= 0
           ? null
           : dayKey(
               DateTime(now.year, now.month, now.day - requestedPeriod + 1),
             );
-      final analysis = await compute(analyzeListening, <String, dynamic>{
-        'events': allEvents,
+      final analysis = await _worker.analyze(<String, dynamic>{
+        'updates': updates,
+        'replace': replace,
+        if (replace) 'foreign': _foreignHistory,
         'book': requestedBook,
         'cutoff': cutoff,
         if (requestedPeriod == -1 && requestedRange != null) ...{
@@ -109,7 +218,6 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
           .bookSummaries();
       final result = analysis.selected;
       final savedGoals = await ListeningGoals.load(widget.repository);
-      final global = await compute(AudioStats.new, allEvents);
 
       if (mounted &&
           requestedPeriod == period &&
@@ -118,31 +226,23 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
         setState(() {
           stats = result;
           goals = savedGoals;
-          goalStats = global;
+          goalStats = _global;
           analytics = analysis;
           summaries = bookData;
           events = result.recent;
           titles = {for (final b in books) b.id: b.title};
-          legacyMs = sessions.fold(
-            0,
-            (sum, s) =>
-                sum +
-                (s.payload?['kind'] == 'listening' &&
-                        (requestedBook == null ||
-                            s.payload?['bookId'] == requestedBook)
-                    ? ((s.payload?['activeSeconds'] as num?)?.toInt() ?? 0) *
-                          1000
-                    : 0),
-          );
+          legacyMs = legacy.read<int>('seconds') * 1000;
           error = null;
         });
       }
     } catch (e) {
+      _historyDirty = _replaceHistory = true;
       if (mounted) setState(() => error = '$e');
     } finally {
       busy = false;
       if (mounted &&
-          (requestedPeriod != period ||
+          (_reloadPending ||
+              requestedPeriod != period ||
               requestedBook != selectedBook ||
               requestedRange != customRange)) {
         unawaited(load());
@@ -251,7 +351,10 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
         ),
       ),
     );
-    if (mounted) load();
+    if (mounted) {
+      _historyDirty = _replaceHistory = true;
+      load();
+    }
   }
 
   String get _periodLabel => switch (period) {

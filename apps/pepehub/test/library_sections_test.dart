@@ -8,6 +8,9 @@ import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/main.dart';
 import 'package:pepehub/media/asset_store.dart';
+import 'package:pepehub/ui/reading_statistics_page.dart';
+
+import 'video_player_tools_widget_test.dart' show ready;
 
 void main() {
   testWidgets(
@@ -80,7 +83,18 @@ void main() {
       await tester.pageBack();
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Статистика чтения'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 400));
+      await ready(
+        tester,
+        () =>
+            find.byType(ReadingStatisticsPage).evaluate().isNotEmpty &&
+            !(tester.state(
+              find.byType(ReadingStatisticsPage),
+            ) as dynamic).loading,
+      );
+      final dynamic statistics = tester.state(
+        find.byType(ReadingStatisticsPage),
+      );
       expect(find.text('5 мин'), findsWidgets);
       expect(find.text('Audio story'), findsNothing);
       expect(find.text('1 день'), findsOneWidget);
@@ -88,7 +102,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Произвольный период'), findsOneWidget);
       await tester.tap(find.text('Применить'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 400));
+      await ready(tester, () => !statistics.loading);
       expect(find.text('5 мин'), findsWidgets);
       expect(tester.takeException(), isNull);
     },

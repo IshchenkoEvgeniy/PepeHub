@@ -24,10 +24,7 @@ class AudioPlayerFooter extends StatelessWidget {
         child: player,
       );
     }
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [player, ?child],
-    );
+    return Column(mainAxisSize: MainAxisSize.min, children: [player, ?child]);
   }
 }
 
@@ -52,15 +49,18 @@ class AudioMiniPlayer extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                LinearProgressIndicator(
-                  value:
-                      audio.bookFraction ??
-                      (audio.duration.inMilliseconds > 0
-                          ? (audio.position.inMilliseconds /
-                                    audio.duration.inMilliseconds)
-                                .clamp(0.0, 1.0)
-                          : 0),
-                  minHeight: 2,
+                ListenableBuilder(
+                  listenable: audio.playbackPosition,
+                  builder: (context, _) => LinearProgressIndicator(
+                    value:
+                        audio.bookFraction ??
+                        (audio.duration.inMilliseconds > 0
+                            ? (audio.position.inMilliseconds /
+                                      audio.duration.inMilliseconds)
+                                  .clamp(0.0, 1.0)
+                            : 0),
+                    minHeight: 2,
+                  ),
                 ),
                 ListTile(
                   key: const ValueKey('audio-mini-player'),
@@ -92,10 +92,13 @@ class AudioMiniPlayer extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  subtitle: Text(
-                    'Глава ${audio.trackIndex + 1} · ${audioTime(audio.position)} / ${audioTime(audio.duration)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  subtitle: ListenableBuilder(
+                    listenable: audio.playbackPosition,
+                    builder: (context, _) => Text(
+                      'Глава ${audio.trackIndex + 1} · ${audioTime(audio.position)} / ${audioTime(audio.duration)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   trailing: IconButton.filledTonal(
                     key: const ValueKey('mini-play-pause'),

@@ -199,7 +199,12 @@ void main() {
         .update('reader:${asset.hash}', {'chapter': 0, 'textOffset': 200});
     await AutomaticMetadata(assets).refresh(repo, schema);
     expect((await repo.entries())[item.id]!.item.values['Progress'], 77);
-    expect((await repo.entries())[item.id]!.operation, isNull);
+    final refreshed = (await repo.entries())[item.id]!.operation!;
+    expect(refreshed['values'], {
+      'pepehub_text_length': 605,
+      'pepehub_text_position': 200,
+    });
+    expect((refreshed['values'] as Map).containsKey('Progress'), false);
   });
   test(
     'autofill respects property aliases on each existing Obsidian card',
@@ -230,7 +235,11 @@ void main() {
         ],
       });
       final op = (await repo.entries())[item.id]!.operation!;
-      expect(op['values'], {'Прочитано': 0});
+      expect(op['values'], {
+        'Прочитано': 0,
+        'pepehub_text_length': 5,
+        'pepehub_text_position': 0,
+      });
     },
   );
 }
