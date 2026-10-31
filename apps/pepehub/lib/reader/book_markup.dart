@@ -21,13 +21,76 @@ class BookMarkup {
   });
 }
 
+/// Exactly `value.replaceAll(RegExp(r'\s+'), ' ')`, without the RegExp
+/// engine.
+///
+/// Book parsers normalize every paragraph, text node and link label this way;
+/// the regular expression took about half of the parsing time. Saved
+/// positions, notes and bookmarks are offsets into the result, so the
+/// whitespace set is Dart's `\s`, code unit for code unit.
+String collapseBookWhitespace(String value) {
+  final length = value.length;
+  var i = 0;
+  // Most text already has single spaces only: return it without copying.
+  while (i < length) {
+    final c = value.codeUnitAt(i);
+    if (isRegExpWhitespace(c) &&
+        (c != 0x20 ||
+            (i + 1 < length && isRegExpWhitespace(value.codeUnitAt(i + 1))))) {
+      break;
+    }
+    i++;
+  }
+  if (i == length) return value;
+  final out = StringBuffer(value.substring(0, i));
+  while (i < length) {
+    if (isRegExpWhitespace(value.codeUnitAt(i))) {
+      out.writeCharCode(0x20);
+      i++;
+      while (i < length && isRegExpWhitespace(value.codeUnitAt(i))) {
+        i++;
+      }
+    } else {
+      final start = i;
+      while (i < length && !isRegExpWhitespace(value.codeUnitAt(i))) {
+        i++;
+      }
+      out.write(value.substring(start, i));
+    }
+  }
+  return out.toString();
+}
+
+/// Whether a UTF-16 code unit matches `\s` in a Dart [RegExp].
+bool isRegExpWhitespace(int c) {
+  if (c > 0x20 && c < 0xa0) return false;
+  return c == 0x20 ||
+      (c >= 0x09 && c <= 0x0d) ||
+      c == 0xa0 ||
+      c == 0x1680 ||
+      (c >= 0x2000 && c <= 0x200a) ||
+      c == 0x2028 ||
+      c == 0x2029 ||
+      c == 0x202f ||
+      c == 0x205f ||
+      c == 0x3000 ||
+      c == 0xfeff;
+}
+
+// Compiled once: htmlMarkup runs these for every element of a book.
+final _headingTag = RegExp(r'^h[1-6]$');
+final _boldStyle = RegExp(r'font-weight\s*:\s*(bold|[6-9]00)');
+final _italicStyle = RegExp(r'font-style\s*:\s*italic');
+final _alignStyle = RegExp(r'text-align\s*:\s*(left|right|center|justify)');
+final _asideClass = RegExp(r'\b(note|tip|warning|caution|admonition)\b');
+
 List<BookMarkup> htmlMarkup(dom.Node root, String text) {
   final result = <BookMarkup>[];
   var cursor = 0;
   (int, int)? visit(dom.Node node, int depth) {
     if (depth > 256) return null;
     if (node is dom.Text) {
-      var value = node.data.replaceAll(RegExp(r'\s+'), ' ').trim();
+      var value = collapseBookWhitespace(node.data).trim();
       if (value.isEmpty) return null;
       var start = text.indexOf(value, cursor);
       if (start < 0) {
@@ -58,19 +121,16 @@ List<BookMarkup> htmlMarkup(dom.Node root, String text) {
     if (node is dom.Element && start != null && end != null) {
       final tag = node.localName ?? '';
       final css = node.attributes['style'] ?? '';
-      final heading = RegExp(r'^h[1-6]$').hasMatch(tag) ? int.parse(tag[1]) : 0;
+      final heading = _headingTag.hasMatch(tag) ? int.parse(tag[1]) : 0;
       final bold =
           const {'b', 'strong', 'dt', 'th'}.contains(tag) ||
-          RegExp(r'font-weight\s*:\s*(bold|[6-9]00)').hasMatch(css);
+          _boldStyle.hasMatch(css);
       final italic =
-          const {'i', 'em', 'cite'}.contains(tag) ||
-          RegExp(r'font-style\s*:\s*italic').hasMatch(css);
+          const {'i', 'em', 'cite'}.contains(tag) || _italicStyle.hasMatch(css);
       final code =
           const {'pre', 'code', 'samp', 'kbd'}.contains(tag) ||
           css.contains('monospace');
-      final align = RegExp(r'text-align\s*:\s*(left|right|center|justify)')
-          .firstMatch(css)
-          ?.group(1);
+      final align = _alignStyle.firstMatch(css)?.group(1);
       final block =
           const {
             'li',
@@ -83,7 +143,7 @@ List<BookMarkup> htmlMarkup(dom.Node root, String text) {
             'th',
           }.contains(tag)
           ? tag
-          : RegExp(r'\b(note|tip|warning|caution|admonition)\b').hasMatch(
+          : _asideClass.hasMatch(
               '${node.className} ${node.attributes['epub:type'] ?? ''} ${node.attributes['role'] ?? ''}',
             )
           ? 'aside'

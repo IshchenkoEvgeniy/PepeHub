@@ -50,6 +50,55 @@ void main() {
     },
   );
 
+  test(
+    'progressive PDF opening parses one page; text never reads placeholders',
+    () async {
+      final root = await Directory.systemTemp.createTemp('pepehub-pdf-lazy-');
+      try {
+        final file = File('${root.path}/sample.pdf');
+        await file.writeAsBytes(twoPagePdf());
+        final full = await openLocalPdf(file.path);
+        final lazy = await openLocalPdf(file.path, progressive: true);
+        try {
+          expect(full.pages.every((p) => p.isLoaded), isTrue);
+          expect(lazy.pages, hasLength(2));
+          expect([for (final p in lazy.pages) p.isLoaded], [true, false]);
+          // An unmeasured page silently yields empty text in pdfrx.
+          expect((await lazy.pages[1].loadStructuredText()).fullText, isEmpty);
+          final second = await loadedPdfPage(lazy, 2);
+          expect(second.isLoaded, isTrue);
+          expect(
+            (await second.loadStructuredText()).fullText,
+            contains('page two'),
+          );
+        } finally {
+          await lazy.dispose();
+        }
+        final reopened = await openLocalPdf(file.path, progressive: true);
+        try {
+          final expected = await pdfStatisticsIndex(
+            full,
+            cancelled: () => false,
+          );
+          final actual = await pdfStatisticsIndex(
+            reopened,
+            cancelled: () => false,
+          );
+          expect((expected!['lengths'] as List).every((l) => l > 0), isTrue);
+          expect(actual, expected);
+          final text = await pdfReadingDocument(reopened, 'Книга');
+          expect(text.texts.last, contains('page two'));
+        } finally {
+          await reopened.dispose();
+          await full.dispose();
+        }
+      } finally {
+        await root.delete(recursive: true);
+      }
+    },
+    skip: pdfium == null,
+  );
+
   test('PDF first page becomes cover; indexing preserves manual cover and progress', () async {
     final root = await Directory.systemTemp.createTemp('pepehub-pdf-cover-');
     final db = AppDatabase(NativeDatabase.memory());

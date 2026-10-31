@@ -234,6 +234,9 @@ int readerWindowStart(String text, int anchor) {
 }
 
 /// Page boundaries use original UTF-16 offsets, never page numbers as identity.
+///
+/// [onPage] receives every page as soon as it is measured; returning false
+/// stops pagination.
 Future<List<ReaderSlice>> paginateReader(
   String text,
   TextStyle style,
@@ -244,6 +247,7 @@ Future<List<ReaderSlice>> paginateReader(
   TextSpan Function(int start, int end)? styledText,
   double? firstPageHeight,
   double Function(int start)? widthAt,
+  Future<bool> Function(ReaderSlice page)? onPage,
 }) async {
   final pages = <ReaderSlice>[];
   var start = 0;
@@ -328,8 +332,12 @@ Future<List<ReaderSlice>> paginateReader(
         }
         end = shorter;
       }
-      pages.add(ReaderSlice(start, end, height: painter.height));
+      final page = ReaderSlice(start, end, height: painter.height);
+      pages.add(page);
       start = end;
+      // Pages depend only on where the previous one ended, so a caller may
+      // use them (and stop) before the rest of the text is measured.
+      if (onPage != null && !await onPage(page)) return pages;
       if (pages.length % 8 == 0) await Future<void>.delayed(Duration.zero);
     }
     return pages.isEmpty ? [const ReaderSlice(0, 0)] : pages;

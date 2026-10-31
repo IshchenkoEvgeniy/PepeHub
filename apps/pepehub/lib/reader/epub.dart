@@ -44,7 +44,7 @@ final _legacyNoteId = RegExp(
 
 String _epubFootnoteText(dom.Element anchor) {
   String normalized(dom.Element node) =>
-      node.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+      collapseBookWhitespace(node.text).trim();
   bool explanation(String text) =>
       text.isNotEmpty &&
       !RegExp(r'^[\s0-9⁰¹²³⁴⁵⁶⁷⁸⁹\[\]().:†*↩←_-]+$').hasMatch(text);
@@ -139,8 +139,38 @@ Future<EpubBook> loadEpub(String path) => Isolate.run(() {
   return parseEpub(file.readAsBytesSync());
 });
 
+final _simpleCssId = RegExp(r'^[A-Za-z_][A-Za-z0-9_-]*$');
+final _anchorIndexes =
+    Expando<({Map<String, dom.Element> ids, Map<String, dom.Element> names})>();
+
+/// `document.getElementById(id)`, else the first element named [id].
+///
+/// A book links every note marker to its target, and each lookup used to
+/// walk the whole target document twice. Both maps keep the first element in
+/// document order, as the selectors do. Identifiers that are not plain CSS
+/// names keep the selector path, including its errors.
+dom.Element? epubAnchorTarget(dom.Document document, String id) {
+  if (!_simpleCssId.hasMatch(id)) {
+    return document.getElementById(id) ??
+        document
+            .querySelectorAll('[name]')
+            .where((e) => e.attributes['name'] == id)
+            .firstOrNull;
+  }
+  final index = _anchorIndexes[document] ??= (() {
+    final ids = <String, dom.Element>{}, names = <String, dom.Element>{};
+    for (final element in document.querySelectorAll('*')) {
+      ids.putIfAbsent(element.id, () => element);
+      final name = element.attributes['name'];
+      if (name != null) names.putIfAbsent(name, () => element);
+    }
+    return (ids: ids, names: names);
+  })();
+  return index.ids[id] ?? index.names[id];
+}
+
 String? _cleanTitle(String? value) {
-  final text = value?.replaceAll(RegExp(r'\s+'), ' ').trim();
+  final text = value == null ? null : collapseBookWhitespace(value).trim();
   if (text == null || text.isEmpty) return null;
   return text.length > 200 ? '${text.substring(0, 199)}…' : text;
 }
@@ -449,9 +479,9 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
     var flushedLength = 0;
     int position() =>
         flushedLength +
-        buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trimLeft().length;
+        collapseBookWhitespace(buffer.toString()).trimLeft().length;
     void flush() {
-      final text = buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+      final text = collapseBookWhitespace(buffer.toString()).trim();
       if (text.isNotEmpty) {
         paragraphs.add(text);
         flushedLength += text.length + 2;
@@ -541,7 +571,7 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
       }
       if (node is dom.Element && tag == 'a' && links.length < 2048) {
         final href = node.attributes['href'] ?? '';
-        final label = node.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+        final label = collapseBookWhitespace(node.text).trim();
         if (href.contains('#') && label.isNotEmpty) {
           links.add((
             href: href,
@@ -577,12 +607,7 @@ EpubBook parseEpub(Uint8List bytes, {bool legacyProjection = false}) {
         }
         final id = Uri.decodeComponent(Uri.parse(link.href).fragment);
         if (id.isEmpty) continue;
-        final element =
-            target.getElementById(id) ??
-            target
-                .querySelectorAll('[name]')
-                .where((e) => e.attributes['name'] == id)
-                .firstOrNull;
+        final element = epubAnchorTarget(target, id);
         if (element == null) continue;
         final semantic = [
           link.sourceType,

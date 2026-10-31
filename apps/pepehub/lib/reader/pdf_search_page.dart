@@ -3,12 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 
+import 'pdf_support.dart';
 import 'reader_layout.dart';
 
 /// Retains bounded plain text, never native glyph arrays, across query edits.
 class PdfSearchTextCache {
   final int maxCharacters, maxPages;
-  final _pages = <int,String>{};
+  final _pages = <int, String>{};
   int _characters = 0;
   bool _closed = false;
   PdfSearchTextCache({
@@ -93,10 +94,11 @@ class _PdfSearchPageState extends State<PdfSearchPage> {
       final pattern = readerSearchPattern(needle);
       for (final page in widget.document.pages) {
         if (cancelled()) return;
-        final text = await textCache.page(
-          page.pageNumber,
-          () async => (await page.loadStructuredText()).fullText,
-        );
+        final text = await textCache.page(page.pageNumber, () async {
+          // The viewer measures pages progressively; never read a placeholder.
+          final loaded = await loadedPdfPage(widget.document, page.pageNumber);
+          return (await loaded.loadStructuredText()).fullText;
+        });
         if (cancelled()) return;
         for (final match in pattern.allMatches(text)) {
           results.add({

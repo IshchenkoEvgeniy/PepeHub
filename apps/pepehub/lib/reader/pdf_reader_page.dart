@@ -36,6 +36,16 @@ import '../ui/app_theme.dart';
 import '../vocabulary/vocabulary_editor.dart';
 import '../vocabulary/vocabulary_repository.dart';
 
+typedef _PdfStoredState = ({
+  Map<String, dynamic> position,
+  int legacyPage,
+  ReaderPreferences? preferences,
+  List<ReadingNote> notes,
+  String? title,
+  Map<String, dynamic> textIndex,
+  Map<String, dynamic> view,
+});
+
 class PdfReaderPage extends StatefulWidget {
   final Repository repository;
   final LocalAsset asset;
@@ -90,7 +100,10 @@ class _PdfReaderPageState extends State<PdfReaderPage>
 
   Timer? positionDelay;
   String? _lastQueuedPosition;
-  List<PdfOutlineNode> outline = [];
+  Future<List<PdfOutlineNode>>? outlineLoad;
+  // Set once PdfViewer has measured every page; until then the PDFium worker
+  // is reserved for the visible pages.
+  bool pagesMeasured = false;
   final history = <int>[];
   final glyphs = <int, PdfPageText>{};
   final loadingGlyphs = <int>{};
@@ -130,37 +143,40 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   }
 
   Future<PdfDocumentRefDirect> _initial() async {
-    final opened = await openLocalPdf(widget.asset.path);
+    // PDFium parses only the first page here; PdfViewer measures the others
+    // in the background, outward from the restored page. The stored reader
+    // state is read from the database at the same time.
+    final opening = await Future.wait<Object?>(
+      [openLocalPdf(widget.asset.path, progressive: true), _storedState()],
+      cleanUp: (value) {
+        if (value is PdfDocument) unawaited(value.dispose());
+      },
+    );
+    final opened = opening[0] as PdfDocument;
+    final stored = opening[1] as _PdfStoredState;
     document = opened;
     count = opened.pages.length;
-    final saved = await library.value('reader:${widget.asset.hash}');
-    final legacy =
-        int.tryParse(await widget.repository.meta(positionKey) ?? '') ?? 1;
-    page = (((saved['chapter'] as num?)?.toInt() ?? legacy - 1) + 1).clamp(
-      1,
-      count,
-    );
+    final saved = stored.position;
+    page = (((saved['chapter'] as num?)?.toInt() ?? stored.legacyPage - 1) + 1)
+        .clamp(1, count);
     finished = saved['pdfFinished'] == true;
     for (final p in (saved['pdfHistory'] as List? ?? []).whereType<int>().take(
       20,
     )) {
       history.add(p.clamp(1, count));
     }
-    preferences = await _storedPreferences() ?? preferences;
-    notes = await library.notes(hash: widget.asset.hash);
-    final card = await widget.repository.record(widget.asset.bookId);
-    displayTitle = card == null
-        ? widget.asset.filename
-        : (await library.bookInfo(card, widget.asset.hash))['title'] as String?;
+    preferences = stored.preferences ?? preferences;
+    notes = stored.notes;
+    displayTitle = stored.title;
     // Opening must not materialize the text and glyphs of every page.
-    textIndex = await library.value('reading-index:${widget.asset.hash}');
+    textIndex = stored.textIndex;
     if (textIndex['pdfPages'] != count) {
       await library.update('reading-index:${widget.asset.hash}', {
         'pdfPages': count,
       });
       textIndex['pdfPages'] = count;
     }
-    final view = await library.value('pdf-view:${widget.asset.hash}');
+    final view = stored.view;
     cropMargins = view['cropMargins'] == true;
     axisLocked = view['locked'] == true;
     lockedX = (view['x'] as num?)?.toDouble();
@@ -172,11 +188,6 @@ class _PdfReaderPageState extends State<PdfReaderPage>
       lockedX = lockedZoom = null;
     }
     if (!mounted) throw StateError('Просмотрщик закрыт');
-    try {
-      outline = await opened.loadOutline();
-    } catch (_) {
-      /* Page list remains available. */
-    }
     final note = widget.initialNote;
     if (note != null && note.hash == widget.asset.hash) {
       history.add(page);
@@ -193,6 +204,39 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     }
     return PdfDocumentRefDirect(opened, autoDispose: false);
   }
+
+  /// Everything the viewer restores from the database, read in one pass.
+  Future<_PdfStoredState> _storedState() async {
+    final hash = widget.asset.hash;
+    final position = await library.value('reader:$hash');
+    final legacy =
+        int.tryParse(await widget.repository.meta(positionKey) ?? '') ?? 1;
+    final preferences = await _storedPreferences();
+    final notes = await library.notes(hash: hash);
+    final card = await widget.repository.record(widget.asset.bookId);
+    final title = card == null
+        ? widget.asset.filename
+        : (await library.bookInfo(card, hash))['title'] as String?;
+    return (
+      position: position,
+      legacyPage: legacy,
+      preferences: preferences,
+      notes: notes,
+      title: title,
+      textIndex: await library.value('reading-index:$hash'),
+      view: await library.value('pdf-view:$hash'),
+    );
+  }
+
+  /// The outline is read on the first request, not while the book opens:
+  /// large books may have thousands of entries.
+  Future<List<PdfOutlineNode>> _outline() => outlineLoad ??= (() async {
+    try {
+      return await document!.loadOutline();
+    } catch (_) {
+      return const <PdfOutlineNode>[]; // Page list remains available.
+    }
+  })();
 
   // Not under "reader:": that prefix holds JSON positions keyed by book hash,
   // and the library reads every "reader:*" value as a JSON object.
@@ -361,7 +405,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     final generation = ++pageFitGeneration;
     Rect? bounds;
     try {
-      bounds = await contentBounds.forPage(document!.pages[at - 1]);
+      bounds = await contentBounds.forPage(await loadedPdfPage(document!, at));
     } catch (_) {
       if (stillActive != null) rethrow;
       return;
@@ -557,7 +601,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     await _go(p);
     if (!mounted) return;
     setState(() => highlighted = (page: p, start: start, end: end));
-    final text = await document!.pages[p - 1].loadStructuredText();
+    final text = await (await loadedPdfPage(document!, p)).loadStructuredText();
     if (!mounted || !ready) return;
     if (start >= 0 && end > start && end <= text.fullText.length) {
       await controller.goToRectInsidePage(
@@ -915,6 +959,9 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     if (relevant.isEmpty && hit == null) return;
     final text = glyphs[pdfPage.pageNumber];
     if (text == null) {
+      // A placeholder page has no text yet; the viewer repaints it once it is
+      // measured. Caching its empty text would hide the highlights.
+      if (!pdfPage.isLoaded) return;
       if (loadingGlyphs.add(pdfPage.pageNumber)) {
         pdfPage
             .loadStructuredText()
@@ -951,6 +998,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   }
 
   Future<void> _contents() async {
+    final outline = await _outline();
+    if (!mounted) return;
     final items = <({String title, int page, int depth})>[];
     void visit(List<PdfOutlineNode> nodes, int depth) {
       if (depth > 20 || items.length > 20000) return;
@@ -1172,6 +1221,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         indexing ||
         preparingText ||
         !ready ||
+        !pagesMeasured ||
         !foreground ||
         !routeVisible ||
         panels > 0 ||
@@ -1786,6 +1836,11 @@ class _PdfReaderPageState extends State<PdfReaderPage>
                                   } else if (cropMargins && !axisLocked) {
                                     unawaited(_fitContent(page));
                                   }
+                                },
+                                onDocumentLoadFinished: (_, _) {
+                                  if (!mounted) return;
+                                  pagesMeasured = true;
+                                  _prepareIndex();
                                 },
                                 onPageChanged: _changed,
                                 pagePaintCallbacks: [_paint],

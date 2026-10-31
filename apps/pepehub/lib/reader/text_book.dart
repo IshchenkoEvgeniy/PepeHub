@@ -159,7 +159,7 @@ List<String> htmlParagraphs(
   final result = <String>[];
   var buffer = StringBuffer();
   void flush() {
-    final text = buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    final text = collapseBookWhitespace(buffer.toString()).trim();
     if (text.isNotEmpty) result.add(text);
     buffer = StringBuffer();
   }
@@ -435,9 +435,7 @@ EpubBook parseTextBook(
           'subtitle',
           'text-author',
         }.contains(node.name.local)) {
-          final normalized = node.innerText
-              .replaceAll(RegExp(r'\s+'), ' ')
-              .trim();
+          final normalized = collapseBookWhitespace(node.innerText).trim();
           if (normalized.isEmpty) return;
           final prefix = StringBuffer();
           void walk(XmlNode child) {
@@ -448,11 +446,7 @@ EpubBook parseTextBook(
             if (child is XmlElement && child.name.local == 'a') {
               anchors[child] =
                   paragraphOffset +
-                  prefix
-                      .toString()
-                      .replaceAll(RegExp(r'\s+'), ' ')
-                      .trimLeft()
-                      .length;
+                  collapseBookWhitespace(prefix.toString()).trimLeft().length;
             }
             for (final sub in child.children) {
               walk(sub);
@@ -500,7 +494,7 @@ EpubBook parseTextBook(
         if (e.name.local == 'a' &&
             (e.getAttribute('type') == 'note' || noteBody || noteId) &&
             footnotes.length < 2048) {
-          final label = e.innerText.replaceAll(RegExp(r'\s+'), ' ').trim();
+          final label = collapseBookWhitespace(e.innerText).trim();
           final content = _fbParagraphs(target).join('\n\n');
           final start = anchors[e] ?? -1;
           if (start >= 0 && content.isNotEmpty && content.length <= 32000) {
@@ -909,7 +903,7 @@ EpubBook parseTextBook(
       var offset = 0, total = 0;
       void visit(dom.Node node) {
         if (node is dom.Text) {
-          final value = node.data.replaceAll(RegExp(r'\s+'), ' ').trim();
+          final value = collapseBookWhitespace(node.data).trim();
           if (value.isNotEmpty) {
             final at = text.indexOf(value, offset);
             if (at >= 0) offset = at + value.length;
@@ -1157,7 +1151,7 @@ List<String> _fbParagraphs(XmlElement root) {
       throw const FormatException('Слишком глубокая структура FB2');
     }
     if (const {'p', 'v', 'subtitle', 'text-author'}.contains(e.name.local)) {
-      final text = e.innerText.replaceAll(RegExp(r'\s+'), ' ').trim();
+      final text = collapseBookWhitespace(e.innerText).trim();
       if (text.isNotEmpty) output.add(text);
     } else {
       for (final child in e.childElements) {
