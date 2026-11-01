@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PepeHub — концепт «Формуляр»</title>
+<style>
+  @font-face { font-family: "Literata"; src: url("../../../apps/pepehub/assets/fonts/Literata.ttf") format("truetype"); font-weight: 200 900; font-style: normal; }
+  @font-face { font-family: "Literata"; src: url("../../../apps/pepehub/assets/fonts/Literata-Italic.ttf") format("truetype"); font-weight: 200 900; font-style: italic; }
+  @font-face { font-family: "PT Sans"; src: url("../../../apps/pepehub/assets/fonts/PTSans.ttf") format("truetype"); font-weight: 400; }
+  @font-face { font-family: "PT Sans"; src: url("../../../apps/pepehub/assets/fonts/PTSans-Bold.ttf") format("truetype"); font-weight: 700; }
+
+  :root {
+    /* Токены «Формуляра» */
+    --card: #e2e5da;      /* картон формуляра — фон */
+    --paper: #f4f5f0;     /* бумага — поверхности */
+    --ink: #1f2a44;       /* синие чернила — текст */
+    --graphite: #5c6371;  /* графит — вторичный текст */
+    --ruling: #b7c1ce;    /* линовка — строки учёта */
+    --stamp: #5a3c9c;     /* штемпель — даты и главное действие */
+    --stamp-soft: #dcd3ee;
+
+    --serif: "Literata", Georgia, serif;
+    --sans: "PT Sans", "Segoe UI", sans-serif;
+    --phone-w: 390px;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--card);
+    color: var(--ink);
+    font: 400 15px/1.45 var(--sans);
+    font-variant-numeric: tabular-nums;
+  }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--stamp); outline-offset: 2px; border-radius: 4px; }
+
+  /* ---------- Лист концепта ---------- */
+  .board { max-width: 1760px; margin: 0 auto; padding: 48px 32px 64px; }
+  .intro { display: grid; grid-template-columns: minmax(0, 620px) 1fr; gap: 48px; align-items: end; margin-bottom: 40px; }
+  .intro h1 { font: 600 44px/1.05 var(--serif); letter-spacing: -0.01em; margin: 0 0 14px; }
+  .intro p { margin: 0; max-width: 60ch; color: var(--graphite); font-size: 16px; }
+  .tokens { display: flex; flex-wrap: wrap; gap: 10px 22px; justify-content: flex-end; list-style: none; margin: 0; padding: 0; }
+  .tokens li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--graphite); }
+  .tokens i { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(31, 42, 68, .18); }
+  .tokens b { color: var(--ink); font-weight: 700; }
+
+  .screens { display: grid; grid-template-columns: repeat(4, var(--phone-w)); gap: 28px; justify-content: center; }
+  .shot { margin: 0; }
+  .shot figcaption { margin-top: 14px; font-size: 14px; color: var(--graphite); max-width: 36ch; }
+  .shot figcaption b { color: var(--ink); }
+
+  /* ---------- Экран телефона ---------- */
+  .phone {
+    position: relative;
+    width: var(--phone-w);
+    height: 844px;
+    background: var(--card);
+    border-radius: 34px;
+    border: 1px solid rgba(31, 42, 68, .22);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .status { display: flex; justify-content: space-between; padding: 14px 26px 6px; font-size: 13px; font-weight: 700; }
+  .status span:last-child { letter-spacing: 2px; }
+  .content { flex: 1; overflow: hidden; padding: 6px 18px 0; }
+  .appbar { display: flex; align-items: center; justify-content: space-between; margin: 6px 2px 14px; }
+  .appbar h2 { font: 600 30px/1.1 var(--serif); margin: 0; }
+  .icons { display: flex; gap: 4px; }
+  .icon-btn { width: 40px; height: 40px; border: 0; background: none; border-radius: 50%; display: grid; place-items: center; cursor: pointer; }
+  .icon-btn svg, .nav svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+  .back { display: flex; align-items: center; gap: 4px; color: var(--graphite); font-size: 15px; margin: 4px 0 12px; }
+  .back svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+
+  /* Вкладки-разделители: ярлыки картотеки */
+  .tabs { display: flex; gap: 2px; margin: 0 -2px 16px; border-bottom: 1px solid var(--ruling); }
+  .tab { border: 0; background: none; padding: 9px 12px 8px; font-size: 15px; color: var(--graphite); border-radius: 8px 8px 0 0; cursor: pointer; }
+  .tab small { font-size: 13px; margin-left: 3px; }
+  .tab[aria-selected="true"] { background: var(--paper); color: var(--ink); font-weight: 700; box-shadow: inset 0 0 0 1px var(--ruling); clip-path: inset(-1px -1px 1px -1px); }
+
+  .section-title { display: flex; justify-content: space-between; align-items: baseline; margin: 22px 2px 10px; }
+  .section-title h3 { font: 600 18px/1.2 var(--serif); margin: 0; }
+  .section-title a { font-size: 14px; color: var(--stamp); text-decoration: none; }
+
+  /* Обложки: переплётная ткань с тиснёным названием */
+  .cover {
+    flex: none; position: relative; border-radius: 3px 6px 6px 3px; color: rgba(255, 255, 255, .9);
+    font: 600 9px/1.15 var(--serif); padding: 8px 6px 6px 10px; display: flex; flex-direction: column; justify-content: space-between;
+    box-shadow: inset 4px 0 0 rgba(0, 0, 0, .18); overflow: hidden; overflow-wrap: anywhere;
+  }
+  .cover em { font-style: normal; font-weight: 400; font-size: 7px; opacity: .8; }
+  .c-moss { background: #3f5b46; } .c-ox { background: #7a2e35; } .c-slate { background: #3b4e74; }
+  .c-ochre { background: #a77a2b; } .c-plum { background: #4b3a5f; } .c-teal { background: #2f6466; }
+  .c-sand { background: #8b7d63; } .c-night { background: #24314f; }
+
+  /* ---------- Книги ---------- */
+  .resume { background: var(--paper); border-radius: 10px; padding: 16px; box-shadow: 0 0 0 1px var(--ruling); }
+  .resume-top { display: flex; gap: 16px; }
+  .resume .cover { width: 80px; height: 118px; font-size: 11px; }
+  .resume h4 { font: 600 22px/1.15 var(--serif); margin: 2px 0 4px; }
+  .resume .author { color: var(--graphite); margin: 0 0 12px; }
+  .resume .where { margin: 0; font-size: 14px; }
+  .resume .left { margin: 2px 0 0; font-size: 14px; color: var(--graphite); }
+  .progress { position: relative; height: 4px; background: var(--ruling); border-radius: 2px; margin: 16px 0 14px; }
+  .progress span { position: absolute; inset: 0 auto 0 0; background: var(--ink); border-radius: 2px; }
+  .primary { width: 100%; border: 0; border-radius: 8px; background: var(--stamp); color: #fff; font-weight: 700; font-size: 16px; padding: 13px 16px; cursor: pointer; }
+
+  .rows { list-style: none; margin: 0; padding: 0; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-bottom: 1px solid var(--ruling); }
+  .row .cover { width: 40px; height: 58px; font-size: 6px; padding: 5px 4px 4px 7px; }
+  .row-main { flex: 1; min-width: 0; }
+  .row-title { font: 600 16px/1.2 var(--serif); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-sub { margin: 2px 0 0; font-size: 13px; color: var(--graphite); }
+  .row-end { text-align: right; font-size: 14px; color: var(--graphite); }
+  .row-end b { display: block; color: var(--ink); font-size: 16px; }
+
+  .plans { display: flex; gap: 12px; }
+  .plan { width: 96px; }
+  .plan .cover { width: 96px; height: 136px; font-size: 11px; }
+  .plan p { margin: 7px 0 0; font: 600 13px/1.25 var(--serif); }
+  .plan small { display: block; font: 400 12px/1.3 var(--sans); color: var(--graphite); margin-top: 2px; }
+  .suggest { margin-top: 14px; display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 8px; border: 1px dashed var(--ruling); font-size: 14px; color: var(--graphite); }
+  .suggest b { color: var(--ink); }
+
+  /* ---------- Библиотека: формуляр ---------- */
+  .search { display: flex; align-items: center; gap: 8px; background: var(--paper); border-radius: 8px; padding: 10px 12px; box-shadow: 0 0 0 1px var(--ruling); color: var(--graphite); margin-bottom: 4px; }
+  .search svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+  .month { font: 600 15px/1 var(--serif); color: var(--graphite); margin: 20px 2px 2px; display: flex; justify-content: space-between; }
+  .month span { font: 400 13px var(--sans); }
+  .ledger .row { gap: 10px; }
+  .date-mark {
+    flex: none; width: 46px; height: 46px; border-radius: 50%; border: 1.5px solid var(--stamp); color: var(--stamp);
+    display: grid; place-content: center; text-align: center; line-height: 1; transform: rotate(-6deg);
+  }
+  .date-mark b { font: 700 17px var(--sans); }
+  .date-mark small { font-size: 10px; }
+  .date-mark.is-paused { border-style: dashed; }
+  .date-mark.is-dropped { border-color: var(--graphite); color: var(--graphite); }
+  .badge { display: inline-flex; align-items: center; gap: 3px; }
+  .badge svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; }
+
+  /* ---------- Карточка книги ---------- */
+  .record { background: var(--paper); border-radius: 10px; box-shadow: 0 0 0 1px var(--ruling); padding: 18px 16px 14px; }
+  .record-head { display: flex; gap: 16px; align-items: flex-start; }
+  .record .cover { width: 112px; height: 166px; font-size: 13px; }
+  .record h4 { font: 600 26px/1.1 var(--serif); margin: 4px 0 6px; }
+  .record .author { margin: 0 0 4px; color: var(--graphite); }
+  .record .meta { margin: 0; font-size: 13px; color: var(--graphite); }
+
+  .stamp {
+    position: absolute; left: 66px; top: 122px; z-index: 2;
+    padding: 6px 12px 7px; border: 2.5px double var(--stamp); border-radius: 8px;
+    color: var(--stamp); text-align: center; line-height: 1.1; transform: rotate(-8deg);
+    background: rgba(244, 245, 240, .55);
+    animation: stamp .55s cubic-bezier(.2, .9, .3, 1.3) .5s both;
+  }
+  .stamp b { display: block; font: 700 17px var(--sans); letter-spacing: .02em; }
+  .stamp span { font: 700 13px var(--sans); letter-spacing: .06em; }
+  @keyframes stamp {
+    from { opacity: 0; transform: rotate(-8deg) scale(1.6); }
+    to { opacity: .94; transform: rotate(-8deg) scale(1); }
+  }
+  .record-head-wrap { position: relative; }
+
+  .facts { display: grid; grid-template-columns: 1fr 1fr; margin: 18px 0 0; border-top: 1px solid var(--ruling); }
+  .facts div { padding: 9px 2px; border-bottom: 1px solid var(--ruling); }
+  .facts div:nth-child(odd) { border-right: 1px solid var(--ruling); padding-right: 10px; }
+  .facts div:nth-child(even) { padding-left: 12px; }
+  .facts dt { font-size: 12px; color: var(--graphite); }
+  .facts dd { margin: 1px 0 0; font: 600 17px/1.2 var(--serif); }
+
+  .log { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .log th { text-align: left; font-weight: 400; color: var(--graphite); font-size: 12px; padding: 0 0 6px; border-bottom: 1px solid var(--ruling); }
+  .log td { padding: 8px 0; border-bottom: 1px solid var(--ruling); }
+  .log td:not(:first-child), .log th:not(:first-child) { text-align: right; }
+
+  .quote { margin: 0; padding: 2px 0 2px 14px; border-left: 2px solid var(--stamp); font: italic 400 15px/1.55 var(--serif); }
+  .quote footer { font: 400 12px/1.4 var(--sans); color: var(--graphite); margin-top: 6px; font-style: normal; }
+
+  /* ---------- Статистика ---------- */
+  .year-line { display: flex; align-items: center; gap: 6px; color: var(--graphite); }
+  .summary { font: 500 24px/1.25 var(--serif); margin: 0 2px 4px; }
+  .summary-sub { margin: 0 2px; color: var(--graphite); font-size: 14px; }
+  .goal { margin: 16px 2px 0; font-size: 14px; }
+  .goal .progress { margin: 8px 0 0; }
+
+  .cal-head { display: grid; grid-template-columns: repeat(7, 1fr); font-size: 12px; color: var(--graphite); text-align: center; margin-bottom: 4px; }
+  .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px 0; }
+  .day { height: 40px; display: grid; place-items: center; position: relative; font-size: 13px; color: var(--graphite); }
+  .day.read { color: var(--ink); }
+  .day.read::before {
+    content: ""; position: absolute; width: 34px; height: 34px; border-radius: 50%; background: var(--stamp-soft);
+  }
+  .day.read b { position: relative; font: 700 13px var(--sans); }
+  .day.done { color: var(--stamp); }
+  .day.done::before { background: var(--paper); border: 2px solid var(--stamp); transform: rotate(-6deg); }
+  .day.today b { text-decoration: underline; text-underline-offset: 3px; }
+  .day.empty { visibility: hidden; }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--graphite); margin: 10px 2px 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 13px; height: 13px; border-radius: 50%; background: var(--stamp-soft); }
+  .legend i.ring { background: var(--paper); border: 2px solid var(--stamp); }
+
+  .bars { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; align-items: end; height: 72px; margin: 4px 2px 0; border-bottom: 1px solid var(--ruling); }
+  .bars span { background: var(--ink); border-radius: 2px 2px 0 0; opacity: .85; }
+  .bars span.now { background: var(--stamp); opacity: 1; }
+  .bars span.future { background: var(--ruling); opacity: .6; }
+  .months { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; font-size: 11px; color: var(--graphite); text-align: center; margin: 4px 2px 0; }
+
+  /* ---------- Навигация ---------- */
+  .nav { display: grid; grid-template-columns: repeat(5, 1fr); background: var(--paper); border-top: 1px solid var(--ruling); padding: 8px 6px 22px; }
+  .nav a { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 12px; color: var(--graphite); text-decoration: none; padding-top: 6px; border-top: 2px solid transparent; }
+  .nav a[aria-current="page"] { color: var(--ink); font-weight: 700; border-top-color: var(--ink); }
+
+  .notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; margin: 56px auto 0; max-width: 1240px; }
+  .notes h3 { font: 600 19px/1.25 var(--serif); margin: 0 0 8px; }
+  .notes p { margin: 0; color: var(--graphite); max-width: 52ch; }
+
+  @media (max-width: 1720px) { .screens { grid-template-columns: repeat(2, var(--phone-w)); column-gap: 48px; row-gap: 40px; } }
+  @media (max-width: 960px) {
+    .board { padding: 28px 16px 48px; }
+    .intro { grid-template-columns: 1fr; gap: 20px; }
+    .intro h1 { font-size: 34px; }
+    .tokens { justify-content: flex-start; }
+    .screens { grid-template-columns: minmax(0, var(--phone-w)); }
+    .notes { grid-template-columns: 1fr; gap: 24px; }
+  }
+  @media (max-width: 420px) {
+    :root { --phone-w: calc(100vw - 32px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .stamp { animation: none; opacity: .94; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5c-.8 0-1.5-.7-1.5-1.5z"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5z"/></symbol>
+  <symbol id="i-head" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3.5" y="14" width="4" height="6" rx="1.5"/><rect x="16.5" y="14" width="4" height="6" rx="1.5"/></symbol>
+  <symbol id="i-media" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M10 9.5v5l4.5-2.5z"/></symbol>
+  <symbol id="i-shelf" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M6 20V6h3v14"/><path d="M10.5 20V4h3v16"/><path d="m15.5 7 2.8-.8 2.7 13.3"/></symbol>
+  <symbol id="i-stats" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M7 17v-5"/><path d="M12 17V7"/><path d="M17 17v-8"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r=".6"/><circle cx="12" cy="12" r=".6"/><circle cx="19" cy="12" r=".6"/></symbol>
+</svg>
+
+<main class="board">
+  <header class="intro">
+    <div>
+      <h1>PepeHub: формуляр читателя</h1>
+      <p>Концепт светлой темы. Библиотека выглядит как читательский формуляр: строки учёта, даты, отметки штемпелем. Синие чернила вместо чёрного, картон вместо белого фона. Фиолетовый цвет штемпеля появляется только там, где есть дата или главное действие.</p>
+    </div>
+    <ul class="tokens" aria-label="Палитра">
+      <li><i style="background:#e2e5da"></i><span><b>Картон</b> #E2E5DA</span></li>
+      <li><i style="background:#f4f5f0"></i><span><b>Бумага</b> #F4F5F0</span></li>
+      <li><i style="background:#1f2a44"></i><span><b>Чернила</b> #1F2A44</span></li>
+      <li><i style="background:#5c6371"></i><span><b>Графит</b> #5C6371</span></li>
+      <li><i style="background:#b7c1ce"></i><span><b>Линовка</b> #B7C1CE</span></li>
+      <li><i style="background:#5a3c9c"></i><span><b>Штемпель</b> #5A3C9C</span></li>
+    </ul>
+  </header>
+
+  <section class="screens" aria-label="Экраны концепта">
+
+    <!-- 1. Книги -->
+    <figure class="shot">
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="content">
+          <div class="appbar">
+            <h2>Книги</h2>
+            <div class="icons">
+              <button class="icon-btn" aria-label="Поиск"><svg><use href="#i-search"/></svg></button>
+              <button class="icon-btn" aria-label="Добавить книгу"><svg><use href="#i-plus"/></svg></button>
+            </div>
+          </div>
+          <div class="tabs" role="tablist">
+            <button class="tab" role="tab" aria-selected="true">Читаю<small>2</small></button>
+            <button class="tab" role="tab" aria-selected="false">В планах<small>8</small></button>
+            <button class="tab" role="tab" aria-selected="false">Все файлы</button>
+          </div>
+
+          <article class="resume">
+            <div class="resume-top">
+              <div class="cover c-moss">Пикник на обочине<em>Стругацкие</em></div>
+              <div>
+                <h4>Пикник на обочине</h4>
+                <p class="author">Аркадий и Борис Стругацкие</p>
+                <p class="where">Глава 3, страница 118 из 224</p>
+                <p class="left">Около 2 ч 40 мин до конца</p>
+              </div>
+            </div>
+            <div class="progress" role="progressbar" aria-valuenow="53" aria-valuemin="0" aria-valuemax="100" aria-label="Прочитано 53%"><span style="width:53%"></span></div>
+            <button class="primary">Продолжить чтение</button>
+          </article>
+
+          <ul class="rows" style="margin-top:8px">
+            <li class="row">
+              <div class="cover c-ox">Мастер и Маргарита</div>
+              <div class="row-main"><p class="row-title">Мастер и Маргарита</p><p class="row-sub">Михаил Булгаков, PDF</p></div>
+              <div class="row-end"><b>64%</b>вчера</div>
+            </li>
+          </ul>
+
+          <div class="section-title"><h3>В планах</h3><a href="#">Подобрать книгу</a></div>
+          <div class="plans">
+            <div class="plan"><div class="cover c-night">Солярис<em>Лем</em></div><p>Солярис<small>224 стр.</small></p></div>
+            <div class="plan"><div class="cover c-ochre">Дюна<em>Герберт</em></div><p>Дюна<small>736 стр.</small></p></div>
+            <div class="plan"><div class="cover c-teal">Улитка на склоне<em>Стругацкие</em></div><p>Улитка на склоне<small>288 стр.</small></p></div>
+          </div>
+        </div>
+        <nav class="nav" aria-label="Разделы">
+          <a href="#" aria-current="page"><svg><use href="#i-book"/></svg>Книги</a>
+          <a href="#"><svg><use href="#i-head"/></svg>Аудио</a>
+          <a href="#"><svg><use href="#i-media"/></svg>Медиа</a>
+          <a href="#"><svg><use href="#i-shelf"/></svg>Библиотека</a>
+          <a href="#"><svg><use href="#i-stats"/></svg>Статистика</a>
+        </nav>
+      </div>
+      <figcaption><b>Книги.</b> Одна карточка «продолжить» вместо витрины. Рекомендации переехали во вкладку «В планах», поэтому разделов пять, а не шесть.</figcaption>
+    </figure>
+
+    <!-- 2. Библиотека -->
+    <figure class="shot">
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="content">
+          <div class="appbar">
+            <h2>Библиотека</h2>
+            <div class="icons"><button class="icon-btn" aria-label="Коллекции"><svg><use href="#i-shelf"/></svg></button></div>
+          </div>
+          <div class="tabs" role="tablist">
+            <button class="tab" role="tab" aria-selected="true">Завершено<small>112</small></button>
+            <button class="tab" role="tab" aria-selected="false">Отложено<small>9</small></button>
+            <button class="tab" role="tab" aria-selected="false">Брошено<small>7</small></button>
+          </div>
+          <div class="search"><svg><use href="#i-search"/></svg>Название, автор или цитата</div>
+
+          <div class="month">Октябрь 2026 <span>4 произведения</span></div>
+          <ul class="rows ledger">
+            <li class="row">
+              <div class="date-mark"><b>28</b><small>окт</small></div>
+              <div class="cover c-night">Солярис</div>
+              <div class="row-main"><p class="row-title">Солярис</p><p class="row-sub">Станислав Лем, 3 цитаты</p></div>
+              <div class="row-end"><b>9</b>из 10</div>
+            </li>
+            <li class="row">
+              <div class="date-mark"><b>21</b><small>окт</small></div>
+              <div class="cover c-plum">Проект «Аве Мария»</div>
+              <div class="row-main"><p class="row-title">Проект «Аве Мария»</p><p class="row-sub"><span class="badge"><svg><use href="#i-head"/></svg>Энди Вейер, 16 ч</span></p></div>
+              <div class="row-end"><b>8</b>из 10</div>
+            </li>
+            <li class="row">
+              <div class="date-mark"><b>14</b><small>окт</small></div>
+              <div class="cover c-ochre">Дюна</div>
+              <div class="row-main"><p class="row-title">Дюна</p><p class="row-sub">Фрэнк Герберт, 5 цитат</p></div>
+              <div class="row-end"><b>10</b>из 10</div>
+            </li>
+            <li class="row">
+              <div class="date-mark"><b>3</b><small>окт</small></div>
+              <div class="cover c-sand">Маленький принц</div>
+              <div class="row-main"><p class="row-title">Маленький принц</p><p class="row-sub">Антуан де Сент-Экзюпери</p></div>
+              <div class="row-end"><b>9</b>из 10</div>
+            </li>
+          </ul>
+          <div class="month">Сентябрь 2026 <span>3 произведения</span></div>
+          <ul class="rows ledger">
+            <li class="row">
+              <div class="date-mark"><b>26</b><small>сен</small></div>
+              <div class="cover c-teal">Град обреченный</div>
+              <div class="row-main"><p class="row-title">Град обреченный</p><p class="row-sub">Стругацкие, 2 цитаты</p></div>
+              <div class="row-end"><b>8</b>из 10</div>
+            </li>
+            <li class="row">
+              <div class="date-mark"><b>9</b><small>сен</small></div>
+              <div class="cover c-ox">Шинель</div>
+              <div class="row-main"><p class="row-title">Шинель</p><p class="row-sub"><span class="badge"><svg><use href="#i-head"/></svg>Николай Гоголь, 1 ч 50 мин</span></p></div>
+              <div class="row-end"><b>7</b>из 10</div>
+            </li>
+          </ul>
+        </div>
+        <nav class="nav" aria-label="Разделы">
+          <a href="#"><svg><use href="#i-book"/></svg>Книги</a>
+          <a href="#"><svg><use href="#i-head"/></svg>Аудио</a>
+          <a href="#"><svg><use href="#i-media"/></svg>Медиа</a>
+          <a href="#" aria-current="page"><svg><use href="#i-shelf"/></svg>Библиотека</a>
+          <a href="#"><svg><use href="#i-stats"/></svg>Статистика</a>
+        </nav>
+      </div>
+      <figcaption><b>Библиотека.</b> Только итоги: завершено, отложено, брошено. Строки идут по месяцам, дата завершения стоит штемпелем слева; у отложенных он пунктирный, у брошенных — серый.</figcaption>
+    </figure>
+
+    <!-- 3. Карточка книги -->
+    <figure class="shot">
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="content">
+          <div class="back"><svg><use href="#i-back"/></svg>Библиотека</div>
+          <article class="record">
+            <div class="record-head-wrap">
+              <div class="record-head">
+                <div class="cover c-night">Солярис<em>Станислав Лем</em></div>
+                <div>
+                  <h4>Солярис</h4>
+                  <p class="author">Станислав Лем</p>
+                  <p class="meta">Перевод Дмитрия Брускина<br>224 страницы, EPUB</p>
+                </div>
+              </div>
+              <div class="stamp" aria-label="Прочитано 28 октября 2026"><b>Прочитано</b><span>28.10.2026</span></div>
+            </div>
+            <dl class="facts">
+              <div><dt>Начато</dt><dd>16 октября</dd></div>
+              <div><dt>Читали</dt><dd>9 дней из 12</dd></div>
+              <div><dt>Время</dt><dd>9 ч 40 мин</dd></div>
+              <div><dt>Оценка</dt><dd>9 из 10</dd></div>
+            </dl>
+          </article>
+
+          <div class="section-title"><h3>Журнал чтения</h3><a href="#">Все записи</a></div>
+          <table class="log">
+            <thead><tr><th>День</th><th>Время</th><th>Страницы</th></tr></thead>
+            <tbody>
+              <tr><td>28 октября</td><td>1 ч 25 мин</td><td>186–224</td></tr>
+              <tr><td>26 октября</td><td>52 мин</td><td>160–186</td></tr>
+              <tr><td>24 октября</td><td>1 ч 10 мин</td><td>131–160</td></tr>
+            </tbody>
+          </table>
+
+          <div class="section-title"><h3>Цитаты</h3><a href="#">Все 3</a></div>
+          <blockquote class="quote">Мы вовсе не хотим завоевывать космос, мы хотим только расширить Землю до его границ.<footer>Глава «Совещание», страница 81</footer></blockquote>
+        </div>
+        <nav class="nav" aria-label="Разделы">
+          <a href="#"><svg><use href="#i-book"/></svg>Книги</a>
+          <a href="#"><svg><use href="#i-head"/></svg>Аудио</a>
+          <a href="#"><svg><use href="#i-media"/></svg>Медиа</a>
+          <a href="#" aria-current="page"><svg><use href="#i-shelf"/></svg>Библиотека</a>
+          <a href="#"><svg><use href="#i-stats"/></svg>Статистика</a>
+        </nav>
+      </div>
+      <figcaption><b>Карточка произведения.</b> Штемпель с датой — единственный яркий элемент экрана. Ниже журнал по дням и цитаты; всё, что раньше было разбросано по вкладкам, читается сверху вниз.</figcaption>
+    </figure>
+
+    <!-- 4. Статистика -->
+    <figure class="shot">
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="content">
+          <div class="appbar">
+            <h2>Статистика</h2>
+            <div class="year-line"><button class="icon-btn" aria-label="Предыдущий год"><svg><use href="#i-back"/></svg></button>2026</div>
+          </div>
+          <p class="summary">24 книги и 6 аудиокниг за десять месяцев</p>
+          <p class="summary-sub">156 часов, из них 41 час слушали. Это на 4 произведения больше, чем к концу октября 2025.</p>
+          <div class="goal">Цель года — 30 произведений, осталось 6
+            <div class="progress" role="progressbar" aria-valuenow="80" aria-valuemin="0" aria-valuemax="100" aria-label="Цель выполнена на 80%"><span style="width:80%"></span></div>
+          </div>
+
+          <div class="section-title"><h3>Октябрь</h3><a href="#">Весь год</a></div>
+          <div class="cal-head"><span>пн</span><span>вт</span><span>ср</span><span>чт</span><span>пт</span><span>сб</span><span>вс</span></div>
+          <div class="cal">
+            <span class="day empty"></span><span class="day empty"></span>
+            <span class="day read"><b>1</b></span><span class="day read"><b>2</b></span><span class="day read done"><b>3</b></span><span class="day"><b>4</b></span><span class="day read"><b>5</b></span>
+            <span class="day read"><b>6</b></span><span class="day"><b>7</b></span><span class="day read"><b>8</b></span><span class="day read"><b>9</b></span><span class="day read"><b>10</b></span><span class="day"><b>11</b></span><span class="day read"><b>12</b></span>
+            <span class="day read"><b>13</b></span><span class="day read done"><b>14</b></span><span class="day"><b>15</b></span><span class="day read"><b>16</b></span><span class="day read"><b>17</b></span><span class="day read"><b>18</b></span><span class="day"><b>19</b></span>
+            <span class="day read"><b>20</b></span><span class="day read done"><b>21</b></span><span class="day read"><b>22</b></span><span class="day"><b>23</b></span><span class="day read"><b>24</b></span><span class="day"><b>25</b></span><span class="day read"><b>26</b></span>
+            <span class="day"><b>27</b></span><span class="day read done"><b>28</b></span><span class="day read"><b>29</b></span><span class="day read today"><b>30</b></span><span class="day"><b>31</b></span>
+          </div>
+          <div class="legend"><span><i></i>Читали или слушали</span><span><i class="ring"></i>Завершили книгу</span></div>
+
+          <div class="section-title"><h3>Часы по месяцам</h3></div>
+          <div class="bars" aria-label="Часы чтения по месяцам">
+            <span style="height:38%"></span><span style="height:52%"></span><span style="height:44%"></span><span style="height:61%"></span><span style="height:47%"></span><span style="height:33%"></span>
+            <span style="height:58%"></span><span style="height:72%"></span><span style="height:55%"></span><span class="now" style="height:88%"></span><span class="future" style="height:6%"></span><span class="future" style="height:6%"></span>
+          </div>
+          <div class="months"><span>я</span><span>ф</span><span>м</span><span>а</span><span>м</span><span>и</span><span>и</span><span>а</span><span>с</span><span>о</span><span>н</span><span>д</span></div>
+        </div>
+        <nav class="nav" aria-label="Разделы">
+          <a href="#"><svg><use href="#i-book"/></svg>Книги</a>
+          <a href="#"><svg><use href="#i-head"/></svg>Аудио</a>
+          <a href="#"><svg><use href="#i-media"/></svg>Медиа</a>
+          <a href="#"><svg><use href="#i-shelf"/></svg>Библиотека</a>
+          <a href="#" aria-current="page"><svg><use href="#i-stats"/></svg>Статистика</a>
+        </nav>
+      </div>
+      <figcaption><b>Статистика.</b> Итог года одной фразой вместо ряда плиток. Дни чтения в календаре отмечены тем же штемпелем, что и даты в библиотеке.</figcaption>
+    </figure>
+  </section>
+
+  <section class="notes" aria-label="Принципы концепта">
+    <div>
+      <h3>Один яркий цвет</h3>
+      <p>Фиолетовый штемпель означает дату или главное действие. Всё остальное — чернила, графит и линовка, поэтому взгляд сразу находит «Продолжить чтение» и даты завершения.</p>
+    </div>
+    <div>
+      <h3>Линии — это строки учёта</h3>
+      <p>Линовка разделяет записи журнала и библиотеки, а не украшает карточки. Где записей нет, нет и линий. Списки остаются ленивыми и работают на тысячах произведений.</p>
+    </div>
+    <div>
+      <h3>Шрифты уже в приложении</h3>
+      <p>Literata для названий, цифр и цитат, PT Sans для интерфейса. Оба лежат в assets/fonts и работают офлайн; в Flutter это две новые темы токенов, без новых зависимостей.</p>
+    </div>
+  </section>
+</main>
+</body>
+</html>
