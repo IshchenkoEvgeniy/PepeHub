@@ -8,12 +8,14 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:drift/drift.dart' show Variable;
 import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../data/repository.dart';
 import '../media/asset_store.dart';
 import 'pdf_support.dart';
+import 'pdf_file_source.dart';
 import 'pdf_image_regions.dart';
 import 'pdf_search_page.dart';
 import 'pdf_view_limits.dart';
@@ -49,11 +51,13 @@ typedef _PdfStoredState = ({
 class PdfReaderPage extends StatefulWidget {
   final Repository repository;
   final LocalAsset asset;
+  final AssetStore? assets;
   final ReadingNote? initialNote;
   const PdfReaderPage({
     super.key,
     required this.repository,
     required this.asset,
+    this.assets,
     this.initialNote,
   });
   @override
@@ -63,7 +67,10 @@ class PdfReaderPage extends StatefulWidget {
 class _PdfReaderPageState extends State<PdfReaderPage>
     with WidgetsBindingObserver, RouteAware {
   final controller = PdfViewerController();
-  late final imageRegions = PdfImageRegions(widget.asset.path);
+  PdfFileSource? fileSource;
+  late final imageRegions = PdfImageRegions(
+    fileSource?.path ?? widget.asset.path,
+  );
   // Set in build; read by the page paint callback.
   bool darkPages = false;
   late final library = ReadingLibrary(widget.repository);
@@ -84,6 +91,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   bool indexing = false, preparingText = false;
   Timer? indexDelay;
   ReadingActivity? activity;
+  Future<void> activityStart = Future.value();
   ReaderPreferences preferences = const ReaderPreferences(mode: 'scroll');
   List<ReadingNote> _pageNotes = [];
   final notesByPage = <int, List<ReadingNote>>{};
@@ -142,12 +150,32 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     WidgetsBinding.instance.addObserver(this);
   }
 
+  Future<PdfDocument> _openDocument() async {
+    if (!widget.asset.path.startsWith('content:')) {
+      return openLocalPdf(widget.asset.path, progressive: true);
+    }
+    final assets = widget.assets ?? await AssetStore.open(widget.repository);
+    fileSource = await PdfFileSource.open(widget.asset, assets);
+    try {
+      return await openLocalPdf(fileSource!.path, progressive: true);
+    } catch (_) {
+      if (!fileSource!.isDirect) rethrow;
+      await fileSource!.close();
+      fileSource = await PdfFileSource.open(
+        widget.asset,
+        assets,
+        preferDirect: false,
+      );
+      return openLocalPdf(fileSource!.path, progressive: true);
+    }
+  }
+
   Future<PdfDocumentRefDirect> _initial() async {
     // PDFium parses only the first page here; PdfViewer measures the others
     // in the background, outward from the restored page. The stored reader
     // state is read from the database at the same time.
     final opening = await Future.wait<Object?>(
-      [openLocalPdf(widget.asset.path, progressive: true), _storedState()],
+      [_openDocument(), _storedState()],
       cleanUp: (value) {
         if (value is PdfDocument) unawaited(value.dispose());
       },
@@ -171,10 +199,18 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     // Opening must not materialize the text and glyphs of every page.
     textIndex = stored.textIndex;
     if (textIndex['pdfPages'] != count) {
-      await library.update('reading-index:${widget.asset.hash}', {
-        'pdfPages': count,
-      });
       textIndex['pdfPages'] = count;
+      writes = writes
+          .then(
+            (_) => library.update('reading-index:${widget.asset.hash}', {
+              'pdfPages': count,
+            }),
+          )
+          .catchError((Object error) {
+            if (mounted) {
+              setState(() => saveError = 'Индекс не сохранён: $error');
+            }
+          });
     }
     final view = stored.view;
     cropMargins = view['cropMargins'] == true;
@@ -194,38 +230,77 @@ class _PdfReaderPageState extends State<PdfReaderPage>
       page = (note.chapter + 1).clamp(1, count);
       highlighted = (page: page, start: note.start, end: note.end);
     }
-    final tracker = _tracker();
-    await tracker.start(_absolute(page));
-    await tracker.pause('loading');
-    activity = tracker;
-    if (!mounted) {
-      await tracker.close();
-      throw StateError('Просмотрщик закрыт');
-    }
     return PdfDocumentRefDirect(opened, autoDispose: false);
   }
 
-  /// Everything the viewer restores from the database, read in one pass.
+  /// Restore small metadata in one query, alongside notes and the book card.
   Future<_PdfStoredState> _storedState() async {
     final hash = widget.asset.hash;
-    final position = await library.value('reader:$hash');
-    final legacy =
-        int.tryParse(await widget.repository.meta(positionKey) ?? '') ?? 1;
-    final preferences = await _storedPreferences();
-    final notes = await library.notes(hash: hash);
-    final card = await widget.repository.record(widget.asset.bookId);
-    final title = card == null
-        ? widget.asset.filename
-        : (await library.bookInfo(card, hash))['title'] as String?;
+    final keys = [
+      'reader:$hash',
+      positionKey,
+      'reader:appearance',
+      _pdfModeKey,
+      _legacyPdfModeKey,
+      'reading-index:$hash',
+      'pdf-view:$hash',
+      'reading-book:${widget.asset.bookId}',
+    ];
+    final values = await Future.wait<Object?>([
+      widget.repository.db
+          .customSelect(
+            'SELECT key,value FROM metadata WHERE key IN (${List.filled(keys.length, '?').join(',')})',
+            variables: keys.map(Variable.new).toList(),
+          )
+          .get()
+          .then(
+            (rows) => {
+              for (final row in rows)
+                row.read<String>('key'): row.read<String>('value'),
+            },
+          ),
+      library.notes(hash: hash),
+      widget.repository.record(widget.asset.bookId),
+    ]);
+    final raw = values[0] as Map<String, String>;
+    Map<String, dynamic> value(String key) =>
+        jsonDecode(raw[key] ?? '{}') as Map<String, dynamic>;
+    final index = value('reading-index:$hash');
+    final card = values[2] as LibraryRecord?;
+    final overrides =
+        value('reading-book:${widget.asset.bookId}')['overrides'] as Map?;
     return (
-      position: position,
-      legacyPage: legacy,
-      preferences: preferences,
-      notes: notes,
-      title: title,
-      textIndex: await library.value('reading-index:$hash'),
-      view: await library.value('pdf-view:$hash'),
+      position: value('reader:$hash'),
+      legacyPage: int.tryParse(raw[positionKey] ?? '') ?? 1,
+      preferences: _decodePreferences(raw),
+      notes: values[1] as List<ReadingNote>,
+      title:
+          (overrides?['title'] ??
+                  index['title'] ??
+                  card?.payload?['title'] ??
+                  widget.asset.filename)
+              as String?,
+      textIndex: index,
+      view: value('pdf-view:$hash'),
     );
+  }
+
+  Future<void> _startActivity() async {
+    final tracker = _tracker();
+    try {
+      await tracker.start(_absolute(page), waitForCheckpoint: false);
+      activity = tracker;
+      if (!mounted || closing) {
+        await tracker.close();
+      } else if (!foreground || !routeVisible || panels > 0) {
+        await tracker.pause('panel');
+      }
+    } catch (error) {
+      await tracker.close();
+      if (mounted) {
+        setState(() => saveError = 'Статистика не сохранена: $error');
+      }
+    }
   }
 
   /// The outline is read on the first request, not while the book opens:
@@ -244,11 +319,16 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   static const _legacyPdfModeKey = 'reader:pdf-mode';
 
   /// Shared reader appearance with the PDF's own page mode.
-  Future<ReaderPreferences?> _storedPreferences() async {
-    final raw = await widget.repository.meta('reader:appearance');
-    final pdfMode =
-        await widget.repository.meta(_pdfModeKey) ??
-        await widget.repository.meta(_legacyPdfModeKey);
+  Future<ReaderPreferences?> _storedPreferences() async => _decodePreferences(
+    {
+      for (final key in ['reader:appearance', _pdfModeKey, _legacyPdfModeKey])
+        key: await widget.repository.meta(key) ?? '',
+    }..removeWhere((_, value) => value.isEmpty),
+  );
+
+  ReaderPreferences? _decodePreferences(Map<String, String> stored) {
+    final raw = stored['reader:appearance'];
+    final pdfMode = stored[_pdfModeKey] ?? stored[_legacyPdfModeKey];
     if (raw == null && pdfMode == null) return null;
     final restored = raw == null
         ? const ReaderPreferences()
@@ -321,23 +401,29 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     positionDelay?.cancel();
     final savedPosition = ready ? _save() : writes;
     indexDelay?.cancel();
-    imageRegions.close();
+    final regionsClosed = imageRegions.close();
     readerRoutes.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     if (fullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
-    Future.wait<void>([savedPosition, if (activity != null) activity!.close()])
-        .then(
-          (_) => _releaseSync?.call(),
-          onError: (Object _, StackTrace _) => _releaseSync?.call(),
-        );
+    Future.wait<void>([
+      savedPosition,
+      activityStart.then((_) => activity?.close()),
+    ]).then(
+      (_) => _releaseSync?.call(),
+      onError: (Object _, StackTrace _) => _releaseSync?.call(),
+    );
     // Wait for text extraction before releasing the native document.
     initial
         .then<void>((_) {}, onError: (Object _, StackTrace _) {})
         .then((_) => indexWork)
         .then((_) => textWork)
-        .then((_) => document?.dispose());
+        .then((_) => document?.dispose())
+        .whenComplete(() async {
+          await regionsClosed;
+          await fileSource?.close();
+        });
     super.dispose();
   }
 
@@ -1262,6 +1348,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
           );
         });
         // No coordinate change in an existing session; rebaseline in a new one.
+        await activityStart;
         await activity?.close();
         if (!mounted || closing) return;
         setState(() => textIndex = index);
@@ -1375,6 +1462,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     if (!mounted || !routeVisible) return;
     await _save();
     // End this session before another reader writes coverage for the same book.
+    await activityStart;
     await activity?.close();
     final wasFullscreen = fullscreen;
     if (wasFullscreen) _fullscreen(false);
@@ -1481,6 +1569,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     if (closing) return;
     closing = true;
     if (ready) await _save();
+    await activityStart;
     await activity?.close();
     if (!mounted) return;
     setState(() => allowPop = true);
@@ -1821,8 +1910,9 @@ class _PdfReaderPageState extends State<PdfReaderPage>
                                     : null,
                                 calculateInitialPageNumber: (_, _) => page,
                                 onViewerReady: (_, _) {
-                                  if (!mounted) return;
+                                  if (!mounted || ready) return;
                                   setState(() => ready = true);
+                                  activityStart = _startActivity();
                                   _prepareIndex();
                                   if (foreground &&
                                       routeVisible &&

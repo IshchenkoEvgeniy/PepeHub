@@ -352,6 +352,8 @@ void main() {
             ),
           );
           await settle(tester);
+          await tester.tap(find.byTooltip('Добавить медиа'));
+          await tester.pumpAndSettle();
           await tester.tap(find.text('Добавить файлы'));
           await tester.pumpAndSettle();
           expect(
@@ -360,6 +362,8 @@ void main() {
           );
           await tester.tap(find.text('Подключить'));
           await settle(tester);
+          await tester.tap(find.byTooltip('Добавить медиа'));
+          await tester.pumpAndSettle();
           await tester.tap(find.text('Добавить ссылку'));
           await tester.pumpAndSettle();
           await tester.enterText(

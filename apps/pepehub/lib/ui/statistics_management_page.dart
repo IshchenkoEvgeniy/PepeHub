@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../sync/peer/app_sync_usage.dart';
 
 import 'audio_mini_player.dart';
+import 'book_picker.dart';
 
 import 'package:flutter/services.dart';
 
@@ -39,6 +40,8 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
   void Function()? _releaseSync;
   late final TabController tabs;
   bool loading = true;
+  bool mutating = false;
+  final Set<String> expandedDays = {};
   bool _moreReading = false, _moreAudio = false;
   int _loadRequest = 0, _activeTab = 0;
   Timer? _searchTimer;
@@ -104,26 +107,30 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
           .toList();
       final names = {for (final b in allBooks) b.id: b.title};
       final history = StatisticsHistory(repository);
-      final nextReadingPage = await history.page(
-        reading: true,
-        titles: names,
-        bookId: selectedBookId,
-        filter: tabs.index == 0 ? typeFilter : 'all',
-        days: periodDays,
-        newest: newestFirst,
-        search: search.text,
-        offset: append ? reading.length : 0,
-      );
-      final nextAudioPage = await history.page(
-        reading: false,
-        titles: names,
-        bookId: selectedBookId,
-        filter: tabs.index == 1 ? typeFilter : 'all',
-        days: periodDays,
-        newest: newestFirst,
-        search: search.text,
-        offset: append ? audioEvents.length + legacyListening.length : 0,
-      );
+      final nextReadingPage = tabs.index != 0
+          ? StatisticsHistoryPage([], false)
+          : await history.page(
+              reading: true,
+              titles: names,
+              bookId: selectedBookId,
+              filter: tabs.index == 0 ? typeFilter : 'all',
+              days: periodDays,
+              newest: newestFirst,
+              search: search.text,
+              offset: append ? reading.length : 0,
+            );
+      final nextAudioPage = tabs.index != 1
+          ? StatisticsHistoryPage([], false)
+          : await history.page(
+              reading: false,
+              titles: names,
+              bookId: selectedBookId,
+              filter: tabs.index == 1 ? typeFilter : 'all',
+              days: periodDays,
+              newest: newestFirst,
+              search: search.text,
+              offset: append ? audioEvents.length + legacyListening.length : 0,
+            );
       final nextReading = [
         for (final row in nextReadingPage.rows)
           _ReadingEntry(
@@ -545,6 +552,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     required Future<void> Function() remove,
     Future<void> Function()? after,
   }) async {
+    if (mutating) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -562,13 +570,24 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted || mutating) return;
+    setState(() => mutating = true);
+    var removed = false;
     try {
       await remove();
+      removed = true;
+      // Publish the committed state before exporting folder journals.
+      await _load();
       await after?.call();
       await _report('Запись удалена.');
     } catch (e) {
-      await _report('Запись удалена в приложении, но журнал не обновлён: $e');
+      await _report(
+        removed
+            ? 'Запись удалена, но журнал не обновлён: $e'
+            : 'Не удалось удалить запись: $e',
+      );
+    } finally {
+      if (mounted) setState(() => mutating = false);
     }
   }
 
@@ -617,6 +636,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
         ];
 
   Future<void> _deleteSelected() async {
+    if (mutating) return;
     final keys = {...selectedEntries};
     if (keys.isEmpty) return;
     final confirmed = await showDialog<bool>(
@@ -639,7 +659,9 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
       ),
     );
     if (confirmed != true) return;
-    final readingDays = <Map<String, dynamic>>[];
+    if (!mounted || mutating) return;
+    setState(() => mutating = true);
+    final readingDays = <String, Map<String, dynamic>>{};
     final audioBooksChanged = <String>{};
     var deleted = 0;
     try {
@@ -654,7 +676,9 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
         } else {
           await widget.repository.delete('session', entry.id);
         }
-        readingDays.add(entry.payload);
+        final date = _dateOf(entry.payload).toLocal();
+        readingDays['${entry.payload['bookId']}:${date.year}-${date.month}-${date.day}'] =
+            entry.payload;
         deleted++;
       }
       for (final entry in audioEvents) {
@@ -673,7 +697,9 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
         }
         deleted++;
       }
-      for (final row in readingDays) {
+      if (mounted) setState(selectedEntries.clear);
+      await _load();
+      for (final row in readingDays.values) {
         await _refreshReadingLog(row);
       }
       for (final bookId in audioBooksChanged) {
@@ -686,6 +712,8 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
       await _report(
         'Удалено $deleted из ${keys.length}; проверьте оставшиеся записи: $e',
       );
+    } finally {
+      if (mounted) setState(() => mutating = false);
     }
   }
 
@@ -1025,26 +1053,9 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                DropdownButton<String?>(
+                BookPicker(
+                  titles: {for (final book in books) book.id: book.title},
                   value: selectedBookId,
-                  hint: const Text('Все книги'),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('Все книги'),
-                    ),
-                    for (final book in books)
-                      DropdownMenuItem<String?>(
-                        value: book.id,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 180),
-                          child: Text(
-                            book.title,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                  ],
                   onChanged: (value) {
                     selectedBookId = value;
                     _filterChanged();
@@ -1094,8 +1105,8 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
           ),
           Text(
             isReading
-                ? 'Показано: $count · ${_durationLabel(time)} · ${_visibleReading().fold<int>(0, (sum, entry) => sum + _readingCharacters(entry))} знаков'
-                : 'Показано: $count · ${_durationLabel(time)}',
+                ? 'Загружено: $count · ${_durationLabel(time)} · ${_visibleReading().fold<int>(0, (sum, entry) => sum + _readingCharacters(entry))} знаков'
+                : 'Загружено: $count · ${_durationLabel(time)}',
             style: Theme.of(context).textTheme.labelMedium,
           ),
         ],
@@ -1235,7 +1246,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
             ],
     ),
     floatingActionButton: FloatingActionButton.extended(
-      onPressed: loading ? null : _addEntry,
+      onPressed: loading || mutating ? null : _addEntry,
       icon: const Icon(Icons.add),
       label: Text(tabs.index == 0 ? 'Добавить чтение' : 'Добавить запись'),
     ),
@@ -1265,60 +1276,112 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
           ),
   );
 
-  Widget _readingList() => reading.isEmpty
-      ? const Center(
-          child: Text('Записей чтения пока нет. Добавьте сессию вручную.'),
-        )
-      : Builder(
-          builder: (context) {
-            final visible = _visibleReading();
-            return visible.isEmpty
-                ? const Center(
-                    child: Text('По выбранным фильтрам записей нет.'),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
-                    itemCount: visible.length + (_moreReading ? 1 : 0),
-                    itemBuilder: (_, index) => index == visible.length
-                        ? TextButton(
-                            onPressed: loading
-                                ? null
-                                : () => _load(append: true),
-                            child: const Text('Показать ещё'),
-                          )
-                        : _readingItem(visible[index]),
-                  );
-          },
+  Widget _dayList<T>({
+    required List<T> rows,
+    required Map<String, dynamic> Function(T) data,
+    required String Function(T) entryKey,
+    required int Function(T) milliseconds,
+    required Widget Function(T) item,
+    required bool more,
+    required String empty,
+  }) {
+    if (rows.isEmpty) return Center(child: Text(empty));
+    final groups = <String, List<T>>{};
+    for (final row in rows) {
+      final date = _dateOf(data(row)).toLocal();
+      final day =
+          '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      (groups[day] ??= []).add(row);
+    }
+    // Only expanded days contribute entry descriptors; widgets stay lazy.
+    final descriptors = <({String day, T? row})>[];
+    for (final group in groups.entries) {
+      descriptors.add((day: group.key, row: null));
+      if (expandedDays.contains('${tabs.index}:${group.key}')) {
+        descriptors.addAll(
+          group.value.map((row) => (day: group.key, row: row)),
         );
-
-  Widget _audioList() => audioEvents.isEmpty && legacyListening.isEmpty
-      ? const Center(
-          child: Text(
-            'Событий прослушивания пока нет. Добавьте запись вручную.',
+      }
+    }
+    return ListView.builder(
+      key: PageStorageKey('history-${tabs.index}'),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+      itemCount: descriptors.length + (more ? 1 : 0),
+      itemBuilder: (_, index) {
+        if (index == descriptors.length) {
+          return TextButton(
+            onPressed: loading || mutating ? null : () => _load(append: true),
+            child: const Text('Показать ещё'),
+          );
+        }
+        final descriptor = descriptors[index];
+        final row = descriptor.row;
+        if (row != null) return item(row);
+        final entries = groups[descriptor.day]!;
+        final groupKey = '${tabs.index}:${descriptor.day}';
+        final expanded = expandedDays.contains(groupKey);
+        final keys = entries.map(entryKey).toSet();
+        final selected = keys.where(selectedEntries.contains).length;
+        return ListTile(
+          key: ValueKey(groupKey),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+          leading: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+          title: Text(descriptor.day),
+          subtitle: Text(
+            '${entries.length} записей · ${_durationLabel(entries.fold<int>(0, (sum, row) => sum + milliseconds(row)))}',
           ),
-        )
-      : Builder(
-          builder: (context) {
-            final rows = _visibleAudioRows();
-            if (rows.isEmpty) {
-              return const Center(
-                child: Text('По выбранным фильтрам записей нет.'),
-              );
-            }
-            return ListView.builder(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
-              itemCount: rows.length + (_moreAudio ? 1 : 0),
-              itemBuilder: (_, index) => index == rows.length
-                  ? TextButton(
-                      onPressed: loading ? null : () => _load(append: true),
-                      child: const Text('Показать ещё'),
-                    )
-                  : rows[index].legacy
-                  ? _legacyItem(rows[index].record)
-                  : _audioItem(rows[index].record),
-            );
-          },
+          trailing: Tooltip(
+            message: 'Выбрать загруженные записи за день',
+            child: Checkbox(
+              tristate: true,
+              value: selected == 0
+                  ? false
+                  : selected == keys.length
+                  ? true
+                  : null,
+              onChanged: mutating
+                  ? null
+                  : (_) => setState(() {
+                      if (selected == keys.length) {
+                        selectedEntries.removeAll(keys);
+                      } else {
+                        selectedEntries.addAll(keys);
+                      }
+                    }),
+            ),
+          ),
+          onTap: () => setState(() {
+            if (!expandedDays.add(groupKey)) expandedDays.remove(groupKey);
+          }),
         );
+      },
+    );
+  }
+
+  Widget _readingList() => _dayList<_ReadingEntry>(
+    rows: _visibleReading(),
+    data: (entry) => entry.payload,
+    entryKey: (entry) => 'reading:${entry.id}',
+    milliseconds: _readingMilliseconds,
+    item: _readingItem,
+    more: _moreReading,
+    empty: 'Записей чтения по выбранным условиям нет.',
+  );
+
+  Widget _audioList() => _dayList<({LibraryRecord record, bool legacy})>(
+    rows: _visibleAudioRows(),
+    data: (row) => row.record.payload ?? {},
+    entryKey: (row) => '${row.legacy ? 'legacy' : 'audio'}:${row.record.id}',
+    milliseconds: (row) => row.legacy
+        ? ((row.record.payload?['activeSeconds'] as num?)?.toInt() ?? 0) * 1000
+        : row.record.payload?['kind'] == 'listen'
+        ? (row.record.payload?['wallMs'] as num?)?.toInt() ?? 0
+        : 0,
+    item: (row) =>
+        row.legacy ? _legacyItem(row.record) : _audioItem(row.record),
+    more: _moreAudio,
+    empty: 'Записей прослушивания по выбранным условиям нет.',
+  );
 }
 
 class _ReadingEntry {

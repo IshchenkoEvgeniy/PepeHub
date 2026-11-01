@@ -775,23 +775,24 @@ class PepeMonthCalendar extends StatelessWidget {
             final date = DateTime(first.year, first.month, number);
             final ms = values[number - 1];
             final future = date.isAfter(today);
-            final reached = goalMinutes > 0
-                ? ms >= goalMinutes * 60000
-                : ms >= maximum * .6;
+            final intensity = ms <= 0 ? 0.0 : math.sqrt(ms / maximum);
             final fill = future || ms <= 0
                 ? Colors.transparent
-                : reached
-                ? palette.accent
-                : palette.raised;
+                : Color.lerp(
+                    palette.raised,
+                    palette.accent,
+                    .12 + .88 * intensity,
+                  )!;
             final ink = future
                 ? palette.muted.withValues(alpha: .5)
-                : reached
-                ? palette.onAccent
-                : ms > 0
-                ? palette.text
-                : palette.muted;
+                : ms <= 0
+                ? palette.muted
+                : ThemeData.estimateBrightnessForColor(fill) == Brightness.dark
+                ? Colors.white
+                : Colors.black;
             return Tooltip(
-              message: describe(ms),
+              message:
+                  '${describe(ms)}${goalMinutes > 0 && ms >= goalMinutes * 60000 ? ' · цель достигнута' : ''}',
               child: Material(
                 color: fill,
                 shape: RoundedRectangleBorder(
@@ -819,6 +820,32 @@ class PepeMonthCalendar extends StatelessWidget {
               ),
             );
           },
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Text(
+              'Меньше',
+              style: TextStyle(fontSize: 11, color: palette.muted),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Container(
+                height: 6,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(3),
+                  gradient: LinearGradient(
+                    colors: [palette.raised, palette.accent],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Больше · ${describe(values.fold<int>(0, math.max))}',
+              style: TextStyle(fontSize: 11, color: palette.muted),
+            ),
+          ],
         ),
       ],
     );

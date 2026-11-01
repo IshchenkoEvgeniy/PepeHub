@@ -1,3 +1,4 @@
+import 'book_picker.dart';
 import '../audio/statistics_export.dart';
 import 'audio_mini_player.dart';
 import 'statistics_range.dart';
@@ -1096,27 +1097,13 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
             border: Border.all(color: palette.strongLine),
             borderRadius: BorderRadius.circular(30),
           ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String?>(
-              isExpanded: true,
-              isDense: true,
-              value: titles.containsKey(selectedBook) ? selectedBook : null,
-              items: [
-                const DropdownMenuItem<String?>(
-                  value: null,
-                  child: Text('Все книги'),
-                ),
-                for (final e in titles.entries)
-                  DropdownMenuItem<String?>(
-                    value: e.key,
-                    child: Text(e.value, overflow: TextOverflow.ellipsis),
-                  ),
-              ],
-              onChanged: (v) {
-                setState(() => selectedBook = v);
-                load();
-              },
-            ),
+          child: BookPicker(
+            titles: titles,
+            value: selectedBook,
+            onChanged: (value) {
+              setState(() => selectedBook = value);
+              load();
+            },
           ),
         ),
       ],

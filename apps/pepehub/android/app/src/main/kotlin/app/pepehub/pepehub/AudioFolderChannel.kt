@@ -27,6 +27,7 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
     private val main = Handler(Looper.getMainLooper())
     private val allowed = mutableSetOf<String>()
     private val streams = mutableMapOf<String, InputStream>()
+    private val pdfDescriptors = mutableMapOf<String, android.os.ParcelFileDescriptor>()
     private var pending: MethodChannel.Result? = null
     private var pendingBooks = false
     private var pendingWriteRoot: Uri? = null
@@ -97,9 +98,34 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
                     pending = result
                     onActivityResult(4712, Activity.RESULT_OK, Intent().setData(uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or (if (permission.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)))
                 }
-            } else if (call.method in listOf("deleteBookFile", "supportFiles", "open", "read", "close", "exists", "snapshot", "cover", "artwork", "metadata", "readRange", "journal", "readingJournal", "report", "relocate", "pdfPreview")) {
-                work(result, if (call.method == "exists") playbackChecks else worker) {
+            } else if (call.method in listOf("deleteBookFile", "supportFiles", "open", "read", "close", "exists", "snapshot", "cover", "artwork", "metadata", "readRange", "journal", "readingJournal", "report", "relocate", "pdfPreview", "openPdfDescriptor", "closePdfDescriptor")) {
+                work(result, if (call.method in listOf("exists", "openPdfDescriptor", "closePdfDescriptor")) playbackChecks else worker) {
                     when (call.method) {
+                        "openPdfDescriptor" -> {
+                            val uri = Uri.parse(call.argument<String>("uri") ?: error("Нет URI"))
+                            check(uri.scheme == "content") { "Нужен URI документа" }
+                            val expected = call.argument<Number>("bytes")?.toLong() ?: 0L
+                            check(expected in 1..(256L * 1024 * 1024)) { "Недопустимый размер PDF" }
+                            val descriptor = context.contentResolver.openFileDescriptor(uri, "r") ?: error("PDF недоступен")
+                            try {
+                                // Pipes and cloud streams need the verified cache fallback.
+                                check(descriptor.statSize == expected) { "Размер PDF изменился. Обновите папку книг." }
+                                android.system.Os.lseek(descriptor.fileDescriptor, 0L, android.system.OsConstants.SEEK_SET)
+                                val token = UUID.randomUUID().toString()
+                                synchronized(pdfDescriptors) {
+                                    check(!disposed && pdfDescriptors.size < 4) { "Слишком много открытых PDF" }
+                                    pdfDescriptors[token] = descriptor
+                                }
+                                mapOf("handle" to token, "path" to "/proc/self/fd/${descriptor.fd}")
+                            } catch (e: Exception) {
+                                descriptor.close()
+                                throw e
+                            }
+                        }
+                        "closePdfDescriptor" -> {
+                            synchronized(pdfDescriptors) { pdfDescriptors.remove(call.argument<String>("handle")) }?.close()
+                            null
+                        }
                         "deleteBookFile" -> {
                             bookAccess.delete(call.argument<String>("uri") ?: error("Нет URI"),
                                 call.argument<String>("hash") ?: error("Нет контрольной суммы"), call.argument<Boolean>("checkOnly") == true)
@@ -555,6 +581,10 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
 
     fun dispose() {
         disposed = true
+        synchronized(pdfDescriptors) {
+            pdfDescriptors.values.forEach { runCatching { it.close() } }
+            pdfDescriptors.clear()
+        }
         playbackChecks.shutdownNow()
         channel.setMethodCallHandler(null)
         pending?.error("closed", "Выбор папки закрыт", null)

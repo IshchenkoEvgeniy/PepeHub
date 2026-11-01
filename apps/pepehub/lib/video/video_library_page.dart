@@ -300,171 +300,216 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
           icon: const Icon(Icons.bar_chart),
         ),
       ],
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          const ShelfIntro(
-            title: 'Медиа',
-            subtitle: 'Видео, курсы и музыка из ваших файлов. Сохраняйте позицию, слушайте плейлисты и продолжайте в мини-плеере.',
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              FilledButton.icon(
-                onPressed: busy ? null : () => _pick(false),
-                icon: const Icon(Icons.library_music_outlined),
-                label: const Text('Добавить файлы'),
-              ),
-              OutlinedButton.icon(
-                onPressed: busy ? null : () => _pick(true),
-                icon: const Icon(Icons.folder_open),
-                label: const Text('Подключить папку'),
-              ),
-              OutlinedButton.icon(
-                onPressed: busy ? null : _addLink,
-                icon: const Icon(Icons.link),
-                label: const Text('Добавить ссылку'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Поиск видео, музыки и уроков',
-            ),
-            onChanged: (value) => setState(() => query = value.trim()),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            children: [
-              for (final entry in const {
-                'video': 'Видео и курсы',
-                'music': 'Музыка',
-              }.entries)
-                ChoiceChip(
-                  label: Text(entry.value),
-                  selected: mediaFilter == entry.key,
-                  onSelected: busy
-                      ? null
-                      : (_) => _run(() async {
-                          await widget.repository.repository.setMeta(
-                            'media-section',
-                            entry.key,
-                          );
-                          if (mounted) setState(() => mediaFilter = entry.key);
-                        }),
-                ),
-              FilterChip(
-                label: const Text('Избранное'),
-                selected: favorites,
-                onSelected: (value) => setState(() => favorites = value),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(10),
-                child: Text(
-                  '${visible.length} в библиотеке',
-                  style: TextStyle(color: palette.muted),
-                ),
-              ),
-            ],
-          ),
-          if (loading) const LinearProgressIndicator(),
-          if (error != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(error!),
-                  TextButton(onPressed: _load, child: const Text('Повторить')),
-                ],
-              ),
-            ),
-          if (!loading && items.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 36),
-              child: ShelfPanel(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  children: [
-                    Icon(Icons.perm_media, size: 48, color: palette.accent),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Добавьте видео или музыку',
-                      style: Theme.of(context).textTheme.titleLarge,
-                      textAlign: TextAlign.center,
+      body: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            sliver: SliverList.list(
+              children: [
+                TextField(
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search),
+                    hintText: 'Поиск в медиа',
+                    suffixIcon: PopupMenuButton<String>(
+                      tooltip: 'Добавить медиа',
+                      enabled: !busy,
+                      icon: const Icon(Icons.add_circle_outline),
+                      onSelected: (action) {
+                        if (action == 'files') _pick(false);
+                        if (action == 'folder') _pick(true);
+                        if (action == 'link') _addLink();
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(
+                          value: 'files',
+                          child: ListTile(
+                            leading: Icon(Icons.library_music_outlined),
+                            title: Text('Добавить файлы'),
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'folder',
+                          child: ListTile(
+                            leading: Icon(Icons.folder_open),
+                            title: Text('Подключить папку'),
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'link',
+                          child: ListTile(
+                            leading: Icon(Icons.link),
+                            title: Text('Добавить ссылку'),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Добавьте файлы, подключите папку с уроками или музыкой либо укажите прямую ссылку. Медиа читаются из исходных файлов.',
-                      textAlign: TextAlign.center,
+                  ),
+                  onChanged: (value) => setState(() => query = value.trim()),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            for (final entry in const {
+                              'video': 'Видео и курсы',
+                              'music': 'Музыка',
+                            }.entries)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ChoiceChip(
+                                  label: Text(entry.value),
+                                  selected: mediaFilter == entry.key,
+                                  onSelected: busy
+                                      ? null
+                                      : (_) => _run(() async {
+                                          await widget.repository.repository
+                                              .setMeta(
+                                                'media-section',
+                                                entry.key,
+                                              );
+                                          if (mounted) {
+                                            setState(
+                                              () => mediaFilter = entry.key,
+                                            );
+                                          }
+                                        }),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: favorites ? 'Показать все медиа' : 'Избранное',
+                      isSelected: favorites,
+                      selectedIcon: const Icon(Icons.star),
+                      icon: const Icon(Icons.star_border),
+                      onPressed: () => setState(() => favorites = !favorites),
                     ),
                   ],
                 ),
-              ),
+                Text(
+                  '${visible.length} в библиотеке',
+                  style: TextStyle(color: palette.muted, fontSize: 12),
+                ),
+                if (loading) const LinearProgressIndicator(),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(error!),
+                        TextButton(
+                          onPressed: _load,
+                          child: const Text('Повторить'),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (!loading && items.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 36),
+                    child: ShelfPanel(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.perm_media,
+                            size: 48,
+                            color: palette.accent,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Добавьте видео или музыку',
+                            style: Theme.of(context).textTheme.titleLarge,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Добавьте файлы, подключите папку с уроками или музыкой либо укажите прямую ссылку. Медиа читаются из исходных файлов.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (!loading && items.isNotEmpty && visible.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('По выбранным условиям ничего не найдено.'),
+                  ),
+              ],
             ),
-          if (!loading && items.isNotEmpty && visible.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: Text('По выбранным условиям ничего не найдено.'),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            sliver: SliverList.builder(
+              itemCount: visible.length,
+              itemBuilder: (_, index) {
+                final item = visible[index];
+                return Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: ShelfPanel(
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      leading: Icon(
+                        mediaFilter == 'music'
+                            ? Icons.music_note_outlined
+                            : item.kind == VideoItemKind.course
+                            ? Icons.school_outlined
+                            : Icons.ondemand_video,
+                        color: palette.accent,
+                      ),
+                      title: Text(
+                        item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        [
+                          mediaFilter == 'music'
+                              ? (item.kind == VideoItemKind.course
+                                    ? 'Плейлист · треков: ${_sectionLessons(item).length}'
+                                    : 'Музыка')
+                              : item.kind == VideoItemKind.course
+                              ? 'Курс · ${_sectionLessons(item).length} уроков'
+                              : 'Видео',
+                          if (_recent(item) != null)
+                            'Последняя позиция: ${pepeTime(_recent(item)!.positionMs)}',
+                        ].join('\n'),
+                      ),
+                      trailing: IconButton(
+                        tooltip: item.favorite
+                            ? 'Убрать из избранного'
+                            : 'В избранное',
+                        onPressed: busy
+                            ? null
+                            : () => _run(() async {
+                                await widget.repository.setFavorite(
+                                  item,
+                                  !item.favorite,
+                                );
+                                await _load();
+                              }),
+                        icon: Icon(
+                          item.favorite ? Icons.star : Icons.star_border,
+                        ),
+                      ),
+                      onTap: busy ? null : () => _open(item),
+                    ),
+                  ),
+                );
+              },
             ),
-          for (final item in visible) ...[
-            const SizedBox(height: 10),
-            ShelfPanel(
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                leading: Icon(
-                  mediaFilter == 'music'
-                      ? Icons.music_note_outlined
-                      : item.kind == VideoItemKind.course
-                      ? Icons.school_outlined
-                      : Icons.ondemand_video,
-                  color: palette.accent,
-                ),
-                title: Text(
-                  item.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  [
-                    mediaFilter == 'music'
-                        ? (item.kind == VideoItemKind.course
-                              ? 'Плейлист · треков: ${_sectionLessons(item).length}'
-                              : 'Музыка')
-                        : item.kind == VideoItemKind.course
-                        ? 'Курс · ${_sectionLessons(item).length} уроков'
-                        : 'Видео',
-                    if (_recent(item) != null)
-                      'Последняя позиция: ${pepeTime(_recent(item)!.positionMs)}',
-                  ].join('\n'),
-                ),
-                trailing: IconButton(
-                  tooltip: item.favorite
-                      ? 'Убрать из избранного'
-                      : 'В избранное',
-                  onPressed: busy
-                      ? null
-                      : () => _run(() async {
-                          await widget.repository.setFavorite(
-                            item,
-                            !item.favorite,
-                          );
-                          await _load();
-                        }),
-                  icon: Icon(item.favorite ? Icons.star : Icons.star_border),
-                ),
-                onTap: busy ? null : () => _open(item),
-              ),
-            ),
-          ],
+          ),
         ],
       ),
     );

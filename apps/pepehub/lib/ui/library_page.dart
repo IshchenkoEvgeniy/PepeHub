@@ -799,7 +799,9 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _showReader(LocalAsset asset, {ReadingNote? note}) async {
     try {
-      asset = await ReadingRoots(widget.assets!).forReading(asset);
+      if (bookFormat(asset.filename) != 'pdf') {
+        asset = await ReadingRoots(widget.assets!).forReading(asset);
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -815,6 +817,7 @@ class _LibraryPageState extends State<LibraryPage> {
       MaterialPageRoute(
         builder: (_) => bookFormat(asset.filename) == 'pdf'
             ? PdfReaderPage(
+                assets: widget.assets,
                 repository: widget.repository,
                 asset: asset,
                 initialNote: note,

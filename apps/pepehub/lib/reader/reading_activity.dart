@@ -48,7 +48,13 @@ class ReadingActivity {
     this.export,
   }) : clock = clock ?? DateTime.now;
 
-  Future<void> start(int offset, {bool runTimer = true}) async {
+  /// A reader may become interactive while the first checkpoint is queued.
+  /// [writes] and [close] still drain that checkpoint, including journal export.
+  Future<void> start(
+    int offset, {
+    bool runTimer = true,
+    bool waitForCheckpoint = true,
+  }) async {
     final stored = await ReadingLibrary(repository)
         .value('reading-coverage:$hash');
     coverage = [
@@ -60,7 +66,8 @@ class ReadingActivity {
     position = offset;
     _event('start', started);
     _begin(started);
-    await checkpoint();
+    final saved = checkpoint();
+    if (waitForCheckpoint) await saved;
     if (runTimer) {
       timer = Timer.periodic(const Duration(seconds: 5), (_) {
         tick();
@@ -433,8 +440,12 @@ ReadingTotals readingTotals(
     var included = false;
     for (final s in session['spans'] as List? ?? []) {
       if (s['pepehubDeleted'] == true) continue;
-      final a = s['start'] is DateTime ? s['start'] as DateTime : DateTime.parse(s['start'] as String),
-          b = s['end'] is DateTime ? s['end'] as DateTime : DateTime.parse(s['end'] as String);
+      final a = s['start'] is DateTime
+              ? s['start'] as DateTime
+              : DateTime.parse(s['start'] as String),
+          b = s['end'] is DateTime
+              ? s['end'] as DateTime
+              : DateTime.parse(s['end'] as String);
       final from = start != null && start.isAfter(a) ? start : a;
       final to = end != null && end.isBefore(b) ? end : b;
       if (!to.isAfter(from) || !b.isAfter(a)) continue;
