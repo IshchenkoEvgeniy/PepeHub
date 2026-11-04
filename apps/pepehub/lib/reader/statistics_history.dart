@@ -23,6 +23,29 @@ class StatisticsHistoryPage {
 class StatisticsHistory {
   final Repository repository;
   StatisticsHistory(this.repository);
+
+  /// Picker candidates come from the entire history, not just its current page
+  /// or filters. Only IDs are read; session payloads and tracks stay unloaded.
+  Future<Set<String>> bookIds({required bool reading}) async {
+    final primary = reading
+        ? 'SELECT book_id AS bookId FROM reading_statistics_sessions_v1'
+        : 'SELECT ${SchemaSql.audioEventBook} AS bookId FROM records '
+              'WHERE ${SchemaSql.audioEventRows} AND deleted=0';
+    final rows = await repository.db
+        .customSelect(
+          '$primary '
+          "UNION SELECT json_extract(payload,'\$.bookId') AS bookId FROM records "
+          "WHERE type='session' AND deleted=0 AND json_valid(payload) "
+          "AND json_extract(payload,'\$.kind')='${reading ? 'reading' : 'listening'}'",
+        )
+        .get();
+    return rows
+        .map((row) => row.data['bookId'])
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
   Future<StatisticsHistoryPage> page({
     required bool reading,
     required Map<String, String> titles,

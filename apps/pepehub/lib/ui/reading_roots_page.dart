@@ -6,6 +6,7 @@ import '../media/asset_store.dart';
 import '../media/library_folder_preference.dart';
 import '../media/audio_player_scope.dart';
 import 'audio_mini_player.dart';
+import 'import_folder_page.dart';
 
 class ReadingRootsPage extends StatefulWidget {
   final AssetStore assets;
@@ -62,6 +63,20 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
       children: [
         const Text(
           'Отдельные папки для EPUB, FB2, TXT, PDF и других текстовых форматов. На Android открываемая книга кэшируется локально для чтения.',
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Папка добавленных книг'),
+          subtitle: const Text('Куда копировать книги, выбранные по одному'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: busy
+              ? null
+              : () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ImportFolderPage(assets: widget.assets),
+                  ),
+                ).then((_) => _run(() async {})),
         ),
         FilledButton.icon(
           onPressed: busy

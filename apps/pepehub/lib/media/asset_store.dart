@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 import '../reader/reading_book_visibility.dart';
 
@@ -16,6 +17,8 @@ import '../reader/epub.dart';
 import '../reader/book_formats.dart';
 import '../reader/text_book.dart';
 import '../reader/pdf_support.dart';
+import '../audio/audio_folder.dart' show audioSourceExists;
+import 'import_folder.dart';
 
 class LocalAsset {
   final String id, bookId, filename, path, hash;
@@ -62,7 +65,9 @@ class AssetStore {
   }) async {
     final id = await AudioLinkService(repository)
         .connect(files, root: root, title: title, replaceBookId: replaceBookId);
-    await repository.db.customStatement('DELETE FROM metadata WHERE key=?', ['audio-cover-missing:$id']);
+    await repository.db.customStatement('DELETE FROM metadata WHERE key=?', [
+      'audio-cover-missing:$id',
+    ]);
     return (await audioTracks(id)).first;
   }
 
@@ -126,10 +131,32 @@ class AssetStore {
   bool isManagedBookPath(LocalAsset asset) =>
       p.equals(p.absolute(asset.path), p.absolute(_managedBookPath(asset)));
 
-  /// Reading caches are temporary; only a published import in the store's
-  /// root is an independent copy. Also finds imports demoted by older scans.
-  Future<LocalAsset?> managedBookCopy(LocalAsset asset) async {
+  /// Reading caches are temporary. Independent imports can live in the chosen
+  /// folder or in the legacy private store; both remain available for deletion.
+  Future<LocalAsset?> managedBookCopy(
+    LocalAsset asset, {
+    bool legacyOnly = false,
+  }) async {
     if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(asset.hash)) return null;
+    final raw = legacyOnly
+        ? null
+        : await repository.meta('reading-import-location:${asset.bookId}');
+    if (raw != null) {
+      final saved = jsonDecode(raw) as Map<String, dynamic>;
+      final path = saved['path'] as String;
+      if (saved['hash'] == asset.hash &&
+          saved['bytes'] == asset.bytes &&
+          await audioSourceExists(path)) {
+        return LocalAsset(
+          id: asset.id,
+          bookId: asset.bookId,
+          filename: asset.filename,
+          path: path,
+          hash: asset.hash,
+          bytes: asset.bytes,
+        );
+      }
+    }
     final file = File(_managedBookPath(asset));
     if (!await file.exists() || await file.length() != asset.bytes) return null;
     if (!isManagedBookPath(asset) &&
@@ -230,13 +257,15 @@ class AssetStore {
 
   Future<LocalAsset> importEpub(XFile selected) => importBook(selected);
 
-  Future<LocalAsset> importBook(XFile selected) {
+  Future<LocalAsset> importBook(XFile selected) async {
     final format = bookFormat(selected.name);
-    return _importFile(
+    await ImportFolder(this).check();
+    final asset = await _importFile(
       selected,
       maxBytes: (format == 'pdf' ? 256 : 64) * 1024 * 1024,
       format: format,
     );
+    return ImportFolder(this).placeBook(asset);
   }
 
   Future<LocalAsset> _importFile(

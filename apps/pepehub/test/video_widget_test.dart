@@ -133,6 +133,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Добавить медиа'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Подключить папку'));
       await tester.pumpAndSettle();
       expect(find.text('Проверить медиа и порядок файлов'), findsOneWidget);
@@ -234,6 +236,8 @@ void main() {
       await tester.tap(find.byTooltip('Медиа'));
       await tester.pumpAndSettle();
       expect(find.byType(VideoLibraryPage), findsOneWidget);
+      await tester.tap(find.byTooltip('Добавить медиа'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Добавить ссылку'));
       await tester.pumpAndSettle();
       await tester.enterText(

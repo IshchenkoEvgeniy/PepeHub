@@ -243,6 +243,10 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
   String type = 'all', scope = 'all', year = 'all', sort = 'completed';
   String? selectedId;
   bool filters = false, grid = false;
+  bool groupSeries = true;
+  int _groupPreferenceEdit = 0;
+  final expandedSeries = <String>{};
+  List<LibrarySeriesGroup> _seriesGroups = [];
   bool selecting = false,
       favoritesOnly = false,
       descending = true,
@@ -258,6 +262,24 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
   void initState() {
     super.initState();
     unawaited(_loadGoal());
+    unawaited(_loadGrouping());
+  }
+
+  Future<void> _loadGrouping() async {
+    final edit = _groupPreferenceEdit;
+    final value = await widget.service.local.meta('library-group-series-v1');
+    if (mounted && edit == _groupPreferenceEdit) {
+      setState(() => groupSeries = value != '0');
+    }
+  }
+
+  Future<void> _toggleGrouping(bool value) async {
+    _groupPreferenceEdit++;
+    setState(() => groupSeries = value);
+    await widget.service.local.setMeta(
+      'library-group-series-v1',
+      value ? '1' : '0',
+    );
   }
 
   @override
@@ -393,10 +415,12 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
         : switch (scope) {
             'title' => item.title,
             'author' => item.authors,
+            'narrator' => _text(item.values['narrator']),
             'series' => _text(item.value('series')),
             _ => [
               item.title,
               item.authors,
+              _text(item.values['narrator']),
               _text(item.value('series')),
               _text(item.value('genre')),
               _text(item.values['tags']),
@@ -439,6 +463,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       final terms = normalized.isEmpty ? <String>[] : normalized.split(_spaces);
       _filtered = all.where((entry) => _matches(entry, terms)).toList()
         ..sort(_compare);
+      _seriesGroups = groupLibrarySeries(_filtered);
     }
     return _filtered;
   }
@@ -799,6 +824,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
         DropdownMenuItem(value: 'all', child: Text('Везде')),
         DropdownMenuItem(value: 'title', child: Text('В названии')),
         DropdownMenuItem(value: 'author', child: Text('По автору')),
+        DropdownMenuItem(value: 'narrator', child: Text('По чтецу')),
         DropdownMenuItem(value: 'series', child: Text('По серии')),
       ],
       onChanged: (next) => setState(() => scope = next ?? 'all'),
@@ -986,6 +1012,16 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
               icon: Icon(descending ? Icons.south : Icons.north, size: 20),
             ),
             IconButton(
+              key: const ValueKey('library-group-series'),
+              tooltip: groupSeries
+                  ? 'Показать книги отдельно'
+                  : 'Группировать по сериям',
+              isSelected: groupSeries,
+              onPressed: () => _toggleGrouping(!groupSeries),
+              icon: const Icon(Icons.library_books_outlined, size: 20),
+              selectedIcon: const Icon(Icons.library_books_rounded, size: 20),
+            ),
+            IconButton(
               tooltip: grid ? 'Показать списком' : 'Показать карточками',
               onPressed: () => setState(() => grid = !grid),
               icon: Icon(
@@ -1030,7 +1066,9 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
               if (all.isNotEmpty)
                 TextButton(
                   onPressed: () => setState(() {
+                    _searchTimer?.cancel();
                     search.clear();
+                    _searchQuery = '';
                     type = year = scope = statusFilter = collectionFilter =
                         'all';
                     hiddenOnly = favoritesOnly = false;
@@ -1042,6 +1080,18 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
         ),
       );
     }
+    final slots = <({LibraryEntry? entry, LibrarySeriesGroup? series})>[];
+    if (groupSeries) {
+      for (final group in _seriesGroups) {
+        if (group.isSeries) {
+          slots.add((entry: null, series: group));
+          if (!expandedSeries.contains(group.key)) continue;
+        }
+        slots.addAll(group.entries.map((e) => (entry: e, series: null)));
+      }
+    } else {
+      slots.addAll(entries.map((e) => (entry: e, series: null)));
+    }
     return SliverLayoutBuilder(
       builder: (context, constraints) {
         final available = constraints.crossAxisExtent;
@@ -1050,7 +1100,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           final columns = (available / 200).floor().clamp(2, 8);
           final width = (available - gap * (columns - 1)) / columns;
           return SliverGrid.builder(
-            itemCount: entries.length,
+            itemCount: slots.length,
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
               crossAxisSpacing: gap,
@@ -1060,23 +1110,32 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                   228 * MediaQuery.textScalerOf(context).scale(1) -
                   64,
             ),
-            itemBuilder: (_, i) => KeyedSubtree(
-              key: ValueKey('library-work:${entries[i].item.id}'),
-              child: _gridCard(
-                entries[i],
-                selected?.item.id == entries[i].item.id,
-                details,
-                width,
-              ),
-            ),
+            itemBuilder: (_, i) {
+              final slot = slots[i];
+              if (slot.series != null) {
+                return _seriesCard(slot.series!, width: width);
+              }
+              final entry = slot.entry!;
+              return KeyedSubtree(
+                key: ValueKey('library-work:${entry.item.id}'),
+                child: _gridCard(
+                  entry,
+                  selected?.item.id == entry.item.id,
+                  details,
+                  width,
+                ),
+              );
+            },
           );
         }
         final table = available >= 620;
         return SliverList.builder(
-          itemCount: entries.length + (table ? 1 : 0),
+          itemCount: slots.length + (table ? 1 : 0),
           itemBuilder: (_, index) {
             if (table && index == 0) return _tableHeader();
-            final entry = entries[index - (table ? 1 : 0)];
+            final slot = slots[index - (table ? 1 : 0)];
+            if (slot.series != null) return _seriesCard(slot.series!);
+            final entry = slot.entry!;
             return Material(
               key: ValueKey('library-work:${entry.item.id}'),
               color: ShelfPalette.of(context).panel,
@@ -1090,6 +1149,164 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           },
         );
       },
+    );
+  }
+
+  Widget _seriesCard(LibrarySeriesGroup group, {double? width}) {
+    final palette = ShelfPalette.of(context);
+    final expanded = expandedSeries.contains(group.key);
+    final finished = group.entries
+        .where((e) => isFinishedLibraryItem(e.item))
+        .length;
+    final audio = group.entries
+        .where((e) => e.item.mediaType == 'audiobook')
+        .length;
+    final count = 'Книг: ${group.entries.length - audio} · Аудиокниг: $audio';
+    void toggle() => setState(() {
+      if (!expandedSeries.add(group.key)) expandedSeries.remove(group.key);
+    });
+    void selectGroup() => setState(() {
+      selecting = true;
+      final ids = group.entries.map((e) => e.item.id).toSet();
+      if (selectedBooks.containsAll(ids)) {
+        selectedBooks.removeAll(ids);
+      } else {
+        selectedBooks.addAll(ids);
+      }
+    });
+    Widget cover(LibraryEntry entry, double w, double h) => ShelfBookCover(
+      title: entry.item.title,
+      mediaType: entry.item.mediaType,
+      cover: _text(entry.item.value('cover')),
+      localPath: widget.service.coverPath(entry.item),
+      width: w,
+      height: h,
+    );
+    final arrow = IconButton(
+      tooltip: expanded ? 'Свернуть серию' : 'Развернуть серию',
+      onPressed: toggle,
+      icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+    );
+    final heading = Text(
+      group.name,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: AppFonts.book(palette.text, size: 17),
+    );
+    final summary = Text(
+      '$count\nЗавершено: $finished из ${group.entries.length}',
+      maxLines: width == null ? null : 3,
+      overflow: width == null ? null : TextOverflow.ellipsis,
+      style: TextStyle(color: palette.muted, fontSize: 12, height: 1.5),
+    );
+    return Semantics(
+      key: ValueKey('library-series:${group.key}'),
+      expanded: expanded,
+      child: Material(
+        color: palette.panel,
+        clipBehavior: Clip.antiAlias,
+        borderRadius: BorderRadius.circular(width == null ? 8 : 16),
+        child: InkWell(
+          onTap: toggle,
+          onLongPress: selectGroup,
+          child: width == null
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      if (selecting)
+                        Checkbox(
+                          value: group.entries.every(
+                            (e) => selectedBooks.contains(e.item.id),
+                          ),
+                          onChanged: (_) => selectGroup(),
+                        ),
+                      cover(group.entries.first, 36, 54),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            heading,
+                            const SizedBox(height: 4),
+                            summary,
+                          ],
+                        ),
+                      ),
+                      arrow,
+                    ],
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      height: width * 1.5,
+                      child: Stack(
+                        children: [
+                          for (
+                            var i = group.entries.length.clamp(1, 3) - 1;
+                            i >= 0;
+                            i--
+                          )
+                            Positioned(
+                              left: 12 + i * 12,
+                              top: 12 + i * 12,
+                              child: cover(
+                                group.entries[i],
+                                width - 48,
+                                (width - 48) * 1.5,
+                              ),
+                            ),
+                          if (selecting)
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: Checkbox(
+                                value: group.entries.every(
+                                  (e) => selectedBooks.contains(e.item.id),
+                                ),
+                                onChanged: (_) => selectGroup(),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            heading,
+                            const SizedBox(height: 4),
+                            summary,
+                            const Spacer(),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Серия',
+                                    style: TextStyle(
+                                      color: palette.muted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                arrow,
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ),
     );
   }
 
@@ -1324,7 +1541,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                     if (_text(item.value('series')).isNotEmpty) ...[
                       const SizedBox(height: 3),
                       Text(
-                        'Серия: ${_text(item.value('series'))}',
+                        'Серия: ${_text(item.value('series'))}${item.value('seriesIndex') == null ? '' : ' · том ${_text(item.value('seriesIndex'))}'}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontSize: 9, color: palette.accent),
@@ -1491,7 +1708,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      item.authors,
+                      '${item.value('series') != null && item.value('seriesIndex') != null ? 'Том ${_text(item.value('seriesIndex'))} · ' : ''}${item.authors}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: palette.muted, fontSize: 12),
@@ -1611,6 +1828,10 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           ),
           const SizedBox(height: 20),
           _status(entry),
+          if (_text(item.values['narrator']).isNotEmpty) ...[
+            const SizedBox(height: 14),
+            value('Чтецы', item.values['narrator']),
+          ],
           const SizedBox(height: 14),
           _progress(entry),
           const SizedBox(height: 18),

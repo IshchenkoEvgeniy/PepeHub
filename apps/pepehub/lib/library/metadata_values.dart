@@ -96,7 +96,9 @@ List<String> metadataStrings(Object? value) {
 
 Map<String, List<String>> metadataSuggestions(Iterable<LibraryEntry> entries) {
   final values = <String, List<String>>{};
-  for (final entry in entries.where((e) => e.state != 'removed')) {
+  for (final entry in entries.where(
+    (e) => e.state != 'removed' && e.item.values['pepehub_deleted_at'] == null,
+  )) {
     for (final field in [
       'author',
       'genre',

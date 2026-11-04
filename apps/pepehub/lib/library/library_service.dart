@@ -272,7 +272,8 @@ class LibraryService extends ChangeNotifier {
   }
 
   final Map<String, Map<String, String>> policies = {};
-  Map<String, List<String>> get suggestions => metadataSuggestions(entries);
+  Map<String, List<String>> get suggestions =>
+      metadataSuggestions(visibleEntries);
   Map<String, dynamic>? collectionFor(ObsidianLibraryItem item) =>
       (personalLibrarySchema['collections'] as List)
           .cast<Map<String, dynamic>>()
@@ -502,7 +503,7 @@ class LibraryService extends ChangeNotifier {
         'format': audio ? 'Audiobook' : 'E-book',
         'unit': audio ? 'minutes' : 'pages',
         'notes': '',
-        'narrator': '',
+        if (audio) 'narrator': <String>[],
         'language': '',
         'publisher': '',
         'tags': <String>[],

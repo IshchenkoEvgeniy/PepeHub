@@ -185,6 +185,15 @@ void main() {
         await tester.enterText(query, 'Жюль');
         await tester.pumpAndSettle();
         expect(find.text('Дюна'), findsNothing);
+        final series = find.byKey(
+          const ValueKey('library-series:series:путешествия'),
+        );
+        expect(series, findsOneWidget);
+        expect(find.byKey(const ValueKey('library-work:ocean')), findsNothing);
+        await tester.ensureVisible(series);
+        await tester.pumpAndSettle();
+        await tester.tap(series);
+        await tester.pumpAndSettle();
         expect(
           find.byKey(const ValueKey('library-work:ocean')),
           findsOneWidget,
@@ -209,6 +218,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('Сбросить фильтры'));
         await tester.pumpAndSettle();
+        expect(tester.widget<TextField>(query).controller!.text, isEmpty);
+        expect(find.text('Ничего не найдено'), findsNothing);
         expect(
           find.byKey(const ValueKey('library-search-scope:all')),
           findsOneWidget,

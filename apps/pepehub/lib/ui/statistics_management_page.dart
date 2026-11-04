@@ -49,6 +49,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
   List<LibraryRecord> audioEvents = [], legacyListening = [];
   List<LibraryRecord> readingBooks = [], audioBooks = [];
   Map<String, String> titles = {};
+  Map<String, String> filterTitles = {};
   Map<String, List<MapEntry<String, String>>> tracks = {};
   String? loadError;
   final search = TextEditingController();
@@ -107,12 +108,20 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
           .toList();
       final names = {for (final b in allBooks) b.id: b.title};
       final history = StatisticsHistory(repository);
+      final historyBookIds = await history.bookIds(reading: tabs.index == 0);
+      final nextFilterTitles = {
+        for (final book in tabs.index == 0 ? nextReadingBooks : nextAudioBooks)
+          if (historyBookIds.contains(book.id)) book.id: book.title,
+      };
+      final nextSelectedBookId = nextFilterTitles.containsKey(selectedBookId)
+          ? selectedBookId
+          : null;
       final nextReadingPage = tabs.index != 0
           ? StatisticsHistoryPage([], false)
           : await history.page(
               reading: true,
               titles: names,
-              bookId: selectedBookId,
+              bookId: nextSelectedBookId,
               filter: tabs.index == 0 ? typeFilter : 'all',
               days: periodDays,
               newest: newestFirst,
@@ -124,7 +133,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
           : await history.page(
               reading: false,
               titles: names,
-              bookId: selectedBookId,
+              bookId: nextSelectedBookId,
               filter: tabs.index == 1 ? typeFilter : 'all',
               days: periodDays,
               newest: newestFirst,
@@ -178,6 +187,8 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
         readingBooks = nextReadingBooks;
         audioBooks = nextAudioBooks;
         titles = names;
+        filterTitles = nextFilterTitles;
+        selectedBookId = nextSelectedBookId;
         if (!append) tracks = {};
         loadError = null;
         loading = false;
@@ -986,7 +997,6 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
 
   Widget _filters() {
     final isReading = tabs.index == 0;
-    final books = isReading ? readingBooks : audioBooks;
     final count = isReading
         ? _visibleReading().length
         : _visibleAudioRows().length;
@@ -1054,7 +1064,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
             child: Row(
               children: [
                 BookPicker(
-                  titles: {for (final book in books) book.id: book.title},
+                  titles: filterTitles,
                   value: selectedBookId,
                   onChanged: (value) {
                     selectedBookId = value;

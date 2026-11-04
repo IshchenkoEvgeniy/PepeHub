@@ -1,0 +1,175 @@
+{
+  "checks": [
+    "Archive exposes only finished, paused, abandoned",
+    "Search and empty search reset",
+    "Status and format filters",
+    "Virtual list keeps at most 12 rows for 2400 mixed works",
+    "Large books and audiobooks filters preserve virtualization",
+    "Loading, empty and error states with retry",
+    "Explicit archive creation with allowed status and escaped content",
+    "Editing impressions updates selected book",
+    "Recommendations add plans to files without changing archive",
+    "File picker does not create archive entries",
+    "Statistics totals reconcile with library",
+    "Mobile navigation, detail and return",
+    "Keyboard list selection and dialog Escape",
+    "Desktop library fits the viewport and scrolls its list",
+    "Record tabs support selection and arrow keys",
+    "Repeated keyboard navigation retains focus in virtual list",
+    "Course lesson selection, full syllabus and track detail",
+    "Small phone and tablet layouts preserve usable content"
+  ],
+  "measures": [
+    {
+      "route": "library",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "h1": "Библиотека",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "library",
+      "width": 390,
+      "scrollWidth": 390,
+      "h1": "Библиотека",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "books",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "h1": "Книги",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "books",
+      "width": 390,
+      "scrollWidth": 390,
+      "h1": "Книги",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "audio",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "h1": "Аудиокниги",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "audio",
+      "width": 390,
+      "scrollWidth": 390,
+      "h1": "Аудиокниги",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "statistics",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "h1": "Статистика",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "statistics",
+      "width": 390,
+      "scrollWidth": 390,
+      "h1": "Статистика",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "recommendations",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "h1": "Рекомендации",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "recommendations",
+      "width": 390,
+      "scrollWidth": 390,
+      "h1": "Рекомендации",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "quotes",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "h1": "Цитаты и заметки",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "quotes",
+      "width": 390,
+      "scrollWidth": 390,
+      "h1": "Цитаты и заметки",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "media",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "h1": "Медиа",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "media",
+      "width": 390,
+      "scrollWidth": 390,
+      "h1": "Медиа",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "library",
+      "width": 768,
+      "scrollWidth": 768,
+      "h1": "Библиотека",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "scenario": "large",
+      "total": 2400,
+      "rowsAtTop": 11,
+      "rowsAtBottom": 8
+    },
+    {
+      "route": "media",
+      "width": 768,
+      "scrollWidth": 768,
+      "h1": "Медиа",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "library",
+      "width": 320,
+      "scrollWidth": 320,
+      "h1": "Библиотека",
+      "fonts": true,
+      "broken": 0
+    },
+    {
+      "route": "media",
+      "width": 320,
+      "scrollWidth": 320,
+      "h1": "Медиа",
+      "fonts": true,
+      "broken": 0
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>PepeHub — Тихий архив</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="navigation">
+    <a class="brand" href="#library" aria-label="PepeHub — библиотека"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M3 5h8l3 3 3-3h8v18h-8l-3 2-3-2H3zM14 8v17M7 10h3M7 14h3M18 10h3M18 14h3"/></svg><span>PepeHub<span class="brand-dot">.</span></span></a>
+    <div class="scope">Личное пространство</div>
+    <nav aria-label="Разделы приложения" id="nav"></nav>
+    <div class="sidebar-bottom"><div class="local-status"><span></span> Всё на вашем устройстве</div><button class="nav-button" data-action="settings"><span data-icon="settings"></span>Настройки</button><div class="profile"><span class="avatar">P</span><div>Мой архив<small>Личная коллекция</small></div></div></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><button class="icon-button menu-toggle" data-action="menu" aria-label="Открыть навигацию" aria-expanded="false" aria-controls="navigation"><span data-icon="menu"></span></button><div class="breadcrumb">PepeHub <span>/</span> <strong id="crumb">Библиотека</strong></div><span class="top-note">Личный архив · книги и медиа</span><span class="top-avatar" aria-label="Личный профиль">P</span></header>
+    <main id="main"></main>
+    <footer class="concept-bar"><span>Концепт <strong>Тихий архив · v2</strong></span><label for="scenario">Сценарий</label><select id="scenario"><option value="normal">Личный архив</option><option value="large">Каталог · 2 400</option><option value="empty">Пустой архив</option><option value="loading">Загрузка</option><option value="error">Ошибка</option></select><span class="demo-note">Демонстрационные данные</span></footer>
+  </div>
+</div>
+<dialog id="dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div><button class="dialog-close icon-button" data-action="close-dialog" aria-label="Закрыть окно"><span data-icon="close"></span></button></dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+<noscript><p>Для интерактивного просмотра концепта включите JavaScript.</p></noscript>
+</body>
+</html>

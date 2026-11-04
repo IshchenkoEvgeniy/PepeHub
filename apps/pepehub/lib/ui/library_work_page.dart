@@ -299,6 +299,13 @@ class _LibraryWorkPageState extends State<LibraryWorkPage> {
                     ),
                 ],
               ),
+              if (metadataStrings(item.values['narrator']).isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Чтецы: ${metadataStrings(item.values['narrator']).join(', ')}',
+                  ),
+                ),
               if ('${item.value('series') ?? ''}'.trim().isNotEmpty)
                 ActionChip(
                   label: Text(

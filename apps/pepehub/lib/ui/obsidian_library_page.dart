@@ -18,6 +18,7 @@ export 'obsidian_library_dashboard.dart' show ObsidianLibraryPage;
 const libraryLabels = {
   'title': 'Название',
   'author': 'Авторы',
+  'narrator': 'Чтецы',
   'genre': 'Жанры',
   'series': 'Серия',
   'seriesIndex': 'Номер в серии',
@@ -114,6 +115,9 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
   @override
   void initState() {
     super.initState();
+    if (personal && widget.item.mediaType == 'audiobook') {
+      values.putIfAbsent('narrator', () => <String>[]);
+    }
     for (final key in values.keys) {
       controllers[key] = TextEditingController(
         text: _fieldText(key, values[key]),
@@ -165,6 +169,12 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
     if (text.trim().isEmpty) return null;
     final original = values[key], kind = fields[key]?.kind;
     if (kind == 'list' ||
+        [
+          'author',
+          'genre',
+          'tags',
+          'narrator',
+        ].contains(fields[key]?.field ?? key) ||
         (original is List && original.every((v) => v is String))) {
       if (text.trimLeft().startsWith('[')) {
         final parsed = jsonDecode(text);
@@ -618,7 +628,6 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
     final label =
         libraryLabels[semantic] ??
         {
-          'narrator': 'Чтец',
           'language': 'Язык',
           'publisher': 'Издательство',
           'tags': 'Теги',
@@ -626,7 +635,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
         key;
     final enabled = editable && !saving;
     final suggestions = widget.suggestions[semantic] ?? const <String>[];
-    if (['author', 'genre', 'tags'].contains(semantic)) {
+    if (['author', 'genre', 'tags', 'narrator'].contains(semantic)) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: MetadataTokensField(
@@ -999,31 +1008,43 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
       'readingTime',
       'rereadCount',
     };
-    final main = controllers.keys.where(
-      (key) =>
-          (fields.containsKey(key) &&
-              !progressFields.contains(fields[key]!.field)) ||
-          ['narrator', 'language', 'publisher', 'tags', 'notes'].contains(key),
-    );
+    const editionFields = {'format', 'language', 'publisher', 'tags'};
+    final main = controllers.keys
+        .where(
+          (key) =>
+              !editionFields.contains(fields[key]?.field ?? key) &&
+              ((fields.containsKey(key) &&
+                      !progressFields.contains(fields[key]!.field)) ||
+                  ['narrator', 'notes'].contains(key)),
+        )
+        .toList();
+    // Put the people together, before the genre and series, even in old cards
+    // where descriptive properties were appended at the end of the schema.
+    final narrator = main
+        .where((key) => (fields[key]?.field ?? key) == 'narrator')
+        .firstOrNull;
+    if (narrator != null) {
+      main.remove(narrator);
+      final author = main.indexWhere((key) => fields[key]?.field == 'author');
+      main.insert(author < 0 ? main.length : author + 1, narrator);
+    }
     final progress = controllers.keys.where(
       (key) => progressFields.contains(fields[key]?.field),
     );
     final extra = controllers.keys.where(
       (key) =>
-          !fields.containsKey(key) &&
+          (editionFields.contains(fields[key]?.field ?? key) ||
+              !fields.containsKey(key)) &&
           !key.startsWith('pepehub_') &&
-          ![
-            'narrator',
-            'language',
-            'publisher',
-            'tags',
-            'notes',
-            'embeddedMetadata',
-          ].contains(key),
+          !['narrator', 'notes', 'embeddedMetadata'].contains(key),
     );
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Метаданные книги'),
+        title: Text(
+          widget.entry == null
+              ? 'Добавление ${widget.item.mediaType == 'audiobook' ? 'аудиокниги' : 'книги'}'
+              : 'Метаданные книги',
+        ),
         actions: [
           if (widget.onDelete != null)
             IconButton(
@@ -1094,13 +1115,9 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
                 children: [
                   Text(
                     widget.item.mediaType == 'audiobook'
-                        ? 'АУДИОКНИГА'
-                        : 'КНИГА',
-                    style: TextStyle(
-                      fontSize: 11,
-                      letterSpacing: 1.2,
-                      color: palette.accent,
-                    ),
+                        ? 'Аудиокнига'
+                        : 'Книга',
+                    style: TextStyle(fontSize: 11, color: palette.muted),
                   ),
                   const SizedBox(height: 9),
                   ValueListenableBuilder<TextEditingValue>(
@@ -1111,7 +1128,11 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
                             ?.key] ??
                         controllers.values.first,
                     builder: (context, value, _) => Text(
-                      value.text.isEmpty ? 'Новая книга' : value.text,
+                      value.text.isEmpty
+                          ? (widget.item.mediaType == 'audiobook'
+                                ? 'Новая аудиокнига'
+                                : 'Новая книга')
+                          : value.text,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleLarge,

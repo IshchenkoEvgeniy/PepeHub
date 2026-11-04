@@ -96,7 +96,7 @@ class _MetadataTokensFieldState extends State<MetadataTokensField> {
           enabled: widget.enabled,
           decoration: InputDecoration(
             labelText: widget.label,
-            hintText: 'Введите или выберите',
+            hintText: 'Имена или значения через запятую',
             suffixIcon: IconButton(
               tooltip: 'Добавить',
               onPressed: widget.enabled
@@ -112,10 +112,9 @@ class _MetadataTokensFieldState extends State<MetadataTokensField> {
               commit(input.text, split: true);
             }
           },
-          onChanged: (text) => widget.controller.text = jsonEncode([
-            ...selected,
-            ...metadataStrings(text),
-          ]),
+          onChanged: (text) => widget.controller.text = jsonEncode(
+            metadataStrings([...selected, ...metadataStrings(text)]),
+          ),
         ),
       ),
       if (selected.isNotEmpty)

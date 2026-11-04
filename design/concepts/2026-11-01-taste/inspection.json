@@ -1,0 +1,89 @@
+{
+  "style": "true-black-flat",
+  "seed": 403080691,
+  "variants": [
+    {
+      "name": "before",
+      "findings": [
+        {
+          "level": "WARN",
+          "id": "tiny-text",
+          "width": 768,
+          "message": "49% of the text is under 13px.",
+          "fix": "Data and labels read at 13–14px; keep 11–12px for sublines and axis ticks.",
+          "alsoAt": [
+            390
+          ]
+        }
+      ],
+      "viewports": [
+        {
+          "width": 1440,
+          "height": 900,
+          "pageHeight": 1322,
+          "consoleErrors": []
+        },
+        {
+          "width": 768,
+          "height": 1024,
+          "pageHeight": 1310,
+          "consoleErrors": []
+        },
+        {
+          "width": 390,
+          "height": 844,
+          "pageHeight": 1085,
+          "consoleErrors": []
+        }
+      ]
+    },
+    {
+      "name": "library",
+      "findings": [],
+      "viewports": [
+        {
+          "width": 1440,
+          "height": 900,
+          "pageHeight": 900,
+          "consoleErrors": []
+        },
+        {
+          "width": 768,
+          "height": 1024,
+          "pageHeight": 1024,
+          "consoleErrors": []
+        },
+        {
+          "width": 390,
+          "height": 844,
+          "pageHeight": 1019,
+          "consoleErrors": []
+        }
+      ]
+    },
+    {
+      "name": "media",
+      "findings": [],
+      "viewports": [
+        {
+          "width": 1440,
+          "height": 900,
+          "pageHeight": 900,
+          "consoleErrors": []
+        },
+        {
+          "width": 768,
+          "height": 1024,
+          "pageHeight": 1024,
+          "consoleErrors": []
+        },
+        {
+          "width": 390,
+          "height": 844,
+          "pageHeight": 1665,
+          "consoleErrors": []
+        }
+      ]
+    }
+  ]
+}

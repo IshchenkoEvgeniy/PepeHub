@@ -29,6 +29,52 @@ int libraryRereads(ObsidianLibraryItem item) {
 List<String> libraryCollections(ObsidianLibraryItem item) =>
     metadataStrings(item.values['pepehub_collections']);
 
+class LibrarySeriesGroup {
+  final String name, key;
+  final List<LibraryEntry> entries;
+  LibrarySeriesGroup(this.name, this.key, this.entries);
+  bool get isSeries => name.isNotEmpty && entries.length > 1;
+}
+
+/// Preserve the current shelf order between groups. Within a series, numbered
+/// volumes precede unnumbered ones, irrespective of the shelf's sort direction.
+List<LibrarySeriesGroup> groupLibrarySeries(List<LibraryEntry> sorted) {
+  final groups = <String, LibrarySeriesGroup>{};
+  for (final entry in sorted) {
+    final name = '${entry.item.value('series') ?? ''}'.trim();
+    final key = name.isEmpty
+        ? 'book:${entry.item.id}'
+        : 'series:${name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ')}';
+    (groups.putIfAbsent(key, () => LibrarySeriesGroup(name, key, [])).entries)
+        .add(entry);
+  }
+  num? index(LibraryEntry entry) {
+    final n = num.tryParse(
+      '${entry.item.value('seriesIndex')}'.replaceAll(',', '.'),
+    );
+    return n?.isFinite == true && n! >= 0 ? n : null;
+  }
+
+  for (final group in groups.values.where((g) => g.isSeries)) {
+    group.entries.sort((a, b) {
+      final x = index(a), y = index(b);
+      final order = x == null || y == null
+          ? x == y
+                ? 0
+                : x == null
+                ? 1
+                : -1
+          : x.compareTo(y);
+      if (order != 0) return order;
+      final title = a.item.title.toLowerCase().compareTo(
+        b.item.title.toLowerCase(),
+      );
+      return title != 0 ? title : a.item.id.compareTo(b.item.id);
+    });
+  }
+  return groups.values.toList();
+}
+
 int compareLibraryEntries(
   LibraryEntry a,
   LibraryEntry b,

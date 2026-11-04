@@ -93,6 +93,14 @@ class ReadingBookActions {
           managed.filename,
         );
       }
+      final legacy = await assets.managedBookCopy(asset, legacyOnly: true);
+      if (legacy != null) {
+        result[legacy.path] = ReadingBookSource(
+          legacy.path,
+          legacy.hash,
+          legacy.filename,
+        );
+      }
     }
     final raw = await assets.repository.meta('reading-source-path:$id');
     if (raw != null && rows.isNotEmpty) {

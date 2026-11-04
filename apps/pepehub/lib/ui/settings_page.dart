@@ -16,6 +16,7 @@ import 'audio_roots_page.dart';
 import 'pepe_widgets.dart';
 import 'reading_hidden_books_page.dart';
 import 'reading_roots_page.dart';
+import 'import_folder_page.dart';
 import 'recommendations_page.dart';
 import 'settings_components.dart';
 import 'library_data_page.dart';
@@ -547,6 +548,15 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
         SettingsGroup(
           children: [
+            SettingsLink(
+              title: 'Папка добавленных книг',
+              enabled: assets != null,
+              subtitle: 'Хранение отдельно добавленных текстовых книг',
+              icon: Icons.drive_file_move_outlined,
+              onTap: assets == null
+                  ? null
+                  : () => _open(ImportFolderPage(assets: assets)),
+            ),
             SettingsLink(
               title: 'Папки книг',
               enabled: assets != null,

@@ -4,8 +4,10 @@ import 'dart:convert';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pepehub/audio/audio_journal.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
+import 'package:pepehub/reader/statistics_history.dart';
 import 'package:pepehub/ui/book_picker.dart';
 import 'package:pepehub/ui/pepe_widgets.dart';
 import 'package:pepehub/ui/statistics_management_page.dart';
@@ -23,6 +25,65 @@ class _SlowJournalRepository extends Repository {
 }
 
 void main() {
+  test(
+    'history book IDs include every source and exclude deleted records',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final repo = Repository(db);
+      try {
+        await repo.setMeta(
+          'reading-session:auto',
+          jsonEncode({
+            'id': 'auto',
+            'bookId': 'automatic-book',
+            'startedAt': '2026-10-01T12:00:00Z',
+            'endedAt': '2026-10-01T12:01:00Z',
+            'spans': [],
+          }),
+        );
+        for (final kind in ['reading', 'listening']) {
+          for (final suffix in ['kept', 'deleted']) {
+            final id = '$kind-$suffix';
+            await repo.put('session', id, {
+              'kind': kind,
+              'bookId': id,
+              'startedAt': '2026-10-01T12:00:00Z',
+              'activeSeconds': 60,
+            });
+            if (suffix == 'deleted') await repo.delete('session', id);
+          }
+        }
+        for (var i = 0; i < 150; i++) {
+          await repo.put('audio_event', 'event-$i', {
+            'bookId': i == 0 ? 'old-book' : 'audio-book',
+            'kind': i == 0 ? 'play' : 'listen',
+            'at': DateTime.utc(2026, 10, 1, 12, i).toIso8601String(),
+          });
+        }
+        await repo.put('audio_event', 'deleted', {'bookId': 'deleted-book'});
+        await AudioJournal(repo).deleteEvent('deleted');
+        await repo.put('audio_event', 'missing-book', {'kind': 'play'});
+        await repo.put('audio_event', 'empty-book', {'bookId': ''});
+        final history = StatisticsHistory(repo);
+        expect(await history.bookIds(reading: true), {
+          'automatic-book',
+          'reading-kept',
+        });
+        expect(await history.bookIds(reading: false), {
+          'audio-book',
+          'old-book',
+          'listening-kept',
+        });
+        await db.customStatement('DELETE FROM metadata WHERE key=?', [
+          'reading-session:auto',
+        ]);
+        expect(await history.bookIds(reading: true), {'reading-kept'});
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
   testWidgets(
     '2000 books remain searchable without building every picker row',
     (tester) async {
@@ -172,6 +233,22 @@ void main() {
           expect(state.readingBooks, hasLength(1000));
           expect(state.audioBooks, hasLength(1000));
           expect(state.tracks, isEmpty);
+          final bookId = audio ? 'audio-0' : 'epub-0';
+          final bookTitle = '${audio ? 'audio' : 'epub'} Книга 0';
+          expect(tester.widget<BookPicker>(find.byType(BookPicker)).titles, {
+            bookId: bookTitle,
+          });
+          await tester.tap(find.text('Все книги'));
+          await tester.pumpAndSettle();
+          expect(find.text('Найдено: 1'), findsOneWidget);
+          await tester.enterText(find.byType(TextField).last, 'Книга 999');
+          await tester.pumpAndSettle();
+          expect(find.text('Книги не найдены'), findsOneWidget);
+          await tester.enterText(find.byType(TextField).last, 'Книга 0');
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(bookTitle));
+          await ready(tester, () => !state.loading);
+          expect(state.selectedBookId, bookId);
           expect(find.byTooltip('Действия'), findsNothing);
           expect(find.text('2 записей · 2 мин'), findsOneWidget);
           await tester.tap(find.text('2026-10-30'));
@@ -208,6 +285,11 @@ void main() {
                 (audio ? state.audioEvents : state.reading).isEmpty,
           );
           expect(find.text('2026-10-30'), findsNothing);
+          expect(
+            tester.widget<BookPicker>(find.byType(BookPicker)).titles,
+            isEmpty,
+          );
+          expect(state.selectedBookId, isNull);
           repo.journalGate!.complete();
           await ready(tester, () => !state.mutating);
           expect(tester.takeException(), isNull);
