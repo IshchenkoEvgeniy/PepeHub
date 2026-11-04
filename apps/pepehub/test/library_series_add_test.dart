@@ -276,10 +276,14 @@ void main() {
                   'new-$i',
                   type: i.isEven ? 'book' : 'audiobook',
                   seriesId: 'new',
-                  values: {'seriesIndex': i + 1},
+                  values: {
+                    'seriesIndex': i + 1,
+                    if (i % 4 < 2) 'status': 'unread',
+                  },
                 ),
             ]);
-            expect(large.visibleEntries, hasLength(2000));
+            expect(large.visibleEntries, hasLength(1500));
+            expect(large.seriesEntries, hasLength(2000));
             expect(
               (await largeDb
                       .customSelect('SELECT count FROM series_writes')

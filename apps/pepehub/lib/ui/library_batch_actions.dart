@@ -26,12 +26,24 @@ Future<void> libraryBatchAction(
       return;
     }
     if (action == 'status') {
+      final selectedIds = ids.toSet();
+      final cards = library.entries
+          .where((e) => selectedIds.contains(e.item.id))
+          .toList();
+      final types = cards.map((e) => e.item.mediaType).toSet();
+      final statuses =
+          cards.length == selectedIds.length &&
+              cards.every(
+                (e) => libraryItemStatuses(e.item).containsKey('unread'),
+              )
+          ? seriesVolumeStatuses(types.length == 1 ? types.single : 'all')
+          : libraryStatusesLocal;
       final status = await showDialog<String>(
         context: context,
         builder: (context) => SimpleDialog(
           title: Text('Статус · ${ids.length}'),
           children: [
-            for (final entry in libraryStatusesLocal.entries)
+            for (final entry in statuses.entries)
               SimpleDialogOption(
                 onPressed: () => Navigator.pop(context, entry.key),
                 child: Text(entry.value),

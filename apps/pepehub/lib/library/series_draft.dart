@@ -42,7 +42,7 @@ Map<String, String> seriesDraftConflicts(
 }) {
   final known = <String, LibraryEntry>{
     for (final e in existing)
-      if (isLibraryArchiveItem(e.item)) seriesVolumeFingerprint(e.item): e,
+      if (isSeriesCatalogItem(e.item)) seriesVolumeFingerprint(e.item): e,
   };
   final seen = <String>{};
   final positions = <String>{};
@@ -55,7 +55,7 @@ Map<String, String> seriesDraftConflicts(
   final occupied = <String>{
     if (existingSeriesKey != null)
       for (final e in existing)
-        if (isLibraryArchiveItem(e.item) &&
+        if (isSeriesCatalogItem(e.item) &&
             !isLibraryDeleted(e.item) &&
             librarySeriesKey(e.item) == existingSeriesKey &&
             position(e.item) != null)
@@ -85,10 +85,8 @@ Map<String, String> seriesDraftConflicts(
 
 void validateSeriesDraft(ObsidianLibraryItem item) {
   if (!['book', 'audiobook'].contains(item.mediaType) ||
-      !libraryStatusesLocal.containsKey(libraryStatus(item))) {
-    throw ArgumentError(
-      'Для каждого тома выберите: завершено, отложено или брошено.',
-    );
+      !libraryItemStatuses(item).containsKey(libraryStatus(item))) {
+    throw ArgumentError('Выберите статус каждого тома серии.');
   }
   if ('${item.value('title') ?? ''}'.trim().isEmpty ||
       '${item.value('series') ?? ''}'.trim().isEmpty) {

@@ -1174,7 +1174,7 @@ class _LibraryPageState extends State<LibraryPage> {
         obsidianLibrary.forBook(book.id) ??
         obsidianLibrary.sourceDraft(book.id);
     if (linked != null &&
-        isLibraryArchiveItem(linked.item) &&
+        isSeriesCatalogItem(linked.item) &&
         !isLibraryDeleted(linked.item) &&
         (isFinishedLibraryItem(linked.item) ||
             linked.item.values['pepehub_auto_discovered'] == false)) {
@@ -2642,16 +2642,24 @@ class _LibraryPageState extends State<LibraryPage> {
             if (deleted && widget.assets != null)
               'restore-deleted': 'Добавить файл заново',
             'obsidian':
-                obsidianLibrary.forBook(book.id) == null ||
-                    obsidianLibrary.forBook(book.id)!.state == 'removed' ||
-                    (!isFinishedLibraryItem(
-                          obsidianLibrary.forBook(book.id)!.item,
-                        ) &&
-                        obsidianLibrary
-                                .forBook(book.id)!
-                                .item
-                                .values['pepehub_auto_discovered'] !=
-                            false)
+                obsidianLibrary.sourceDraft(book.id) != null &&
+                    isUnreadSeriesItem(
+                      obsidianLibrary.sourceDraft(book.id)!.item,
+                    ) &&
+                    !isLibraryDeleted(
+                      obsidianLibrary.sourceDraft(book.id)!.item,
+                    )
+                ? 'Карточка серии'
+                : obsidianLibrary.forBook(book.id) == null ||
+                      obsidianLibrary.forBook(book.id)!.state == 'removed' ||
+                      (!isFinishedLibraryItem(
+                            obsidianLibrary.forBook(book.id)!.item,
+                          ) &&
+                          obsidianLibrary
+                                  .forBook(book.id)!
+                                  .item
+                                  .values['pepehub_auto_discovered'] !=
+                              false)
                 ? 'Добавить в библиотеку'
                 : isLibraryDeleted(obsidianLibrary.forBook(book.id)!.item)
                 ? 'Вернуть в библиотеку'

@@ -143,7 +143,8 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
           .firstOrNull
           ?.key;
       if (key != null &&
-          !libraryStatusesLocal.containsKey(controllers[key]!.text)) {
+          !libraryItemStatuses(widget.item)
+              .containsKey(controllers[key]!.text)) {
         controllers[key]!.text = 'finished';
       }
     }
@@ -656,7 +657,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
         semantic == 'format' ||
         semantic == 'libraryType') {
       final statuses = personal
-          ? libraryStatusesLocal
+          ? libraryItemStatuses(widget.item)
           : libraryStatuses(selectedCollection);
       final options = <String>{
         if (controllers[key]!.text.isNotEmpty) controllers[key]!.text,
@@ -687,9 +688,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
               .map((c) => '${c['id']}'),
       };
       if (personal && semantic == 'status') {
-        options.removeWhere(
-          (status) => !libraryStatusesLocal.containsKey(status),
-        );
+        options.removeWhere((status) => !statuses.containsKey(status));
       }
       const unitLabels = {
         'pages': 'Страницы',

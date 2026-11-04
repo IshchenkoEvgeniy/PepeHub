@@ -18,6 +18,31 @@ const libraryStatusesLocal = {
   'finished': 'Завершённая',
 };
 
+/// Unstarted volumes describe a series' composition, outside the archive.
+bool isUnreadSeriesItem(ObsidianLibraryItem item) =>
+    libraryStatus(item) == 'unread' &&
+    '${item.value('series') ?? ''}'.trim().isNotEmpty &&
+    item.values['pepehub_auto_discovered'] != true &&
+    item.values['pepehub_source_only'] != true &&
+    item.values['pepehub_recommendation_only'] != true;
+
+bool isSeriesCatalogItem(ObsidianLibraryItem item) =>
+    isLibraryArchiveItem(item) || isUnreadSeriesItem(item);
+
+Map<String, String> seriesVolumeStatuses(String mediaType) => {
+  ...libraryStatusesLocal,
+  'unread': switch (mediaType) {
+    'audiobook' => 'Не прослушана',
+    'book' => 'Не прочитана',
+    _ => 'Не прочитана / не прослушана',
+  },
+};
+
+Map<String, String> libraryItemStatuses(ObsidianLibraryItem item) =>
+    '${item.value('series') ?? ''}'.trim().isEmpty
+    ? libraryStatusesLocal
+    : seriesVolumeStatuses(item.mediaType);
+
 /// The personal archive contains outcomes, never a file shelf or reading queue.
 bool isLibraryArchiveItem(ObsidianLibraryItem item) =>
     libraryStatusesLocal.containsKey(libraryStatus(item)) &&
@@ -44,7 +69,35 @@ class LibrarySeriesGroup {
   final List<LibraryEntry> entries;
   LibrarySeriesGroup(this.name, this.key, this.entries);
   bool get isSeries =>
-      name.isNotEmpty && (entries.length > 1 || key.startsWith('series-id:'));
+      name.isNotEmpty &&
+      (entries.length > 1 ||
+          key.startsWith('series-id:') ||
+          entries.any((e) => isUnreadSeriesItem(e.item)));
+
+  num get listenedMinutes {
+    num sum = 0;
+    for (final entry in entries) {
+      final item = entry.item;
+      if (item.mediaType != 'audiobook' || isUnreadSeriesItem(item)) continue;
+      final unit = '${item.value('unit') ?? ''}'.trim().toLowerCase();
+      if (!['', 'minutes', 'minute', 'мин', 'минуты', 'hours'].contains(unit)) {
+        continue;
+      }
+      num? amount(Object? value) {
+        final n = num.tryParse('$value');
+        return n != null && n.isFinite && n >= 0 ? n : null;
+      }
+
+      final total = amount(item.value('total'));
+      var progress =
+          amount(item.value('progress')) ??
+          (isFinishedLibraryItem(item) ? total : null);
+      if (progress == null) continue;
+      if (total != null && total > 0 && progress > total) progress = total;
+      sum += progress * (unit == 'hours' ? 60 : 1);
+    }
+    return sum;
+  }
 }
 
 /// Preserve the current shelf order between groups. Within a series, numbered

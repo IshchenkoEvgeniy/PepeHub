@@ -6,6 +6,7 @@ import '../library/metadata_values.dart';
 import '../library/models.dart';
 import 'library_work_page.dart';
 import 'library_series_editor_page.dart';
+import 'obsidian_library_dashboard.dart' show metadataSeriesListeningLabel;
 
 class LibraryGroupsPage extends StatefulWidget {
   final LibraryService library;
@@ -88,7 +89,9 @@ class _LibraryGroupsPageState extends State<LibraryGroupsPage> {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.library,
     builder: (context, _) {
-      final all = widget.library.visibleEntries;
+      final all = widget.kind == 'series'
+          ? widget.library.seriesEntries
+          : widget.library.visibleEntries;
       final seriesGroups = widget.kind == 'series'
           ? {
               for (final g in groupLibrarySeries(all))
@@ -162,6 +165,7 @@ class _LibraryGroupsPageState extends State<LibraryGroupsPage> {
         rows.addAll(list.map((e) => (entry: e, missing: null)));
       }
       double fraction(LibraryEntry e) {
+        if (isUnreadSeriesItem(e.item)) return 0;
         if (libraryStatus(e.item) == 'finished') return 1;
         final total = num.tryParse('${e.item.value('total')}'),
             progress = num.tryParse('${e.item.value('progress')}');
@@ -189,7 +193,7 @@ class _LibraryGroupsPageState extends State<LibraryGroupsPage> {
           '${widget.kind == 'series' && index(e) > 0 ? 'Том ${index(e)} · ' : ''}${e.item.title}',
         ),
         subtitle: Text(
-          '${e.item.authors}\n${libraryStatusesLocal[libraryStatus(e.item)] ?? 'Статус не указан'} · ${e.item.mediaType == 'audiobook' ? 'Аудиокнига' : 'Книга'}',
+          '${e.item.authors}\n${libraryItemStatuses(e.item)[libraryStatus(e.item)] ?? 'Статус не указан'} · ${e.item.mediaType == 'audiobook' ? 'Аудиокнига' : 'Книга'}',
         ),
         isThreeLine: true,
         onTap: () => Navigator.push(
@@ -238,6 +242,19 @@ class _LibraryGroupsPageState extends State<LibraryGroupsPage> {
                               Text(
                                 'Общий прогресс: ${(progress * 100).round()}%',
                               ),
+                              if (widget.kind == 'series' &&
+                                  list.any(
+                                    (e) => e.item.mediaType == 'audiobook',
+                                  ))
+                                Text(
+                                  metadataSeriesListeningLabel(
+                                    LibrarySeriesGroup(
+                                      widget.name!,
+                                      selectedSeriesKey,
+                                      list,
+                                    ),
+                                  ),
+                                ),
                               const SizedBox(height: 8),
                               LinearProgressIndicator(value: progress),
                               if (widget.kind == 'series') ...[

@@ -92,6 +92,7 @@ String metadataReadingStatus(ObsidianLibraryItem item) {
 }
 
 double? metadataProgress(ObsidianLibraryItem item) {
+  if (isUnreadSeriesItem(item)) return 0;
   final total = _number(item.value('total')),
       progress = _number(item.value('progress'));
   if (total == null ||
@@ -118,6 +119,7 @@ String _duration(num value) {
 }
 
 String metadataProgressLabel(ObsidianLibraryItem item) {
+  if (isUnreadSeriesItem(item)) return 'Ещё не начата';
   final total = _number(item.value('total')),
       progress = _number(item.value('progress'));
   final unit = _text(item.value('unit'));
@@ -148,6 +150,9 @@ String metadataProgressLabel(ObsidianLibraryItem item) {
       ? '${_amount(progress)} $label'
       : '${_amount(progress)} / ${_amount(total)} $label';
 }
+
+String metadataSeriesListeningLabel(LibrarySeriesGroup group) =>
+    'Прослушано: ${_duration(group.listenedMinutes)}';
 
 class ShelfBookCover extends StatelessWidget {
   final String title, mediaType;
@@ -276,7 +281,10 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
 
   Future<void> _toggleGrouping(bool value) async {
     _groupPreferenceEdit++;
-    setState(() => groupSeries = value);
+    setState(() {
+      groupSeries = value;
+      if (!value && statusFilter == 'unread') statusFilter = 'all';
+    });
     await widget.service.local.setMeta(
       'library-group-series-v1',
       value ? '1' : '0',
@@ -470,9 +478,10 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       _filterKey = key;
       final normalized = _searchQuery.trim().toLowerCase().replaceAll('ё', 'е');
       final terms = normalized.isEmpty ? <String>[] : normalized.split(_spaces);
-      _filtered = all.where((entry) => _matches(entry, terms)).toList()
+      final matched = all.where((entry) => _matches(entry, terms)).toList()
         ..sort(_compare);
-      _seriesGroups = groupLibrarySeries(_filtered);
+      _filtered = matched.where((e) => isLibraryArchiveItem(e.item)).toList();
+      _seriesGroups = groupLibrarySeries(matched);
     }
     return _filtered;
   }
@@ -493,10 +502,13 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           unawaited(_loadGoal());
         }
         final all = service.visibleEntries;
-        final entries = _results(all);
+        final entries = _results(service.seriesEntries);
+        final candidates = groupSeries
+            ? _seriesGroups.expand((g) => g.entries)
+            : entries;
         final selected =
-            entries.where((e) => e.item.id == selectedId).firstOrNull ??
-            entries.firstOrNull;
+            candidates.where((e) => e.item.id == selectedId).firstOrNull ??
+            candidates.firstOrNull;
         final books = service.completed
                 .where((e) => e.item.mediaType == 'book')
                 .length,
@@ -885,7 +897,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
               label: Text(
                 statusFilter == 'all'
                     ? 'Все статусы'
-                    : libraryStatusesLocal[statusFilter] ?? statusFilter,
+                    : seriesVolumeStatuses(type)[statusFilter] ?? statusFilter,
               ),
               avatar: const Icon(Icons.filter_list, size: 16),
               onPressed: () => setState(() => filters = true),
@@ -902,7 +914,11 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
             ),
             items: [
               const DropdownMenuItem(value: 'all', child: Text('Все статусы')),
-              for (final e in libraryStatusesLocal.entries)
+              for (final e
+                  in (groupSeries
+                          ? seriesVolumeStatuses(type)
+                          : libraryStatusesLocal)
+                      .entries)
                 DropdownMenuItem(value: e.key, child: Text(e.value)),
             ],
             onChanged: (v) => setState(() => statusFilter = v ?? 'all'),
@@ -1051,7 +1067,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     LibraryEntry? selected,
     bool details,
   ) {
-    if (entries.isEmpty) {
+    if (entries.isEmpty && (!groupSeries || _seriesGroups.isEmpty)) {
       return SliverToBoxAdapter(
         child: ShelfPanel(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
@@ -1196,12 +1212,6 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       onPressed: toggle,
       icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),
     );
-    final addVolumes = IconButton(
-      tooltip: 'Добавить тома в серию',
-      icon: const Icon(Icons.playlist_add),
-      onPressed: () =>
-          openLibrarySeriesEditor(context, widget.service, series: group),
-    );
     final heading = Text(
       group.name,
       maxLines: 2,
@@ -1209,8 +1219,9 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       style: AppFonts.book(palette.text, size: 17),
     );
     final summary = Text(
-      '$count\nЗавершено: $finished из ${group.entries.length}',
-      maxLines: width == null ? null : 3,
+      '$count\nЗавершено: $finished из ${group.entries.length}'
+      '${audio > 0 ? '\n${metadataSeriesListeningLabel(group)}' : ''}',
+      maxLines: width == null ? null : 5,
       overflow: width == null ? null : TextOverflow.ellipsis,
       style: TextStyle(color: palette.muted, fontSize: 12, height: 1.5),
     );
@@ -1239,7 +1250,24 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                           ),
                           onChanged: (_) => selectGroup(),
                         ),
-                      cover(group.entries.first, 36, 54),
+                      SizedBox(
+                        width: 36 + (group.entries.length.clamp(1, 3) - 1) * 10,
+                        height: 66,
+                        child: Stack(
+                          children: [
+                            for (
+                              var i = group.entries.length.clamp(1, 3) - 1;
+                              i >= 0;
+                              i--
+                            )
+                              Positioned(
+                                left: i * 10,
+                                top: i * 6,
+                                child: cover(group.entries[i], 36, 54),
+                              ),
+                          ],
+                        ),
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -1251,7 +1279,6 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                           ],
                         ),
                       ),
-                      if (!selecting) addVolumes,
                       arrow,
                     ],
                   ),
@@ -1288,6 +1315,15 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                                 onChanged: (_) => selectGroup(),
                               ),
                             ),
+                          Positioned(
+                            right: 8,
+                            bottom: 8,
+                            child: Material(
+                              color: palette.panel,
+                              borderRadius: BorderRadius.circular(24),
+                              child: arrow,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -1300,22 +1336,6 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                             heading,
                             const SizedBox(height: 4),
                             summary,
-                            const Spacer(),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    'Серия',
-                                    style: TextStyle(
-                                      color: palette.muted,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                                if (!selecting) addVolumes,
-                                arrow,
-                              ],
-                            ),
                           ],
                         ),
                       ),
@@ -1378,6 +1398,12 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
   }
 
   Widget _status(LibraryEntry entry) {
+    if (isUnreadSeriesItem(entry.item)) {
+      return Text(
+        libraryItemStatuses(entry.item)['unread']!,
+        style: TextStyle(fontSize: 11, color: ShelfPalette.of(context).muted),
+      );
+    }
     if (entry.state != 'synced') {
       return Text(
         libraryState(entry),

@@ -431,7 +431,7 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
         initialValue: status,
         decoration: const InputDecoration(labelText: 'Статус томов'),
         items: [
-          for (final e in libraryStatusesLocal.entries)
+          for (final e in seriesVolumeStatuses(mediaType).entries)
             DropdownMenuItem(value: e.key, child: Text(e.value)),
         ],
         onChanged: (v) => setState(() => status = v!),
@@ -522,7 +522,7 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
                     ),
                     const SizedBox(height: 5),
                     Text(
-                      '${item.mediaType == 'audiobook' ? 'Аудиокнига' : 'Книга'} · ${libraryStatusesLocal[libraryStatus(item)]}',
+                      '${item.mediaType == 'audiobook' ? 'Аудиокнига' : 'Книга'} · ${seriesVolumeStatuses(item.mediaType)[libraryStatus(item)]}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     if (details.isNotEmpty)
@@ -605,7 +605,7 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
                         children: [
                           if (!reviewing) ...[
                             const Text(
-                              'Добавьте сразу несколько произведений в личную библиотеку.',
+                              'Добавьте тома серии, включая ещё не прочитанные или не прослушанные.',
                             ),
                             const SizedBox(height: 24),
                             LayoutBuilder(
@@ -671,8 +671,9 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
                                     }
                                   }),
                                   itemBuilder: (_) => [
-                                    for (final e
-                                        in libraryStatusesLocal.entries)
+                                    for (final e in seriesVolumeStatuses(
+                                      mediaType,
+                                    ).entries)
                                       PopupMenuItem(
                                         value: e.key,
                                         child: Text(e.value),

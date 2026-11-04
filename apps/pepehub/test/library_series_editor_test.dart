@@ -157,6 +157,7 @@ void main() {
               'title': 'Том ${i.toString().padLeft(4, '0')}',
               'series': 'Большая серия',
               'seriesIndex': i + 1,
+              if (i % 4 == 0) 'status': 'unread',
             },
           ),
       ];

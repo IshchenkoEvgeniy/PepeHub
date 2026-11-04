@@ -82,6 +82,7 @@ class LibraryService extends ChangeNotifier {
 
   List<LibraryEntry> _entries = [];
   List<LibraryEntry> _visible = [], _completed = [], _inbox = [], _trash = [];
+  List<LibraryEntry> _seriesEntries = [], _unreadSeriesEntries = [];
   final Map<String, LibraryEntry> _bySource = {};
   List<LibraryEntry> get entries => _entries;
   set entries(List<LibraryEntry> value) {
@@ -96,7 +97,14 @@ class LibraryService extends ChangeNotifier {
     _inbox = List.unmodifiable(
       _visible.where((e) => !isFinishedLibraryItem(e.item)),
     );
-    _trash = List.unmodifiable(archive.where((e) => isLibraryDeleted(e.item)));
+    final series = value.where((e) => isSeriesCatalogItem(e.item)).toList();
+    _seriesEntries = List.unmodifiable(
+      series.where((e) => !isLibraryDeleted(e.item)),
+    );
+    _unreadSeriesEntries = List.unmodifiable(
+      _seriesEntries.where((e) => isUnreadSeriesItem(e.item)),
+    );
+    _trash = List.unmodifiable(series.where((e) => isLibraryDeleted(e.item)));
     _bySource.clear();
     for (final e in value) {
       if (e.sourceBookId != null) _bySource[e.sourceBookId!] = e;
@@ -107,6 +115,8 @@ class LibraryService extends ChangeNotifier {
   List<LibraryEntry> get inbox => _inbox;
   List<LibraryEntry> get trash => _trash;
   List<LibraryEntry> get visibleEntries => _visible;
+  List<LibraryEntry> get seriesEntries => _seriesEntries;
+  List<LibraryEntry> get unreadSeriesEntries => _unreadSeriesEntries;
   Future<void> deleteCards(Iterable<String> ids) async {
     final selected = ids.toSet();
     await repository.mutate((cards) async {
@@ -145,6 +155,27 @@ class LibraryService extends ChangeNotifier {
     }
   }
 
+  /// A first completion is an outcome, not a reread. Explicit editor values win.
+  void _completeUnreadVolume(
+    ObsidianLibraryItem before,
+    Map<String, dynamic> changes,
+  ) {
+    if (!isUnreadSeriesItem(before) ||
+        canonicalLibraryStatus(changes['status']) != 'finished') {
+      return;
+    }
+    final total = num.tryParse('${changes['total'] ?? before.value('total')}');
+    if (!changes.containsKey('progress') &&
+        total != null &&
+        total.isFinite &&
+        total > 0) {
+      changes['progress'] = total;
+    }
+    if (!changes.containsKey('endDate')) {
+      changes['endDate'] = DateTime.now().toIso8601String().substring(0, 10);
+    }
+  }
+
   /// A single transaction for the current selection; unrelated card fields stay intact.
   Future<void> editCards(
     Iterable<String> ids,
@@ -177,7 +208,9 @@ class LibraryService extends ChangeNotifier {
             rereads != rereads.round())) {
       throw ArgumentError('Введите целое число перечитываний от 0 до 99999');
     }
-    if (status != null && !libraryStatusesLocal.containsKey(status)) {
+    if (status != null &&
+        !libraryStatusesLocal.containsKey(status) &&
+        status != 'unread') {
       throw ArgumentError('Неизвестный статус');
     }
     await local.db.transaction(() async {
@@ -185,7 +218,18 @@ class LibraryService extends ChangeNotifier {
         for (final id in selected) {
           final card = cards[id];
           if (card == null || isLibraryDeleted(card.item)) continue;
-          final values = {...card.item.values, ...changes};
+          final patch = {...changes, if (reread) 'status': 'finished'};
+          _completeUnreadVolume(card.item, patch);
+          final values = {...card.item.values, ...patch};
+          if (card.item.mediaType == 'audiobook' &&
+              patch.containsKey('progress')) {
+            values.addAll(manualAudioProgressStamp(values));
+          }
+          final updated = card.item.withValues(values);
+          if (libraryStatus(updated) == 'unread' &&
+              !isUnreadSeriesItem(updated)) {
+            throw ArgumentError('Непрочитанный том должен относиться к серии');
+          }
           if (changes.containsKey('series') &&
               seriesTextKey(changes['series']) !=
                   seriesTextKey(card.item.value('series'))) {
@@ -199,7 +243,7 @@ class LibraryService extends ChangeNotifier {
               10,
             );
           }
-          if (reread) {
+          if (reread && !isUnreadSeriesItem(card.item)) {
             if (libraryRereads(card.item) >= 99999) {
               throw StateError('Достигнут предел счётчика перечитываний');
             }
@@ -231,7 +275,7 @@ class LibraryService extends ChangeNotifier {
             final key = 'obsidian-policy:$personalLibraryNamespace:$id';
             final policy = await ReadingLibrary(local).value(key);
             policy['status'] =
-                ['paused', 'abandoned', 'planned'].contains(status)
+                ['paused', 'abandoned', 'planned', 'unread'].contains(status)
                 ? 'obsidian'
                 : 'auto';
             await local.setMeta(key, jsonEncode(policy));
@@ -251,6 +295,7 @@ class LibraryService extends ChangeNotifier {
 
   Map<String, dynamic>? snapshot = personalLibrarySchema;
   Future<void> _sourceStatus(LibraryEntry card, String status) async {
+    if (status == 'unread') status = 'planned';
     final source = card.sourceBookId == null
         ? null
         : await local.record(card.sourceBookId!);
@@ -658,7 +703,7 @@ class LibraryService extends ChangeNotifier {
           : cards.values
                 .where(
                   (e) =>
-                      isLibraryArchiveItem(e.item) &&
+                      isSeriesCatalogItem(e.item) &&
                       !isLibraryDeleted(e.item) &&
                       librarySeriesKey(e.item) == existingSeriesKey,
                 )
@@ -788,9 +833,14 @@ class LibraryService extends ChangeNotifier {
               seriesTextKey(entry.item.value('series'))) {
         changed['pepehub_series_id'] = null;
       }
+      _completeUnreadVolume(entry.item, changed);
+      final updated = entry.item.withValues({...entry.item.values, ...changed});
+      if (libraryStatus(updated) == 'unread' && !isUnreadSeriesItem(updated)) {
+        throw ArgumentError('Непрочитанный том должен относиться к серии');
+      }
       if (changed.containsKey('status')) {
         final status = canonicalLibraryStatus(changed['status']);
-        if (!libraryStatusesLocal.containsKey(status)) {
+        if (!libraryItemStatuses(updated).containsKey(status)) {
           throw ArgumentError('Неизвестный статус');
         }
         changed['status'] = status;
@@ -802,7 +852,8 @@ class LibraryService extends ChangeNotifier {
         }
         final key = 'obsidian-policy:$personalLibraryNamespace:$id';
         final policy = await ReadingLibrary(local).value(key);
-        policy['status'] = ['paused', 'abandoned', 'planned'].contains(status)
+        policy['status'] =
+            ['paused', 'abandoned', 'planned', 'unread'].contains(status)
             ? 'obsidian'
             : 'auto';
         await local.setMeta(key, jsonEncode(policy));

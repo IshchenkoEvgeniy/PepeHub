@@ -159,6 +159,12 @@ class _LibraryWorkPageState extends State<LibraryWorkPage> {
   }
 
   Future<void> _reread(LibraryEntry entry) async {
+    if (isUnreadSeriesItem(entry.item)) {
+      await _run(
+        () => widget.library.editCards([entry.item.id], {'status': 'finished'}),
+      );
+      return;
+    }
     final yes = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -322,12 +328,12 @@ class _LibraryWorkPageState extends State<LibraryWorkPage> {
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 key: ValueKey('work-status:$status'),
-                initialValue: libraryStatusesLocal.containsKey(status)
+                initialValue: libraryItemStatuses(item).containsKey(status)
                     ? status
                     : null,
                 decoration: const InputDecoration(labelText: 'Статус'),
                 items: [
-                  for (final e in libraryStatusesLocal.entries)
+                  for (final e in libraryItemStatuses(item).entries)
                     DropdownMenuItem(value: e.key, child: Text(e.value)),
                 ],
                 onChanged: busy
@@ -370,7 +376,10 @@ class _LibraryWorkPageState extends State<LibraryWorkPage> {
               ),
               const SizedBox(height: 12),
               Text('Общий прогресс: ${metadataProgressLabel(item)}'),
-              if (progress != null && total != null && total > 0) ...[
+              if (!isUnreadSeriesItem(item) &&
+                  progress != null &&
+                  total != null &&
+                  total > 0) ...[
                 const SizedBox(height: 8),
                 LinearProgressIndicator(
                   value: (progress / total).clamp(0, 1).toDouble(),
@@ -393,8 +402,16 @@ class _LibraryWorkPageState extends State<LibraryWorkPage> {
               Text('Перечитываний: ${libraryRereads(item)}'),
               TextButton.icon(
                 onPressed: busy ? null : () => _reread(entry),
-                icon: const Icon(Icons.repeat),
-                label: const Text('Завершено ещё раз'),
+                icon: Icon(
+                  isUnreadSeriesItem(item) ? Icons.check : Icons.repeat,
+                ),
+                label: Text(
+                  isUnreadSeriesItem(item)
+                      ? item.mediaType == 'audiobook'
+                            ? 'Завершить прослушивание'
+                            : 'Завершить чтение'
+                      : 'Завершено ещё раз',
+                ),
               ),
               if (item.values['pepehub_completions'] is List) ...[
                 const Text('История завершений'),
