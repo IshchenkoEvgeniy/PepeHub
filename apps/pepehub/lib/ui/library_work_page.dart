@@ -188,8 +188,14 @@ class _LibraryWorkPageState extends State<LibraryWorkPage> {
   void _group(String kind, String name) => Navigator.push(
     context,
     MaterialPageRoute(
-      builder: (_) =>
-          LibraryGroupsPage(library: widget.library, kind: kind, name: name),
+      builder: (_) => LibraryGroupsPage(
+        library: widget.library,
+        kind: kind,
+        name: name,
+        seriesKey: kind == 'series' && card != null
+            ? librarySeriesKey(card!.item)
+            : null,
+      ),
     ),
   );
   @override

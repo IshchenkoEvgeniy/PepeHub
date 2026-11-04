@@ -2,6 +2,16 @@ import 'metadata_values.dart';
 import 'models.dart';
 import 'personal_library.dart';
 
+String seriesTextKey(Object? value) =>
+    '${value ?? ''}'.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+String librarySeriesKey(ObsidianLibraryItem item) {
+  final name = seriesTextKey(item.value('series'));
+  if (name.isEmpty) return 'book:${item.id}';
+  final id = item.values['pepehub_series_id'];
+  return id is String && id.isNotEmpty ? 'series-id:$id' : 'series:$name';
+}
+
 const libraryStatusesLocal = {
   'paused': 'Отложена',
   'abandoned': 'Брошена',
@@ -33,7 +43,8 @@ class LibrarySeriesGroup {
   final String name, key;
   final List<LibraryEntry> entries;
   LibrarySeriesGroup(this.name, this.key, this.entries);
-  bool get isSeries => name.isNotEmpty && entries.length > 1;
+  bool get isSeries =>
+      name.isNotEmpty && (entries.length > 1 || key.startsWith('series-id:'));
 }
 
 /// Preserve the current shelf order between groups. Within a series, numbered
@@ -42,9 +53,7 @@ List<LibrarySeriesGroup> groupLibrarySeries(List<LibraryEntry> sorted) {
   final groups = <String, LibrarySeriesGroup>{};
   for (final entry in sorted) {
     final name = '${entry.item.value('series') ?? ''}'.trim();
-    final key = name.isEmpty
-        ? 'book:${entry.item.id}'
-        : 'series:${name.toLowerCase().replaceAll(RegExp(r'\s+'), ' ')}';
+    final key = librarySeriesKey(entry.item);
     (groups.putIfAbsent(key, () => LibrarySeriesGroup(name, key, [])).entries)
         .add(entry);
   }

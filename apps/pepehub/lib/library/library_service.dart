@@ -23,6 +23,7 @@ import 'automatic_metadata.dart';
 import 'note_store.dart';
 import 'metadata_values.dart';
 import 'library_features.dart';
+import 'series_draft.dart';
 
 class LibraryService extends ChangeNotifier {
   final Repository local;
@@ -185,6 +186,11 @@ class LibraryService extends ChangeNotifier {
           final card = cards[id];
           if (card == null || isLibraryDeleted(card.item)) continue;
           final values = {...card.item.values, ...changes};
+          if (changes.containsKey('series') &&
+              seriesTextKey(changes['series']) !=
+                  seriesTextKey(card.item.value('series'))) {
+            values['pepehub_series_id'] = null;
+          }
           if (status == 'finished' &&
               libraryStatus(card.item) != 'finished' &&
               '${values['endDate'] ?? ''}'.isEmpty) {
@@ -601,6 +607,124 @@ class LibraryService extends ChangeNotifier {
     }
   }
 
+  /// Save the reviewed batch once. A failed validation or write leaves both the
+  /// new series and existing cards untouched; missing dates stay unknown.
+  Future<List<String>> addSeries(
+    Iterable<ObsidianLibraryItem> items, {
+    Set<String> allowDuplicateIds = const {},
+    String? existingSeriesKey,
+  }) async {
+    final drafts = items.toList();
+    if (drafts.isEmpty || drafts.length > 1000) {
+      throw ArgumentError('Выберите от 1 до 1000 томов.');
+    }
+    final ids = <String>{};
+    final seriesIds = <String>{};
+    final seriesNames = <String>{};
+    for (final item in drafts) {
+      validateSeriesDraft(item);
+      if (!ids.add(item.id)) {
+        throw ArgumentError('Карточка повторяется в списке.');
+      }
+      final seriesId = item.values['pepehub_series_id'];
+      if (seriesId is! String || seriesId.isEmpty) {
+        throw ArgumentError('Не задана серия.');
+      }
+      seriesIds.add(seriesId);
+      seriesNames.add(seriesTextKey(item.value('series')));
+    }
+    if (seriesIds.length != 1 || seriesNames.length != 1) {
+      throw ArgumentError(
+        'Все выбранные тома должны относиться к одной серии.',
+      );
+    }
+    await repository.mutate((cards) async {
+      if (ids.any(cards.containsKey)) {
+        throw StateError(
+          'Карточки уже были сохранены. Откройте библиотеку заново.',
+        );
+      }
+      if (cards.values.any(
+        (e) =>
+            librarySeriesKey(e.item) == 'series-id:${seriesIds.single}' &&
+            librarySeriesKey(e.item) != existingSeriesKey,
+      )) {
+        throw StateError(
+          'Эта серия уже существует. Откройте её и выберите «Добавить тома».',
+        );
+      }
+      final target = existingSeriesKey == null
+          ? <LibraryEntry>[]
+          : cards.values
+                .where(
+                  (e) =>
+                      isLibraryArchiveItem(e.item) &&
+                      !isLibraryDeleted(e.item) &&
+                      librarySeriesKey(e.item) == existingSeriesKey,
+                )
+                .toList();
+      if (existingSeriesKey != null && target.isEmpty) {
+        throw StateError(
+          'Серия изменилась. Откройте её заново перед добавлением.',
+        );
+      }
+      if (target.any(
+            (e) => seriesTextKey(e.item.value('series')) != seriesNames.single,
+          ) ||
+          target.any(
+            (e) =>
+                e.item.values['pepehub_series_id'] != null &&
+                e.item.values['pepehub_series_id'] != seriesIds.single,
+          )) {
+        throw StateError(
+          'Серия изменилась. Откройте её заново перед добавлением.',
+        );
+      }
+      final conflicts = seriesDraftConflicts(
+        drafts,
+        cards.values,
+        existingSeriesKey: existingSeriesKey,
+      );
+      if (conflicts.keys.any((id) => !allowDuplicateIds.contains(id))) {
+        throw StateError(
+          'Обнаружены совпадения. Проверьте список томов ещё раз.',
+        );
+      }
+      final addedAt = DateTime.now().toUtc().toIso8601String();
+      for (final e in target) {
+        cards[e.item.id] = LibraryEntry(
+          e.item.withValues({
+            ...e.item.values,
+            'pepehub_series_id': seriesIds.single,
+          }),
+          sourceBookId: e.sourceBookId,
+          state: e.state,
+          message: e.message,
+          operation: e.operation,
+          remote: e.remote,
+        );
+      }
+      for (final item in drafts) {
+        cards[item.id] = LibraryEntry(
+          personalLibraryItem(item.id, item.mediaType, {
+            ...item.values,
+            'series': '${drafts.first.value('series')}'.trim(),
+            'status': libraryStatus(item),
+            'pepehub_added_at': addedAt,
+            'pepehub_auto_discovered': false,
+            'pepehub_source_only': false,
+            'pepehub_recommendation_only': false,
+            'pepehub_deleted_at': null,
+            if (item.mediaType == 'audiobook')
+              ...manualAudioProgressStamp(item.values),
+          }),
+        );
+      }
+    });
+    await loadCached();
+    return ids.toList();
+  }
+
   Future<ObsidianLibraryItem> previewLink(
     LibraryRecord book,
     ObsidianLibraryItem target,
@@ -658,6 +782,11 @@ class LibraryService extends ChangeNotifier {
             'Карточка изменилась во время редактирования. Откройте её заново перед сохранением.',
           );
         }
+      }
+      if (changed.containsKey('series') &&
+          seriesTextKey(changed['series']) !=
+              seriesTextKey(entry.item.value('series'))) {
+        changed['pepehub_series_id'] = null;
       }
       if (changed.containsKey('status')) {
         final status = canonicalLibraryStatus(changed['status']);

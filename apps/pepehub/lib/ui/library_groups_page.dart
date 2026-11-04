@@ -5,16 +5,19 @@ import '../library/library_service.dart';
 import '../library/metadata_values.dart';
 import '../library/models.dart';
 import 'library_work_page.dart';
+import 'library_series_editor_page.dart';
 
 class LibraryGroupsPage extends StatefulWidget {
   final LibraryService library;
   final String kind;
   final String? name;
+  final String? seriesKey;
   const LibraryGroupsPage({
     super.key,
     required this.library,
     required this.kind,
     this.name,
+    this.seriesKey,
   });
   @override
   State<LibraryGroupsPage> createState() => _LibraryGroupsPageState();
@@ -22,8 +25,13 @@ class LibraryGroupsPage extends StatefulWidget {
 
 class _LibraryGroupsPageState extends State<LibraryGroupsPage> {
   int expected = 0;
+  String? currentSeriesKey;
+  String get selectedSeriesKey =>
+      currentSeriesKey ??
+      widget.seriesKey ??
+      'series:${seriesTextKey(widget.name)}';
   String get key =>
-      'library-series-length:${widget.name?.trim().toLowerCase()}';
+      'library-series-length:${selectedSeriesKey.startsWith('series-id:') ? selectedSeriesKey : widget.name?.trim().toLowerCase()}';
   @override
   void initState() {
     super.initState();
@@ -81,19 +89,33 @@ class _LibraryGroupsPageState extends State<LibraryGroupsPage> {
     listenable: widget.library,
     builder: (context, _) {
       final all = widget.library.visibleEntries;
+      final seriesGroups = widget.kind == 'series'
+          ? {
+              for (final g in groupLibrarySeries(all))
+                if (g.name.isNotEmpty) g.key: g,
+            }
+          : <String, LibrarySeriesGroup>{};
       final names = <String, String>{};
-      for (final e in all) {
-        for (final name in groups(e)) {
-          names.putIfAbsent(name.trim().toLowerCase(), () => name);
+      if (widget.kind == 'series') {
+        names.addAll({
+          for (final g in seriesGroups.entries) g.key: g.value.name,
+        });
+      } else {
+        for (final e in all) {
+          for (final name in groups(e)) {
+            names.putIfAbsent(name.trim().toLowerCase(), () => name);
+          }
         }
       }
       final list = all
           .where(
-            (e) => groups(e).any(
-              (name) =>
-                  name.trim().toLowerCase() ==
-                  widget.name?.trim().toLowerCase(),
-            ),
+            (e) => widget.kind == 'series'
+                ? librarySeriesKey(e.item) == selectedSeriesKey
+                : groups(e).any(
+                    (name) =>
+                        name.trim().toLowerCase() ==
+                        widget.name?.trim().toLowerCase(),
+                  ),
           )
           .toList();
       num index(LibraryEntry e) {
@@ -118,24 +140,24 @@ class _LibraryGroupsPageState extends State<LibraryGroupsPage> {
       final upper = expected > maxKnown ? expected : maxKnown;
       final rows = <({LibraryEntry? entry, int? missing})>[];
       if (widget.kind == 'series') {
+        rows.addAll(list.map((e) => (entry: e, missing: null)));
         for (var n = 1; n <= upper; n++) {
-          final matches = list.where((e) => index(e) == n).toList();
-          if (matches.isEmpty) {
+          if (!known.contains(n)) {
             rows.add((entry: null, missing: n));
-          } else {
-            rows.addAll(matches.map((e) => (entry: e, missing: null)));
           }
         }
-        rows.addAll(
-          list
-              .where(
-                (e) =>
-                    index(e) < 1 ||
-                    index(e) > upper ||
-                    index(e) != index(e).round(),
-              )
-              .map((e) => (entry: e, missing: null)),
-        );
+        num? rowIndex(({LibraryEntry? entry, int? missing}) row) {
+          final n =
+              row.missing ??
+              num.tryParse('${row.entry!.item.value('seriesIndex')}');
+          return n?.isFinite == true ? n : null;
+        }
+
+        rows.sort((a, b) {
+          final left = rowIndex(a), right = rowIndex(b);
+          if (left == null) return right == null ? 0 : 1;
+          return right == null ? -1 : left.compareTo(right);
+        });
       } else {
         rows.addAll(list.map((e) => (entry: e, missing: null)));
       }
@@ -189,63 +211,136 @@ class _LibraryGroupsPageState extends State<LibraryGroupsPage> {
                     : 'Коллекции'),
           ),
         ),
-        body: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            if (widget.name == null) ...[
-              for (final name
-                  in (names.values.toList()..sort(
-                    (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
-                  )))
-                ListTile(
-                  title: Text(name),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => LibraryGroupsPage(
-                        library: widget.library,
-                        kind: widget.kind,
-                        name: name,
-                      ),
-                    ),
+        body: Builder(
+          builder: (context) {
+            final orderedNames = names.entries.toList()
+              ..sort(
+                (a, b) =>
+                    a.value.toLowerCase().compareTo(b.value.toLowerCase()),
+              );
+            return CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.all(20),
+                  sliver: SliverToBoxAdapter(
+                    child: widget.name == null
+                        ? names.isEmpty
+                              ? const Text(
+                                  'Пока нет записей. Заполните сведения в карточках книг.',
+                                )
+                              : const SizedBox.shrink()
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                'Завершено $finished из ${list.length} · книги и аудиокниги',
+                              ),
+                              Text(
+                                'Общий прогресс: ${(progress * 100).round()}%',
+                              ),
+                              const SizedBox(height: 8),
+                              LinearProgressIndicator(value: progress),
+                              if (widget.kind == 'series') ...[
+                                TextButton.icon(
+                                  onPressed: list.isEmpty
+                                      ? null
+                                      : () async {
+                                          final memberId = list.first.item.id;
+                                          await openLibrarySeriesEditor(
+                                            context,
+                                            widget.library,
+                                            series:
+                                                seriesGroups[selectedSeriesKey] ??
+                                                LibrarySeriesGroup(
+                                                  widget.name!,
+                                                  selectedSeriesKey,
+                                                  list,
+                                                ),
+                                          );
+                                          if (!mounted) return;
+                                          final member = widget.library.entries
+                                              .where(
+                                                (e) => e.item.id == memberId,
+                                              )
+                                              .firstOrNull;
+                                          if (member != null) {
+                                            setState(
+                                              () => currentSeriesKey =
+                                                  librarySeriesKey(member.item),
+                                            );
+                                          }
+                                        },
+                                  icon: const Icon(Icons.playlist_add),
+                                  label: const Text('Добавить тома'),
+                                ),
+                                TextButton(
+                                  onPressed: _length,
+                                  child: Text(
+                                    expected == 0
+                                        ? 'Указать число томов'
+                                        : 'Всего томов: $expected',
+                                  ),
+                                ),
+                                const Text(
+                                  'Пропуски определяются по номерам сохранённых томов и указанному размеру серии.',
+                                ),
+                              ],
+                              const SizedBox(height: 16),
+                            ],
+                          ),
                   ),
                 ),
-              if (names.isEmpty)
-                const Text(
-                  'Пока нет записей. Заполните сведения в карточках книг.',
-                ),
-            ] else ...[
-              Text(
-                'Завершено $finished из ${list.length} · книги и аудиокниги',
-              ),
-              Text('Общий прогресс: ${(progress * 100).round()}%'),
-              const SizedBox(height: 8),
-              LinearProgressIndicator(value: progress),
-              if (widget.kind == 'series') ...[
-                TextButton(
-                  onPressed: _length,
-                  child: Text(
-                    expected == 0
-                        ? 'Указать число томов'
-                        : 'Всего томов: $expected',
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                  sliver: SliverList.builder(
+                    itemCount: widget.name == null
+                        ? orderedNames.length
+                        : rows.length,
+                    itemBuilder: (context, index) {
+                      if (widget.name == null) {
+                        final group = orderedNames[index];
+                        return ListTile(
+                          title: Text(group.value),
+                          subtitle: widget.kind == 'series'
+                              ? Text(
+                                  seriesGroups[group.key]!
+                                      .entries
+                                      .first
+                                      .item
+                                      .authors,
+                                )
+                              : null,
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => LibraryGroupsPage(
+                                library: widget.library,
+                                kind: widget.kind,
+                                name: group.value,
+                                seriesKey: widget.kind == 'series'
+                                    ? group.key
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      final row = rows[index];
+                      return row.entry != null
+                          ? tile(row.entry!)
+                          : ListTile(
+                              leading: const Icon(Icons.remove_circle_outline),
+                              title: Text(
+                                'Том ${row.missing} — нет в библиотеке',
+                              ),
+                            );
+                    },
                   ),
-                ),
-                const Text(
-                  'Пропуски определяются по номерам сохранённых томов и указанному размеру серии.',
                 ),
               ],
-              const SizedBox(height: 16),
-              for (final row in rows)
-                if (row.entry != null)
-                  tile(row.entry!)
-                else
-                  ListTile(
-                    leading: const Icon(Icons.remove_circle_outline),
-                    title: Text('Том ${row.missing} — нет в библиотеке'),
-                  ),
-            ],
-          ],
+            );
+          },
         ),
       );
     },

@@ -63,6 +63,7 @@ class LibraryMetadataEditor extends StatefulWidget {
   final Future<void> Function(Map<String, String>)? onSavePolicy;
   final String? Function(String)? coverResolver;
   final Future<bool> Function()? onDelete;
+  final Set<String> lockedFields;
   const LibraryMetadataEditor({
     super.key,
     required this.item,
@@ -79,6 +80,7 @@ class LibraryMetadataEditor extends StatefulWidget {
     this.onSavePolicy,
     this.coverResolver,
     this.onDelete,
+    this.lockedFields = const {},
   });
   @override
   State<LibraryMetadataEditor> createState() => _LibraryMetadataEditorState();
@@ -633,7 +635,8 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
           'tags': 'Теги',
         }[key] ??
         key;
-    final enabled = editable && !saving;
+    final enabled =
+        editable && !saving && !widget.lockedFields.contains(semantic);
     final suggestions = widget.suggestions[semantic] ?? const <String>[];
     if (['author', 'genre', 'tags', 'narrator'].contains(semantic)) {
       return Padding(

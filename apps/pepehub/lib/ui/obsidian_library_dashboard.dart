@@ -12,6 +12,7 @@ import 'library_data_page.dart';
 import 'library_work_page.dart';
 import 'library_cover_search.dart';
 import 'library_groups_page.dart';
+import 'library_series_editor_page.dart';
 import 'library_batch_actions.dart';
 import '../library/library_features.dart';
 import 'obsidian_notes_page.dart';
@@ -352,24 +353,32 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     MaterialPageRoute(builder: (_) => LibraryDataPage(library: widget.service)),
   );
   Future<void> _add() async {
-    final audio = await showDialog<bool>(
+    final choice = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
         title: const Text('Добавить произведение'),
         children: [
           SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(context, 'book'),
             child: const Text('Книга'),
           ),
           SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(context, 'audiobook'),
             child: const Text('Аудиокнига'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'series'),
+            child: const Text('Серия'),
           ),
         ],
       ),
     );
-    if (audio == null || !mounted) return;
-    final draft = widget.service.emptyDraft(audio: audio);
+    if (choice == null || !mounted) return;
+    if (choice == 'series') {
+      await openLibrarySeriesEditor(context, widget.service);
+      return;
+    }
+    final draft = widget.service.emptyDraft(audio: choice == 'audiobook');
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
@@ -1187,6 +1196,12 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       onPressed: toggle,
       icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),
     );
+    final addVolumes = IconButton(
+      tooltip: 'Добавить тома в серию',
+      icon: const Icon(Icons.playlist_add),
+      onPressed: () =>
+          openLibrarySeriesEditor(context, widget.service, series: group),
+    );
     final heading = Text(
       group.name,
       maxLines: 2,
@@ -1236,6 +1251,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                           ],
                         ),
                       ),
+                      if (!selecting) addVolumes,
                       arrow,
                     ],
                   ),
@@ -1296,6 +1312,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                                     ),
                                   ),
                                 ),
+                                if (!selecting) addVolumes,
                                 arrow,
                               ],
                             ),
