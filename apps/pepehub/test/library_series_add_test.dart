@@ -19,6 +19,7 @@ import 'package:pepehub/library/series_draft.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/library_series_editor_page.dart';
 import 'package:pepehub/ui/library_groups_page.dart';
+import 'package:pepehub/ui/metadata_input.dart';
 import 'package:pepehub/ui/obsidian_library_page.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
@@ -335,6 +336,177 @@ void main() {
     expect(library.entries, isEmpty);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'shared narrators genres and edition data persist without overwriting individual edits',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final boundary = GlobalKey();
+      await tester.runAsync(() async {
+        for (final font in ['Onest', 'Oswald', 'CormorantGaramond']) {
+          await (FontLoader(font)..addFont(
+                File('assets/fonts/$font.ttf')
+                    .readAsBytes()
+                    .then(ByteData.sublistView),
+              ))
+              .load();
+        }
+        await (FontLoader('MaterialIcons')..addFont(
+              File(
+                '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+              ).readAsBytes().then(ByteData.sublistView),
+            ))
+            .load();
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.data(Brightness.dark),
+          home: RepaintBoundary(
+            key: boundary,
+            child: LibrarySeriesEditorPage(library: library),
+          ),
+        ),
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('series-name')),
+        'Архипелаг',
+      );
+      await tester.tap(find.byKey(const ValueKey('series-type')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Аудиокниги').last);
+      await tester.pumpAndSettle();
+      Future<void> tokens(
+        String field,
+        String text, {
+        bool replace = false,
+      }) async {
+        final scope = find.byKey(ValueKey('series-$field'));
+        await tester.ensureVisible(scope);
+        await tester.pumpAndSettle();
+        if (replace) {
+          var remove = find.descendant(
+            of: scope,
+            matching: find.byTooltip('Убрать'),
+          );
+          while (remove.evaluate().isNotEmpty) {
+            await tester.tap(remove.first);
+            await tester.pumpAndSettle();
+            remove = find.descendant(
+              of: scope,
+              matching: find.byTooltip('Убрать'),
+            );
+          }
+        }
+        final input = find.descendant(
+          of: scope,
+          matching: find.byType(TextFormField),
+        );
+        await tester.enterText(input, text);
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+      }
+
+      await tokens('narrator', 'Первый чтец; Второй чтец');
+      await tokens('genre', 'Фантастика, Приключения');
+      await tester.enterText(
+        find.byKey(const ValueKey('series-titles')),
+        'Северный путь\nЛедяной берег',
+      );
+      await tester.ensureVisible(find.text('Издание и теги'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Издание и теги'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('series-language')));
+      await tester.enterText(
+        find.byKey(const ValueKey('series-language')),
+        'Русский',
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('series-publisher')),
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('series-publisher')),
+        'Издательство',
+      );
+      await tokens('tags', 'Избранное; Переслушать');
+      FocusManager.instance.primaryFocus?.unfocus();
+      tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position
+          .jumpTo(0);
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        final image =
+            await (boundary.currentContext!.findRenderObject()
+                    as RenderRepaintBoundary)
+                .toImage();
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        image.dispose();
+        await Directory('build/series-preview').create(recursive: true);
+        await File('build/series-preview/input-audio-390.png')
+            .writeAsBytes(bytes!.buffer.asUint8List());
+      });
+      await tester.tap(find.byKey(const ValueKey('series-primary')));
+      await tester.pumpAndSettle();
+      final dynamic state = tester.state(find.byType(LibrarySeriesEditorPage));
+      expect(state.volumes[0].item.values['narrator'], [
+        'Первый чтец',
+        'Второй чтец',
+      ]);
+      expect(state.volumes[1].item.value('genre'), [
+        'Фантастика',
+        'Приключения',
+      ]);
+      expect(
+        find.textContaining('Чтецы: Первый чтец, Второй чтец'),
+        findsNWidgets(2),
+      );
+      await tester.tap(find.byTooltip('Изменить том').first);
+      await tester.pumpAndSettle();
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is MetadataTokensField && w.label == 'Чтецы',
+        ),
+        findsOneWidget,
+      );
+      final editor = tester.widget<LibraryMetadataEditor>(
+        find.byType(LibraryMetadataEditor),
+      );
+      await editor.onSave({
+        ...editor.item.values,
+        'narrator': ['Другой чтец'],
+        'genre': <String>[],
+      });
+      Navigator.of(tester.element(find.byType(LibraryMetadataEditor))).pop();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('К общим сведениям'));
+      await tester.pumpAndSettle();
+      await tokens('narrator', 'Третий чтец', replace: true);
+      await tokens('genre', 'Детектив', replace: true);
+      await tester.tap(find.byKey(const ValueKey('series-primary')));
+      await tester.pumpAndSettle();
+      expect(state.volumes[0].item.values['narrator'], ['Другой чтец']);
+      expect(state.volumes[0].item.value('genre'), isEmpty);
+      expect(state.volumes[1].item.values['narrator'], ['Третий чтец']);
+      expect(state.volumes[1].item.value('genre'), ['Детектив']);
+      await tester.runAsync(
+        () => library.addSeries(
+          (state.volumes as List).map((v) => v.item as ObsidianLibraryItem),
+        ),
+      );
+      expect(library.visibleEntries, hasLength(2));
+      for (final e in library.visibleEntries) {
+        expect(e.item.values['language'], 'Русский');
+        expect(e.item.values['publisher'], 'Издательство');
+        expect(e.item.values['tags'], ['Избранное', 'Переслушать']);
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   for (final width in [390.0, 768.0, 1440.0]) {
     testWidgets('manual series preview edits without writing and fits $width', (

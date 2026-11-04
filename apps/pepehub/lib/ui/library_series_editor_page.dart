@@ -18,6 +18,7 @@ class _Volume {
   final String source;
   ObsidianLibraryItem item;
   bool selected = true, allowDuplicate = false, customType = false;
+  final Set<String> overrides = {};
   _Volume(this.source, this.item);
 }
 
@@ -56,10 +57,15 @@ class LibrarySeriesEditorPage extends StatefulWidget {
 class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
   final form = GlobalKey<FormState>();
   final name = TextEditingController(), authors = TextEditingController();
+  final narrators = TextEditingController(), genres = TextEditingController();
+  final language = TextEditingController(), publisher = TextEditingController();
+  final tags = TextEditingController();
   final titles = TextEditingController(),
       firstIndex = TextEditingController(text: '1');
   late final String seriesId;
+  late final Map<String, List<String>> suggestions;
   String mediaType = 'book', status = 'finished';
+  String bookFormat = 'E-book';
   List<_Volume> volumes = [];
   Map<String, dynamic> previousDefaults = {};
   Map<String, String> conflicts = {};
@@ -69,10 +75,35 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
   @override
   void initState() {
     super.initState();
+    suggestions = widget.library.suggestions;
     final group = widget.series;
     final first = group?.entries.firstOrNull?.item;
     name.text = group?.name ?? '';
     authors.text = jsonEncode(metadataStrings(first?.value('author')));
+    Object? common(String field, {String? type}) {
+      final members =
+          group?.entries
+              .where((e) => type == null || e.item.mediaType == type)
+              .toList() ??
+          [];
+      if (members.isEmpty) return null;
+      Object? property(LibraryEntry e) =>
+          e.item.value(field) ?? e.item.values[field];
+      final value = property(members.first);
+      return members.every((e) => sameMetadataValue(property(e), value))
+          ? value
+          : null;
+    }
+
+    narrators.text = jsonEncode(
+      metadataStrings(common('narrator', type: 'audiobook')),
+    );
+    genres.text = jsonEncode(metadataStrings(common('genre')));
+    tags.text = jsonEncode(metadataStrings(common('tags')));
+    language.text = '${common('language') ?? ''}';
+    publisher.text = '${common('publisher') ?? ''}';
+    final format = common('format', type: 'book');
+    if (format == 'Paper') bookFormat = 'Paper';
     mediaType = first?.mediaType ?? 'book';
     final existingId = first?.values['pepehub_series_id'];
     seriesId = existingId is String && existingId.isNotEmpty
@@ -92,6 +123,11 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
   void dispose() {
     name.dispose();
     authors.dispose();
+    narrators.dispose();
+    genres.dispose();
+    language.dispose();
+    publisher.dispose();
+    tags.dispose();
     titles.dispose();
     firstIndex.dispose();
     super.dispose();
@@ -124,9 +160,14 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
     }
     final old = {for (final v in volumes) v.source: v};
     final defaults = <String, dynamic>{
-      'author': _authors(),
+      'author': _tokens(authors),
+      'genre': _tokens(genres),
+      if (mediaType == 'audiobook') 'narrator': _tokens(narrators),
+      'language': language.text.trim().isEmpty ? null : language.text.trim(),
+      'publisher': publisher.text.trim().isEmpty ? null : publisher.text.trim(),
+      'tags': _tokens(tags),
       'status': status,
-      'format': mediaType == 'audiobook' ? 'Audiobook' : 'E-book',
+      'format': mediaType == 'audiobook' ? 'Audiobook' : bookFormat,
       'unit': mediaType == 'audiobook' ? 'minutes' : 'pages',
     };
     final next = <_Volume>[];
@@ -142,7 +183,9 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
         ...?previous?.item.values,
         for (final e in defaults.entries)
           if (previous != null &&
-              !['format', 'unit'].contains(e.key) &&
+              !previous.overrides.contains(e.key) &&
+              e.key != 'unit' &&
+              (e.key != 'format' || !previous.customType) &&
               sameMetadataValue(
                 previous.item.values[e.key],
                 previousDefaults[e.key],
@@ -156,12 +199,13 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
           : mediaType;
       if (previous != null && previous.item.mediaType != type) {
         values.addAll({
-          'format': type == 'audiobook' ? 'Audiobook' : 'E-book',
+          'format': type == 'audiobook' ? 'Audiobook' : bookFormat,
           'unit': type == 'audiobook' ? 'minutes' : 'pages',
           'total': null,
           'progress': null,
         });
       }
+      if (type == 'book') values.remove('narrator');
       final item = personalLibraryItem(
         previous?.item.id ?? uuid.v4(),
         type,
@@ -180,11 +224,11 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
     });
   }
 
-  List<String> _authors() {
+  List<String> _tokens(TextEditingController controller) {
     try {
-      return metadataStrings(jsonDecode(authors.text));
+      return metadataStrings(jsonDecode(controller.text));
     } on FormatException {
-      return metadataStrings(authors.text);
+      return metadataStrings(controller.text);
     }
   }
 
@@ -221,6 +265,22 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
             );
             validateSeriesDraft(next);
             setState(() {
+              for (final key in next.values.keys) {
+                final tokens = const {
+                  'author',
+                  'genre',
+                  'narrator',
+                  'tags',
+                }.contains(key);
+                if (!sameMetadataValue(
+                  tokens
+                      ? metadataStrings(volume.item.values[key])
+                      : volume.item.values[key],
+                  tokens ? metadataStrings(next.values[key]) : next.values[key],
+                )) {
+                  volume.overrides.add(key);
+                }
+              }
               volume.item = next;
               _checkConflicts();
             });
@@ -234,13 +294,16 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
     if (type == volume.item.mediaType) return;
     setState(() {
       volume.customType = true;
-      volume.item = personalLibraryItem(volume.item.id, type, {
+      final values = <String, dynamic>{
         ...volume.item.values,
-        'format': type == 'audiobook' ? 'Audiobook' : 'E-book',
+        'format': type == 'audiobook' ? 'Audiobook' : bookFormat,
         'unit': type == 'audiobook' ? 'minutes' : 'pages',
+        if (type == 'audiobook') 'narrator': _tokens(narrators),
         // Pages cannot silently become minutes (or the reverse).
         'total': null, 'progress': null,
-      });
+      };
+      if (type == 'book') values.remove('narrator');
+      volume.item = personalLibraryItem(volume.item.id, type, values);
       _checkConflicts();
     });
   }
@@ -274,7 +337,56 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
     }
   }
 
-  Widget _shared() => Column(
+  Widget _tokenField(
+    String field,
+    String label,
+    TextEditingController controller,
+  ) => MetadataTokensField(
+    key: ValueKey('series-$field'),
+    controller: controller,
+    initial: _tokens(controller),
+    label: label,
+    suggestions: suggestions[field] ?? [],
+    enabled: true,
+  );
+
+  Widget _extra() => ExpansionTile(
+    key: const ValueKey('series-extra'),
+    tilePadding: EdgeInsets.zero,
+    title: const Text('Издание и теги'),
+    childrenPadding: const EdgeInsets.only(top: 8, bottom: 16),
+    maintainState: true,
+    children: [
+      if (mediaType == 'book') ...[
+        DropdownButtonFormField<String>(
+          key: const ValueKey('series-format'),
+          initialValue: bookFormat,
+          decoration: const InputDecoration(labelText: 'Формат издания'),
+          items: const [
+            DropdownMenuItem(value: 'E-book', child: Text('Электронная книга')),
+            DropdownMenuItem(value: 'Paper', child: Text('Бумажная книга')),
+          ],
+          onChanged: (v) => setState(() => bookFormat = v!),
+        ),
+        const SizedBox(height: 16),
+      ],
+      TextFormField(
+        key: const ValueKey('series-language'),
+        controller: language,
+        decoration: const InputDecoration(labelText: 'Язык'),
+      ),
+      const SizedBox(height: 16),
+      TextFormField(
+        key: const ValueKey('series-publisher'),
+        controller: publisher,
+        decoration: const InputDecoration(labelText: 'Издательство'),
+      ),
+      const SizedBox(height: 16),
+      _tokenField('tags', 'Теги', tags),
+    ],
+  );
+
+  Widget _shared({bool includeExtra = true}) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       Text('Общее для серии', style: Theme.of(context).textTheme.titleMedium),
@@ -291,9 +403,9 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
       MetadataTokensField(
         key: const ValueKey('series-authors'),
         controller: authors,
-        initial: _authors(),
+        initial: _tokens(authors),
         label: 'Авторы',
-        suggestions: widget.library.suggestions['author'] ?? [],
+        suggestions: suggestions['author'] ?? [],
         enabled: true,
       ),
       const SizedBox(height: 16),
@@ -308,6 +420,12 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
         onChanged: (v) => setState(() => mediaType = v!),
       ),
       const SizedBox(height: 16),
+      if (mediaType == 'audiobook') ...[
+        _tokenField('narrator', 'Чтецы', narrators),
+        const SizedBox(height: 16),
+      ],
+      _tokenField('genre', 'Жанры', genres),
+      const SizedBox(height: 16),
       DropdownButtonFormField<String>(
         key: const ValueKey('series-status'),
         initialValue: status,
@@ -318,6 +436,7 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
         ],
         onChanged: (v) => setState(() => status = v!),
       ),
+      if (includeExtra) ...[const SizedBox(height: 16), _extra()],
     ],
   );
 
@@ -365,6 +484,12 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
   Widget _volume(_Volume volume) {
     final item = volume.item;
     final warning = conflicts[item.id];
+    final details = [
+      ...metadataStrings(item.value('genre')),
+      if (item.mediaType == 'audiobook' &&
+          metadataStrings(item.values['narrator']).isNotEmpty)
+        'Чтецы: ${metadataStrings(item.values['narrator']).join(', ')}',
+    ].join(' · ');
     return Padding(
       key: ValueKey('series-volume:${item.id}'),
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -400,6 +525,11 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
                       '${item.mediaType == 'audiobook' ? 'Аудиокнига' : 'Книга'} · ${libraryStatusesLocal[libraryStatus(item)]}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
+                    if (details.isNotEmpty)
+                      Text(
+                        details,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     if (warning != null)
                       Text(
                         warning,
@@ -493,9 +623,11 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
                                     )
                                   : Column(
                                       children: [
-                                        _shared(),
+                                        _shared(includeExtra: false),
                                         const SizedBox(height: 24),
                                         _paste(),
+                                        const SizedBox(height: 16),
+                                        _extra(),
                                       ],
                                     ),
                             ),
@@ -531,6 +663,7 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
                                     for (final v in volumes.where(
                                       (v) => v.selected,
                                     )) {
+                                      v.overrides.add('status');
                                       v.item = v.item.withValues({
                                         ...v.item.values,
                                         'status': value,
