@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart' show Variable;
 
 import '../audio/audio_journal.dart';
+import '../audio/audio_statistics_history.dart';
 import '../data/repository.dart';
 import '../reader/reading_statistics_data.dart';
 
@@ -43,6 +44,7 @@ class BookCalendarData {
     LibraryService? library,
     List<LibraryRecord>? bookRecords,
     ReadingCalendarSummary? readingSummary,
+    AudioStatisticsHistory? audioHistory,
   }) async {
     final data = BookCalendarData();
     final links = {
@@ -96,14 +98,31 @@ class BookCalendarData {
         row.read<int>('wall_ms'),
       );
     }
+    final supplemental =
+        audioHistory ??
+        await AudioStatisticsHistory.load(
+          repository,
+          entries: library?.visibleEntries,
+          foreign: foreignAudio,
+        );
     final audioGroups = <String, List<Map<String, dynamic>>>{};
-    for (final event in foreignAudio) {
+    for (final title in supplemental.titles.entries) {
+      data.books.putIfAbsent(
+        title.key,
+        () => CalendarBook(title.key, title.value, 'audiobook', null, null),
+      );
+    }
+    for (final event in supplemental.events) {
       (audioGroups['${event['bookId']}'] ??= []).add(event);
     }
     for (final group in audioGroups.entries) {
       for (final day in AudioStats(group.value).days.entries) {
+        data.archiveAudioAll[day.key] =
+            (data.archiveAudioAll[day.key] ?? 0) + day.value;
         if (day.key.startsWith('$year-')) {
           data.add(day.key, group.key, day.value);
+          data.archiveAudio[day.key] =
+              (data.archiveAudio[day.key] ?? 0) + day.value;
         }
       }
     }
@@ -128,6 +147,7 @@ class BookCalendarData {
           if (v['deleted'] == true || !standalone.containsKey(v['itemId'])) {
             continue;
           }
+          if (v['mediaType'] == 'audiobook') continue;
           final day = '${v['day']}';
           final ms = (v['durationMs'] as num).toInt();
           final all = v['mediaType'] == 'book'

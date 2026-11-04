@@ -10,7 +10,7 @@ import 'dart:async';
 
 import 'package:drift/drift.dart' show Variable;
 
-import '../library/activity_store.dart';
+import '../audio/audio_statistics_history.dart';
 
 import 'dart:math' as math;
 
@@ -68,6 +68,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
   bool _replaceHistory = true;
   final _changedIds = <String>{};
   List<Map<String, dynamic>> _foreignHistory = [];
+  Map<String, String> _archiveTitles = {};
   AudioStats _global = AudioStats(const []);
   late final Zone _uiZone;
   @override
@@ -157,9 +158,6 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
                       .get()) {
                 updates[row.read<String>('id')] = row.read<String>('payload');
               }
-              _foreignHistory = await ActivityStore.foreignAudio(
-                widget.repository,
-              );
             } else {
               for (var start = 0; start < ids.length; start += 400) {
                 final batch = ids.skip(start).take(400).toList();
@@ -178,6 +176,11 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
                 }
               }
             }
+            final history = await AudioStatisticsHistory.load(
+              widget.repository,
+            );
+            _foreignHistory = history.events;
+            _archiveTitles = history.titles;
             _global = AudioStats(const []);
             for (final row
                 in await widget.repository.db
@@ -207,7 +210,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
       final analysis = await _worker.analyze(<String, dynamic>{
         'updates': updates,
         'replace': replace,
-        if (replace) 'foreign': _foreignHistory,
+        'foreign': _foreignHistory,
         'book': requestedBook,
         'cutoff': cutoff,
         if (requestedPeriod == -1 && requestedRange != null) ...{
@@ -231,7 +234,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
           analytics = analysis;
           summaries = bookData;
           events = result.recent;
-          titles = {for (final b in books) b.id: b.title};
+          titles = {for (final b in books) b.id: b.title, ..._archiveTitles};
           legacyMs = legacy.read<int>('seconds') * 1000;
           error = null;
         });

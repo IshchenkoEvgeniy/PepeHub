@@ -123,7 +123,9 @@ void main() {
     await repo.put('book', 'native', {'title': 'Аудио', 'format': 'audio'});
     await library.repository.mutate((entries) async {
       entries['card-0'] = card(0);
-      entries['card-1'] = LibraryEntry(card(1).item, sourceBookId: 'native');
+      final linked = card(1).item;
+      linked.values['progress'] = null;
+      entries['card-1'] = LibraryEntry(linked, sourceBookId: 'native');
       entries['card-2'] = card(2);
     });
     await library.loadCached();

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../audio/audio_journal.dart';
+import '../audio/audio_statistics_history.dart';
 import '../audio/listening_analytics.dart';
 import '../audio/audio_daily_totals.dart';
 import '../data/repository.dart';
@@ -57,12 +57,29 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
   void initState() {
     super.initState();
     widget.repository.externalChanges.addListener(_load);
+    widget.library?.addListener(_libraryChanged);
     _load();
+  }
+
+  void _libraryChanged() {
+    // loadCached also notifies while this page is reading its catalog.
+    if (!loading) _load();
+  }
+
+  @override
+  void didUpdateWidget(StatisticsHubPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.library != widget.library) {
+      oldWidget.library?.removeListener(_libraryChanged);
+      widget.library?.addListener(_libraryChanged);
+      _load();
+    }
   }
 
   @override
   void dispose() {
     widget.repository.externalChanges.removeListener(_load);
+    widget.library?.removeListener(_libraryChanged);
     super.dispose();
   }
 
@@ -124,21 +141,21 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
         DateTime(selectedYear + 1),
       );
       final nativeAll = await totals.lifetime();
-      final events = await ActivityStore.foreignAudio(repository);
+      await widget.library?.loadCached();
+      final history = await AudioStatisticsHistory.load(repository);
       final listening = await compute(analyzeListening, <String, dynamic>{
-        'events': events,
+        'events': history.events,
         'book': null,
         'cutoff': null,
         'start': DateTime(selectedYear).toUtc().toIso8601String(),
         'end': DateTime(selectedYear + 1).toUtc().toIso8601String(),
       });
-      final lifetime = await compute(AudioStats.new, events);
-      await widget.library?.loadCached();
       final calendarData = await BookCalendarData.load(
         repository: repository,
         year: selectedYear,
         reading: rows,
-        foreignAudio: events,
+        foreignAudio: history.events,
+        audioHistory: history,
         library: widget.library,
         bookRecords: records,
         readingSummary: reading,
@@ -147,6 +164,7 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
       setState(() {
         titles = {
           for (final b in records) b.id: b.title,
+          ...history.titles,
           for (final b in calendarData.books.values) b.id: b.title,
         };
         calendar = calendarData;
@@ -155,14 +173,8 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
           reading.allDays,
           calendarData.archiveReadingAll,
         );
-        audioDays = _merge(
-          _merge(native.days, listening.selected.days),
-          calendarData.archiveAudio,
-        );
-        audioAllDays = _merge(
-          _merge(nativeAll.days, lifetime.days),
-          calendarData.archiveAudioAll,
-        );
+        audioDays = _merge(native.days, listening.selected.days);
+        audioAllDays = _merge(nativeAll.days, listening.lifetime.days);
         error = null;
         loading = false;
       });
