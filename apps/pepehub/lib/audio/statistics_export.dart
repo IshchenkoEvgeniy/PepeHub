@@ -111,6 +111,8 @@ String statisticsCsv(ListeningAnalytics analysis, Map<String, String> titles) {
   ]);
   rows[1].addAll([analysis.firstHeardMs, analysis.repeatedHistoryMs]);
   for (final entry in <String, Object>{
+    'estimated_at_1x_ms': analysis.selected.estimatedMs,
+    'undated_ms': analysis.selected.undatedMs,
     'average_speed': analysis.selected.averageSpeed,
     'longest_streak_days': analysis.lifetime.longestStreak,
     'bookmarks_added': analysis.selected.bookmarks,
@@ -204,6 +206,9 @@ String statisticsJson(
   'bookId': bookId,
   'unit': 'milliseconds',
   'activeMs': analysis.selected.wallMs,
+  'estimatedAt1xMs': analysis.selected.estimatedMs,
+  'undatedMs': analysis.selected.undatedMs,
+  'measuredActiveDays': analysis.selected.activityDays,
   'materialMs': analysis.selected.mediaMs,
   'uniqueMs': analysis.selected.uniqueMs,
   'firstHeardMs': analysis.firstHeardMs,
@@ -229,6 +234,8 @@ String statisticsJson(
         'id': e.key,
         'title': titles[e.key],
         'activeMs': e.value.wallMs,
+        'estimatedAt1xMs': e.value.estimatedMs,
+        'undatedMs': e.value.undatedMs,
         'materialMs': e.value.mediaMs,
         'uniqueMs': e.value.uniqueMs,
       },

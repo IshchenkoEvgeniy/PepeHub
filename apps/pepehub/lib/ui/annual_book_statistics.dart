@@ -12,6 +12,8 @@ class AnnualBookStatistics extends StatefulWidget {
   final int year;
   final String scope;
   final Map<String, int> readingDays, audioDays;
+  final Map<String, int>? audioActivityDays;
+  final int audioEstimateMs, audioUndatedMs;
   final ValueChanged<int> onYear;
   final ValueChanged<String> onScope;
   const AnnualBookStatistics({
@@ -22,6 +24,9 @@ class AnnualBookStatistics extends StatefulWidget {
     required this.scope,
     required this.readingDays,
     required this.audioDays,
+    this.audioActivityDays,
+    this.audioEstimateMs = 0,
+    this.audioUndatedMs = 0,
     required this.onYear,
     required this.onScope,
   });
@@ -134,6 +139,16 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
       }
     }
     final totalTime = timeMonths.fold<int>(0, (a, b) => a + b);
+    final activityDays = <String>{
+      if (widget.scope != 'audio')
+        ...widget.readingDays.entries
+            .where((e) => e.value > 0)
+            .map((e) => e.key),
+      if (widget.scope != 'reading')
+        ...(widget.audioActivityDays ?? widget.audioDays).entries
+            .where((e) => e.value > 0)
+            .map((e) => e.key),
+    };
     final pageBooks = completed
         .where(
           (b) =>
@@ -249,10 +264,7 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
             'В среднем за месяц',
           ),
           _figure(bookActivityTime(totalTime), 'Чтение и прослушивание'),
-          _figure(
-            '${days.values.where((ms) => ms > 0).length}',
-            'Активных дней',
-          ),
+          _figure('${activityDays.length}', 'Активных дней'),
           _figure(bookAmount(pages), 'Страниц в завершённых книгах'),
         ],
       ),
@@ -289,6 +301,14 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
         'Время по месяцам · ${bookActivityTime(totalTime)}',
         _bars(timeMonths, bookActivityTime, counts: false),
       ),
+      if (widget.scope != 'reading' && widget.audioEstimateMs > 0)
+        () => Text(
+          'Включая ${bookActivityTime(widget.audioEstimateMs)} по полю «Прослушано»: оценка при 1×, отнесена к дате в карточке.',
+        ),
+      if (widget.scope != 'reading' && widget.audioUndatedMs > 0)
+        () => Text(
+          '${bookActivityTime(widget.audioUndatedMs)} без даты не отнесено к году. Укажите дату начала или завершения в карточке.',
+        ),
       () => _panel(
         'Время чтения и прослушивания',
         Wrap(

@@ -353,6 +353,7 @@ class ListeningSampler {
 
 class AudioStats {
   int knownWallMs = 0;
+  int estimatedMs = 0, estimatedMediaMs = 0, undatedMs = 0;
   int wallMs = 0,
       mediaMs = 0,
       uniqueMs = 0,
@@ -366,6 +367,12 @@ class AudioStats {
       forwardMs = 0,
       backwardMs = 0;
   final Map<String, int> days = {}, books = {}, speeds = {};
+  final Map<String, int> estimatedDays = {};
+  Map<String, int> get activityDays => {
+    for (final e in days.entries)
+      if (e.value > (estimatedDays[e.key] ?? 0))
+        e.key: e.value - (estimatedDays[e.key] ?? 0),
+  };
   final Map<int, int> hours = {};
   final List<Map<String, dynamic>> recent = [];
   AudioStats(Iterable<Map<String, dynamic>> events) {
@@ -379,10 +386,21 @@ class AudioStats {
         wallMs += wall;
         mediaMs += media;
         unknownCoverageMs += media;
-        if (media > 0) knownWallMs += wall;
+        final estimated = e['estimated'] == true;
+        if (estimated) {
+          estimatedMs += wall;
+          estimatedMediaMs += media;
+        } else if (media > 0) {
+          knownWallMs += wall;
+        }
         final day = e['localDay'] as String, book = e['bookId'] as String;
-        days[day] = (days[day] ?? 0) + wall;
         books[book] = (books[book] ?? 0) + wall;
+        if (e['dateKnown'] == false) {
+          undatedMs += wall;
+        } else {
+          days[day] = (days[day] ?? 0) + wall;
+          if (estimated) estimatedDays[day] = (estimatedDays[day] ?? 0) + wall;
+        }
         continue;
       }
       if (kind == 'listen') {
@@ -456,7 +474,7 @@ class AudioStats {
     }
   }
   int get longestStreak {
-    final sorted = days.keys.toList()..sort();
+    final sorted = activityDays.keys.toList()..sort();
     var best = 0, current = 0;
     DateTime? previous;
     for (final key in sorted) {
@@ -472,5 +490,6 @@ class AudioStats {
 
   int get repeatedMs => mediaMs - uniqueMs - unknownCoverageMs;
   int unknownCoverageMs = 0;
-  double get averageSpeed => knownWallMs == 0 ? 0 : mediaMs / knownWallMs;
+  double get averageSpeed =>
+      knownWallMs == 0 ? 0 : (mediaMs - estimatedMediaMs) / knownWallMs;
 }

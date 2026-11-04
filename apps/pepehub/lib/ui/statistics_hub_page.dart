@@ -46,6 +46,8 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
   BookCalendarData calendar = BookCalendarData();
   Map<String, int> readingDays = {}, audioDays = {};
   Map<String, int> readingAllDays = {}, audioAllDays = {};
+  Map<String, int> audioActivityDays = {}, audioActivityAllDays = {};
+  int audioEstimateMs = 0, audioUndatedMs = 0;
   Map<String, String> titles = {};
   bool loading = true;
   String? error;
@@ -175,6 +177,16 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
         );
         audioDays = _merge(native.days, listening.selected.days);
         audioAllDays = _merge(nativeAll.days, listening.lifetime.days);
+        audioActivityDays = _merge(
+          native.days,
+          listening.selected.activityDays,
+        );
+        audioActivityAllDays = _merge(
+          nativeAll.days,
+          listening.lifetime.activityDays,
+        );
+        audioEstimateMs = listening.selected.estimatedMs;
+        audioUndatedMs = listening.lifetime.undatedMs;
         error = null;
         loading = false;
       });
@@ -200,8 +212,13 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
   };
   Map<String, int> get _allDays => switch (scope) {
     'reading' => readingAllDays,
-    'audio' => audioAllDays,
-    _ => _merge(readingAllDays, audioAllDays),
+    'audio' => audioActivityAllDays,
+    _ => _merge(readingAllDays, audioActivityAllDays),
+  };
+  Map<String, int> get _activityDays => switch (scope) {
+    'reading' => readingDays,
+    'audio' => audioActivityDays,
+    _ => _merge(readingDays, audioActivityDays),
   };
   Map<String, int> get _books {
     final result = <String, int>{};
@@ -230,7 +247,7 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
     final palette = ShelfPalette.of(context);
     final days = _days;
     final total = days.values.fold(0, (sum, ms) => sum + ms);
-    final activeDays = days.values.where((ms) => ms > 0).length;
+    final activeDays = _activityDays.values.where((ms) => ms > 0).length;
     final streak = readingStreak(_allDays, DateTime.now());
     final top = _books.entries.where((e) => e.value > 0).toList()
       ..sort((a, b) => b.value.compareTo(a.value));
@@ -278,6 +295,9 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
                     scope: scope,
                     readingDays: readingDays,
                     audioDays: audioDays,
+                    audioActivityDays: audioActivityDays,
+                    audioEstimateMs: audioEstimateMs,
+                    audioUndatedMs: audioUndatedMs,
                     onScope: (value) => setState(() => scope = value),
                     onYear: (value) {
                       if (loading) return;
@@ -386,6 +406,14 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
                           ),
                         ),
                         const SizedBox(height: 24),
+                        if (scope != 'reading' && audioEstimateMs > 0)
+                          Text(
+                            'Включая ${hours(audioEstimateMs)} по полю «Прослушано»: оценка при 1×, отнесена к дате в карточке.',
+                          ),
+                        if (scope != 'reading' && audioUndatedMs > 0)
+                          Text(
+                            'Ещё ${hours(audioUndatedMs)} указано без даты и не отнесено к году. Укажите дату начала или завершения в карточке.',
+                          ),
                         _heading('Книжный календарь', null, palette),
                         const SizedBox(height: 10),
                         BookCalendar(

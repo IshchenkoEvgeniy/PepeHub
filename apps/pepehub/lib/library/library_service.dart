@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 import '../data/repository.dart';
+import '../audio/manual_audio_progress.dart';
 import '../reader/reading_library.dart';
 import '../recommendations/recommendation_store.dart';
 import '../media/asset_store.dart';
@@ -530,6 +531,9 @@ class LibraryService extends ChangeNotifier {
         cards[item.id] = LibraryEntry(
           personalLibraryItem(item.id, item.mediaType, {
             ...item.values,
+            if (item.mediaType == 'audiobook' &&
+                item.values['pepehub_audio_progress_at'] == null)
+              ...manualAudioProgressStamp(item.values),
             'pepehub_added_at':
                 item.values['pepehub_added_at'] ??
                 DateTime.now().toUtc().toIso8601String(),
@@ -673,6 +677,25 @@ class LibraryService extends ChangeNotifier {
             ? 'obsidian'
             : 'auto';
         await local.setMeta(key, jsonEncode(policy));
+      }
+      if (entry.item.mediaType == 'audiobook') {
+        if (changed.containsKey('progress') || changed.containsKey('unit')) {
+          changed.addAll(
+            manualAudioProgressStamp({...entry.item.values, ...changed}),
+          );
+        } else if (entry.item.values['pepehub_audio_progress_at'] == null) {
+          // Preserve a legacy card's cutoff before a title/status/date edit
+          // changes modifiedAt. Its original manual edit time is unavailable.
+          changed.addAll(
+            manualAudioProgressStamp(
+              entry.item.values,
+              at: DateTime.fromMillisecondsSinceEpoch(
+                entry.item.modifiedAt,
+                isUtc: true,
+              ),
+            ),
+          );
+        }
       }
       data[id] = LibraryEntry(
         personalLibraryItem(id, entry.item.mediaType, {

@@ -1,4 +1,9 @@
+import 'dart:convert';
+
+import 'package:drift/drift.dart' show Variable;
+
 import '../data/repository.dart';
+import '../data/database_schema.dart';
 import '../library/activity_store.dart';
 import '../library/library_features.dart';
 import '../library/library_repository.dart';
@@ -7,6 +12,7 @@ import '../library/personal_library.dart';
 import '../library/reading_insights.dart';
 import '../reader/reading_library.dart';
 import 'audio_journal.dart';
+import 'manual_audio_progress.dart';
 
 /// Supplemental statistics are views of saved data, never new journal writes.
 class AudioStatisticsHistory {
@@ -47,91 +53,158 @@ class AudioStatisticsHistory {
           !standalone.containsKey(v['itemId'])) {
         continue;
       }
-      result.add(
-        _event(
+      result.add({
+        ..._event(
           'card:${v['itemId']}',
           '${v['day']}',
           (v['durationMs'] as num).toInt(),
           (v['mediaMs'] as num?)?.toInt() ?? 0,
           'activity:${v['id']}',
         ),
-      );
+        'at': v['startedAt'] ?? '${v['day']}T12:00:00.000Z',
+        'timeKnown': v['startedAt'] != null,
+        'offsetMinutes': v['offsetMinutes'] ?? 0,
+      });
     }
-    final recordedMedia = <String, int>{};
-    void account(String id, int wall, int media) {
-      recordedMedia[id] = (recordedMedia[id] ?? 0) + (media > 0 ? media : wall);
-    }
-
     final baselines = await ReadingLibrary(repository)
         .entries('obsidian-auto:$personalLibraryNamespace:');
-
-    // Aggregate in SQLite without loading tracks or native event payloads.
-    for (final row
-        in await repository.db
-            .customSelect(
-              "SELECT json_extract(payload,'\$.bookId') AS book_id,"
-              "SUM(json_extract(payload,'\$.wallMs')) AS wall,"
-              "SUM(CASE WHEN json_extract(payload,'\$.kind')='listen' THEN "
-              "json_extract(payload,'\$.endMs')-json_extract(payload,'\$.positionMs') "
-              "ELSE COALESCE(NULLIF(json_extract(payload,'\$.mediaMs'),0),"
-              "json_extract(payload,'\$.wallMs')) END) AS media "
-              "FROM records WHERE type='audio_event' AND deleted=0 AND json_valid(payload) "
-              "AND json_extract(payload,'\$.kind') IN ('listen','journal') "
-              "AND json_extract(payload,'\$.wallMs')>0 GROUP BY 1",
-            )
-            .get()) {
-      account(
-        row.read<String>('book_id'),
-        row.read<int>('wall'),
-        row.read<int>('media'),
-      );
-    }
-    for (final e in result) {
-      account(
-        e['bookId'] as String,
-        (e['wallMs'] as num).toInt(),
-        (e['mediaMs'] as num?)?.toInt() ?? 0,
-      );
-    }
+    final candidates =
+        <({LibraryEntry entry, String id, int media, DateTime cutoff})>[];
     final titles = <String, String>{};
     for (final entry in cards) {
       final item = entry.item;
       if (item.mediaType != 'audiobook') continue;
       final id = entry.sourceBookId ?? 'card:${item.id}';
       titles[id] = item.title;
-      final progress = num.tryParse(
-        '${item.value('progress')}'.replaceAll(',', '.'),
-      );
-      final savedUnit = item.value('unit');
-      final unit = savedUnit == null || savedUnit == '' ? 'minutes' : savedUnit;
+      final values = {
+        'progress': item.value('progress'),
+        'unit': item.value('unit'),
+      };
+      final listened = audioProgressMs(values);
       // Automatic position updates can include seeks. Only a manual value may
       // supply missing listening time; an unchanged automatic baseline cannot.
       if (entry.sourceBookId != null &&
-          sameMetadataValue(
-            baselines[item.id]?['progress'],
-            item.value('progress'),
-          )) {
+          listened != null &&
+          listened == audioProgressMs(baselines[item.id] ?? {})) {
         continue;
       }
-      if (progress == null ||
-          !progress.isFinite ||
-          progress <= 0 ||
-          !['minutes', 'hours'].contains(unit)) {
-        continue;
+      if (listened == null || listened <= 0) continue;
+      final stamped = item.values['pepehub_audio_progress_ms'] == listened
+          ? DateTime.tryParse('${item.values['pepehub_audio_progress_at']}')
+          : null;
+      candidates.add((
+        entry: entry,
+        id: id,
+        media: listened,
+        cutoff:
+            stamped ??
+            DateTime.fromMillisecondsSinceEpoch(item.modifiedAt, isUtc: true),
+      ));
+    }
+    final recorded = await _recordedBefore(repository, candidates);
+    final journalsByBook = <String, List<Map<String, dynamic>>>{};
+    for (final e in result) {
+      (journalsByBook[e['bookId'] as String] ??= []).add(e);
+    }
+    for (final candidate in candidates) {
+      final item = candidate.entry.item;
+      var covered = recorded[candidate.id] ?? 0;
+      // Journal entries have no track ranges, so their material is the best
+      // available overlap estimate. Entries recorded later cannot erase history.
+      for (final event
+          in journalsByBook[candidate.id] ?? <Map<String, dynamic>>[]) {
+        final at = DateTime.tryParse('${event['at']}');
+        if (at == null) continue;
+        final before = event['timeKnown'] == false
+            ? '${event['localDay']}'.compareTo(
+                    dayKey(candidate.cutoff.toLocal()),
+                  ) <=
+                  0
+            : at.isBefore(candidate.cutoff);
+        if (!before) continue;
+        final wall = (event['wallMs'] as num).toInt();
+        final media = (event['mediaMs'] as num?)?.toInt() ?? 0;
+        if (event['timeKnown'] == false || wall <= 0) {
+          covered += media > 0 ? media : wall;
+        } else {
+          final clipped = candidate.cutoff
+              .difference(at)
+              .inMilliseconds
+              .clamp(0, wall);
+          covered += ((media > 0 ? media : wall) * clipped / wall).round();
+        }
       }
-      final listened = (progress * (unit == 'hours' ? 3600000 : 60000)).round();
-      // Progress describes media time. Subtract media already journaled so
-      // playback at 2x and repeated visits never inflate the manual remainder.
-      final missing = listened - (recordedMedia[id] ?? 0);
+      final missing = candidate.media - covered;
       if (missing <= 0) continue;
       final date =
           bookDate(item.value('endDate')) ?? bookDate(item.value('startDate'));
-      if (date == null) continue;
-      result.add(
-        _event(id, dayKey(date), missing, missing, 'metadata:${item.id}'),
-      );
+      result.add({
+        ..._event(
+          candidate.id,
+          dayKey(date ?? candidate.cutoff.toLocal()),
+          missing,
+          missing,
+          'metadata:${item.id}',
+        ),
+        'estimated': true,
+        'dateKnown': date != null,
+      });
     }
     return AudioStatisticsHistory(result, titles);
+  }
+
+  /// Union overlapping ranges inside SQLite. Replays count as real listening,
+  /// but must not consume the manual progress twice. Return one row per book.
+  static Future<Map<String, int>> _recordedBefore(
+    Repository repository,
+    List<({LibraryEntry entry, String id, int media, DateTime cutoff})>
+    candidates,
+  ) async {
+    final linked = [
+      for (final c in candidates)
+        if (c.entry.sourceBookId != null)
+          {'book': c.id, 'cutoff': c.cutoff.millisecondsSinceEpoch},
+    ];
+    if (linked.isEmpty) return {};
+    final rows = await repository.db
+        .customSelect(
+          '''
+      WITH requested AS (
+        SELECT json_extract(value,'\$.book') AS book,
+          json_extract(value,'\$.cutoff') AS cutoff FROM json_each(?)
+      ), source AS (
+        SELECT book,cutoff,${SchemaSql.audioEventAt} AS at,
+          json_extract(payload,'\$.kind') AS kind,
+          json_extract(payload,'\$.trackId') AS track,
+          CAST(json_extract(payload,'\$.wallMs') AS INTEGER) AS wall,
+          CAST(json_extract(payload,'\$.positionMs') AS INTEGER) AS lo,
+          CAST(json_extract(payload,'\$.endMs') AS INTEGER) AS hi,
+          COALESCE(NULLIF(CAST(json_extract(payload,'\$.mediaMs') AS INTEGER),0),
+            CAST(json_extract(payload,'\$.wallMs') AS INTEGER)) AS media
+        FROM requested JOIN records ON ${SchemaSql.audioEventBook}=book
+        WHERE ${SchemaSql.audioEventRows} AND deleted=0
+          AND json_extract(payload,'\$.kind') IN ('listen','journal')
+      ), clipped AS (
+        SELECT *, MIN(wall,cutoff-at) AS elapsed FROM source
+        WHERE wall>0 AND at<cutoff
+      ), ranges AS (
+        SELECT book,track,lo,lo+CAST(ROUND(1.0*(hi-lo)*elapsed/wall) AS INTEGER) AS hi
+        FROM clipped WHERE kind='listen' AND hi>lo
+      ), ordered AS (
+        SELECT *,MAX(hi) OVER (PARTITION BY book,track ORDER BY lo,hi
+          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS previous_hi FROM ranges
+      ), totals AS (
+        SELECT book,SUM(MAX(0,hi-MAX(lo,COALESCE(previous_hi,lo)))) AS media FROM ordered GROUP BY book
+        UNION ALL SELECT book,SUM(CAST(ROUND(1.0*media*elapsed/wall) AS INTEGER))
+          FROM clipped WHERE kind='journal' GROUP BY book
+      ) SELECT book,SUM(media) AS media FROM totals GROUP BY book
+    ''',
+          variables: [Variable(jsonEncode(linked))],
+        )
+        .get();
+    return {
+      for (final row in rows) row.read<String>('book'): row.read<int>('media'),
+    };
   }
 
   static Map<String, dynamic> _event(

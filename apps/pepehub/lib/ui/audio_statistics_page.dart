@@ -191,6 +191,9 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
               _global.days[row.read<String>('day')] = row.read<int>('total');
             }
             for (final event in _foreignHistory) {
+              if (event['estimated'] == true || event['dateKnown'] == false) {
+                continue;
+              }
               final day = event['localDay'] as String;
               _global.days[day] =
                   (_global.days[day] ?? 0) + (event['wallMs'] as num).toInt();
@@ -408,9 +411,16 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
               ),
             ),
             Text(
-              'Реальное время звучания · без пауз и перемоток',
+              s != null && s.estimatedMs > 0
+                  ? 'Включая ${statTime(s.estimatedMs)} по полю «Прослушано»: оценка при 1×.'
+                  : 'Реальное время звучания · без пауз и перемоток',
               style: TextStyle(fontSize: 13, color: soft),
             ),
+            if (s != null && s.undatedMs > 0)
+              Text(
+                '${statTime(s.undatedMs)} без даты: только в итогах за всё время.',
+                style: TextStyle(fontSize: 13, color: soft),
+              ),
             if (s != null && data != null) ...[
               const SizedBox(height: 18),
               Wrap(
@@ -418,9 +428,11 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
                 runSpacing: 12,
                 children: [
                   figure('${data.sessions.length}', 'Сессий'),
-                  figure('${s.days.length}', 'Активных дней'),
+                  figure('${s.activityDays.length}', 'Активных дней'),
                   figure(
-                    '${s.averageSpeed.toStringAsFixed(2)}×',
+                    s.knownWallMs == 0
+                        ? '—'
+                        : '${s.averageSpeed.toStringAsFixed(2)}×',
                     'Средняя скорость',
                   ),
                 ],
@@ -515,7 +527,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
     final now = DateTime.now();
     final cells = [
       for (var i = 29; i >= 0; i--)
-        data.lifetime.days[dayKey(
+        data.lifetime.activityDays[dayKey(
               DateTime(now.year, now.month, now.day - i),
             )] ??
             0,

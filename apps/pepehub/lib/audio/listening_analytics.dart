@@ -35,11 +35,12 @@ class ListeningAnalytics {
 
   int currentStreak(DateTime now) {
     var date = DateTime.utc(now.year, now.month, now.day);
-    if (!lifetime.days.containsKey(dayKey(date))) {
+    final days = lifetime.activityDays;
+    if (!days.containsKey(dayKey(date))) {
       date = date.subtract(const Duration(days: 1));
     }
     var count = 0;
-    while (lifetime.days.containsKey(dayKey(date))) {
+    while (days.containsKey(dayKey(date))) {
       count++;
       date = date.subtract(const Duration(days: 1));
     }
@@ -105,13 +106,33 @@ ListeningAnalytics analyzeListening(Map<String, dynamic> request) {
   events.sort((a, b) => (a['at'] as String).compareTo(b['at'] as String));
   final book = request['book'] as String?;
   final cutoff = request['cutoff'] as String?;
-  bool matches(Map<String, dynamic> e) =>
-      (book == null || e['bookId'] == book) &&
-      (cutoff == null || (e['localDay'] as String).compareTo(cutoff) >= 0) &&
-      (rangeStart == null ||
-          !DateTime.parse(e['at'] as String).isBefore(rangeStart)) &&
-      (rangeEnd == null ||
-          DateTime.parse(e['at'] as String).isBefore(rangeEnd));
+  bool matches(Map<String, dynamic> e) {
+    if (book != null && e['bookId'] != book) return false;
+    if (e['dateKnown'] == false) {
+      return cutoff == null && rangeStart == null && rangeEnd == null;
+    }
+    final day = e['localDay'] as String;
+    if (cutoff != null && day.compareTo(cutoff) < 0) return false;
+    // A day-only total has no clock time. The synthetic noon used to sort it
+    // must not determine which local calendar day/year contains the total.
+    if (e['timeKnown'] == false) {
+      return (rangeStart == null ||
+              day.compareTo(dayKey(rangeStart.toLocal())) >= 0) &&
+          (rangeEnd == null ||
+              day.compareTo(
+                    dayKey(
+                      rangeEnd
+                          .subtract(const Duration(microseconds: 1))
+                          .toLocal(),
+                    ),
+                  ) <=
+                  0);
+    }
+    final at = DateTime.parse(e['at'] as String);
+    return (rangeStart == null || !at.isBefore(rangeStart)) &&
+        (rangeEnd == null || at.isBefore(rangeEnd));
+  }
+
   final filtered = events.where(matches).toList();
   final allBook = events
       .where((e) => book == null || e['bookId'] == book)
@@ -125,6 +146,7 @@ ListeningAnalytics analyzeListening(Map<String, dynamic> request) {
     final at = DateTime.parse(e['at'] as String);
     if (e['kind'] == 'journal') {
       active = null;
+      if (e['estimated'] == true) continue;
       if (matches(e) && (e['wallMs'] as num) > 0) {
         final session = ListeningSession(
           e['bookId'] as String,
