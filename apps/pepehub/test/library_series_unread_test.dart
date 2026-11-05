@@ -118,7 +118,7 @@ void main() {
           (w.key as ValueKey<String>).value.startsWith('library-work:'),
     );
     expect(rows.evaluate().length, inInclusiveRange(1, 25));
-    await tester.tap(find.text('Все статусы'));
+    await tester.tap(find.byTooltip('Фильтры библиотеки'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(
       find.byKey(const ValueKey('library-status:all')),

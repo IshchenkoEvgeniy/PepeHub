@@ -163,7 +163,10 @@ void main() {
         expect(service.inbox.length, 3);
         expect(find.text('В планах'), findsNothing);
         expect(find.byType(Badge), findsNothing);
-        expect(find.textContaining('Итоги и цель'), findsOneWidget);
+        expect(
+          find.textContaining('${DateTime.now().year} · книг:'),
+          findsOneWidget,
+        );
         expect(tester.takeException(), isNull);
         if (width != 1100 && scale == 1) {
           await tester.runAsync(() async {
@@ -183,6 +186,7 @@ void main() {
         await tester.ensureVisible(query);
         await tester.pumpAndSettle();
         await tester.enterText(query, 'Жюль');
+        await tester.pump(const Duration(milliseconds: 250));
         await tester.pumpAndSettle();
         expect(find.text('Дюна'), findsNothing);
         final series = find.byKey(
@@ -207,12 +211,18 @@ void main() {
         await tester.ensureVisible(
           find.byKey(const ValueKey('library-search-scope:all')),
         );
+        await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(const ValueKey('library-search-scope:all')),
         );
         await tester.pumpAndSettle();
         await tester.tap(find.text('По серии').last);
         await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.text('Ничего не найдено'),
+          180,
+          scrollable: find.byType(Scrollable).first,
+        );
         expect(find.text('Ничего не найдено'), findsOneWidget);
         await tester.ensureVisible(find.text('Сбросить фильтры'));
         await tester.pumpAndSettle();
@@ -227,7 +237,13 @@ void main() {
         await tester.ensureVisible(query);
         await tester.pumpAndSettle();
         await tester.enterText(query, 'Путешествия');
+        await tester.pump(const Duration(milliseconds: 250));
         await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.byKey(const ValueKey('library-work:island')),
+          180,
+          scrollable: find.byType(Scrollable).first,
+        );
         expect(
           find.byKey(const ValueKey('library-work:ocean')),
           findsOneWidget,

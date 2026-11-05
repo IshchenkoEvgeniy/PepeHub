@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
@@ -258,7 +259,29 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       descending = true,
       hiddenOnly = false;
   String statusFilter = 'all', collectionFilter = 'all';
+  String ratingFilter = 'all';
+  static const _viewKey = 'library-view-v1';
+  static const _sortLabels = {
+    'added': 'Недавно добавленные',
+    'completed': 'По дате завершения',
+    'started': 'По дате начала',
+    'recent': 'Недавно изменённые',
+    'title': 'По названию А–Я',
+    'author': 'По автору А–Я',
+    'series': 'По серии А–Я',
+    'progress': 'По прогрессу',
+    'rating': 'По оценке',
+  };
+  int _viewPreferenceEdit = 0;
+  Future<void> _viewWrites = Future.value();
   final selectedBooks = <String>{};
+  List<LibraryEntry>? _catalogInput;
+  Object? _catalogKey;
+  List<LibraryEntry> _catalogEntries = [];
+  List<String> _collectionOptions = [];
+  List<int> _yearOptions = [];
+  Map<String, int> _statusCounts = {};
+  int _yearBooks = 0, _yearAudio = 0, _allBooks = 0, _allAudio = 0;
   List<LibraryEntry>? _filterInput;
   Object? _filterKey;
   List<LibraryEntry> _filtered = [];
@@ -269,7 +292,59 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     super.initState();
     unawaited(_loadGoal());
     unawaited(_loadGrouping());
+    unawaited(_loadView());
   }
+
+  Future<void> _loadView() async {
+    final edit = _viewPreferenceEdit;
+    final raw = await widget.service.local.meta(_viewKey);
+    if (!mounted || edit != _viewPreferenceEdit || raw == null) return;
+    try {
+      final saved = jsonDecode(raw);
+      if (saved is! Map) return;
+      setState(() {
+        if (saved['grid'] is bool) grid = saved['grid'];
+        if (saved['descending'] is bool) descending = saved['descending'];
+        if (_sortLabels.containsKey(saved['sort'])) sort = saved['sort'];
+        if (['all', 'book', 'audiobook'].contains(saved['type'])) {
+          type = saved['type'];
+        }
+      });
+    } on FormatException {
+      // A damaged preference must not prevent the catalog from opening.
+    }
+  }
+
+  void _changeView(VoidCallback change) {
+    _viewPreferenceEdit++;
+    setState(change);
+    final value = jsonEncode({
+      'grid': grid,
+      'sort': sort,
+      'descending': descending,
+      'type': type,
+    });
+    _viewWrites = _viewWrites
+        .then((_) => widget.service.local.setMeta(_viewKey, value))
+        .catchError((Object _) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Не удалось запомнить вид библиотеки'),
+              ),
+            );
+          }
+        });
+  }
+
+  void _resetFilters() => _changeView(() {
+    _searchTimer?.cancel();
+    search.clear();
+    _searchQuery = '';
+    type = scope = year = statusFilter = collectionFilter = ratingFilter =
+        'all';
+    hiddenOnly = favoritesOnly = false;
+  });
 
   Future<void> _loadGrouping() async {
     final edit = _groupPreferenceEdit;
@@ -445,11 +520,13 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           };
     final haystack = text.toLowerCase().replaceAll('ё', 'е');
     return (type == 'all' || item.mediaType == type) &&
-        (statusFilter == 'all' || libraryStatus(item) == statusFilter) &&
         (collectionFilter == 'all' ||
             libraryCollections(item).contains(collectionFilter)) &&
-        ((item.values['pepehub_hidden'] == true) == hiddenOnly) &&
         (!favoritesOnly || item.values['pepehub_favorite'] == true) &&
+        (ratingFilter == 'all' ||
+            (ratingFilter == 'unrated'
+                ? libraryRating(item) == null
+                : (libraryRating(item) ?? -1) >= int.parse(ratingFilter))) &&
         (year == 'all' ||
             (year == 'unknown'
                 ? libraryCompletionDate(item) == null
@@ -461,6 +538,44 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       compareLibraryEntries(a, b, sort, descending: descending);
 
   List<LibraryEntry> _results(List<LibraryEntry> all) {
+    final currentYear = DateTime.now().year;
+    final catalogKey = (hiddenOnly, groupSeries, currentYear);
+    if (!identical(all, _catalogInput) || catalogKey != _catalogKey) {
+      _catalogInput = all;
+      _catalogKey = catalogKey;
+      _catalogEntries = [];
+      final collections = <String>{}, years = <int>{};
+      _yearBooks = _yearAudio = _allBooks = _allAudio = 0;
+      for (final entry in all) {
+        final item = entry.item;
+        final hidden = item.values['pepehub_hidden'] == true;
+        final completed = libraryCompletionDate(item);
+        if (!hidden && isFinishedLibraryItem(item)) {
+          final audio = item.mediaType == 'audiobook';
+          if (audio) {
+            _allAudio++;
+          } else {
+            _allBooks++;
+          }
+          if (completed?.year == currentYear) {
+            if (audio) {
+              _yearAudio++;
+            } else {
+              _yearBooks++;
+            }
+          }
+        }
+        if (hidden != hiddenOnly || !groupSeries && isUnreadSeriesItem(item)) {
+          continue;
+        }
+        _catalogEntries.add(entry);
+        collections.addAll(libraryCollections(item));
+        if (completed != null) years.add(completed.year);
+      }
+      _collectionOptions = collections.toList()..sort();
+      _yearOptions = years.toList()..sort((a, b) => b.compareTo(a));
+      _filterInput = null;
+    }
     final key = (
       _searchQuery,
       type,
@@ -472,16 +587,31 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       favoritesOnly,
       statusFilter,
       collectionFilter,
+      ratingFilter,
     );
     if (!identical(all, _filterInput) || key != _filterKey) {
       _filterInput = all;
       _filterKey = key;
       final normalized = _searchQuery.trim().toLowerCase().replaceAll('ё', 'е');
       final terms = normalized.isEmpty ? <String>[] : normalized.split(_spaces);
-      final matched = all.where((entry) => _matches(entry, terms)).toList()
-        ..sort(_compare);
-      _filtered = matched.where((e) => isLibraryArchiveItem(e.item)).toList();
-      _seriesGroups = groupLibrarySeries(matched);
+      final matched = _catalogEntries
+          .where((entry) => _matches(entry, terms))
+          .toList();
+      _statusCounts = {};
+      for (final entry in matched) {
+        final status = libraryStatus(entry.item);
+        _statusCounts[status] = (_statusCounts[status] ?? 0) + 1;
+      }
+      _filtered =
+          matched
+              .where(
+                (entry) =>
+                    statusFilter == 'all' ||
+                    libraryStatus(entry.item) == statusFilter,
+              )
+              .toList()
+            ..sort(_compare);
+      _seriesGroups = groupLibrarySeries(_filtered);
     }
     return _filtered;
   }
@@ -501,18 +631,14 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           annualGoal = null;
           unawaited(_loadGoal());
         }
-        final all = service.visibleEntries;
         final entries = _results(service.seriesEntries);
+        final all = _catalogEntries;
         final candidates = groupSeries
             ? _seriesGroups.expand((g) => g.entries)
             : entries;
         final selected =
             candidates.where((e) => e.item.id == selectedId).firstOrNull ??
             candidates.firstOrNull;
-        final books = service.completed
-                .where((e) => e.item.mediaType == 'book')
-                .length,
-            audio = service.completed.length - books;
         return ShelfShell(
           title: 'Библиотека',
           navigation: widget.navigation,
@@ -525,9 +651,6 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                   await _groups(action);
                 }
                 if (!context.mounted) return;
-                if (action == 'hidden') {
-                  setState(() => hiddenOnly = !hiddenOnly);
-                }
                 if (action == 'notes') {
                   await Navigator.push(
                     context,
@@ -544,15 +667,6 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                       builder: (_) => ActivityPage(library: service),
                     ),
                   );
-                }
-                if (action == 'select') {
-                  setState(() {
-                    selecting = !selecting;
-                    selectedBooks.clear();
-                  });
-                }
-                if (action == 'favorites') {
-                  setState(() => favoritesOnly = !favoritesOnly);
                 }
                 if (action == 'trash') {
                   if (!context.mounted) return;
@@ -575,27 +689,9 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                   value: 'collection',
                   child: Text('Коллекции'),
                 ),
-                PopupMenuItem(
-                  value: 'hidden',
-                  child: Text(
-                    hiddenOnly ? 'Вернуться к видимым' : 'Скрытые карточки',
-                  ),
-                ),
                 const PopupMenuItem(
                   value: 'journal',
                   child: Text('Журнал чтения и прослушивания'),
-                ),
-                PopupMenuItem(
-                  value: 'select',
-                  child: Text(
-                    selecting ? 'Завершить выбор' : 'Выбрать несколько книг',
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'favorites',
-                  child: Text(
-                    favoritesOnly ? 'Показать все книги' : 'Только избранные',
-                  ),
                 ),
                 PopupMenuItem(
                   value: 'trash',
@@ -626,11 +722,25 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                             children: [
                               Expanded(
                                 child: Text(
-                                  'Записей: ${all.length}',
+                                  'Показано ${entries.length} из ${all.length}',
                                   style: TextStyle(
                                     color: palette.muted,
                                     fontSize: 12,
                                   ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: selecting
+                                    ? 'Завершить выбор'
+                                    : 'Выбрать несколько книг',
+                                isSelected: selecting,
+                                onPressed: () => setState(() {
+                                  selecting = !selecting;
+                                  selectedBooks.clear();
+                                }),
+                                icon: const Icon(
+                                  Icons.checklist_rounded,
+                                  size: 20,
                                 ),
                               ),
                               TextButton.icon(
@@ -664,10 +774,22 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                             minTileHeight: 40,
                             dense: true,
                             title: Text(
-                              'Итоги и цель · $books книг, $audio аудиокниг',
+                              '${DateTime.now().year} · книг: $_yearBooks · аудиокниг: $_yearAudio',
                               style: const TextStyle(fontSize: 12),
                             ),
-                            children: [_goal(service.completed)],
+                            children: [
+                              _goal(),
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Text(
+                                  'За всё время · книг: $_allBooks · аудиокниг: $_allAudio',
+                                  style: TextStyle(
+                                    color: palette.muted,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 8),
                           if (selecting)
@@ -739,16 +861,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                                 ],
                               ),
                             ),
-                          if (favoritesOnly)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: InputChip(
-                                label: const Text('Только избранные'),
-                                onDeleted: () =>
-                                    setState(() => favoritesOnly = false),
-                              ),
-                            ),
-                          _collectionControls(all),
+                          _collectionControls(),
                         ],
                       ),
                     ),
@@ -782,7 +895,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       },
     ),
   );
-  Widget _collectionControls(List<LibraryEntry> all) {
+  Widget _collectionControls() {
     final palette = ShelfPalette.of(context);
     final pill = OutlineInputBorder(
       borderRadius: BorderRadius.circular(26),
@@ -886,99 +999,76 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 label: Text(option.value),
                 selected: type == option.key,
                 showCheckmark: false,
-                onSelected: (_) => setState(() => type = option.key),
+                onSelected: (_) => _changeView(() => type = option.key),
               ),
           ],
         ),
-        if (!filters)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: ActionChip(
-              label: Text(
-                statusFilter == 'all'
-                    ? 'Все статусы'
-                    : seriesVolumeStatuses(type)[statusFilter] ?? statusFilter,
+        const SizedBox(height: 6),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              ChoiceChip(
+                key: const ValueKey('library-quick-status:all'),
+                label: const Text('Все статусы'),
+                showCheckmark: false,
+                selected: statusFilter == 'all',
+                onSelected: (_) => setState(() => statusFilter = 'all'),
               ),
-              avatar: const Icon(Icons.filter_list, size: 16),
-              onPressed: () => setState(() => filters = true),
-            ),
-          ),
-        if (filters) ...[
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            key: ValueKey('library-status:$statusFilter'),
-            initialValue: statusFilter,
-            decoration: const InputDecoration(
-              labelText: 'Статус книги',
-              isDense: true,
-            ),
-            items: [
-              const DropdownMenuItem(value: 'all', child: Text('Все статусы')),
-              for (final e
-                  in (groupSeries
-                          ? seriesVolumeStatuses(type)
-                          : libraryStatusesLocal)
-                      .entries)
-                DropdownMenuItem(value: e.key, child: Text(e.value)),
+              for (final entry in {
+                'finished': 'Завершено',
+                'paused': 'Отложено',
+                'abandoned': 'Брошено',
+                if (groupSeries)
+                  'unread': type == 'audiobook'
+                      ? 'Не прослушано'
+                      : 'Не прочитано',
+              }.entries)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: ChoiceChip(
+                    key: ValueKey('library-quick-status:${entry.key}'),
+                    label: Text(
+                      '${entry.value} · ${_statusCounts[entry.key] ?? 0}',
+                    ),
+                    showCheckmark: false,
+                    selected: statusFilter == entry.key,
+                    onSelected: (selected) => setState(
+                      () => statusFilter = selected ? entry.key : 'all',
+                    ),
+                  ),
+                ),
             ],
-            onChanged: (v) => setState(() => statusFilter = v ?? 'all'),
           ),
-        ],
+        ),
+        _activeFilters(),
         if (filters) ...[
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            key: ValueKey('library-collection:$collectionFilter'),
-            initialValue: collectionFilter,
-            decoration: const InputDecoration(
-              labelText: 'Коллекция',
-              isDense: true,
-            ),
-            items: [
-              const DropdownMenuItem(
-                value: 'all',
-                child: Text('Все коллекции'),
+          _advancedFilters(),
+          Wrap(
+            spacing: 8,
+            children: [
+              FilterChip(
+                key: const ValueKey('library-favorites-filter'),
+                label: const Text('Только избранные'),
+                selected: favoritesOnly,
+                onSelected: (value) => setState(() => favoritesOnly = value),
               ),
-              for (final name in ({
-                ...all.expand((e) => libraryCollections(e.item)),
-                if (collectionFilter != 'all') collectionFilter,
-              }.toList()..sort()))
-                DropdownMenuItem(value: name, child: Text(name)),
+              FilterChip(
+                key: const ValueKey('library-hidden-filter'),
+                label: const Text('Скрытые карточки'),
+                selected: hiddenOnly,
+                onSelected: (value) => setState(() => hiddenOnly = value),
+              ),
             ],
-            onChanged: (v) => setState(() => collectionFilter = v ?? 'all'),
           ),
         ],
-        if (filters)
-          Padding(
-            padding: const EdgeInsets.only(top: 14),
-            child: DropdownButtonFormField<String>(
-              key: ValueKey('library-year:$year'),
-              initialValue: year,
-              decoration: const InputDecoration(
-                labelText: 'Год завершения',
-                isDense: true,
-              ),
-              items: [
-                const DropdownMenuItem(value: 'all', child: Text('Все годы')),
-                const DropdownMenuItem(
-                  value: 'unknown',
-                  child: Text('Дата не указана'),
-                ),
-                for (final value in ({
-                  ...all
-                      .map((e) => libraryCompletionDate(e.item)?.year)
-                      .whereType<int>(),
-                  if (int.tryParse(year) != null) int.parse(year),
-                }.toList()..sort((a, b) => b.compareTo(a))))
-                  DropdownMenuItem(value: '$value', child: Text('$value')),
-              ],
-              onChanged: (next) => setState(() => year = next ?? 'all'),
-            ),
-          ),
         const SizedBox(height: 8),
         Row(
           children: [
             Expanded(
               child: DropdownButton<String>(
+                key: const ValueKey('library-sort'),
                 value: sort,
                 isExpanded: true,
                 underline: const SizedBox(),
@@ -987,43 +1077,19 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                   color: palette.text,
                   fontSize: 13,
                 ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'added',
-                    child: Text('Недавно добавленные'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'completed',
-                    child: Text('По дате завершения'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'recent',
-                    child: Text('Недавно изменённые'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'title',
-                    child: Text('По названию А–Я'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'author',
-                    child: Text('По автору А–Я'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'series',
-                    child: Text('По серии А–Я'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'progress',
-                    child: Text('По прогрессу'),
-                  ),
-                  DropdownMenuItem(value: 'rating', child: Text('По оценке')),
+                items: [
+                  for (final entry in _sortLabels.entries)
+                    DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value, overflow: TextOverflow.ellipsis),
+                    ),
                 ],
-                onChanged: (next) => setState(() {
+                onChanged: (next) => _changeView(() {
                   sort = next ?? 'added';
-                  if (sort == 'added') statusFilter = 'all';
                   descending = [
                     'added',
                     'completed',
+                    'started',
                     'recent',
                     'rating',
                     'progress',
@@ -1033,7 +1099,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
             ),
             IconButton(
               tooltip: descending ? 'По убыванию' : 'По возрастанию',
-              onPressed: () => setState(() => descending = !descending),
+              onPressed: () => _changeView(() => descending = !descending),
               icon: Icon(descending ? Icons.south : Icons.north, size: 20),
             ),
             IconButton(
@@ -1048,7 +1114,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
             ),
             IconButton(
               tooltip: grid ? 'Показать списком' : 'Показать карточками',
-              onPressed: () => setState(() => grid = !grid),
+              onPressed: () => _changeView(() => grid = !grid),
               icon: Icon(
                 grid ? Icons.view_list_outlined : Icons.grid_view_rounded,
                 size: 20,
@@ -1058,6 +1124,167 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
         ),
         const SizedBox(height: 8),
       ],
+    );
+  }
+
+  Widget _activeFilters() {
+    final active = <({String key, String label, VoidCallback clear})>[
+      if (_searchQuery.trim().isNotEmpty)
+        (
+          key: 'search',
+          label: 'Поиск: ${_searchQuery.trim()}',
+          clear: () => setState(() {
+            _searchTimer?.cancel();
+            search.clear();
+            _searchQuery = '';
+          }),
+        ),
+      if (scope != 'all')
+        (
+          key: 'scope',
+          label:
+              'Поиск: ${{'title': 'в названии', 'author': 'по автору', 'narrator': 'по чтецу', 'series': 'по серии'}[scope]}',
+          clear: () => setState(() => scope = 'all'),
+        ),
+      if (type != 'all')
+        (
+          key: 'type',
+          label: type == 'book' ? 'Книги' : 'Аудиокниги',
+          clear: () => _changeView(() => type = 'all'),
+        ),
+      if (statusFilter != 'all')
+        (
+          key: 'status',
+          label: seriesVolumeStatuses(type)[statusFilter] ?? statusFilter,
+          clear: () => setState(() => statusFilter = 'all'),
+        ),
+      if (collectionFilter != 'all')
+        (
+          key: 'collection',
+          label: 'Коллекция: $collectionFilter',
+          clear: () => setState(() => collectionFilter = 'all'),
+        ),
+      if (year != 'all')
+        (
+          key: 'year',
+          label: year == 'unknown' ? 'Дата не указана' : 'Год: $year',
+          clear: () => setState(() => year = 'all'),
+        ),
+      if (ratingFilter != 'all')
+        (
+          key: 'rating',
+          label: ratingFilter == 'unrated'
+              ? 'Без оценки'
+              : 'Оценка: от $ratingFilter',
+          clear: () => setState(() => ratingFilter = 'all'),
+        ),
+      if (favoritesOnly)
+        (
+          key: 'favorites',
+          label: 'Только избранные',
+          clear: () => setState(() => favoritesOnly = false),
+        ),
+      if (hiddenOnly)
+        (
+          key: 'hidden',
+          label: 'Скрытые карточки',
+          clear: () => setState(() => hiddenOnly = false),
+        ),
+    ];
+    if (active.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      key: const ValueKey('library-active-filters'),
+      padding: const EdgeInsets.only(top: 6),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          for (final filter in active)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 300),
+              child: InputChip(
+                key: ValueKey('library-active-${filter.key}'),
+                label: Text(filter.label, overflow: TextOverflow.ellipsis),
+                deleteButtonTooltipMessage: 'Убрать фильтр',
+                onDeleted: filter.clear,
+              ),
+            ),
+          TextButton(
+            key: const ValueKey('library-reset-filters'),
+            onPressed: _resetFilters,
+            child: const Text('Сбросить всё'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _advancedFilters() {
+    Widget field(
+      String name,
+      String label,
+      String value,
+      Map<String, String> options,
+      ValueChanged<String> change,
+    ) => DropdownButtonFormField<String>(
+      key: ValueKey('library-$name:$value'),
+      initialValue: value,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: label,
+        helperText: name == 'rating' ? 'Шкала 0–10' : null,
+        isDense: true,
+      ),
+      items: [
+        for (final entry in options.entries)
+          DropdownMenuItem(
+            value: entry.key,
+            child: Text(entry.value, overflow: TextOverflow.ellipsis),
+          ),
+      ],
+      onChanged: (next) {
+        if (next != null) setState(() => change(next));
+      },
+    );
+    final fields = [
+      field('status', 'Статус книги', statusFilter, {
+        'all': 'Все статусы',
+        ...groupSeries ? seriesVolumeStatuses(type) : libraryStatusesLocal,
+      }, (value) => statusFilter = value),
+      field('collection', 'Коллекция', collectionFilter, {
+        'all': 'Все коллекции',
+        for (final name in _collectionOptions) name: name,
+        if (collectionFilter != 'all') collectionFilter: collectionFilter,
+      }, (value) => collectionFilter = value),
+      field('year', 'Год завершения', year, {
+        'all': 'Все годы',
+        'unknown': 'Дата не указана',
+        for (final value in _yearOptions) '$value': '$value',
+        if (int.tryParse(year) != null) year: year,
+      }, (value) => year = value),
+      field('rating', 'Оценка', ratingFilter, {
+        'all': 'Любая оценка',
+        'unrated': 'Без оценки',
+        for (var value = 0; value <= 10; value++) '$value': 'От $value из 10',
+      }, (value) => ratingFilter = value),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 880
+            ? 4
+            : constraints.maxWidth >= 600
+            ? 3
+            : 1;
+        final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            for (final child in fields) SizedBox(width: width, child: child),
+          ],
+        );
+      },
     );
   }
 
@@ -1090,14 +1317,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 ),
               if (all.isNotEmpty)
                 TextButton(
-                  onPressed: () => setState(() {
-                    _searchTimer?.cancel();
-                    search.clear();
-                    _searchQuery = '';
-                    type = year = scope = statusFilter = collectionFilter =
-                        'all';
-                    hiddenOnly = favoritesOnly = false;
-                  }),
+                  onPressed: _resetFilters,
                   child: const Text('Сбросить фильтры'),
                 ),
             ],
@@ -1460,22 +1680,62 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     );
   }
 
-  Widget _rating(ObsidianLibraryItem item) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      if (_text(item.value('rating')).isNotEmpty)
-        const Icon(Icons.star_rounded, color: Color(0xffc9ae78), size: 12),
-      Flexible(
-        child: Text(
-          _text(item.value('rating')).isEmpty
-              ? '—'
-              : _text(item.value('rating')),
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 11),
-        ),
+  Widget _rating(ObsidianLibraryItem item) {
+    final known = libraryRating(item) != null;
+    final label = libraryRatingLabel(item);
+    final color = ShelfPalette.of(context).accent;
+    return Semantics(
+      label: known ? 'Оценка: ${label.substring(2)} из 10' : 'Без оценки',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (known) ...[
+            Icon(Icons.star_rounded, size: 12, color: color),
+            const SizedBox(width: 3),
+          ],
+          Flexible(
+            child: Text(
+              known ? label.substring(2) : label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: color),
+            ),
+          ),
+        ],
       ),
-    ],
-  );
+    );
+  }
+
+  Widget _bookTitle(ObsidianLibraryItem item) {
+    final rereads = libraryRereads(item);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            item.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: AppFonts.book(ShelfPalette.of(context).text, size: 15),
+          ),
+        ),
+        if (rereads > 0)
+          Padding(
+            padding: const EdgeInsets.only(left: 6),
+            child: Tooltip(
+              message: 'Перечитываний: $rereads',
+              child: Text(
+                '×$rereads',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: ShelfPalette.of(context).muted,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _menu(LibraryEntry entry) => PopupMenuButton<String>(
     tooltip: 'Действия с книгой',
     icon: const Icon(Icons.more_horiz, size: 20),
@@ -1566,12 +1826,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      item.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppFonts.book(palette.text, size: 15),
-                    ),
+                    _bookTitle(item),
                     if (item.authors.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
@@ -1597,6 +1852,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           _status(entry),
+                          if (libraryRating(item) != null) _rating(item),
                           Text(
                             metadataProgressLabel(item),
                             style: TextStyle(
@@ -1668,7 +1924,6 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     double width,
   ) {
     final item = entry.item, palette = ShelfPalette.of(context);
-    final rating = _number(item.value('rating'));
     return Material(
       color: palette.panel,
       shape: RoundedRectangleBorder(
@@ -1743,12 +1998,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      item.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppFonts.book(palette.text, size: 15),
-                    ),
+                    _bookTitle(item),
                     const SizedBox(height: 3),
                     Text(
                       '${item.value('series') != null && item.value('seriesIndex') != null ? 'Том ${_text(item.value('seriesIndex'))} · ' : ''}${item.authors}',
@@ -1769,15 +2019,9 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                               color: palette.accent,
                             ),
                           ),
-                        if (rating != null) ...[
+                        if (libraryRating(item) != null) ...[
                           const SizedBox(width: 8),
-                          Text(
-                            '★ ${_amount(rating)}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: palette.accent,
-                            ),
-                          ),
+                          Flexible(child: _rating(item)),
                         ],
                       ],
                     ),
@@ -1942,16 +2186,9 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     );
   }
 
-  Widget _goal(List<LibraryEntry> entries) {
+  Widget _goal() {
     final palette = ShelfPalette.of(context), year = DateTime.now().year;
-    final finished = entries.where((entry) {
-      if (metadataReadingStatus(entry.item) != 'finished') return false;
-      final raw = _text(entry.item.value('endDate'));
-      final iso = DateTime.tryParse(raw);
-      if (iso != null) return iso.year == year;
-      final parts = raw.split('.');
-      return parts.length == 3 && int.tryParse(parts.last) == year;
-    }).length;
+    final finished = _yearBooks + _yearAudio;
     final goal = annualGoal;
     if (goal == null) {
       return ShelfPanel(

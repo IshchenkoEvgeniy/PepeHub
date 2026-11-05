@@ -64,6 +64,17 @@ int libraryRereads(ObsidianLibraryItem item) {
 List<String> libraryCollections(ObsidianLibraryItem item) =>
     metadataStrings(item.values['pepehub_collections']);
 
+num? libraryRating(ObsidianLibraryItem item) {
+  final value = num.tryParse('${item.value('rating')}'.replaceAll(',', '.'));
+  return value != null && value.isFinite && value >= 0 ? value : null;
+}
+
+String libraryRatingLabel(ObsidianLibraryItem item) {
+  final rating = libraryRating(item);
+  if (rating == null) return '—';
+  return '★ ${rating == rating.roundToDouble() ? rating.toInt() : rating}';
+}
+
 class LibrarySeriesGroup {
   final String name, key;
   final List<LibraryEntry> entries;
@@ -163,10 +174,12 @@ int compareLibraryEntries(
   }
 
   int result;
-  if (sort == 'added' || sort == 'completed') {
-    result = sort == 'added'
-        ? date(libraryAddedAt(left), libraryAddedAt(right))
-        : date(libraryCompletionDate(left), libraryCompletionDate(right));
+  if (['added', 'started', 'completed'].contains(sort)) {
+    result = switch (sort) {
+      'added' => date(libraryAddedAt(left), libraryAddedAt(right)),
+      'started' => date(libraryStartDate(left), libraryStartDate(right)),
+      _ => date(libraryCompletionDate(left), libraryCompletionDate(right)),
+    };
   } else {
     result = switch (sort) {
       'author' => left.authors.toLowerCase().compareTo(
@@ -175,8 +188,8 @@ int compareLibraryEntries(
       'series' => '${left.value('series') ?? ''}'.toLowerCase().compareTo(
         '${right.value('series') ?? ''}'.toLowerCase(),
       ),
-      'rating' => (number(left.value('rating')) ?? -1).compareTo(
-        number(right.value('rating')) ?? -1,
+      'rating' => (libraryRating(left) ?? -1).compareTo(
+        libraryRating(right) ?? -1,
       ),
       'recent' => left.modifiedAt.compareTo(right.modifiedAt),
       'progress' =>

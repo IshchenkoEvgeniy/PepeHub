@@ -219,9 +219,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(series, findsOneWidget);
       expect(built(), 0);
+      await tester.ensureVisible(series);
+      await tester.pumpAndSettle();
       await tester.tap(series);
       await tester.pumpAndSettle();
       expect(built(), inInclusiveRange(1, 20));
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('library-group-series')),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('library-group-series')));
       await tester.pumpAndSettle();
       expect(series, findsNothing);

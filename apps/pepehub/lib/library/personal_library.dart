@@ -95,8 +95,14 @@ bool isLibraryDeleted(ObsidianLibraryItem item) =>
 bool isFinishedLibraryItem(ObsidianLibraryItem item) =>
     canonicalLibraryStatus(item.value('status')) == 'finished';
 
-DateTime? libraryCompletionDate(ObsidianLibraryItem item) {
-  final text = '${item.value('endDate') ?? ''}';
+DateTime? libraryCompletionDate(ObsidianLibraryItem item) =>
+    _libraryDate(item.value('endDate'));
+
+DateTime? libraryStartDate(ObsidianLibraryItem item) =>
+    _libraryDate(item.value('startDate'));
+
+DateTime? _libraryDate(Object? value) {
+  final text = '${value ?? ''}';
   final iso = DateTime.tryParse(text);
   if (iso != null) return iso;
   final parts = text.split('.').map(int.tryParse).toList();
