@@ -59,11 +59,14 @@ class LibraryService extends ChangeNotifier {
   Future<void> get idle => _reloadTail;
   String? coverPath(ObsidianLibraryItem item) {
     final cover = '${item.value('cover') ?? ''}';
+    if (CoverSync.referenceHash(cover) != null) {
+      return coverReferencePath(cover);
+    }
+    if (['http', 'https'].contains(Uri.tryParse(cover)?.scheme)) return null;
     final stored = item.values['pepehub_cover_asset'];
     final hash =
         item.coverAsset?['hash'] ?? (stored is Map ? stored['hash'] : null);
-    return coverReferencePath(cover) ??
-        coverReferencePath('pepehub-cover:$hash');
+    return coverReferencePath('pepehub-cover:$hash');
   }
 
   String? coverReferencePath(String value) {
@@ -155,12 +158,9 @@ class LibraryService extends ChangeNotifier {
     }
   }
 
-  /// A first completion is an outcome, not a reread. Explicit editor values win.
-  void _completeUnreadVolume(
-    ObsidianLibraryItem before,
-    Map<String, dynamic> changes,
-  ) {
-    if (!isUnreadSeriesItem(before) ||
+  /// Completing an item fills known progress. Explicit editor values win.
+  void _completeItem(ObsidianLibraryItem before, Map<String, dynamic> changes) {
+    if (isFinishedLibraryItem(before) ||
         canonicalLibraryStatus(changes['status']) != 'finished') {
       return;
     }
@@ -171,7 +171,9 @@ class LibraryService extends ChangeNotifier {
         total > 0) {
       changes['progress'] = total;
     }
-    if (!changes.containsKey('endDate')) {
+    if (!changes.containsKey('endDate') &&
+        (isUnreadSeriesItem(before) ||
+            '${before.value('endDate') ?? ''}'.isEmpty)) {
       changes['endDate'] = DateTime.now().toIso8601String().substring(0, 10);
     }
   }
@@ -219,7 +221,7 @@ class LibraryService extends ChangeNotifier {
           final card = cards[id];
           if (card == null || isLibraryDeleted(card.item)) continue;
           final patch = {...changes, if (reread) 'status': 'finished'};
-          _completeUnreadVolume(card.item, patch);
+          _completeItem(card.item, patch);
           final values = {...card.item.values, ...patch};
           if (card.item.mediaType == 'audiobook' &&
               patch.containsKey('progress')) {
@@ -234,14 +236,6 @@ class LibraryService extends ChangeNotifier {
               seriesTextKey(changes['series']) !=
                   seriesTextKey(card.item.value('series'))) {
             values['pepehub_series_id'] = null;
-          }
-          if (status == 'finished' &&
-              libraryStatus(card.item) != 'finished' &&
-              '${values['endDate'] ?? ''}'.isEmpty) {
-            values['endDate'] = DateTime.now().toIso8601String().substring(
-              0,
-              10,
-            );
           }
           if (reread && !isUnreadSeriesItem(card.item)) {
             if (libraryRereads(card.item) >= 99999) {
@@ -833,7 +827,11 @@ class LibraryService extends ChangeNotifier {
               seriesTextKey(entry.item.value('series'))) {
         changed['pepehub_series_id'] = null;
       }
-      _completeUnreadVolume(entry.item, changed);
+      if (changed.containsKey('cover') &&
+          !changed.containsKey('pepehub_cover_asset')) {
+        changed['pepehub_cover_asset'] = null;
+      }
+      _completeItem(entry.item, changed);
       final updated = entry.item.withValues({...entry.item.values, ...changed});
       if (libraryStatus(updated) == 'unread' && !isUnreadSeriesItem(updated)) {
         throw ArgumentError('Непрочитанный том должен относиться к серии');

@@ -256,8 +256,17 @@ class _LibraryPageState extends State<LibraryPage> {
     super.dispose();
   }
 
-  void _remoteChanged() {
-    if (mounted) unawaited(_reload());
+  Future<void> _remoteChanged() async {
+    if (!mounted) return;
+    try {
+      await Future.wait([_reload(), obsidianLibrary.reload()]);
+    } catch (e) {
+      if (mounted) {
+        setState(
+          () => obsidianLibrary.error = 'Не удалось обновить библиотеку: $e',
+        );
+      }
+    }
   }
 
   AndroidBookFiles? incomingBooks;

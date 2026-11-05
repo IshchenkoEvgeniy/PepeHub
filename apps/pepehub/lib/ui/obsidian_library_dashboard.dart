@@ -805,7 +805,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                                     onPressed: () => setState(() {
                                       selectedBooks.clear();
                                       selectedBooks.addAll(
-                                        entries.map((e) => e.item.id),
+                                        candidates.map((e) => e.item.id),
                                       );
                                     }),
                                     child: const Text('Выбрать показанные'),

@@ -12,7 +12,7 @@ class LibraryTrashPage extends StatelessWidget {
     body: ListenableBuilder(
       listenable: service,
       builder: (context, _) {
-        final cards = service.trash
+        final cards = service.trash.toList()
           ..sort(
             (a, b) => '${b.item.values['pepehub_deleted_at']}'.compareTo(
               '${a.item.values['pepehub_deleted_at']}',
