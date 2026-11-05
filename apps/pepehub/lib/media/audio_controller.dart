@@ -26,6 +26,7 @@ import 'audio_artwork.dart';
 import 'listening_clock.dart';
 import 'shared_media_handler.dart';
 import 'audio_focus.dart';
+import 'audio_source.dart';
 
 class AudioController extends BaseAudioHandler with ChangeNotifier {
   final AssetStore assets;
@@ -91,9 +92,10 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   Future<void> _durationWork = Future.value();
 
   /// A silent, independent decoder never seeks or pauses the playback queue.
-  Future<void> scanDurations() {
+  Future<void> scanDurations({bool refresh = false}) {
     final generation = ++_durationGeneration;
     final tracks = List<LocalAsset>.of(_tracks);
+    final cacheKey = _durationCacheKey;
     _durationWork = _durationWork
         .then((_) async {
           if (_closed || generation != _durationGeneration) return;
@@ -110,12 +112,17 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
           try {
             for (final track in tracks) {
               if (_closed || generation != _durationGeneration) break;
-              if ((_durations[track.id] ?? Duration.zero) > Duration.zero) {
+              if (!refresh &&
+                  (_durations[track.id] ?? Duration.zero) > Duration.zero) {
                 continue;
               }
               try {
                 final length = await probe
-                    .setAudioSource(AudioSource.uri(audioSourceUri(track.path)))
+                    .setAudioSource(
+                      AudioSource.uri(
+                        audioPlaybackUri(track.path, track.filename),
+                      ),
+                    )
                     .timeout(const Duration(seconds: 12));
                 if (_closed || generation != _durationGeneration) break;
                 if (length == null || length <= Duration.zero) {
@@ -136,6 +143,9 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
                 .timeout(const Duration(seconds: 1))
                 .catchError((Object _) {});
             if (!_closed && generation == _durationGeneration) {
+              if (refresh && failures.isEmpty && cacheKey != null) {
+                await assets.repository.setMeta(cacheKey, '1');
+              }
               scanningDurations = false;
               durationError = failures.isEmpty
                   ? ''
@@ -153,6 +163,10 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         });
     return _durationWork;
   }
+
+  String? get _durationCacheKey => _locator == null
+      ? null
+      : 'audio-duration-bounds-v1:${_locator!.editionId}:${_locator!.manifestRevision}';
 
   Future<void> seekBook(Duration target) => _command(() async {
     final location = timeline.locate(target.inMilliseconds);
@@ -450,7 +464,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
           () => player.setAudioSources(
             [
               for (final track in _tracks)
-                AudioSource.uri(audioSourceUri(track.path)),
+                AudioSource.uri(audioPlaybackUri(track.path, track.filename)),
             ],
             initialIndex: index,
             initialPosition: Duration(milliseconds: saved.locator.positionMs),
@@ -787,7 +801,10 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         () => player.setAudioSources(
           [
             for (var i = 0; i < _tracks.length; i++)
-              AudioSource.uri(audioSourceUri(_tracks[i].path), tag: items[i]),
+              AudioSource.uri(
+                audioPlaybackUri(_tracks[i].path, _tracks[i].filename),
+                tag: items[i],
+              ),
           ],
           initialIndex: _activeIndex,
           initialPosition: Duration(milliseconds: saved.locator.positionMs),
@@ -801,7 +818,11 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         _rememberDuration(current!.id, player.duration!);
       }
       _publishTrack();
-      unawaited(scanDurations());
+      final refreshDurations =
+          defaultTargetPlatform == TargetPlatform.android &&
+          _tracks.any((track) => isMp3Source(track.path, track.filename)) &&
+          await assets.repository.meta(_durationCacheKey!) != '1';
+      unawaited(scanDurations(refresh: refreshDurations));
       if (duration > Duration.zero && position > duration) {
         await _native('seek', () => player.seek(duration));
       }
@@ -1104,7 +1125,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
             [
               for (final track in _tracks)
                 AudioSource.uri(
-                  audioSourceUri(track.path),
+                  audioPlaybackUri(track.path, track.filename),
                   tag: MediaItem(
                     id: track.id,
                     title: track.filename,
@@ -1241,7 +1262,11 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         );
     try {
       final value = await probe
-          .setAudioSource(AudioSource.uri(audioSourceUri(_tracks[index].path)))
+          .setAudioSource(
+            AudioSource.uri(
+              audioPlaybackUri(_tracks[index].path, _tracks[index].filename),
+            ),
+          )
           .timeout(backendTimeout);
       if (value == null || value <= Duration.zero) {
         throw StateError('Не определена длительность трека');

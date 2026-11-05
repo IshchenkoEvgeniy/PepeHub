@@ -49,6 +49,8 @@ android {
 dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation("androidx.media3:media3-extractor:1.4.1")
+    testImplementation("androidx.media3:media3-common:1.4.1")
 }
 
 // AGP 9 host tests package the merged debug assets, including Flutter's output.

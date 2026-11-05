@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -143,6 +144,43 @@ void main() {
     await h.restart();
     return player;
   }
+
+  test(
+    'Android refreshes old MP3 durations once without changing saved progress',
+    () async {
+      await h.controller.shutdown();
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      h.initialPlayerFactory = () =>
+          TestAudioPlayer(const [Duration(seconds: 80), Duration(seconds: 80)]);
+      final probes = <TestAudioPlayer>[];
+      h.durationProbeFactory = () {
+        final probe = TestAudioPlayer(const [Duration(seconds: 80)]);
+        probes.add(probe);
+        return probe;
+      };
+      await h.restart();
+      for (
+        var i = 0;
+        i < 200 &&
+            await h.repo.meta('audio-duration-bounds-v1:edition:1') != '1';
+        i++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      expect(await h.repo.meta('audio-duration-bounds-v1:edition:1'), '1');
+      expect(h.controller.bookDuration, const Duration(seconds: 160));
+      expect((await h.progress()).locator.trackId, 'track1');
+      expect((await h.progress()).locator.positionMs, 3000);
+      await h.controller.shutdown();
+      final before = probes.fold(0, (n, probe) => n + probe.opens);
+      await h.restart();
+      await h.controller.shutdown();
+      expect(before, 2);
+      expect(probes.fold(0, (n, probe) => n + probe.opens), before);
+      expect(await h.repo.meta('audio-duration-bounds-v1:edition:1'), '1');
+    },
+  );
 
   test(
     'a shelf opener loads all 30 chapters and persists automatic advance',

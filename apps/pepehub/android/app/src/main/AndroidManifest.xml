@@ -23,6 +23,9 @@
         <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MEDIA_BUTTON"/></intent-filter>
         </receiver>
+        <provider android:name=".AudioPlaybackProvider"
+            android:authorities="${applicationId}.audioplayback"
+            android:exported="false" />
         <provider android:name=".BookFileProvider"
             android:authorities="${applicationId}.bookfiles"
             android:exported="false" android:grantUriPermissions="true">
