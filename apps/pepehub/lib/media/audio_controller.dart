@@ -163,7 +163,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         reason: 'book_timeline',
       );
     }
-  });
+  }, recoverBackend: false);
 
   Future<void> _commands = Future.value();
   Future<void> _command(
@@ -182,7 +182,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       await action();
     });
     _commands = next.catchError((Object e) {
-      error = '$e';
+      error = _playbackError(e);
       if (!_closed) _notify();
     });
     return _commands;
@@ -317,12 +317,21 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     _playerSubscriptions.add(
       player.errorStream.listen((e) {
         if (!currentPlayer()) return;
-        error = 'Не удалось воспроизвести файл: ${e.message}';
+        error = _playbackError(e);
         _retireBackend(_captureRecoveryProgress(), 'error', {
           'code': e.code.toString(),
+          'message': e.message,
+          'sourceIndex': e.index,
         });
       }),
     );
+  }
+
+  String _playbackError(Object failure) {
+    if (failure is! PlayerException) return '$failure';
+    return 'Сбой аудиоисточника при воспроизведении '
+        '«${current?.filename ?? title}»: ${failure.message ?? failure.code}. '
+        'Попробуйте выбрать другую главу или подключить папку повторно.';
   }
 
   AudioProgress? _captureRecoveryProgress() {
@@ -402,8 +411,11 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     }
   }
 
-  Future<void> _recoverBackend({bool restorePrevious = true}) async {
-    final saved = restorePrevious ? _recoveryProgress : null;
+  Future<void> _recoverBackend({
+    bool restorePrevious = true,
+    AudioProgress? target,
+  }) async {
+    final saved = restorePrevious ? target ?? _recoveryProgress : null;
     await _writes;
     final old = player;
     final restoredVolume = _sleepVolume ?? _requestedSleepVolume ?? old.volume;
@@ -794,7 +806,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         await _native('seek', () => player.seek(duration));
       }
     } catch (e) {
-      error = '$e';
+      error = _playbackError(e);
     } finally {
       _loadingSource = false;
       loading = false;
@@ -855,14 +867,14 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
               _backendUnresponsive) {
             return;
           }
-          error = '$e';
+          error = _playbackError(e);
           _retireBackend(_captureRecoveryProgress(), 'backend_error', {
             'operation': 'play',
           });
         }),
       );
     } catch (e) {
-      error = '$e';
+      error = _playbackError(e);
       _notify();
     }
   }
@@ -1074,7 +1086,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
 
   @override
   Future<void> seek(Duration position) =>
-      _command(() => _seekTo(_activeIndex, position));
+      _command(() => _seekTo(_activeIndex, position), recoverBackend: false);
 
   Future<void> _backendSeek(int index, Duration target) async {
     if (Platform.isWindows &&
@@ -1129,10 +1141,11 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     Duration target, {
     String reason = 'seek',
   }) async {
-    if (_sleepStopped && current != null) await _open(current!, title);
     final fromTrack = current?.id, fromMs = position.inMilliseconds;
     final resume = playing;
-    if (!_ready || index < 0 || index >= _tracks.length) return;
+    if (index < 0 || index >= _tracks.length) return;
+    if (_sleepStopped && current != null) await _open(current!, title);
+    if (!_ready && !_backendUnresponsive) return;
     if (!await audioSourceExists(_tracks[index].path)) {
       throw StateError(
         'Источник недоступен: ${_tracks[index].filename}. Подключите папку повторно.',
@@ -1151,7 +1164,30 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
           (index != _activeIndex || ms >= (_sleepPosition ?? 0))) {
         setSleepTimer(null);
       }
-      await _backendSeek(index, Duration(milliseconds: ms));
+      if (_backendUnresponsive) {
+        // Navigation must reopen the requested chapter directly. Reloading the
+        // failed chapter first can fail again and prevent every seek/Next.
+        final previous = _recoveryProgress;
+        try {
+          await _recoverBackend(
+            target: AudioProgress(
+              AudioLocator(
+                bookId: _locator!.bookId,
+                editionId: _locator!.editionId,
+                trackId: _tracks[index].id,
+                manifestRevision: _locator!.manifestRevision,
+                positionMs: ms,
+              ),
+              speed,
+            ),
+          );
+        } catch (_) {
+          _recoveryProgress = previous;
+          rethrow;
+        }
+      } else {
+        await _backendSeek(index, Duration(milliseconds: ms));
+      }
       _activeIndex = index;
       if (_locator != null) await resumeStore.clear(_locator!.editionId);
       _log('seek', {
@@ -1161,7 +1197,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       });
       _publishTrack();
     } catch (e) {
-      error = 'Не удалось перемотать: $e';
+      error = 'Не удалось перемотать: ${_playbackError(e)}';
     } finally {
       if (resume &&
           !playing &&
@@ -1176,13 +1212,17 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
 
   @override
   Future<void> skipToQueueItem(int index) =>
-      _command(() => _seekTo(index, Duration.zero));
+      _command(() => _seekTo(index, Duration.zero), recoverBackend: false);
   @override
-  Future<void> skipToNext() =>
-      _command(() => _seekTo(_activeIndex + 1, Duration.zero));
+  Future<void> skipToNext() => _command(
+    () => _seekTo(_activeIndex + 1, Duration.zero),
+    recoverBackend: false,
+  );
   @override
-  Future<void> skipToPrevious() =>
-      _command(() => _seekTo(_activeIndex - 1, Duration.zero));
+  Future<void> skipToPrevious() => _command(
+    () => _seekTo(_activeIndex - 1, Duration.zero),
+    recoverBackend: false,
+  );
 
   Future<Duration> _trackDuration(int index) async {
     final cached = _durations[_tracks[index].id];
@@ -1401,6 +1441,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       Duration(milliseconds: chapter.startMs),
       reason: 'chapter',
     ),
+    recoverBackend: false,
   );
   Future<void> goToLocation(
     String trackId,
@@ -1410,7 +1451,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     final index = _tracks.indexWhere((t) => t.id == trackId);
     if (index < 0) throw StateError('Трек отсутствует в книге');
     await _seekTo(index, Duration(milliseconds: milliseconds), reason: reason);
-  });
+  }, recoverBackend: false);
   Future<void> addBookmark(String label) async {
     final asset = current;
     if (asset == null) return;

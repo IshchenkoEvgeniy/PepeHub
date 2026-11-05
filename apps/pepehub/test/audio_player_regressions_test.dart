@@ -96,6 +96,36 @@ class RoundedLoadPlayer extends TestAudioPlayer {
   );
 }
 
+class ChapterLoadPlayer extends TestAudioPlayer {
+  final int? rejectedIndex;
+  final List<int?> loadedIndexes = [];
+  List<AudioSource> sources = [];
+  ChapterLoadPlayer({this.rejectedIndex, int tracks = 2})
+    : super(List.filled(tracks, const Duration(seconds: 100)));
+
+  @override
+  Future<Duration?> setAudioSources(
+    List<AudioSource> sources, {
+    bool preload = true,
+    int? initialIndex,
+    Duration? initialPosition,
+    ShuffleOrder? shuffleOrder,
+  }) {
+    loadedIndexes.add(initialIndex);
+    this.sources = sources;
+    if (initialIndex == rejectedIndex) {
+      throw PlayerException(0, 'Source error', initialIndex);
+    }
+    return super.setAudioSources(
+      sources,
+      preload: preload,
+      initialIndex: initialIndex,
+      initialPosition: initialPosition,
+      shuffleOrder: shuffleOrder,
+    );
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Harness h;
@@ -113,6 +143,91 @@ void main() {
     await h.restart();
     return player;
   }
+
+  test(
+    'a shelf opener loads all 30 chapters and persists automatic advance',
+    () async {
+      await h.controller.skipToQueueItem(0);
+      await h.controller.shutdown();
+      for (var i = 2; i < 30; i++) {
+        await h.db.customStatement(
+          'INSERT INTO audio_tracks VALUES(?,?,?,?,?,?)',
+          ['track$i', 'edition', 'hash0', i, 'Track $i', 100000],
+        );
+      }
+      final player = ChapterLoadPlayer(tracks: 30);
+      h.initialPlayerFactory = () => player;
+      await h.restart();
+      final opener = (await h.assets.shelfAssets(audio: true)).single;
+      expect(await h.assets.audioTracks('book', firstOnly: true), hasLength(1));
+      await h.controller.stop();
+      player.loadedIndexes.clear();
+      await h.controller.open(opener, 'Book');
+      expect(player.loadedIndexes, [0]);
+      expect(player.sources, hasLength(30));
+      expect(h.controller.queue.value, hasLength(30));
+      await h.controller.play();
+      player.at(1, 1500);
+      await h.controller.pause();
+      expect(h.controller.trackIndex, 1);
+      expect((await h.progress()).locator.trackId, 'track1');
+      expect((await h.progress()).locator.positionMs, 1500);
+      expect(h.controller.error, isEmpty);
+    },
+  );
+
+  for (final navigation in ['next', 'list', 'timeline', 'bookmark']) {
+    test(
+      '$navigation opens the requested chapter without reloading a failed first chapter',
+      () async {
+        await h.controller.skipToQueueItem(0);
+        await h.controller.play();
+        h.player.at(0, 98000);
+        h.player.errors.add(PlayerException(0, 'Source error', 0));
+        final replacement = ChapterLoadPlayer(rejectedIndex: 0);
+        h.replacementPlayerFactory = () => replacement;
+        if (navigation == 'next') {
+          await h.controller.skipToNext();
+        } else if (navigation == 'list') {
+          await h.controller.skipToQueueItem(1);
+        } else if (navigation == 'timeline') {
+          await h.controller.seekBook(const Duration(seconds: 100));
+        } else {
+          await h.controller.goToLocation('track1', 0);
+        }
+        expect(replacement.loadedIndexes, [1]);
+        expect(h.controller.trackIndex, 1);
+        expect(h.controller.position, Duration.zero);
+        expect(h.controller.canPlay, true);
+        expect(h.controller.error, isEmpty);
+        await h.controller.play();
+        expect(h.controller.playing, true);
+        await h.controller.pause();
+        expect((await h.progress()).locator.trackId, 'track1');
+      },
+    );
+  }
+
+  test(
+    'a failed chapter selection retains the audible checkpoint for retry',
+    () async {
+      await h.controller.skipToQueueItem(0);
+      h.player.at(0, 98000);
+      h.player.errors.add(PlayerException(0, 'Source error', 0));
+      h.replacementPlayerFactory = () => ChapterLoadPlayer(rejectedIndex: 1);
+      await h.controller.skipToNext();
+      expect(h.controller.error, contains('Source error'));
+      expect(h.controller.canPlay, true);
+      expect(h.controller.trackIndex, 0);
+      expect(h.controller.position.inMilliseconds, 98000);
+      expect((await h.progress()).locator.trackId, 'track0');
+      h.replacementPlayerFactory = () => ChapterLoadPlayer();
+      await h.controller.play();
+      expect(h.controller.trackIndex, 0);
+      expect(h.controller.position.inMilliseconds, 98000);
+      expect(h.controller.playing, true);
+    },
+  );
 
   for (final roundingMs in [-1, 1]) {
     test(
