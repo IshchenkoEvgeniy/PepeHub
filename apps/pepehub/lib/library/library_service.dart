@@ -504,6 +504,25 @@ class LibraryService extends ChangeNotifier {
   Future<void> loadCached() async {
     if (_disposed) return;
     var values = await repository.entries();
+    if (missingLibrarySeriesLinks(values.values).isNotEmpty) {
+      await repository.mutate((cards) async {
+        for (final link in missingLibrarySeriesLinks(cards.values).entries) {
+          final entry = cards[link.key]!;
+          cards[link.key] = LibraryEntry(
+            entry.item.withValues({
+              ...entry.item.values,
+              'pepehub_series_id': link.value,
+            }),
+            sourceBookId: entry.sourceBookId,
+            state: entry.state,
+            message: entry.message,
+            operation: entry.operation,
+            remote: entry.remote,
+          );
+        }
+      });
+      values = await repository.entries();
+    }
     final retention =
         int.tryParse(await local.meta('library-trash-retention-days') ?? '') ??
         0;
@@ -672,11 +691,10 @@ class LibraryService extends ChangeNotifier {
     String sourceBookId, {
     Map<String, dynamic>? original,
   }) async {
-    if (!libraryStatusesLocal.containsKey(
-      canonicalLibraryStatus(item.value('status')),
-    )) {
+    if (!libraryItemStatuses(item)
+        .containsKey(canonicalLibraryStatus(item.value('status')))) {
       throw ArgumentError(
-        'В библиотеке доступны только завершённые, отложенные и брошенные произведения',
+        'Выберите статус произведения; непрочитанный том должен относиться к серии',
       );
     }
     final existing = (await repository.entries()).values
@@ -905,7 +923,8 @@ class LibraryService extends ChangeNotifier {
       }
       if (changed.containsKey('series') &&
           seriesTextKey(changed['series']) !=
-              seriesTextKey(entry.item.value('series'))) {
+              seriesTextKey(entry.item.value('series')) &&
+          !changed.containsKey('pepehub_series_id')) {
         changed['pepehub_series_id'] = null;
       }
       if (changed.containsKey('cover') &&

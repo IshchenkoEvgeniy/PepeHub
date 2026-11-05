@@ -57,6 +57,7 @@ class LibraryMetadataEditor extends StatefulWidget {
   final String saveLabel;
   final Future<String?> Function()? onPickCover, onSearchCover;
   final Map<String, List<String>> suggestions;
+  final List<LibraryEntry> seriesEntries;
   final Map<String, dynamic>? collection;
   final List<Map<String, dynamic>> collections;
   final Map<String, String> syncPolicy;
@@ -74,6 +75,7 @@ class LibraryMetadataEditor extends StatefulWidget {
     this.onPickCover,
     this.onSearchCover,
     this.suggestions = const {},
+    this.seriesEntries = const [],
     this.collection,
     this.collections = const [],
     this.syncPolicy = const {},
@@ -98,6 +100,21 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
   bool saving = false;
   int editGeneration = 0;
   String? error;
+  final seriesGroups = <String, List<LibrarySeriesGroup>>{};
+  String? selectedSeriesKey;
+  String? _propertyKey(String field) =>
+      fields.values.where((f) => f.field == field).firstOrNull?.key;
+  String get seriesName =>
+      controllers[_propertyKey('series')]?.text.trim() ?? '';
+  LibrarySeriesGroup? get matchedSeries {
+    final matches = seriesGroups[seriesTextKey(seriesName)] ?? const [];
+    return matches.where((g) => g.key == selectedSeriesKey).firstOrNull ??
+        (matches.length == 1 ? matches.single : null);
+  }
+
+  Map<String, String> get currentStatuses => libraryItemStatuses(
+    widget.item.withValues({...widget.item.values, 'series': seriesName}),
+  );
   bool get personal =>
       widget.item.fields == personalLibraryFields ||
       widget.item.fields.any((f) => f.key == 'title' && f.field == 'title') &&
@@ -142,16 +159,177 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
           .where((f) => f.field == 'status')
           .firstOrNull
           ?.key;
-      if (key != null &&
-          !libraryItemStatuses(widget.item)
-              .containsKey(controllers[key]!.text)) {
+      if (key != null && !currentStatuses.containsKey(controllers[key]!.text)) {
         controllers[key]!.text = 'finished';
       }
+      for (final group in groupLibrarySeries(
+        widget.seriesEntries
+            .where(
+              (e) => isSeriesCatalogItem(e.item) && !isLibraryDeleted(e.item),
+            )
+            .toList(),
+      )) {
+        if (group.name.isNotEmpty) {
+          (seriesGroups[seriesTextKey(group.name)] ??= []).add(group);
+        }
+      }
+      selectedSeriesKey = librarySeriesKey(widget.item);
+      controllers[_propertyKey('series')]?.addListener(_seriesChanged);
     }
+  }
+
+  void _seriesChanged() {
+    if (!personal || widget.lockedFields.contains('series')) return;
+    final group = matchedSeries;
+    final id =
+        group?.entries.first.item.values['pepehub_series_id'] ??
+        (seriesTextKey(seriesName) == seriesTextKey(widget.item.value('series'))
+            ? widget.item.values['pepehub_series_id']
+            : null);
+    (controllers['pepehub_series_id'] ??= TextEditingController()).text =
+        id is String ? id : '';
+    setState(() {});
+  }
+
+  Future<void> _chooseSeries() async {
+    final matches = seriesGroups[seriesTextKey(seriesName)] ?? const [];
+    final selected = await showDialog<LibrarySeriesGroup>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Выбрать цикл'),
+        content: SizedBox(
+          width: 440,
+          height: 320,
+          child: ListView.builder(
+            itemCount: matches.length,
+            itemBuilder: (context, index) {
+              final group = matches[index];
+              return ListTile(
+                title: Text(group.name),
+                subtitle: Text(
+                  '${group.entries.first.item.authors} · томов: ${group.entries.length}',
+                ),
+                onTap: () => Navigator.pop(context, group),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    selectedSeriesKey = selected.key;
+    controllers[_propertyKey('series')]!.text = selected.name;
+    _seriesChanged();
+  }
+
+  Future<void> _borrowSeriesMetadata(LibrarySeriesGroup group) async {
+    final proposal = commonLibrarySeriesMetadata(group, widget.item);
+    final chosen = <String>{};
+    for (final field in proposal.keys) {
+      final key = _propertyKey(field) ?? field;
+      final current = _parse(key, controllers[key]?.text ?? '');
+      if (current == null ||
+          current == '' ||
+          current is List && current.isEmpty) {
+        chosen.add(field);
+      }
+    }
+    String label(String key) =>
+        libraryLabels[key] ??
+        const {
+          'language': 'Язык',
+          'publisher': 'Издательство',
+          'tags': 'Теги',
+        }[key] ??
+        key;
+    String text(Object? value) =>
+        value is List ? value.join(', ') : '${value ?? ''}';
+    final apply = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Данные из других книг цикла'),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '«${group.name}». Выберите поля для заполнения. Уже заполненные поля не отмечены; различающиеся данные других томов не предлагаются.',
+                  ),
+                  for (final entry in proposal.entries)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(label(entry.key)),
+                      subtitle: Text(text(entry.value)),
+                      value: chosen.contains(entry.key),
+                      onChanged: (value) => update(() {
+                        value == true
+                            ? chosen.add(entry.key)
+                            : chosen.remove(entry.key);
+                      }),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: chosen.isEmpty
+                  ? null
+                  : () => Navigator.pop(context, true),
+              child: const Text('Заполнить выбранные поля'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (apply != true || !mounted) return;
+    setState(() {
+      for (final field in chosen) {
+        final key = _propertyKey(field) ?? field;
+        final value = proposal[field];
+        values[key] = value;
+        (controllers[key] ??= TextEditingController()).text = value is List
+            ? jsonEncode(value)
+            : '$value';
+      }
+      editGeneration++;
+    });
+  }
+
+  Widget _seriesProposal() {
+    if (!personal || widget.lockedFields.contains('series')) {
+      return const SizedBox.shrink();
+    }
+    final matches = seriesGroups[seriesTextKey(seriesName)] ?? const [];
+    if (matches.isEmpty) return const SizedBox.shrink();
+    final group = matchedSeries;
+    if (group == null) {
+      return TextButton.icon(
+        onPressed: saving ? null : _chooseSeries,
+        icon: const Icon(Icons.library_books_outlined),
+        label: const Text('Найдено несколько циклов — выбрать нужный'),
+      );
+    }
+    if (commonLibrarySeriesMetadata(group, widget.item).isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return TextButton.icon(
+      onPressed: saving ? null : () => _borrowSeriesMetadata(group),
+      icon: const Icon(Icons.auto_fix_high_outlined),
+      label: const Text('Взять данные из других книг цикла…'),
+    );
   }
 
   @override
   void dispose() {
+    controllers[_propertyKey('series')]?.removeListener(_seriesChanged);
     for (final controller in controllers.values) {
       controller.dispose();
     }
@@ -638,7 +816,13 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
         key;
     final enabled =
         editable && !saving && !widget.lockedFields.contains(semantic);
-    final suggestions = widget.suggestions[semantic] ?? const <String>[];
+    final suggestions = semantic == 'series' && personal
+        ? metadataStrings([
+            ...widget.suggestions[semantic] ?? const <String>[],
+            for (final groups in seriesGroups.values)
+              for (final group in groups) group.name,
+          ])
+        : widget.suggestions[semantic] ?? const <String>[];
     if (['author', 'genre', 'tags', 'narrator'].contains(semantic)) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),
@@ -657,7 +841,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
         semantic == 'format' ||
         semantic == 'libraryType') {
       final statuses = personal
-          ? libraryItemStatuses(widget.item)
+          ? currentStatuses
           : libraryStatuses(selectedCollection);
       final options = <String>{
         if (controllers[key]!.text.isNotEmpty) controllers[key]!.text,
@@ -701,11 +885,16 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
         padding: const EdgeInsets.only(bottom: 16),
         child: DropdownButtonFormField<String>(
           key: ValueKey('choice:$key:${controllers[key]!.text}'),
-          initialValue: controllers[key]!.text.isEmpty
+          initialValue: !options.contains(controllers[key]!.text)
               ? null
               : controllers[key]!.text,
           isExpanded: true,
           decoration: InputDecoration(labelText: label),
+          validator: personal && semantic == 'status'
+              ? (_) => currentStatuses.containsKey(controllers[key]!.text)
+                    ? null
+                    : 'Выберите статус; непрочитанному тому нужен цикл'
+              : null,
           items: [
             for (final value in options)
               DropdownMenuItem(
@@ -920,6 +1109,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           field,
+          if (semantic == 'series') _seriesProposal(),
           if (semantic == 'cover') _coverPreview(key),
           if (semantic == 'cover' && widget.onSearchCover != null)
             TextButton.icon(

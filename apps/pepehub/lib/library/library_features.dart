@@ -12,6 +12,73 @@ String librarySeriesKey(ObsidianLibraryItem item) {
   return id is String && id.isNotEmpty ? 'series-id:$id' : 'series:$name';
 }
 
+/// Reconnect name-only cards only when the saved catalog identifies one cycle.
+/// Distinct explicitly created cycles with the same name remain separate.
+Map<String, String> missingLibrarySeriesLinks(Iterable<LibraryEntry> entries) {
+  final ids = <String, Set<String>>{};
+  final unbound = <LibraryEntry>[];
+  for (final entry in entries) {
+    if (!isSeriesCatalogItem(entry.item) || isLibraryDeleted(entry.item)) {
+      continue;
+    }
+    final name = seriesTextKey(entry.item.value('series'));
+    if (name.isEmpty) continue;
+    final id = entry.item.values['pepehub_series_id'];
+    if (id is String && id.isNotEmpty) {
+      (ids[name] ??= {}).add(id);
+    } else {
+      unbound.add(entry);
+    }
+  }
+  return {
+    for (final entry in unbound)
+      if (ids[seriesTextKey(entry.item.value('series'))]?.length == 1)
+        entry.item.id: ids[seriesTextKey(entry.item.value('series'))]!.single,
+  };
+}
+
+/// Offer matching descriptive values, never another volume's reading result.
+Map<String, dynamic> commonLibrarySeriesMetadata(
+  LibrarySeriesGroup group,
+  ObsidianLibraryItem target,
+) {
+  final result = <String, dynamic>{};
+  for (final field in [
+    'author',
+    'narrator',
+    'genre',
+    'language',
+    'publisher',
+    'tags',
+  ]) {
+    if (field == 'narrator' && target.mediaType != 'audiobook') continue;
+    final tokens = ['author', 'narrator', 'genre', 'tags'].contains(field);
+    Object? comparison;
+    Object? proposal;
+    var different = false;
+    for (final entry in group.entries) {
+      if (entry.item.id == target.id ||
+          field == 'narrator' && entry.item.mediaType != 'audiobook') {
+        continue;
+      }
+      final raw = entry.item.value(field) ?? entry.item.values[field];
+      final value = tokens ? metadataStrings(raw) : '${raw ?? ''}'.trim();
+      if (value is List && value.isEmpty || value == '') continue;
+      final normalized = tokens
+          ? ((value as List<String>).map(seriesTextKey).toList()..sort())
+          : seriesTextKey(value);
+      if (comparison != null && !sameMetadataValue(comparison, normalized)) {
+        different = true;
+        break;
+      }
+      comparison = normalized;
+      proposal ??= value;
+    }
+    if (!different && proposal != null) result[field] = proposal;
+  }
+  return result;
+}
+
 const libraryStatusesLocal = {
   'paused': 'Отложена',
   'abandoned': 'Брошена',

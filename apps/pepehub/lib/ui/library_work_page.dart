@@ -28,6 +28,7 @@ Future<void> editLibraryEntry(
       entry: entry,
       collection: library.collectionFor(entry.item),
       suggestions: library.suggestions,
+      seriesEntries: library.seriesEntries,
       coverResolver: library.coverReferencePath,
       onPickCover: library.chooseCover,
       onSearchCover: () => Navigator.push<String>(

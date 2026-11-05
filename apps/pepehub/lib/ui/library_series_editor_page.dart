@@ -241,6 +241,7 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
           lockedFields: const {'series'},
           collection: widget.library.collectionFor(volume.item),
           suggestions: widget.library.suggestions,
+          seriesEntries: widget.library.seriesEntries,
           coverResolver: widget.library.coverReferencePath,
           onPickCover: widget.library.chooseCover,
           onSearchCover: () => Navigator.push<String>(

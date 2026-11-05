@@ -1250,6 +1250,7 @@ class _LibraryPageState extends State<LibraryPage> {
             saveLabel: 'Добавить в библиотеку',
             coverResolver: obsidianLibrary.coverReferencePath,
             suggestions: obsidianLibrary.suggestions,
+            seriesEntries: obsidianLibrary.seriesEntries,
             collection: obsidianLibrary.collectionFor(linked.item),
             collections:
                 (obsidianLibrary.snapshot?['collections'] as List? ?? [])
@@ -1334,6 +1335,7 @@ class _LibraryPageState extends State<LibraryPage> {
         builder: (_) => LibraryMetadataEditor(
           coverResolver: obsidianLibrary.coverReferencePath,
           suggestions: obsidianLibrary.suggestions,
+          seriesEntries: obsidianLibrary.seriesEntries,
           collection: obsidianLibrary.collectionFor(draft),
           collections: (obsidianLibrary.snapshot?['collections'] as List? ?? [])
               .map((c) => Map<String, dynamic>.from(c as Map))
@@ -1384,6 +1386,7 @@ class _LibraryPageState extends State<LibraryPage> {
           item: draft,
           collection: obsidianLibrary.collectionFor(draft),
           suggestions: obsidianLibrary.suggestions,
+          seriesEntries: obsidianLibrary.seriesEntries,
           coverResolver: obsidianLibrary.coverReferencePath,
           onPickCover: obsidianLibrary.chooseCover,
           saveLabel: 'Сохранить в библиотеке',

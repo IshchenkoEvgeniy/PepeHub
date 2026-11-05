@@ -472,6 +472,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
           item: draft,
           collection: widget.service.collectionFor(draft),
           suggestions: widget.service.suggestions,
+          seriesEntries: widget.service.seriesEntries,
           onPickCover: widget.service.chooseCover,
           onSearchCover: () => Navigator.push<String>(
             context,
