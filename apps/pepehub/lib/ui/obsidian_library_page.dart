@@ -562,7 +562,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
     final selected = await showDialog<int>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Оценка по шкале 0–10'),
+        title: const Text('Выбрать оценку'),
         content: Wrap(
           spacing: 8,
           runSpacing: 8,

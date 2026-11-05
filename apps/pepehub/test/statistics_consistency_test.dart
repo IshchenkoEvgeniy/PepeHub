@@ -324,7 +324,7 @@ void main() {
       ); // native + orphan + manual + card + remote
       expect(summary.days.containsKey('2025-12-31'), false);
       expect(summary.allDays['2025-12-31'], 120000);
-      expect(history.titles['missing'], contains('missing'));
+      expect(history.titles['missing'], 'Книга без файла');
       final detailed = await worker.analyze({
         'sessions': history.sessions,
         'now': DateTime(2026, 1, 3),

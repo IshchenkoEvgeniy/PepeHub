@@ -514,7 +514,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                 itemCount: perBook.length,
                 itemBuilder: (context, index) {
                   final id = perBook[index],
-                      title = titles[id] ?? 'Книга без файла · $id';
+                      title = titles[id] ?? 'Книга без файла';
                   return PepeShareRow(
                     key: ValueKey('reading-statistics-book:$id'),
                     leading: PepeSpine(title),

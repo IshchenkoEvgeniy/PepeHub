@@ -281,6 +281,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
   List<LibraryEntry> _catalogEntries = [];
   List<String> _collectionOptions = [];
   List<int> _yearOptions = [];
+  Map<String, Set<int>> _completionYears = {};
   Map<String, int> _statusCounts = {};
   int _yearBooks = 0, _yearAudio = 0, _allBooks = 0, _allAudio = 0;
   List<LibraryEntry>? _filterInput;
@@ -530,8 +531,9 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 : (libraryRating(item) ?? -1) >= int.parse(ratingFilter))) &&
         (year == 'all' ||
             (year == 'unknown'
-                ? libraryCompletionDate(item) == null
-                : '${libraryCompletionDate(item)?.year}' == year)) &&
+                ? (_completionYears[item.id]?.isEmpty ?? true)
+                : _completionYears[item.id]?.contains(int.tryParse(year)) ==
+                      true)) &&
         terms.every(haystack.contains);
   }
 
@@ -545,6 +547,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       _catalogInput = all;
       _catalogKey = catalogKey;
       _catalogEntries = [];
+      _completionYears = {};
       final collections = <String>{}, years = <int>{};
       _yearBooks = _yearAudio = _allBooks = _allAudio = 0;
       final completions = annualCompletionCounts(all, currentYear);
@@ -553,7 +556,10 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       for (final entry in all) {
         final item = entry.item;
         final hidden = item.values['pepehub_hidden'] == true;
-        final completed = libraryCompletionDate(item);
+        final completedYears = libraryCompletionDates(item)
+            .map((d) => d.year)
+            .toSet();
+        _completionYears[item.id] = completedYears;
         if (!hidden && isFinishedLibraryItem(item)) {
           final audio = item.mediaType == 'audiobook';
           if (audio) {
@@ -567,7 +573,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
         }
         _catalogEntries.add(entry);
         collections.addAll(libraryCollections(item));
-        if (completed != null) years.add(completed.year);
+        years.addAll(completedYears);
       }
       _collectionOptions = collections.toList()..sort();
       _yearOptions = years.toList()..sort((a, b) => b.compareTo(a));
@@ -1230,7 +1236,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       isExpanded: true,
       decoration: InputDecoration(
         labelText: label,
-        helperText: name == 'rating' ? 'Шкала 0–10' : null,
+        helperText: name == 'rating' ? 'Значение из карточки' : null,
         isDense: true,
       ),
       items: [
@@ -1263,7 +1269,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       field('rating', 'Оценка', ratingFilter, {
         'all': 'Любая оценка',
         'unrated': 'Без оценки',
-        for (var value = 0; value <= 10; value++) '$value': 'От $value из 10',
+        for (var value = 0; value <= 10; value++) '$value': 'От $value',
       }, (value) => ratingFilter = value),
     ];
     return LayoutBuilder(
@@ -1682,7 +1688,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     final label = libraryRatingLabel(item);
     final color = ShelfPalette.of(context).accent;
     return Semantics(
-      label: known ? 'Оценка: ${label.substring(2)} из 10' : 'Без оценки',
+      label: known ? 'Оценка: ${label.substring(2)}' : 'Без оценки',
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

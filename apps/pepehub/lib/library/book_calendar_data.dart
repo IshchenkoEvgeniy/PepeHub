@@ -94,7 +94,7 @@ class BookCalendarData {
         book.key,
         () => CalendarBook(
           book.key,
-          readingTitles[book.key] ?? 'Книга без файла · ${book.key}',
+          readingTitles[book.key] ?? 'Книга без файла',
           'book',
           null,
           null,
@@ -121,13 +121,7 @@ class BookCalendarData {
       final id = row.read<String>('book_id');
       data.books.putIfAbsent(
         id,
-        () => CalendarBook(
-          id,
-          'Аудиокнига без файла · $id',
-          'audiobook',
-          null,
-          null,
-        ),
+        () => CalendarBook(id, 'Аудиокнига без файла', 'audiobook', null, null),
       );
       data.add(
         row.read<String>('day'),
@@ -141,7 +135,7 @@ class BookCalendarData {
           book.key,
           () => CalendarBook(
             book.key,
-            'Аудиокнига без файла · ${book.key}',
+            'Аудиокнига без файла',
             'audiobook',
             null,
             null,
@@ -182,7 +176,7 @@ class BookCalendarData {
         group.key,
         () => CalendarBook(
           group.key,
-          'Аудиокнига без файла · ${group.key}',
+          'Аудиокнига без файла',
           'audiobook',
           null,
           null,

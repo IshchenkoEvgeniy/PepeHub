@@ -332,6 +332,9 @@ class _ActivityPageState extends State<ActivityPage> {
     final status = _status(slot);
     final deleted = v['deleted'] == true;
     final title = titles[v['itemId']] ?? 'Книга';
+    final note = (v['note'] as String).isNotEmpty
+        ? v['note'] as String
+        : slot['hint'] as String? ?? '';
     final menu = slot['nativeBookId'] != null
         ? IconButton(
             tooltip: 'Правка сессий',
@@ -389,11 +392,11 @@ class _ActivityPageState extends State<ActivityPage> {
                 overflow: TextOverflow.ellipsis,
                 style: AppFonts.book(palette.text, size: 16),
               ),
-              if ((v['note'] as String).isNotEmpty)
+              if (note.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 3),
                   child: Text(
-                    v['note'] as String,
+                    note,
                     maxLines: wide ? 1 : 3,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 12, color: palette.muted),

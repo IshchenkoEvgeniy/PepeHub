@@ -14,6 +14,7 @@ import 'package:pepehub/library/library_features.dart';
 import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/library/models.dart';
 import 'package:pepehub/library/personal_library.dart';
+import 'package:pepehub/library/reading_insights.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/obsidian_library_dashboard.dart';
 import 'package:pepehub/ui/shelf_components.dart';
@@ -249,6 +250,93 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets('completion-year filter and picker include every reread year', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    library.entries = [
+      entry(
+        'reread',
+        values: {
+          'endDate': '${year - 2}-05-01',
+          'pepehub_completions': [
+            {'date': '${year - 1}-06-01'},
+            {'date': '$year-02-01'},
+            {'date': '$year-03-01'},
+            {'date': '31.02.${year + 1}'},
+          ],
+        },
+      ),
+      entry(
+        'unknown',
+        values: {
+          'endDate': null,
+          'pepehub_completions': [
+            {'date': 'invalid'},
+          ],
+        },
+      ),
+    ];
+    expect(annualCompletionCounts(library.entries, year).total, 2);
+    await mount(tester);
+    await tap(tester, find.byTooltip('Фильтры библиотеки'));
+    final picker = tester.widget<DropdownButton<String>>(
+      find.descendant(
+        of: find.byKey(const ValueKey('library-year:all')),
+        matching: find.byWidgetPredicate((w) => w is DropdownButton<String>),
+      ),
+    );
+    expect(
+      picker.items!.map((i) => i.value),
+      containsAll(['${year - 2}', '${year - 1}', '$year']),
+    );
+    expect(picker.items!.any((i) => i.value == '${year + 1}'), false);
+    await choose(tester, 'library-year:all', '$year');
+    expect(find.text('Показано 1 из 2'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('library-work:reread')),
+      150,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await choose(tester, 'library-year:$year', 'unknown');
+    expect(find.text('Показано 1 из 2'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('library-work:unknown')),
+      150,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('rating filters describe saved values without assuming a scale', (
+    tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await mount(tester);
+    await tap(tester, find.byTooltip('Фильтры библиотеки'));
+    expect(find.text('Значение из карточки'), findsOneWidget);
+    expect(find.textContaining('Шкала 0–10'), findsNothing);
+    final picker = tester.widget<DropdownButton<String>>(
+      find.descendant(
+        of: find.byKey(const ValueKey('library-rating:all')),
+        matching: find.byWidgetPredicate((w) => w is DropdownButton<String>),
+      ),
+    );
+    expect(
+      picker.items!.where((i) => i.value == '4').single.child,
+      isA<Text>().having((w) => w.data, 'label', 'От 4'),
+    );
+    final rated = entry(
+      'rating',
+      values: {'rating': '4,50', 'endDate': '$year-01-01'},
+    );
+    expect(booksCompletedInYear([rated], year).single.rating, 4.5);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets(
     'sorting retains status and list/grid share ratings and reread badges',

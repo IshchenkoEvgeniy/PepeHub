@@ -52,7 +52,7 @@ class ReadingStatisticsHistory {
                 'FROM records b LEFT JOIN local_assets a ON a.book_id=b.id '
                 "LEFT JOIN reading_shelf_v1 i ON i.key='reading-index:'||a.sha256 "
                 "LEFT JOIN metadata p ON p.key='reading-book:'||b.id "
-                "WHERE b.type='book' AND b.deleted=0 AND json_valid(b.payload) "
+                "WHERE b.type='book' AND json_valid(b.payload) AND json_type(b.payload)='object' "
                 "AND IFNULL(json_extract(b.payload,'\$.format'),'')!='audio'",
               )
               .get())
@@ -104,7 +104,7 @@ class ReadingStatisticsHistory {
     }
     for (final session in sessions) {
       final id = session['bookId'] as String;
-      titles.putIfAbsent(id, () => 'Книга без файла · $id');
+      titles.putIfAbsent(id, () => 'Книга без файла');
     }
     return ReadingStatisticsHistory(sessions, titles);
   }

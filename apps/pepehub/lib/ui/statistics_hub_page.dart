@@ -27,6 +27,7 @@ class StatisticsHubPage extends StatefulWidget {
   final ShelfNavigation navigation;
   final VoidCallback? onJournal;
   final LibraryService? library;
+  final DateTime Function()? clock;
   const StatisticsHubPage({
     super.key,
     required this.repository,
@@ -34,6 +35,7 @@ class StatisticsHubPage extends StatefulWidget {
     this.audio,
     this.onJournal,
     this.library,
+    this.clock,
   });
   @override
   State<StatisticsHubPage> createState() => _StatisticsHubPageState();
@@ -41,7 +43,8 @@ class StatisticsHubPage extends StatefulWidget {
 
 class _StatisticsHubPageState extends State<StatisticsHubPage> {
   String scope = 'all';
-  int year = DateTime.now().year;
+  late int year;
+  DateTime get _now => widget.clock?.call() ?? DateTime.now();
   bool annual = false;
   BookCalendarData calendar = BookCalendarData();
   Map<String, int> readingDays = {}, audioDays = {};
@@ -65,6 +68,7 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
   @override
   void initState() {
     super.initState();
+    year = _now.year;
     widget.repository.externalChanges.addListener(_load);
     widget.library?.addListener(_libraryChanged);
     _load();
@@ -201,7 +205,7 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
             .fold(0, (a, b) => a + b);
         audioUndatedMs = listening.lifetime.undatedMs;
         final years = <int>[
-          DateTime.now().year,
+          _now.year,
           for (final day in {...readingAllDays.keys, ...audioAllDays.keys})
             if (int.tryParse(day.split('-').first) case final int year) year,
           for (final book in calendarData.completedDays.keys)
@@ -244,6 +248,11 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
     'audio' => audioActivityDays,
     _ => _merge(readingDays, audioActivityDays),
   };
+  Map<String, int> get _allActivityDays => switch (scope) {
+    'reading' => readingAllDays,
+    'audio' => audioActivityAllDays,
+    _ => _merge(readingAllDays, audioActivityAllDays),
+  };
   Map<String, int> get _books {
     final result = <String, int>{};
     for (final day in calendar.days.values) {
@@ -272,7 +281,9 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
     final days = _days;
     final total = days.values.fold(0, (sum, ms) => sum + ms);
     final activeDays = _activityDays.values.where((ms) => ms > 0).length;
-    final streak = activityStreak(_activityDays, DateTime.now(), year: year);
+    final now = _now;
+    final currentStreak = activityStreak(_allActivityDays, now).current;
+    final yearBest = activityStreak(_activityDays, now, year: year).best;
     final top = _books.entries.where((e) => e.value > 0).toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     final topMax = top.isEmpty ? 1 : top.first.value;
@@ -380,7 +391,7 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
                             ),
                             IconButton(
                               tooltip: 'Следующий год',
-                              onPressed: loading || year >= DateTime.now().year
+                              onPressed: loading || year >= now.year
                                   ? null
                                   : () {
                                       setState(() => year++);
@@ -421,12 +432,15 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
                                   'дней с книгой',
                                 ),
                                 VerticalDivider(color: palette.line, width: 1),
-                                _figure(
-                                  palette,
-                                  '${year == DateTime.now().year ? streak.current : streak.best}',
-                                  year == DateTime.now().year
-                                      ? 'дней подряд, рекорд года ${streak.best} · от 5 мин'
-                                      : 'рекорд дней подряд за $year · от 5 мин',
+                                KeyedSubtree(
+                                  key: const ValueKey('statistics-streak'),
+                                  child: _figure(
+                                    palette,
+                                    '${year == now.year ? currentStreak : yearBest}',
+                                    year == now.year
+                                        ? 'дней подряд, рекорд года $yearBest · от 5 мин'
+                                        : 'рекорд дней подряд за $year · от 5 мин',
+                                  ),
                                 ),
                               ],
                             ),

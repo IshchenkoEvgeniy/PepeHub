@@ -90,10 +90,33 @@ class YearBook {
   final List<DateTime> dates;
   int get completions => dates.length;
   const YearBook(this.entry, this.date, this.dates);
-  double? get rating {
-    final n = double.tryParse('${entry.item.value('rating') ?? ''}');
-    return n != null && n.isFinite && n >= 0 && n <= 10 ? n : null;
+  double? get rating => libraryRating(entry.item)?.toDouble();
+}
+
+/// All recorded completions, using the same rules for filters and annual goals.
+/// The current endDate mirrors a completion already recorded on that day.
+List<DateTime> libraryCompletionDates(ObsidianLibraryItem item) {
+  if (!isLibraryArchiveItem(item)) return const [];
+  final dates = <DateTime>[];
+  final recorded = item.values['pepehub_completions'];
+  if (recorded is List) {
+    for (final completion in recorded) {
+      if (completion is! Map) continue;
+      final date = bookDate(completion['date']);
+      if (date != null) dates.add(date);
+    }
   }
+  if (libraryStatus(item) == 'finished') {
+    final date = libraryCompletionDate(item);
+    if (date != null &&
+        !dates.any(
+          (d) =>
+              d.year == date.year && d.month == date.month && d.day == date.day,
+        )) {
+      dates.add(date);
+    }
+  }
+  return dates..sort();
 }
 
 /// One card per year; repeated completions are counted separately, without
@@ -113,31 +136,10 @@ List<YearBook> booksCompletedInYear(
         (scope == 'audio' && item.mediaType != 'audiobook')) {
       continue;
     }
-    final dates = <DateTime>[];
-    void add(dynamic raw, {bool mirror = false}) {
-      final date = bookDate(raw);
-      if (date == null || date.year != year) return;
-      if (mirror &&
-          dates.any(
-            (d) =>
-                d.year == date.year &&
-                d.month == date.month &&
-                d.day == date.day,
-          )) {
-        return;
-      }
-      dates.add(date);
-    }
-
-    for (final completion
-        in (item.values['pepehub_completions'] as List? ?? [])) {
-      if (completion is Map) add(completion['date']);
-    }
-    if (libraryStatus(item) == 'finished') {
-      add(item.value('endDate'), mirror: true);
-    }
+    final dates = libraryCompletionDates(item)
+        .where((d) => d.year == year)
+        .toList();
     if (dates.isEmpty) continue;
-    dates.sort();
     result.add(YearBook(entry, dates.last, List.unmodifiable(dates)));
   }
   return result..sort((a, b) => b.date.compareTo(a.date));

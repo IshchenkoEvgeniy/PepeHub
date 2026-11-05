@@ -19,14 +19,24 @@ import 'package:pepehub/ui/shelf_components.dart';
 
 import 'video_player_tools_widget_test.dart' show ready;
 
+class _CountingRepository extends Repository {
+  _CountingRepository(super.db);
+  int shelfReads = 0;
+  @override
+  Future<List<LibraryRecord>> shelfBooks({required bool audio}) {
+    shelfReads++;
+    return super.shelfBooks(audio: audio);
+  }
+}
+
 void main() {
   late AppDatabase db;
-  late Repository local;
+  late _CountingRepository local;
   late LibraryService library;
   late Directory temp;
   setUp(() async {
     db = AppDatabase(NativeDatabase.memory());
-    local = Repository(db);
+    local = _CountingRepository(db);
     temp = await Directory.systemTemp.createTemp('pepehub-audit-');
     final client = MockClient((_) => throw StateError('No network'));
     library = LibraryService(local, client, assets: AssetStore(local, temp));
@@ -115,10 +125,11 @@ void main() {
         library.coverPath(
           imported.withValues({
             ...imported.values,
-            'cover': 'https://example.test/new.png',
+            'cover': 'https://example.test/imported.png',
           }),
         ),
-        isNull,
+        oldCover.path,
+        reason: 'An unchanged imported URL retains its downloaded copy offline',
       );
       final explicit = imported.withValues({
         ...imported.values,
@@ -132,6 +143,58 @@ void main() {
       final newCover = File(library.covers!.path(newHash));
       await newCover.writeAsBytes([2]);
       expect(library.coverPath(explicit), newCover.path);
+    },
+  );
+
+  test(
+    'HTTPS import stays offline-capable until an explicit cover edit',
+    () async {
+      final hash = 'c' * 64;
+      final file = File(library.covers!.path(hash));
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes([1]);
+      final remote = ObsidianLibraryItem(
+        id: uuid.v4(),
+        path: 'Book.md',
+        collectionId: 'book',
+        mediaType: 'book',
+        fields: personalLibraryFields,
+        values: {
+          'title': 'Imported URL',
+          'status': 'finished',
+          'cover': 'https://example.test/imported.png',
+        },
+        coverAsset: {'hash': hash},
+      );
+      final imported = personalLibraryItem(
+        remote.id,
+        'book',
+        personalValues(remote),
+      );
+      await library.add(imported, '');
+      await library.reload();
+      final before = library.entries.single.item;
+      expect(before.value('cover'), 'https://example.test/imported.png');
+      expect(library.coverPath(before), file.path);
+      // The test HTTP client always throws; neither load nor lookup needs it.
+      await library.save(before.id, {
+        ...before.values,
+        'cover': 'https://example.test/replacement.png',
+      }, original: before.values);
+      await library.reload();
+      expect(library.entries.single.item.values['pepehub_cover_asset'], isNull);
+      expect(library.coverPath(library.entries.single.item), isNull);
+      expect(
+        library.coverPath(
+          remote.withValues({
+            ...remote.values,
+            'cover': 'https://example.test/replacement.png',
+            'pepehub_cover_asset': null,
+          }),
+        ),
+        isNull,
+        reason: 'A top-level legacy coverAsset cannot resurrect a cleared copy',
+      );
     },
   );
 
@@ -244,6 +307,58 @@ void main() {
   });
 
   for (final format in ['epub', 'audio']) {
+    testWidgets('external $format change refreshes the file shelf once', (
+      tester,
+    ) async {
+      await tester.runAsync(() async {
+        await local.addBook('Source', '', format);
+        await local.setMeta(
+          'library-section',
+          format == 'epub' ? 'reading' : 'audio',
+        );
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LibraryPage(repository: local, assets: library.assets),
+        ),
+      );
+      final dynamic state = tester.state(find.byType(LibraryPage));
+      final LibraryService live = state.obsidianLibrary;
+      await ready(tester, () => !state.loading && !live.loading);
+      await tester.runAsync(() => live.idle);
+      await tester.pumpAndSettle();
+      final beforeBooks = state.books;
+      local.shelfReads = 0;
+      local.notifyExternalChange();
+      await ready(
+        tester,
+        () => !identical(state.books, beforeBooks) && !live.loading,
+      );
+      await tester.runAsync(() => live.idle);
+      await tester.pumpAndSettle();
+      expect(
+        local.shelfReads,
+        1,
+        reason:
+            'The final service notification must not reload the shelf again',
+      );
+      final nextBooks = state.books;
+      local.shelfReads = 0;
+      for (var i = 0; i < 20; i++) {
+        local.notifyExternalChange();
+      }
+      await ready(
+        tester,
+        () => !identical(state.books, nextBooks) && !live.loading,
+      );
+      await tester.runAsync(() => live.idle);
+      await tester.pumpAndSettle();
+      expect(local.shelfReads, inInclusiveRange(1, 2));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(() => live.idle);
+    });
+
     testWidgets('external $format updates refresh the displayed archive', (
       tester,
     ) async {

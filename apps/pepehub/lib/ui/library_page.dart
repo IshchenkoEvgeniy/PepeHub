@@ -159,7 +159,8 @@ class _LibraryPageState extends State<LibraryPage> {
 
   void _libraryChanged() {
     if (mounted) setState(() {});
-    if (!obsidianLibrary.syncing &&
+    if (_remoteRefresh == null &&
+        !obsidianLibrary.syncing &&
         !obsidianLibrary.loading &&
         mounted &&
         !metadataSection &&
@@ -256,16 +257,31 @@ class _LibraryPageState extends State<LibraryPage> {
     super.dispose();
   }
 
-  Future<void> _remoteChanged() async {
-    if (!mounted) return;
+  Future<void>? _remoteRefresh;
+  bool _remoteAgain = false;
+  Future<void> _remoteChanged() {
+    if (!mounted) return Future<void>.value();
+    _remoteAgain = true;
+    return _remoteRefresh ??= _drainRemoteRefresh();
+  }
+
+  Future<void> _drainRemoteRefresh() async {
     try {
-      await Future.wait([_reload(), obsidianLibrary.reload()]);
+      do {
+        _remoteAgain = false;
+        // Service notifications still repaint the archive, but the file shelf
+        // is refreshed once after metadata updates have committed.
+        await obsidianLibrary.reload();
+        if (mounted) await _reload();
+      } while (_remoteAgain && mounted);
     } catch (e) {
       if (mounted) {
         setState(
           () => obsidianLibrary.error = 'Не удалось обновить библиотеку: $e',
         );
       }
+    } finally {
+      _remoteRefresh = null;
     }
   }
 

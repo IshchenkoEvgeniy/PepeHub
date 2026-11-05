@@ -36,6 +36,9 @@ class JournalDays {
       for (final b in await repository.bookHeaders()) b.id: b.title,
       ...history.titles,
     };
+    for (final id in audioBooks.keys) {
+      titles.putIfAbsent(id, () => 'Аудиокнига без файла');
+    }
     final slots = <Map<String, dynamic>>[];
     for (final (type, books) in [
       ('book', reading.bookDays),
@@ -47,6 +50,7 @@ class JournalDays {
           if (day.value <= 0) continue;
           slots.add({
             'nativeBookId': book.key,
+            'hint': 'Отдельные сессии доступны в правке журнала',
             'value': {
               'id': 'native:$type:${book.key}:${day.key}',
               'itemId': 'source:${book.key}',
@@ -56,8 +60,7 @@ class JournalDays {
               'progress': 0,
               'unit': 'unknown',
               'mediaMs': 0,
-              'note':
-                  'Дневной итог · отдельные сессии доступны в правке журнала',
+              'note': '',
               'origin': 'app-native',
               'deleted': false,
             },

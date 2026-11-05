@@ -115,7 +115,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
       final history = StatisticsHistory(repository);
       final historyBookIds = await history.bookIds(reading: tabs.index == 0);
       for (final id in historyBookIds) {
-        names.putIfAbsent(id, () => 'Книга без файла · $id');
+        names.putIfAbsent(id, () => 'Книга без файла');
       }
       final nextFilterTitles = {
         for (final book in tabs.index == 0 ? nextReadingBooks : nextAudioBooks)

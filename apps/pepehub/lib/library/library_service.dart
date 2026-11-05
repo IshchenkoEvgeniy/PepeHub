@@ -62,10 +62,13 @@ class LibraryService extends ChangeNotifier {
     if (CoverSync.referenceHash(cover) != null) {
       return coverReferencePath(cover);
     }
-    if (['http', 'https'].contains(Uri.tryParse(cover)?.scheme)) return null;
-    final stored = item.values['pepehub_cover_asset'];
-    final hash =
-        item.coverAsset?['hash'] ?? (stored is Map ? stored['hash'] : null);
+    // The imported copy also belongs to an unchanged HTTP(S) reference and is
+    // usable offline. A cover edit explicitly clears this value, including on
+    // legacy items that still carry a top-level coverAsset.
+    final stored = item.values.containsKey('pepehub_cover_asset')
+        ? item.values['pepehub_cover_asset']
+        : item.coverAsset;
+    final hash = stored is Map ? stored['hash'] : null;
     return coverReferencePath('pepehub-cover:$hash');
   }
 
