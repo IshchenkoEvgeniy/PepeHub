@@ -172,6 +172,8 @@ void main() {
         );
         expect(find.text('Файл удалён'), findsOneWidget);
         expect(tester.takeException(), isNull);
+        await Scrollable.ensureVisible(tester.element(card), alignment: .5);
+        await tester.pumpAndSettle();
         await tester.tap(card);
         await tester.pumpAndSettle();
         expect(find.text('Файл книги удалён'), findsOneWidget);

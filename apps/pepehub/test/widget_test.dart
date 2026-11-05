@@ -59,7 +59,7 @@ void main() {
     await tester.pumpWidget(PepeHubApp(repository: repository));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
-      find.text('Добавить книгу'),
+      find.text('Новая карточка без файла'),
       250,
       scrollable: find
           .descendant(
@@ -69,7 +69,7 @@ void main() {
           .first,
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Добавить книгу'));
+    await tester.tap(find.text('Новая карточка без файла'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byType(TextFormField).first,

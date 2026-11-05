@@ -1,3 +1,4 @@
+import 'catalog_search.dart';
 import 'audio_mini_player.dart';
 import 'app_theme.dart';
 import 'app_preferences.dart';
@@ -58,7 +59,8 @@ import '../reader/pdf_reader_page.dart';
 import '../reader/reading_roots.dart';
 import '../reader/reading_shelf_sources.dart';
 
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:flutter/services.dart'
+    show Clipboard, ClipboardData, LogicalKeyboardKey;
 
 import '../reader/reading_book_actions.dart';
 import '../audio/audio_book_actions.dart';
@@ -109,7 +111,17 @@ class _LibraryPageState extends State<LibraryPage> {
   Map<String, String> statusOverrides = {};
   String? selectedRoot;
   String? pinnedRoot;
-  bool showSearch = false;
+  final readingSearch = TextEditingController(),
+      audioSearch = TextEditingController();
+  final searchFocus = FocusNode();
+  final searchKey = GlobalKey();
+  TextEditingController get searchController =>
+      reading ? readingSearch : audioSearch;
+  String readingView = 'auto', audioView = 'auto';
+  bool savingView = false;
+  String get shelfView => reading ? readingView : audioView;
+  bool _useCovers(double width) =>
+      shelfView == 'covers' || shelfView == 'auto' && width >= 900;
   bool reading = false;
   bool metadataSection = false;
   bool recommendationsSection = false;
@@ -233,8 +245,8 @@ class _LibraryPageState extends State<LibraryPage> {
       books = [];
       roots = [];
       selectedRoot = null;
-      query = '';
-      showSearch = false;
+      _searchDebounce?.cancel();
+      query = searchController.text;
       filter = statusFilter = 'all';
       favoritesOnly = false;
       collectionFilter = null;
@@ -251,6 +263,9 @@ class _LibraryPageState extends State<LibraryPage> {
   void dispose() {
     widget.repository.externalChanges.removeListener(_remoteChanged);
     _searchDebounce?.cancel();
+    readingSearch.dispose();
+    audioSearch.dispose();
+    searchFocus.dispose();
     incomingBooks?.dispose();
     obsidianLibrary.removeListener(_libraryChanged);
     obsidianLibrary.dispose();
@@ -313,6 +328,8 @@ class _LibraryPageState extends State<LibraryPage> {
       selectedRoot = collectionFilter = null;
       favoritesOnly = false;
       query = '';
+      readingSearch.clear();
+      _searchDebounce?.cancel();
       filter = statusFilter = 'all';
     });
     await widget.repository.setMeta('library-section', 'reading');
@@ -429,6 +446,7 @@ class _LibraryPageState extends State<LibraryPage> {
         );
         final groups = await readingLibrary.entries('reading-collection:');
         final order = await widget.repository.meta('reading-sort') ?? 'title';
+        final view = await widget.repository.meta('reading-shelf-view');
         if (mounted && reading == readingSection) {
           effectiveReadingInfo = {
             for (final book in b)
@@ -443,6 +461,9 @@ class _LibraryPageState extends State<LibraryPage> {
           readingSourcePaths = sourcePaths;
           readingCollections = groups;
           readingSort = order;
+          readingView = const ['list', 'covers'].contains(view)
+              ? view!
+              : 'auto';
           if (!groups.containsKey(collectionFilter)) collectionFilter = null;
         }
       } else {
@@ -450,6 +471,7 @@ class _LibraryPageState extends State<LibraryPage> {
         final groups = await readingLibrary.entries('audio-collection:');
         final sourcePaths = await readingLibrary.entries('audio-source-path:');
         final order = await widget.repository.meta('audio-sort') ?? 'title';
+        final view = await widget.repository.meta('audio-shelf-view');
         final recent = await AudioLibraryRepository(widget.repository.db)
             .lastPlayed();
         if (mounted && reading == readingSection) {
@@ -457,6 +479,7 @@ class _LibraryPageState extends State<LibraryPage> {
           audioCollections = groups;
           audioSourcePaths = sourcePaths;
           audioSort = order;
+          audioView = const ['list', 'covers'].contains(view) ? view! : 'auto';
           audioRecent = recent;
           if (!groups.containsKey(collectionFilter)) collectionFilter = null;
         }
@@ -1376,6 +1399,89 @@ class _LibraryPageState extends State<LibraryPage> {
     );
   }
 
+  Future<void> _focusSearch() async {
+    final field = searchKey.currentContext;
+    if (field != null) {
+      await Scrollable.ensureVisible(
+        field,
+        duration: const Duration(milliseconds: 180),
+        alignment: .1,
+      );
+    }
+    if (mounted) searchFocus.requestFocus();
+  }
+
+  void _searchChanged(String value) {
+    _searchDebounce?.cancel();
+    final section = reading;
+    _searchDebounce = Timer(const Duration(milliseconds: 200), () {
+      if (mounted &&
+          reading == section &&
+          !metadataSection &&
+          !recommendationsSection &&
+          !statisticsSection &&
+          !videoSection) {
+        setState(() => query = value);
+      }
+    });
+  }
+
+  Future<void> _setShelfView(String value) async {
+    if (busy || savingView) return;
+    final section = reading;
+    setState(() => savingView = true);
+    try {
+      await widget.repository.setMeta(
+        '${section ? 'reading' : 'audio'}-shelf-view',
+        value,
+      );
+      if (mounted) {
+        setState(() {
+          if (section) {
+            readingView = value;
+          } else {
+            audioView = value;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось сохранить вид полки: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => savingView = false);
+    }
+  }
+
+  Widget _viewChoices() => LayoutBuilder(
+    builder: (context, size) {
+      final grid = _useCovers(size.maxWidth);
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Список',
+            isSelected: !grid,
+            onPressed: busy || savingView ? null : () => _setShelfView('list'),
+            icon: const Icon(Icons.view_list_outlined),
+            selectedIcon: const Icon(Icons.view_list),
+          ),
+          IconButton(
+            tooltip: 'Обложки',
+            isSelected: grid,
+            onPressed: busy || savingView
+                ? null
+                : () => _setShelfView('covers'),
+            icon: const Icon(Icons.grid_view_outlined),
+            selectedIcon: const Icon(Icons.grid_view),
+          ),
+        ],
+      );
+    },
+  );
+
   List<Object?>? _visibleInputs;
   List<LibraryRecord> _visibleCache = [];
   Timer? _searchDebounce;
@@ -1411,7 +1517,7 @@ class _LibraryPageState extends State<LibraryPage> {
               .firstOrNull
               ?.bookIds
               .toSet();
-    final search = query.toLowerCase();
+    final terms = catalogSearchTerms(query);
     final visible = books
         .where(
           (b) =>
@@ -1435,14 +1541,16 @@ class _LibraryPageState extends State<LibraryPage> {
                   (bookPrefs[b.id]?['collections'] as List? ?? []).contains(
                     collectionFilter,
                   )) &&
-              ('${_title(b)} ${_authors(b)} ${reading ? _textInfo(b)['series'] ?? '' : ''}'
-                  .toLowerCase()
-                  .contains(search)),
+              matchesCatalogSearch(
+                '${_title(b)} ${_authors(b)} ${reading ? _textInfo(b)['series'] ?? '' : b.payload?['series'] ?? ''}',
+                terms,
+              ),
         )
         .toList();
     if (reading) {
       visible.sort((a, b) {
         final result = switch (readingSort) {
+          'added' => (b.localOrder ?? 0).compareTo(a.localOrder ?? 0),
           'author' => naturalAudioOrder(_authors(a), _authors(b)),
           'series' => naturalAudioOrder(
             '${_textInfo(a)['series'] ?? ''}',
@@ -1522,6 +1630,16 @@ class _LibraryPageState extends State<LibraryPage> {
         onSettings: () => unawaited(_obsidianSettings()),
       );
     }
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true):
+            _focusSearch,
+      },
+      child: Focus(autofocus: true, child: _fileShelf(context)),
+    );
+  }
+
+  Widget _fileShelf(BuildContext context) {
     final liveCount = books
         .where((b) => !deletedReadingBooks.contains(b.id) && !_remoteOnly(b))
         .length;
@@ -1588,6 +1706,11 @@ class _LibraryPageState extends State<LibraryPage> {
                   const PopupMenuItem(
                     value: 'active',
                     child: Text('Отметить начатыми'),
+                  ),
+                  const PopupMenuItem(value: 'paused', child: Text('Отложить')),
+                  const PopupMenuItem(
+                    value: 'abandoned',
+                    child: Text('Бросить'),
                   ),
                   const PopupMenuItem(
                     value: 'finished',
@@ -1661,24 +1784,31 @@ class _LibraryPageState extends State<LibraryPage> {
                   }
                 },
                 itemBuilder: (_) => [
-                  PopupMenuItem(value: 'new', child: Text('Добавить книгу')),
+                  PopupMenuItem(
+                    value: 'new',
+                    child: Text('Новая карточка без файла'),
+                  ),
                   PopupMenuItem(
                     value: 'folder',
-                    child: Text('Добавить папку библиотеки'),
+                    child: Text(
+                      reading
+                          ? 'Подключить папку книг…'
+                          : 'Подключить папку аудиокниг…',
+                    ),
                   ),
                   if (reading)
                     const PopupMenuItem(
                       value: 'book',
-                      child: Text('Импорт книги'),
+                      child: Text('Открыть файл…'),
                     ),
                   const PopupMenuItem(
                     value: 'hidden',
-                    child: Text('Скрытое и удалённое'),
+                    child: Text('Скрытое и отсутствующее'),
                   ),
                   if (!reading)
                     const PopupMenuItem(
                       value: 'audio',
-                      child: Text('Копировать аудиофайлы'),
+                      child: Text('Добавить аудиофайлы…'),
                     ),
                   PopupMenuItem(
                     value: 'export',
@@ -1783,14 +1913,6 @@ class _LibraryPageState extends State<LibraryPage> {
                                       : Icons.push_pin_outlined,
                                 ),
                               ),
-                            IconButton(
-                              tooltip: 'Поиск',
-                              onPressed: () => setState(() {
-                                showSearch = !showSearch;
-                                if (!showSearch) query = '';
-                              }),
-                              icon: const Icon(Icons.search),
-                            ),
                             if (reading)
                               PopupMenuButton<String>(
                                 tooltip: 'Формат книг',
@@ -1823,7 +1945,7 @@ class _LibraryPageState extends State<LibraryPage> {
                           TextButton.icon(
                             onPressed: busy ? null : _addBook,
                             icon: const Icon(Icons.add),
-                            label: const Text('Добавить книгу'),
+                            label: const Text('Новая карточка без файла'),
                           ),
                         if (showSync) ...[
                           TextButton(
@@ -1838,25 +1960,29 @@ class _LibraryPageState extends State<LibraryPage> {
                         ],
                         if (message.startsWith('Ошибка')) Text(message),
                         const SizedBox(height: 8),
-                        if (showSearch)
-                          TextField(
-                            onChanged: (v) {
-                              _searchDebounce?.cancel();
-                              _searchDebounce = Timer(
-                                const Duration(milliseconds: 200),
-                                () {
-                                  if (mounted && showSearch) {
-                                    setState(() => query = v);
-                                  }
-                                },
-                              );
-                            },
-                            decoration: const InputDecoration(
-                              hintText: 'Название или автор',
-                              prefixIcon: Icon(Icons.search),
-                              filled: true,
-                            ),
+                        TextField(
+                          key: searchKey,
+                          controller: searchController,
+                          focusNode: searchFocus,
+                          onChanged: _searchChanged,
+                          decoration: InputDecoration(
+                            hintText: 'Название, автор или серия',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: searchController.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: 'Очистить поиск',
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () {
+                                      _searchDebounce?.cancel();
+                                      searchController.clear();
+                                      setState(() => query = '');
+                                      searchFocus.requestFocus();
+                                    },
+                                  ),
+                            filled: true,
                           ),
+                        ),
                         const SizedBox(height: 8),
                         ...[
                           if (reading && indexing)
@@ -1865,6 +1991,15 @@ class _LibraryPageState extends State<LibraryPage> {
                             spacing: 8,
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
+                              if (reading && filter != 'all')
+                                InputChip(
+                                  key: const ValueKey('active-format-filter'),
+                                  label: Text('Формат: ${formatLabel(filter)}'),
+                                  onDeleted: () =>
+                                      setState(() => filter = 'all'),
+                                  deleteButtonTooltipMessage: 'Сбросить формат',
+                                ),
+                              _viewChoices(),
                               FilterChip(
                                 label: const Text('Избранное'),
                                 avatar: const Icon(
@@ -1890,6 +2025,7 @@ class _LibraryPageState extends State<LibraryPage> {
                                 },
                                 itemBuilder: (_) => [
                                   for (final e in {
+                                    'added': 'Недавно добавленные',
                                     'title': 'По названию',
                                     'author': 'По автору',
                                     if (reading) 'series': 'По серии',
@@ -2009,11 +2145,11 @@ class _LibraryPageState extends State<LibraryPage> {
                   ),
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  // Wide windows get a grid of covers; phones keep the list.
+                  // Both display modes build only visible shelf rows/tiles.
                   sliver: SliverLayoutBuilder(
                     builder: (context, constraints) {
                       final width = constraints.crossAxisExtent;
-                      if (width < 900) {
+                      if (!_useCovers(width)) {
                         return SliverList.builder(
                           itemCount: listed.length,
                           itemBuilder: (_, i) => Padding(
@@ -2022,8 +2158,12 @@ class _LibraryPageState extends State<LibraryPage> {
                           ),
                         );
                       }
-                      const gap = 18.0;
-                      final columns = (width / 210).floor().clamp(4, 8);
+                      final gap = width < 600 ? 12.0 : 18.0;
+                      final columns = width < 300
+                          ? 1
+                          : (width / 210).floor().clamp(width < 900 ? 2 : 4, 8);
+                      final scale =
+                          MediaQuery.textScalerOf(context).scale(14) / 14;
                       final tile = (width - gap * (columns - 1)) / columns;
                       return SliverGrid.builder(
                         itemCount: listed.length,
@@ -2031,7 +2171,9 @@ class _LibraryPageState extends State<LibraryPage> {
                           crossAxisCount: columns,
                           crossAxisSpacing: gap,
                           mainAxisSpacing: gap,
-                          mainAxisExtent: tile * (reading ? 1.5 : 1) + 128,
+                          mainAxisExtent:
+                              tile * (reading ? 1.5 : 1) +
+                              (reading ? 160 : 184) * scale,
                         ),
                         itemBuilder: (_, i) => _bookTile(listed[i], tile),
                       );
@@ -2476,9 +2618,11 @@ class _LibraryPageState extends State<LibraryPage> {
     final deleted = !audio && deletedReadingBooks.contains(book.id);
     final fraction = !audio
         ? _fraction(book)
-        : summary?.total == null || summary?.position == null
+        : summary?.total == null ||
+              summary!.total! <= 0 ||
+              summary.position == null
         ? null
-        : (summary!.position! / summary.total!).clamp(0.0, 1.0);
+        : (summary.position! / summary.total!).clamp(0.0, 1.0);
     return Material(
       key: ValueKey('book-card:${book.id}'),
       color: selected ? scheme.primaryContainer : scheme.surface,
@@ -2610,6 +2754,17 @@ class _LibraryPageState extends State<LibraryPage> {
                         ),
                       ],
                     ),
+                    if (audio && audioRemainingLabel(summary) != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          audioRemainingLabel(summary)!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
                     if (fraction != null) ...[
                       const SizedBox(height: 9),
                       ClipRRect(
@@ -2947,6 +3102,17 @@ class _LibraryPageState extends State<LibraryPage> {
                       '${(fraction * 100).round()}%',
                       style: AppFonts.title(colors.onAccent, size: 40),
                     ),
+                    if (audio && audioRemainingLabel(summary) != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          audioRemainingLabel(summary)!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colors.onAccent,
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 10),
                     FilledButton(
                       style: FilledButton.styleFrom(
@@ -3017,7 +3183,7 @@ class _LibraryPageState extends State<LibraryPage> {
             : deleted
             ? () => _deletedBookInfo(book)
             : asset == null
-            ? null
+            ? () => _bookSource(book)
             : () => audio ? _openAudio(asset) : _openReader(asset),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3090,6 +3256,16 @@ class _LibraryPageState extends State<LibraryPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 12, color: colors.muted),
+                        ),
+                      ),
+                    if (audio && audioRemainingLabel(summary) != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          audioRemainingLabel(summary)!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, color: colors.muted),
                         ),
                       ),
                     const Spacer(),

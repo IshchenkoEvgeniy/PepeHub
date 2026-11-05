@@ -26,6 +26,7 @@ int compareAudioBooks(
   String author(LibraryRecord book) =>
       (book.payload?['authors'] as List? ?? []).join(', ').toLowerCase();
   final result = switch (order) {
+    'added' => nullable(a.localOrder, b.localOrder, descending: true),
     'author' => author(a).compareTo(author(b)),
     'progress' => nullable(fraction(a), fraction(b), descending: true),
     'duration' || 'duration-desc' => nullable(
@@ -43,4 +44,22 @@ int compareAudioBooks(
   if (result != 0) return result;
   final title = naturalAudioOrder(a.title, b.title);
   return title != 0 ? title : a.id.compareTo(b.id);
+}
+
+String? audioRemainingLabel(AudioBookSummary? summary) {
+  final total = summary?.total;
+  if (summary == null ||
+      total == null ||
+      total <= 0 ||
+      summary.position == null) {
+    return null;
+  }
+  final remaining = total - (summary.position ?? 0).clamp(0, total);
+  if (remaining == 0) return 'Прослушано полностью';
+  final speed = summary.speed.isFinite && summary.speed > 0 ? summary.speed : 1;
+  final minutes = (remaining / speed / 60000).ceil();
+  final time = minutes >= 60
+      ? '${minutes ~/ 60} ч${minutes % 60 == 0 ? '' : ' ${minutes % 60} мин'}'
+      : '$minutes мин';
+  return 'Осталось $time${speed == 1 ? '' : ' на $speed×'}';
 }

@@ -72,7 +72,7 @@ void main() {
       expect(await repo.meta('library-section'), 'reading');
       await tester.tap(find.byTooltip('Добавить'));
       await tester.pumpAndSettle();
-      expect(find.text('Импорт книги'), findsOneWidget);
+      expect(find.text('Открыть файл…'), findsOneWidget);
       expect(find.text('Копировать аудиофайлы'), findsNothing);
       await tester.tapAt(const Offset(10, 400));
       await tester.pumpAndSettle();

@@ -14,19 +14,26 @@ class LibraryRecord {
   final int revision;
   final bool deleted;
   final Map<String, dynamic>? payload;
+  // Local insertion order, projected only for file shelves. Updates retain the
+  // rowid, so status edits and reconnects do not make old files look new.
+  final int? localOrder;
   const LibraryRecord(
     this.id,
     this.type,
     this.revision,
     this.deleted,
-    this.payload,
-  );
+    this.payload, {
+    this.localOrder,
+  });
   factory LibraryRecord.fromRow(QueryRow row) => LibraryRecord(
     row.read<String>('id'),
     row.read<String>('type'),
     row.read<int>('revision'),
     row.read<int>('deleted') == 1,
     jsonDecode(row.read<String>('payload')) as Map<String, dynamic>?,
+    localOrder: row.data.containsKey('local_order')
+        ? row.read<int>('local_order')
+        : null,
   );
   factory LibraryRecord.fromJson(Map<String, dynamic> json) => LibraryRecord(
     json['entityId'] as String,
@@ -183,7 +190,7 @@ class Repository {
   Future<List<LibraryRecord>> shelfBooks({required bool audio}) async =>
       (await db
               .customSelect(
-                "SELECT * FROM records WHERE type='book' AND deleted=0 AND (IFNULL(json_extract(payload,'\$.format'),'')='audio')=? ORDER BY json_extract(payload,'\$.title'),id",
+                "SELECT records.*,rowid AS local_order FROM records WHERE type='book' AND deleted=0 AND (IFNULL(json_extract(payload,'\$.format'),'')='audio')=? ORDER BY json_extract(payload,'\$.title'),id",
                 variables: [Variable(audio ? 1 : 0)],
               )
               .get())

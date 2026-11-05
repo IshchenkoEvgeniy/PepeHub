@@ -144,7 +144,13 @@ void main() {
       expect(find.text('Reading only'), findsNothing);
       await tester.tap(find.text('Создать коллекцию'));
       await settle();
-      await tester.enterText(find.byType(TextField), 'В дороге');
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(TextField),
+        ),
+        'В дороге',
+      );
       await tester.tap(find.text('Сохранить'));
       await settle();
       final groups = await library.entries('audio-collection:');
@@ -195,6 +201,12 @@ void main() {
       expect(await repo.meta('audio-sort'), 'author');
       expect(await repo.meta('reading-sort'), 'series');
       expect(find.text('Сейчас слушаю'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Aardvark audio'),
+        180,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await settle();
       expect(
         tester.getTopLeft(find.text('Beta audio')).dy,
         lessThan(tester.getTopLeft(find.text('Aardvark audio')).dy),
@@ -211,11 +223,17 @@ void main() {
       );
       expect(find.text('★ Alpha audio'), findsOneWidget);
       expect(find.text('Сейчас слушаю'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Aardvark audio'),
+        180,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await settle();
       expect(
         tester.getTopLeft(find.text('Beta audio')).dy,
         lessThan(tester.getTopLeft(find.text('Aardvark audio')).dy),
       );
-      await tester.tap(find.text('Коллекции'));
+      await tapVisible(find.text('Коллекции'));
       await settle();
       final row = find.ancestor(
         of: find.text('В дороге'),
@@ -230,7 +248,13 @@ void main() {
       await settle();
       await tester.tap(find.text('Переименовать'));
       await settle();
-      await tester.enterText(find.byType(TextField), 'Поездки');
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(TextField),
+        ),
+        'Поездки',
+      );
       await tester.tap(find.text('Сохранить'));
       await settle();
       expect(

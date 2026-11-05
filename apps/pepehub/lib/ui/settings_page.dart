@@ -548,7 +548,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   : () => _open(AudioRootsPage(assets: assets)),
             ),
             SettingsLink(
-              title: 'Скрытое и удалённое',
+              title: 'Скрытое и отсутствующее',
               enabled: true,
               subtitle: 'Убранные книги, пропавшие файлы и корзина',
               icon: Icons.visibility_off_outlined,

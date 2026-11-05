@@ -1,3 +1,5 @@
+import 'catalog_search.dart';
+
 import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
@@ -247,7 +249,6 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
   final searchFocus = FocusNode();
   Timer? _searchTimer;
   String _searchQuery = '';
-  static final _spaces = RegExp(r'\s+');
   String type = 'all', scope = 'all', year = 'all', sort = 'completed';
   String? selectedId;
   bool filters = false, grid = false;
@@ -520,7 +521,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
               _text(item.values['tags']),
             ].join(' '),
           };
-    final haystack = text.toLowerCase().replaceAll('ё', 'е');
+    final haystack = normalizeCatalogSearch(text);
     return (type == 'all' || item.mediaType == type) &&
         (collectionFilter == 'all' ||
             libraryCollections(item).contains(collectionFilter)) &&
@@ -595,8 +596,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     if (!identical(all, _filterInput) || key != _filterKey) {
       _filterInput = all;
       _filterKey = key;
-      final normalized = _searchQuery.trim().toLowerCase().replaceAll('ё', 'е');
-      final terms = normalized.isEmpty ? <String>[] : normalized.split(_spaces);
+      final terms = catalogSearchTerms(_searchQuery);
       final matched = _catalogEntries
           .where((entry) => _matches(entry, terms))
           .toList();
@@ -699,7 +699,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 PopupMenuItem(
                   value: 'trash',
                   child: Text(
-                    'Скрытое и удалённое · корзина: ${service.trash.length}',
+                    'Скрытое и отсутствующее · корзина: ${service.trash.length}',
                   ),
                 ),
               ],

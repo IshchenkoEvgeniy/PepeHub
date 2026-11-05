@@ -23,7 +23,7 @@ class _AddBookDialogState extends State<AddBookDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Новая книга'),
+    title: const Text('Новая карточка без файла'),
     content: SizedBox(
       width: 440,
       child: Form(

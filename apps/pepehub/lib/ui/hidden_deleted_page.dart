@@ -217,7 +217,7 @@ class _HiddenDeletedPageState extends State<HiddenDeletedPage> {
         initialIndex: tab,
         child: Scaffold(
           appBar: AppBar(
-            title: const Text('Скрытое и удалённое'),
+            title: const Text('Скрытое и отсутствующее'),
             bottom: TabBar(
               isScrollable: true,
               tabAlignment: TabAlignment.start,
