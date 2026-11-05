@@ -548,6 +548,7 @@ void main() {
   test('rewind options preserve legacy disabled preference and persist new amounts', () async {
     await h.controller.updateSleepOptions(
       rewindSeconds: 45,
+      seekStepSeconds: 30,
       resume: const AudioRewindSettings(
         shortSeconds: 5,
         mediumSeconds: 15,
@@ -557,6 +558,7 @@ void main() {
     await h.controller.shutdown();
     await h.restart();
     expect(h.controller.sleepRewindSeconds, 45);
+    expect(h.controller.seekStepSeconds, 30);
     expect(h.controller.rewindSettings.longSeconds, 60);
     await h.repo.setMeta(
       'audio-sleep-settings',
@@ -565,6 +567,7 @@ void main() {
     await h.controller.loadPlaybackPreferences();
     expect(h.controller.sleepRewind, false);
     expect(h.controller.sleepFade, false);
+    expect(h.controller.seekStepSeconds, 10);
   });
   test('chapter boundary pauses at the boundary; manual chapter navigation cancels it', () async {
     await h.controller.seek(const Duration(seconds: 10));

@@ -141,14 +141,69 @@ class LibraryService extends ChangeNotifier {
     await loadCached();
   }
 
-  Future<void> restoreCard(String id) async {
-    final card = (await repository.entries())[id];
-    if (card != null) {
-      await save(id, {
-        ...card.item.values,
-        'pepehub_deleted_at': null,
-      }, original: card.item.values);
+  Future<void> restoreCard(String id) => restoreCards([id]);
+
+  Future<void> restoreCards(Iterable<String> ids) async {
+    final selected = ids.toSet();
+    await repository.mutate((cards) async {
+      for (final id in selected) {
+        final card = cards[id];
+        if (card == null || !isLibraryDeleted(card.item)) continue;
+        cards[id] = LibraryEntry(
+          card.item.withValues({
+            ...card.item.values,
+            'pepehub_deleted_at': null,
+          }),
+          sourceBookId: card.sourceBookId,
+        );
+      }
+    });
+    await loadCached();
+  }
+
+  /// Permanent removal concerns the archive card and its own journal/notes.
+  /// Native reader/player data, physical covers and source files are untouched.
+  Future<int> _purgeCards(Iterable<String> ids) async {
+    final removed = <String>{};
+    await repository.mutate((cards) async {
+      for (final id in ids.toSet()) {
+        final card = cards[id];
+        if (card != null && isLibraryDeleted(card.item)) {
+          cards.remove(id);
+          removed.add(id);
+        }
+      }
+      if (removed.isEmpty) return;
+      for (final store in [history!, notes!]) {
+        await store.mutate((state) async {
+          (state['slots'] as Map).removeWhere(
+            (_, slot) => removed.contains((slot['value'] as Map)['itemId']),
+          );
+        });
+      }
+      for (final id in removed) {
+        await local.db.customStatement('DELETE FROM metadata WHERE key=?', [
+          'obsidian-policy:$personalLibraryNamespace:$id',
+        ]);
+      }
+    });
+    return removed.length;
+  }
+
+  Future<int> purgeCards(Iterable<String> ids) async {
+    final count = await _purgeCards(ids);
+    await loadCached();
+    return count;
+  }
+
+  Future<void> setTrashRetention(int days) async {
+    if (![0, 7, 30, 90].contains(days)) {
+      throw ArgumentError('Срок хранения: 0, 7, 30 или 90 дней');
     }
+    await local.db.transaction(() async {
+      await local.setMeta('library-trash-retention-days', '$days');
+      await loadCached();
+    });
   }
 
   Future<void> favorite(String id) async {
@@ -445,6 +500,25 @@ class LibraryService extends ChangeNotifier {
   Future<void> loadCached() async {
     if (_disposed) return;
     var values = await repository.entries();
+    final retention =
+        int.tryParse(await local.meta('library-trash-retention-days') ?? '') ??
+        0;
+    if ([7, 30, 90].contains(retention)) {
+      final cutoff = DateTime.now().toUtc().subtract(Duration(days: retention));
+      final expired = values.values
+          .where((entry) {
+            final deleted = DateTime.tryParse(
+              '${entry.item.values['pepehub_deleted_at']}',
+            );
+            return deleted != null && deleted.isBefore(cutoff);
+          })
+          .map((entry) => entry.item.id)
+          .toList();
+      if (expired.isNotEmpty) {
+        await _purgeCards(expired);
+        values = await repository.entries();
+      }
+    }
     if (await local.meta('library-manual-archive-v1') != '1') {
       if (values.values.any(
         (e) => e.item.values['pepehub_auto_discovered'] == true,

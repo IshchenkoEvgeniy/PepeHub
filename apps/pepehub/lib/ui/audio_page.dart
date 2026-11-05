@@ -612,7 +612,7 @@ class _AudioPageState extends State<AudioPage> {
 
   Widget _skip(int seconds, {bool compact = false}) => IconButton(
     tooltip:
-        '${seconds < 0 ? 'Назад' : 'Вперёд'} на ${seconds.abs() == 60 ? '1 минуту' : '10 секунд'}',
+        '${seconds < 0 ? 'Назад' : 'Вперёд'} на ${seconds.abs() == 60 ? '1 минуту' : '${seconds.abs()} секунд'}',
     onPressed: controller.canPlay
         ? () => controller.skipSeconds(seconds)
         : null,
@@ -624,7 +624,7 @@ class _AudioPageState extends State<AudioPage> {
           size: compact ? 26 : 30,
         ),
         Text(
-          '${seconds < 0 ? '−' : '+'}${seconds.abs() == 60 ? '1 мин' : '10 с'}',
+          '${seconds < 0 ? '−' : '+'}${seconds.abs() == 60 ? '1 мин' : '${seconds.abs()} с'}',
           style: const TextStyle(fontSize: 11),
         ),
       ],
@@ -811,12 +811,12 @@ class _AudioPageState extends State<AudioPage> {
           icon: const Icon(Icons.skip_previous_rounded),
         ),
         _skip(-60, compact: !wide),
-        _skip(-10, compact: !wide),
+        _skip(-controller.seekStepSeconds, compact: !wide),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: _playButton(palette, wide ? 84 : 68),
         ),
-        _skip(10, compact: !wide),
+        _skip(controller.seekStepSeconds, compact: !wide),
         _skip(60, compact: !wide),
         IconButton(
           tooltip: 'Следующая глава',

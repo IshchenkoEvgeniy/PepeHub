@@ -8,6 +8,8 @@ import 'sync/peer/peer_service.dart';
 import 'sync/peer/peer_store.dart';
 import 'sync/peer/peer_background.dart';
 import 'ui/app_theme.dart';
+import 'ui/goal_reminders.dart';
+import 'ui/goal_settings_page.dart';
 import 'updates/update_service.dart';
 import 'updates/update_page.dart';
 
@@ -104,6 +106,33 @@ class _PepeHubAppState extends State<PepeHubApp> {
   String? _notifiedUpdate;
   late final theme = AppTheme(widget.repository);
   final navigator = GlobalKey<NavigatorState>();
+  late final reminders = GoalReminderService(
+    widget.repository,
+    foreground: () =>
+        mounted &&
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed,
+    show: () {
+      final host = messenger.currentState;
+      if (host == null) return false;
+      host.showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Время для чтения или аудиокниги. Проверьте свои цели на сегодня.',
+          ),
+          duration: const Duration(seconds: 15),
+          action: SnackBarAction(
+            label: 'Цели',
+            onPressed: () => navigator.currentState?.push(
+              MaterialPageRoute<void>(
+                builder: (_) => GoalSettingsPage(repository: widget.repository),
+              ),
+            ),
+          ),
+        ),
+      );
+      return true;
+    },
+  );
   late final peers = PeerSyncService(
     PeerStore(widget.repository),
     assets: widget.assets,
@@ -126,6 +155,8 @@ class _PepeHubAppState extends State<PepeHubApp> {
   void initState() {
     super.initState();
     theme.load();
+    reminders.start();
+    WidgetsBinding.instance.addPostFrameCallback((_) => reminders.check());
     updates.addListener(_updateNotice);
     unawaited(updates.initialize());
     attachPeerBackground(peers);
@@ -168,6 +199,7 @@ class _PepeHubAppState extends State<PepeHubApp> {
   @override
   void dispose() {
     widget.repository.externalChanges.removeListener(_externalChange);
+    reminders.dispose();
     theme.dispose();
     updates.removeListener(_updateNotice);
     updates.dispose();

@@ -101,9 +101,16 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('settings-entry:sync')));
       await tester.pumpAndSettle();
       expect(find.text('Obsidian'), findsNothing);
-      await tester.tap(find.text('Экспорт и резервные копии'));
+      expect(find.text('Экспорт и резервные копии'), findsNothing);
+      await tester.pageBack();
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Данные библиотеки'));
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('settings-entry:data')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('settings-entry:data')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Создать резервную копию'));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       appearance.dispose();

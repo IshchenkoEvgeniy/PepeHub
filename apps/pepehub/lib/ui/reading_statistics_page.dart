@@ -1,3 +1,6 @@
+import 'goal_settings_page.dart';
+import 'reading_plan_page.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -13,7 +16,6 @@ import 'audio_statistics_page.dart' show statTime;
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
 import 'statistics_range.dart';
-import 'reading_plan_page.dart';
 import 'statistics_management_page.dart';
 
 class ReadingStatisticsPage extends StatefulWidget {
@@ -200,52 +202,19 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
   }
 
   Future<void> _goal() async {
-    final input = TextEditingController(text: '$goal');
-    final result = await showDialog<int>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Ежедневная цель чтения'),
-        content: TextField(
-          controller: input,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: 'Минут в день (1–1440)'),
-        ),
-        actions: [
-          if (widget.bookId != null)
-            IconButton(
-              tooltip: 'План чтения',
-              icon: const Icon(Icons.event_note),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ReadingPlanPage(
-                    repository: widget.repository,
-                    bookId: widget.bookId!,
-                  ),
-                ),
-              ),
-            ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final v = int.tryParse(input.text);
-              if (v != null && v >= 1 && v <= 1440) Navigator.pop(context, v);
-            },
-            child: const Text('Сохранить'),
-          ),
-        ],
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GoalSettingsPage(repository: widget.repository),
       ),
     );
-    Future<void>.delayed(const Duration(seconds: 1), input.dispose);
-    if (result == null) return;
     try {
-      await widget.repository.setMeta('reading-daily-goal', '$result');
-      if (mounted) setState(() => goal = result);
+      final saved = await widget.repository.meta('reading-daily-goal');
+      if (mounted) {
+        setState(() => goal = (int.tryParse(saved ?? '') ?? 30).clamp(0, 1440));
+      }
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = 'Не удалось обновить цель: $e');
     }
   }
 
@@ -314,10 +283,29 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
     );
     final goalPanel = PepePanel(
       title: 'Цель на сегодня · вся библиотека',
-      trailing: IconButton(
-        tooltip: 'Изменить цель чтения',
-        onPressed: _goal,
-        icon: const Icon(Icons.edit_outlined, size: 20),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (widget.bookId != null)
+            IconButton(
+              tooltip: 'План чтения',
+              icon: const Icon(Icons.event_note, size: 20),
+              onPressed: () => Navigator.push<void>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ReadingPlanPage(
+                    repository: widget.repository,
+                    bookId: widget.bookId!,
+                  ),
+                ),
+              ),
+            ),
+          IconButton(
+            tooltip: 'Настроить цели',
+            onPressed: _goal,
+            icon: const Icon(Icons.tune, size: 20),
+          ),
+        ],
       ),
       child: Row(
         children: [

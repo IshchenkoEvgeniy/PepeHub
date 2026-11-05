@@ -16,7 +16,9 @@ class AudioFolder {
   final String title;
   final List<XFile> files;
   final String? root;
-  AudioFolder(this.title, this.files, {this.root});
+  final int unsupportedFiles;
+  int get foundFiles => files.length + unsupportedFiles;
+  AudioFolder(this.title, this.files, {this.root, this.unsupportedFiles = 0});
 }
 
 /// The name is a relative display path, never an absolute source path.
@@ -63,7 +65,7 @@ Future<AudioFolder> scanAudioFolder(
 }) async {
   final root = Directory(path);
   final files = <XFile>[];
-  var entries = 0;
+  var entries = 0, unsupported = 0;
   Future<void> visit(Directory directory, int depth) async {
     if (depth > 32) {
       throw StateError('Слишком много вложенных папок (максимум 32)');
@@ -92,6 +94,8 @@ Future<AudioFolder> scanAudioFolder(
             'В корневой папке допускается не более $maxFiles аудиофайлов',
           );
         }
+      } else if (entry is File) {
+        unsupported++;
       }
     }
   }
@@ -101,6 +105,7 @@ Future<AudioFolder> scanAudioFolder(
     p.basename(p.normalize(path)),
     files,
     root: p.normalize(p.absolute(path)),
+    unsupportedFiles: unsupported,
   );
 }
 
@@ -111,14 +116,19 @@ Future<AudioFolder?> pickAudioFolder({bool books = false}) async {
       {'books': books},
     );
     if (result == null) return null;
-    return AudioFolder(result['title'] as String, [
-      for (final entry in result['files'] as List)
-        SafAudioFile(
-          entry['uri'] as String,
-          entry['name'] as String,
-          entry['size'] as int,
-        ),
-    ], root: result['root'] as String);
+    return AudioFolder(
+      result['title'] as String,
+      [
+        for (final entry in result['files'] as List)
+          SafAudioFile(
+            entry['uri'] as String,
+            entry['name'] as String,
+            entry['size'] as int,
+          ),
+      ],
+      root: result['root'] as String,
+      unsupportedFiles: (result['unsupportedFiles'] as num?)?.toInt() ?? 0,
+    );
   }
   final path = await getDirectoryPath();
   return path == null ? null : scanAudioFolder(path, books: books);
@@ -135,14 +145,19 @@ Future<AudioFolder> rescanAudioFolder(String root, {bool books = false}) async {
   if (result == null) {
     throw StateError('Папка недоступна. Укажите путь заново.');
   }
-  return AudioFolder(result['title'] as String, [
-    for (final entry in result['files'] as List)
-      SafAudioFile(
-        entry['uri'] as String,
-        entry['name'] as String,
-        entry['size'] as int,
-      ),
-  ], root: root);
+  return AudioFolder(
+    result['title'] as String,
+    [
+      for (final entry in result['files'] as List)
+        SafAudioFile(
+          entry['uri'] as String,
+          entry['name'] as String,
+          entry['size'] as int,
+        ),
+    ],
+    root: root,
+    unsupportedFiles: (result['unsupportedFiles'] as num?)?.toInt() ?? 0,
+  );
 }
 
 Uri audioSourceUri(String path) =>

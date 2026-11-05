@@ -38,9 +38,9 @@ void main() {
       await tester.tap(find.text('Сохранить'));
       await tester.pumpAndSettle();
       expect(find.text('Моя полка'), findsOneWidget);
-      await tester.tap(find.text('Убрать из библиотеки'));
+      await tester.tap(find.text('Отключить папку'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Убрать'));
+      await tester.tap(find.text('Отключить'));
       await tester.pumpAndSettle();
       expect(await AudioRoots(assets).list(), isEmpty);
       expect(tester.takeException(), isNull);

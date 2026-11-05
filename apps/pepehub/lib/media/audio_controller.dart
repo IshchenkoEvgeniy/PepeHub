@@ -229,6 +229,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   double? _requestedSleepVolume;
   bool _sleepFiring = false, _sleepStopped = false;
   bool sleepFade = true, sleepRewind = true;
+  int seekStepSeconds = 10;
   bool resumeAfterInterruption = false;
   int sleepRewindSeconds = 10;
   AudioRewindSettings rewindSettings = const AudioRewindSettings();
@@ -527,6 +528,10 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     if (raw == null) return;
     try {
       final settings = jsonDecode(raw) as Map;
+      final step = settings['seekStepSeconds'];
+      seekStepSeconds = const [5, 10, 15, 30, 60].contains(step)
+          ? step as int
+          : 10;
       sleepFade = settings['fade'] != false;
       sleepRewind = settings['rewind'] != false;
       final seconds = settings['rewindSeconds'];
@@ -1283,9 +1288,9 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   Future<void> skipSeconds(int seconds) => _skipRelative(seconds);
 
   @override
-  Future<void> rewind() => _skipRelative(-15);
+  Future<void> rewind() => _skipRelative(-seekStepSeconds);
   @override
-  Future<void> fastForward() => _skipRelative(15);
+  Future<void> fastForward() => _skipRelative(seekStepSeconds);
   @override
   Future<void> setSpeed(double speed) => _command(() => _setSpeed(speed));
   Future<void> _setSpeed(double speed) async {
@@ -1428,6 +1433,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     bool? fade,
     bool? rewind,
     int? rewindSeconds,
+    int? seekStepSeconds,
     AudioRewindSettings? resume,
     bool? resumeAfterInterruption,
   }) async {
@@ -1443,6 +1449,11 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         ].any((v) => v < 0 || v > 300)) {
       throw ArgumentError('Возврат от 0 до 300 секунд');
     }
+    if (seekStepSeconds != null &&
+        !const [5, 10, 15, 30, 60].contains(seekStepSeconds)) {
+      throw ArgumentError('Недопустимый шаг перемотки');
+    }
+    this.seekStepSeconds = seekStepSeconds ?? this.seekStepSeconds;
     sleepFade = fade ?? sleepFade;
     sleepRewind = rewind ?? sleepRewind;
     sleepRewindSeconds = rewindSeconds ?? sleepRewindSeconds;
@@ -1457,6 +1468,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       await assets.repository.setMeta(
         'audio-sleep-settings',
         jsonEncode({
+          'seekStepSeconds': this.seekStepSeconds,
           'fade': sleepFade,
           'rewind': sleepRewind,
           'rewindSeconds': sleepRewindSeconds,

@@ -26,9 +26,18 @@ class AudioRoot {
 class RootRefreshResult {
   final int added, updated;
   final List<String> warnings;
-  RootRefreshResult(this.added, this.updated, this.warnings);
+  final int found, supported, unsupported, errors;
+  RootRefreshResult(
+    this.added,
+    this.updated,
+    this.warnings, {
+    this.found = 0,
+    this.supported = 0,
+    this.unsupported = 0,
+    this.errors = 0,
+  });
   String get message =>
-      'Добавлено: $added, обновлено: $updated.${warnings.isEmpty ? '' : '\n${warnings.join('\n')}'}';
+      'Найдено файлов: $found, аудиофайлов: $supported. Добавлено книг: $added, обновлено книг: $updated. Пропущено неподдерживаемых: $unsupported, ошибок: $errors.${warnings.isEmpty ? '' : '\n${warnings.join('\n')}'}';
 }
 
 class AudioRoots {
@@ -56,28 +65,31 @@ class AudioRoots {
       root.key,
       jsonEncode({...root.data, 'title': clean, 'displayTitle': clean}),
     );
+    assets.repository.notifyExternalChange();
   }
 
-  Future<void> remove(AudioRoot root) =>
-      assets.repository.db.transaction(() async {
-        await LibraryFolderPreference(
-          assets.repository,
-          reading: false,
-        ).replace(root.key, null);
-        final others = (await list())
-            .where((r) => r.key != root.key)
-            .expand((r) => r.bookIds)
-            .toSet();
-        for (final id in root.bookIds) {
-          if (!others.contains(id)) {
-            await assets.repository.setMeta('audio-library-hidden:$id', '1');
-          }
+  Future<void> remove(AudioRoot root) async {
+    await assets.repository.db.transaction(() async {
+      await LibraryFolderPreference(
+        assets.repository,
+        reading: false,
+      ).replace(root.key, null);
+      final others = (await list())
+          .where((r) => r.key != root.key)
+          .expand((r) => r.bookIds)
+          .toSet();
+      for (final id in root.bookIds) {
+        if (!others.contains(id)) {
+          await assets.repository.setMeta('audio-library-hidden:$id', '1');
         }
-        await assets.repository.db.customStatement(
-          'DELETE FROM metadata WHERE key=?',
-          [root.key],
-        );
-      });
+      }
+      await assets.repository.db.customStatement(
+        'DELETE FROM metadata WHERE key=?',
+        [root.key],
+      );
+    });
+    assets.repository.notifyExternalChange();
+  }
 
   Future<RootRefreshResult> refresh(
     AudioRoot root, {
@@ -121,7 +133,7 @@ class AudioRoots {
       }
     }
     final drafts = groupAudioCatalog(scan, mode: mode);
-    var added = 0, updated = 0;
+    var added = 0, updated = 0, errors = 0;
     final ids = {...root.bookIds}, seen = <String>{}, warnings = <String>[];
     final repo = assets.repository;
     await repo.db.transaction(() async {
@@ -152,6 +164,7 @@ class AudioRoots {
           );
           ids.add(asset.bookId);
           seen.add(asset.bookId);
+          await repo.setMeta('audio-source-missing:${asset.bookId}', '0');
           await repo.setMeta(
             'audio-source-path:${asset.bookId}',
             jsonEncode({'relativePath': draft.relativeFolder}),
@@ -168,11 +181,13 @@ class AudioRoots {
             updated++;
           }
         } catch (e) {
+          errors++;
           if (oldId != null) seen.add(oldId);
           warnings.add('${draft.title}: $e');
         }
       }
       for (final id in root.bookIds.where((id) => !seen.contains(id))) {
+        await repo.setMeta('audio-source-missing:$id', '1');
         final book = await repo.record(id);
         warnings.add(
           '${book?.title ?? id}: не найдена; карточка и прогресс сохранены.',
@@ -191,6 +206,15 @@ class AudioRoots {
           'bookIds': ids.toList(),
           'lastScan': DateTime.now().toUtc().toIso8601String(),
           'warnings': warnings,
+          'lastReport': {
+            'found': scan.foundFiles,
+            'supported': scan.files.length,
+            'added': added,
+            'updated': updated,
+            'unsupported': scan.unsupportedFiles,
+            'errors': errors,
+            'missing': root.bookIds.where((id) => !seen.contains(id)).length,
+          },
         }),
       );
       if (newKey != root.key) {
@@ -203,13 +227,25 @@ class AudioRoots {
         ]);
       }
     });
-    await recoverAudioRoot(
-      assets,
-      AudioRoot(
-        newKey,
-        jsonDecode((await repo.meta(newKey))!) as Map<String, dynamic>,
-      ),
+    try {
+      await recoverAudioRoot(
+        assets,
+        AudioRoot(
+          newKey,
+          jsonDecode((await repo.meta(newKey))!) as Map<String, dynamic>,
+        ),
+      );
+    } finally {
+      repo.notifyExternalChange();
+    }
+    return RootRefreshResult(
+      added,
+      updated,
+      warnings,
+      found: scan.foundFiles,
+      supported: scan.files.length,
+      unsupported: scan.unsupportedFiles,
+      errors: errors,
     );
-    return RootRefreshResult(added, updated, warnings);
   }
 }

@@ -1,3 +1,4 @@
+import 'goal_settings_page.dart';
 import 'book_picker.dart';
 import '../audio/statistics_export.dart';
 import 'audio_mini_player.dart';
@@ -261,54 +262,17 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
   }
 
   Future<void> _goals() async {
-    var daily = '${goals.dailyMinutes}', weekly = '${goals.weeklyMinutes}';
-    final accepted = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Цели прослушивания'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Для всех книг. 0 — выключить цель.'),
-            TextFormField(
-              initialValue: daily,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Минут в день'),
-              onChanged: (v) => daily = v,
-            ),
-            TextFormField(
-              initialValue: weekly,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Минут в неделю'),
-              onChanged: (v) => weekly = v,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Сохранить'),
-          ),
-        ],
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GoalSettingsPage(repository: widget.repository),
       ),
     );
-    if (accepted != true) return;
     try {
-      final value = ListeningGoals(
-        dailyMinutes: int.parse(daily),
-        weeklyMinutes: int.parse(weekly),
-      );
-      await value.save(widget.repository);
-      if (mounted) setState(() => goals = value);
+      final saved = await ListeningGoals.load(widget.repository);
+      if (mounted) setState(() => goals = saved);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Проверьте минуты: $e')));
-      }
+      if (mounted) setState(() => error = 'Не удалось обновить цели: $e');
     }
   }
 

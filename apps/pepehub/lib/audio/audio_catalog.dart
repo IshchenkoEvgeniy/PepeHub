@@ -219,6 +219,17 @@ Future<int> connectAudioCatalog(
         'root': root.root,
         'title': prior['displayTitle'] ?? root.title,
         'mode': mode,
+        'lastScan': DateTime.now().toUtc().toIso8601String(),
+        'warnings': <String>[],
+        'lastReport': {
+          'found': root.foundFiles,
+          'supported': root.files.length,
+          'added': ids.where((id) => !priorIds.contains(id)).length,
+          'updated': ids.where(priorIds.contains).length,
+          'unsupported': root.unsupportedFiles,
+          'errors': 0,
+          'missing': 0,
+        },
         'bookIds': {
           for (final id in priorIds)
             if (!absorbed.contains(id)) id,
@@ -229,12 +240,16 @@ Future<int> connectAudioCatalog(
     return ids.length;
   });
   final key = audioRootKey(root.root!);
-  await recoverAudioRoot(
-    assets,
-    AudioRoot(
-      key,
-      jsonDecode((await repository.meta(key))!) as Map<String, dynamic>,
-    ),
-  );
+  try {
+    await recoverAudioRoot(
+      assets,
+      AudioRoot(
+        key,
+        jsonDecode((await repository.meta(key))!) as Map<String, dynamic>,
+      ),
+    );
+  } finally {
+    repository.notifyExternalChange();
+  }
   return count;
 }

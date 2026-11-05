@@ -15,6 +15,10 @@ import 'package:pepehub/ui/settings_page.dart';
 import 'package:pepehub/updates/update_service.dart';
 
 import 'peer_sync_test.dart' show MemorySecrets;
+import 'video_player_tools_widget_test.dart' show ready;
+
+import 'package:pepehub/ui/storage_settings_page.dart';
+
 import 'update_test.dart' show UpdateFixture;
 
 void main() {
@@ -154,9 +158,26 @@ void main() {
           final target = find.byKey(
             ValueKey('settings-${size.width >= 960 ? 'nav' : 'entry'}:$id'),
           );
+          if (target.evaluate().isEmpty) {
+            final scrollable = find.byType(Scrollable).first;
+            tester.state<ScrollableState>(scrollable).position.jumpTo(0);
+            await tester.pumpAndSettle();
+            await tester.scrollUntilVisible(
+              target,
+              350,
+              scrollable: scrollable,
+            );
+          }
           await tester.ensureVisible(target);
           await tester.pumpAndSettle();
           await tester.tap(target);
+          if (id == 'storage') {
+            await tester.pump();
+            final dynamic storage = tester.state(
+              find.byType(StorageSettingsPage),
+            );
+            await ready(tester, () => !storage.busy);
+          }
           await tester.pumpAndSettle();
         }
 
@@ -193,12 +214,12 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Прямая синхронизация'), findsOneWidget);
         expect(find.text('Obsidian'), findsNothing);
-        await tap('Экспорт и резервные копии');
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await open('data');
         expect(find.text('Создать резервную копию'), findsOneWidget);
         expect(find.text('Обменять с Obsidian'), findsNothing);
         expect(await f.repo.meta('peer-sync-interval'), '180');
-        await tester.pageBack();
-        await tester.pumpAndSettle();
         await tester.pageBack();
         await tester.pumpAndSettle();
         await open('updates');
@@ -210,6 +231,64 @@ void main() {
         await tester.pageBack();
         await tester.pumpAndSettle();
         expect(find.text('Проверить обновления'), findsOneWidget);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await open('reading');
+        await tap('Настройки читалки');
+        await tester.tap(find.byKey(const ValueKey('reader-appearance-done')));
+        await tester.pumpAndSettle();
+        expect(await f.repo.meta('reader:appearance'), isNotNull);
+        await tap('Цели чтения и прослушивания');
+        await tester.tap(find.byTooltip('Увеличить: Чтение в день'));
+        await tester.pumpAndSettle();
+        expect(await f.repo.meta('reading-daily-goal'), '35');
+        await capture('goals');
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await open('startup');
+        await capture('startup');
+        expect(find.text('Начальная вкладка'), findsOneWidget);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await open('storage');
+        final dynamic storage = tester.state(find.byType(StorageSettingsPage));
+        await ready(tester, () => !storage.busy);
+        expect(storage.error, isNull);
+        expect(storage.usage, isNotNull);
+        await capture('storage');
+        await tester.scrollUntilVisible(
+          find.text('Очистить временные копии'),
+          250,
+          scrollable: find
+              .descendant(
+                of: find.byType(StorageSettingsPage),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        expect(find.text('Очистить временные копии'), findsOneWidget);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await open('about');
+        await capture('about');
+        expect(find.text('База данных'), findsOneWidget);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await open('reminders');
+        expect(find.text('Напоминать о чтении и аудиокнигах'), findsOneWidget);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await open('help');
+        await tap('Почему книга без файла?');
+        expect(find.text('Проверить подключённые папки'), findsOneWidget);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await tap('История файлов и очистка');
+        expect(find.textContaining('Общих папок пока нет'), findsOneWidget);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
         await tester.pageBack();
         await tester.pumpAndSettle();
         await open('appearance');

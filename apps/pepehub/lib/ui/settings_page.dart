@@ -1,6 +1,15 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
-import '../audio/statistics_export.dart' show ListeningGoals;
+import '../reader/reader_appearance.dart';
+import '../reader/reader_layout.dart';
+import '../sync/peer/peer_history_page.dart';
+import 'goal_settings_page.dart';
+import 'playback_settings_page.dart';
+import 'storage_settings_page.dart';
+import 'app_preferences.dart';
+import 'goal_reminders.dart';
 import '../library/library_service.dart';
 import '../recommendations/recommendation_store.dart';
 import '../sync/peer/peer_service.dart';
@@ -13,8 +22,8 @@ import '../vocabulary/vocabulary_repository.dart';
 import 'app_theme.dart';
 import 'audio_mini_player.dart';
 import 'audio_roots_page.dart';
-import 'pepe_widgets.dart';
-import 'reading_hidden_books_page.dart';
+import 'audio_recovery_page.dart';
+import 'hidden_deleted_page.dart';
 import 'reading_roots_page.dart';
 import 'import_folder_page.dart';
 import 'recommendations_page.dart';
@@ -34,7 +43,7 @@ const _catalog = [
     id: 'reading',
     group: 'Основные',
     title: 'Чтение и аудио',
-    note: 'Цели чтения и прослушивания',
+    note: 'Читалка, плеер и общие цели',
     icon: Icons.menu_book_outlined,
   ),
   (
@@ -57,6 +66,41 @@ const _catalog = [
     title: 'Каталоги и инструменты',
     note: 'Рекомендации, Anki и заметки',
     icon: Icons.extension_outlined,
+  ),
+  (
+    id: 'data',
+    group: 'Данные',
+    title: 'Экспорт и резервные копии',
+    note: 'Сохранение, перенос и восстановление библиотеки',
+    icon: Icons.backup_outlined,
+  ),
+  (
+    id: 'storage',
+    group: 'Данные',
+    title: 'Место на диске и кэш',
+    note: 'Размер данных и очистка временных файлов',
+    icon: Icons.storage_outlined,
+  ),
+  (
+    id: 'reminders',
+    group: 'Основные',
+    title: 'Напоминания о целях',
+    note: 'Время напоминания в приложении',
+    icon: Icons.notifications_outlined,
+  ),
+  (
+    id: 'startup',
+    group: 'Основные',
+    title: 'Запуск приложения',
+    note: 'Какую вкладку открывать',
+    icon: Icons.home_outlined,
+  ),
+  (
+    id: 'about',
+    group: 'Приложение',
+    title: 'О приложении',
+    note: 'Версия и расположение данных',
+    icon: Icons.info_outline,
   ),
   (
     id: 'updates',
@@ -91,10 +135,8 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  int goal = 30;
   double? scaleDraft;
   bool loaded = false, saving = false;
-  ListeningGoals listening = const ListeningGoals();
   String page = 'home';
   String? error;
   final navigation = <String>[];
@@ -120,31 +162,15 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _load() async {
     try {
       final repo = widget.library.local;
-      final values = await Future.wait([repo.meta('reading-daily-goal')]);
-      ListeningGoals goals;
-      try {
-        final saved = await ListeningGoals.load(repo);
-        goals = ListeningGoals(
-          dailyMinutes: saved.dailyMinutes.clamp(0, 1440),
-          weeklyMinutes: saved.weeklyMinutes.clamp(0, 10080),
-        );
-      } on FormatException {
-        goals = const ListeningGoals();
-      } on TypeError {
-        goals = const ListeningGoals();
-      }
-      final roots = await repo.metadataPrefixes([
-        'reading-library-root:',
-        'audio-library-root:',
-      ]);
+      final counts = await repo.db
+          .customSelect(
+            "SELECT COUNT(CASE WHEN key >= 'reading-library-root:' AND key < 'reading-library-root;' THEN 1 END) AS reading, COUNT(CASE WHEN key >= 'audio-library-root:' AND key < 'audio-library-root;' THEN 1 END) AS audio FROM metadata WHERE (key >= 'reading-library-root:' AND key < 'reading-library-root;') OR (key >= 'audio-library-root:' AND key < 'audio-library-root;')",
+          )
+          .getSingle();
       if (!mounted) return;
       setState(() {
-        goal = (int.tryParse(values[0] ?? '') ?? 30).clamp(0, 1440);
-        listening = goals;
-        readingRoots = roots.keys
-            .where((k) => k.startsWith('reading-library-root:'))
-            .length;
-        audioRoots = roots.length - readingRoots;
+        readingRoots = counts.read<int>('reading');
+        audioRoots = counts.read<int>('audio');
         loaded = true;
         error = null;
       });
@@ -174,23 +200,6 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<void> _save(String key, String value) async {
-    await widget.library.local.setMeta(key, value);
-  }
-
-  Future<void> _setGoal(int value) => _change(() async {
-    final next = value.clamp(0, 1440);
-    await _save('reading-daily-goal', '$next');
-    if (mounted) setState(() => goal = next);
-  });
-  Future<void> _setListening({int? daily, int? weekly}) => _change(() async {
-    final next = ListeningGoals(
-      dailyMinutes: (daily ?? listening.dailyMinutes).clamp(0, 1440),
-      weeklyMinutes: (weekly ?? listening.weeklyMinutes).clamp(0, 10080),
-    );
-    await next.save(widget.library.local);
-    if (mounted) setState(() => listening = next);
-  });
   void _go(String next, {bool replace = false}) {
     if (page == next && (!replace || navigation.isEmpty)) return;
     setState(() {
@@ -342,50 +351,6 @@ class _SettingsPageState extends State<SettingsPage> {
     onChanged: saving ? null : onChanged,
   );
 
-  Widget _goalLine(
-    ShelfPalette palette,
-    String title,
-    String note,
-    int value,
-    int step,
-    int max,
-    ValueChanged<int> onChanged,
-  ) => Container(
-    padding: const EdgeInsets.symmetric(vertical: 10),
-    decoration: BoxDecoration(
-      border: Border(top: BorderSide(color: palette.line)),
-    ),
-    child: Wrap(
-      alignment: WrapAlignment.spaceBetween,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 12,
-      runSpacing: 8,
-      children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 180, maxWidth: 360),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Text(note, style: TextStyle(fontSize: 12, color: palette.muted)),
-            ],
-          ),
-        ),
-        PepeStepper(
-          value: value == 0 ? '—' : '$value',
-          onMinus: saving || value <= 0 ? null : () => onChanged(value - step),
-          onPlus: saving || value >= max ? null : () => onChanged(value + step),
-        ),
-      ],
-    ),
-  );
-
   Widget _groupTitle(String text) => Padding(
     padding: const EdgeInsets.fromLTRB(4, 18, 0, 10),
     child: Text(
@@ -483,57 +448,62 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     ],
   );
+  Future<void> _readerDefaults() async {
+    await _change(() async {
+      final raw = await widget.library.local.meta('reader:appearance');
+      ReaderPreferences preferences;
+      try {
+        preferences = raw == null
+            ? const ReaderPreferences()
+            : ReaderPreferences.fromJson(
+                jsonDecode(raw) as Map<String, dynamic>,
+              );
+      } catch (_) {
+        preferences = const ReaderPreferences();
+      }
+      if (!mounted) return;
+      final next = await showReaderAppearance(context, preferences);
+      if (next != null) {
+        await widget.library.local.setMeta(
+          'reader:appearance',
+          jsonEncode(next.toJson()),
+        );
+      }
+    });
+  }
+
   Widget _goals() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       const SettingsHeading(
         'Чтение и аудио',
-        'Цели чтения и аудиокниг учитываются отдельно. 0 — без цели.',
+        'Общий профиль читалки, настройки плеера и цели для всех книг.',
       ),
       SettingsGroup(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                _goalLine(
-                  ShelfPalette.of(context),
-                  'Цель чтения в день',
-                  goal == 0 ? 'Без цели' : '$goal мин · вся библиотека',
-                  goal,
-                  5,
-                  1440,
-                  _setGoal,
-                ),
-                _goalLine(
-                  ShelfPalette.of(context),
-                  'Прослушивание в день',
-                  listening.dailyMinutes == 0
-                      ? 'Без цели'
-                      : '${listening.dailyMinutes} мин',
-                  listening.dailyMinutes,
-                  5,
-                  1440,
-                  (v) => _setListening(daily: v),
-                ),
-                _goalLine(
-                  ShelfPalette.of(context),
-                  'Прослушивание в неделю',
-                  listening.weeklyMinutes == 0
-                      ? 'Без цели'
-                      : '${listening.weeklyMinutes} мин',
-                  listening.weeklyMinutes,
-                  30,
-                  10080,
-                  (v) => _setListening(weekly: v),
-                ),
-              ],
-            ),
+          SettingsLink(
+            title: 'Настройки читалки',
+            subtitle: 'Шрифт, тема, поля, листание и зоны касания',
+            icon: Icons.menu_book_outlined,
+            onTap: saving ? null : _readerDefaults,
+          ),
+          SettingsLink(
+            title: 'Настройки плеера аудиокниг',
+            subtitle: 'Возврат после паузы, затухание и шаг перемотки',
+            icon: Icons.headphones_outlined,
+            onTap: () => _open(const PlaybackSettingsPage()),
+          ),
+          SettingsLink(
+            title: 'Цели чтения и прослушивания',
+            subtitle: 'Единый экран для настроек и статистики',
+            icon: Icons.flag_outlined,
+            onTap: () =>
+                _open(GoalSettingsPage(repository: widget.library.local)),
           ),
         ],
       ),
       const SettingsNotice(
-        'Шрифт, поля и режим чтения меняются в открытой книге. Скорость и таймер сна — в проигрывателе аудиокниги. Очередь, перемешивание и повтор — в музыкальном плеере. Музыка не входит в цель прослушивания аудиокниг.',
+        'Профиль читалки применяется при открытии книги. Изменения оформления внутри читалки сохраняются в этот же профиль. У PDF отдельно сохраняется режим страниц.',
       ),
     ],
   );
@@ -578,13 +548,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   : () => _open(AudioRootsPage(assets: assets)),
             ),
             SettingsLink(
-              title: 'Скрытые книги',
-              enabled: assets != null,
-              subtitle: 'Вернуть карточку без повторного импорта',
+              title: 'Скрытое и удалённое',
+              enabled: true,
+              subtitle: 'Убранные книги, пропавшие файлы и корзина',
               icon: Icons.visibility_off_outlined,
-              onTap: assets == null
-                  ? null
-                  : () => _open(ReadingHiddenBooksPage(assets: assets)),
+              onTap: () => _open(HiddenDeletedPage(library: widget.library)),
             ),
           ],
         ),
@@ -605,21 +573,6 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _data() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      const SettingsHeading(
-        'Экспорт и резервные копии',
-        'Перенос библиотеки без подключения к сторонним приложениям.',
-      ),
-      SettingsLink(
-        title: 'Данные библиотеки',
-        subtitle: 'ZIP, JSON, CSV, Markdown и восстановление',
-        icon: Icons.backup_outlined,
-        onTap: () => _open(LibraryDataPage(library: widget.library)),
-      ),
-    ],
-  );
   Widget _integrations() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -654,12 +607,6 @@ class _SettingsPageState extends State<SettingsPage> {
       SettingsGroup(
         children: [
           SettingsLink(
-            title: 'Экспорт и резервные копии',
-            subtitle: 'Сохранить или восстановить библиотеку',
-            icon: Icons.link,
-            onTap: () => _go('data'),
-          ),
-          SettingsLink(
             title: 'Цитаты и заметки',
             subtitle: 'Открыть отдельный рабочий экран',
             icon: Icons.notes_outlined,
@@ -682,9 +629,9 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             SettingsLink(
               title: 'Почему книга без файла?',
-              subtitle: 'Проверить источник и связь с папкой',
+              subtitle: 'Как найти источник и вернуть доступ к книге',
               icon: Icons.find_in_page_outlined,
-              onTap: () => _go('files'),
+              onTap: () => _go('missing-file'),
             ),
             SettingsLink(
               title: 'Журнал синхронизации',
@@ -702,9 +649,21 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             SettingsLink(
               title: 'История файлов и очистка',
-              subtitle: 'Сначала выберите общую папку',
+              subtitle: 'Версии файлов в общих папках',
               icon: Icons.manage_history,
-              onTap: () => _go('sync-folders'),
+              onTap: () => _go('file-history'),
+            ),
+            SettingsLink(
+              title: 'Снимки и журналы аудиокниг',
+              subtitle:
+                  'Сохранить снимок или восстановить события прослушивания',
+              icon: Icons.restore_page_outlined,
+              enabled: widget.library.assets != null,
+              onTap: widget.library.assets == null
+                  ? null
+                  : () => _open(
+                      AudioRecoveryPage(assets: widget.library.assets!),
+                    ),
             ),
             SettingsLink(
               title: 'Обновление приложения',
@@ -718,7 +677,71 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  Widget _missingFile() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const SettingsHeading(
+        'Почему книга без файла?',
+        'Карточка и файл книги хранятся отдельно. Синхронизация карточки не всегда передаёт сам файл.',
+      ),
+      const SettingsNotice(
+        '1. Откройте меню нужной книги → «Источник и файл»: там указаны путь и доступность.\n\n2. Если папку переместили или отключили, подключите её снова и обновите список. На Android может потребоваться заново разрешить доступ.\n\n3. Для карточки с другого устройства подключите соответствующую папку или добавьте файл и свяжите его с карточкой. История, цитаты и карточка сохраняются.',
+      ),
+      SettingsGroup(
+        children: [
+          SettingsLink(
+            title: 'Проверить подключённые папки',
+            subtitle: 'Источники книг и аудиокниг на этом устройстве',
+            icon: Icons.folder_open_outlined,
+            onTap: () => _go('files'),
+          ),
+        ],
+      ),
+    ],
+  );
+  Widget _fileHistory() {
+    final peers = PeerSyncScope.of(context);
+    final folders = peers?.folders ?? [];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SettingsHeading(
+          'История файлов и очистка',
+          'Выберите папку, чтобы посмотреть версии файлов и освободить место в её истории.',
+        ),
+        if (folders.isEmpty)
+          const SettingsNotice(
+            'Общих папок пока нет. История версий доступна для папок, добавленных в синхронизацию.',
+          ),
+        SettingsGroup(
+          children: [
+            for (final folder in folders)
+              SettingsLink(
+                title: folder.name,
+                subtitle: folder.root,
+                icon: Icons.history,
+                onTap: () =>
+                    _open(PeerHistoryPage(service: peers!, folder: folder)),
+              ),
+          ],
+        ),
+        SettingsLink(
+          title: 'Общие папки для обмена',
+          subtitle: 'Добавить или настроить папки синхронизации',
+          icon: Icons.folder_shared_outlined,
+          onTap: () => _go('sync-folders'),
+        ),
+      ],
+    );
+  }
+
   Widget _content(String current, AppTheme appearance) {
+    if (current == 'data') {
+      return LibraryDataPage(library: widget.library, embedded: true);
+    }
+    if (current == 'storage') {
+      return StorageSettingsPage(assets: widget.library.assets, embedded: true);
+    }
     if (current == 'updates' || current == 'update-details') {
       final updates = UpdateScope.of(context);
       return updates == null
@@ -744,16 +767,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SettingsNotice(
                   'Прямая синхронизация недоступна в этой сборке.',
                 ),
-                SettingsGroup(
-                  children: [
-                    SettingsLink(
-                      title: 'Экспорт и резервные копии',
-                      subtitle: 'ZIP, JSON, CSV и Markdown',
-                      icon: Icons.link,
-                      onTap: () => _go('data'),
-                    ),
-                  ],
-                ),
               ],
             )
           : PeerSyncPage(
@@ -762,14 +775,20 @@ class _SettingsPageState extends State<SettingsPage> {
               section: part,
               onNavigate: (next) =>
                   _go(next == 'overview' ? 'sync' : 'sync-$next'),
-              onData: () => _open(LibraryDataPage(library: widget.library)),
             );
     }
     final child = switch (current) {
       'appearance' => _appearance(appearance),
       'reading' => _goals(),
       'files' => _files(),
-      'data' => _data(),
+      'startup' => StartupSettings(repository: widget.library.local),
+      'about' => AboutAppSettings(
+        repository: widget.library.local,
+        assets: widget.library.assets,
+      ),
+      'reminders' => GoalReminderSettings(repository: widget.library.local),
+      'missing-file' => _missingFile(),
+      'file-history' => _fileHistory(),
       'integrations' => _integrations(),
       'help' => _help(),
       _ => _home(),
@@ -781,11 +800,12 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  String _area(String current) =>
-      current.startsWith('sync') || current == 'data'
+  String _area(String current) => current.startsWith('sync')
       ? 'sync'
       : current.startsWith('update')
       ? 'updates'
+      : ['missing-file', 'file-history'].contains(current)
+      ? 'help'
       : current;
   Widget _sidebar(String current) => SizedBox(
     width: 248,

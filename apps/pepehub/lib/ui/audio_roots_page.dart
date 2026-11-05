@@ -1,7 +1,3 @@
-import 'package:file_selector/file_selector.dart';
-
-import '../audio/audio_sidecar.dart';
-
 import 'package:flutter/material.dart';
 
 import '../audio/audio_roots.dart';
@@ -10,6 +6,7 @@ import '../media/asset_store.dart';
 import '../media/library_folder_preference.dart';
 import '../media/audio_player_scope.dart';
 import 'audio_mini_player.dart';
+import 'folder_scan_summary.dart';
 
 class AudioRootsPage extends StatefulWidget {
   final AssetStore assets;
@@ -66,119 +63,12 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
     }
   }
 
-  Future<void> restoreLogs(AudioRoot root) async => run(() async {
-    final files = await openFiles(
-      acceptedTypeGroups: [
-        const XTypeGroup(
-          label: 'Журнал',
-          extensions: ['json', 'bak'],
-          mimeTypes: ['application/json', 'application/octet-stream'],
-        ),
-      ],
-    );
-    if (files.isEmpty) return 'Отменено';
-    if (files.length > 100) {
-      throw StateError('Выберите до 100 пакетов за один раз');
-    }
-    final snapshots = <Map<String, dynamic>>[];
-    var size = 0, count = 0;
-    for (final file in files) {
-      size += await file.length();
-      if (size > 64 * 1024 * 1024) {
-        throw StateError('За один раз можно восстановить до 64 МиБ журнала');
-      }
-      final snapshot = parseAudioSnapshot(await file.readAsString());
-      if (snapshot['kind'] != 'audio-journal') {
-        throw StateError('Выберите файлы events-*.json');
-      }
-      snapshots.add(snapshot);
-      count += (snapshot['events'] as List).length;
-    }
-    if (!mounted) return 'Отменено';
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Восстановить подробный журнал?'),
-        content: Text(
-          'Пакетов: ${files.length}, событий: $count. Существующие события не будут продублированы.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Восстановить'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return 'Отменено';
-    await saveAudioSidecar(
-      widget.assets,
-      AudioFolder(root.title, [], root: root.path),
-    );
-    await widget.assets.repository.db.transaction(() async {
-      for (final snapshot in snapshots) {
-        await restoreAudioSnapshot(
-          widget.assets,
-          root,
-          snapshot,
-          backup: false,
-        );
-      }
-    });
-    return 'Восстановлено событий: $count';
-  });
-
-  Future<void> restore(AudioRoot root) async {
-    await run(() async {
-      final file = await openFile(
-        acceptedTypeGroups: [
-          const XTypeGroup(
-            label: 'Снимок PepeHub',
-            extensions: ['json'],
-            mimeTypes: ['application/json'],
-          ),
-        ],
-      );
-      if (file == null) return 'Восстановление отменено';
-      if (await file.length() > 16 * 1024 * 1024) {
-        throw StateError('Снимок больше 16 МиБ');
-      }
-      final snapshot = parseAudioSnapshot(await file.readAsString());
-      if (!mounted) return 'Отменено';
-      final accepted = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Восстановить снимок?'),
-          content: Text(
-            'Дата: ${snapshot['createdAt']}\nКниг: ${(snapshot['books'] as List).length}, сессий: ${(snapshot['sessions'] as List).length}.\nПозиции, обложки и закладки будут заменены, сессии объединены по ID. Перед заменой сохраним текущий снимок. Аудиофайлы не изменятся.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Восстановить'),
-            ),
-          ],
-        ),
-      );
-      if (accepted != true) return 'Восстановление отменено';
-      final count = await restoreAudioSnapshot(widget.assets, root, snapshot);
-      return 'Восстановлено книг: $count';
-    });
-  }
-
   Future<void> rename(AudioRoot root) async {
     var title = root.title;
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         title: const Text('Название папки в PepeHub'),
         content: TextFormField(
           initialValue: title,
@@ -213,9 +103,10 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
     final yes = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Убрать папку из библиотеки?'),
+        scrollable: true,
+        title: const Text('Отключить папку аудиокниг?'),
         content: Text(
-          '${root.title}\nКниги этой папки скроются. Исходные файлы, позиции и история останутся. Повторное подключение вернёт книги.',
+          '${root.title}\nАудиокниги этой папки скроются из списка файлов. Исходные файлы, позиции и история останутся. Повторное подключение вернёт книги.',
         ),
         actions: [
           TextButton(
@@ -224,7 +115,7 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Убрать'),
+            child: const Text('Отключить'),
           ),
         ],
       ),
@@ -232,7 +123,7 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
     if (yes == true && mounted) {
       await run(() async {
         await manager.remove(root);
-        return 'Папка отключена от библиотеки';
+        return 'Папка аудиокниг отключена';
       });
     }
   }
@@ -241,7 +132,7 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
   Widget build(BuildContext context) => PopScope(
     canPop: !busy,
     child: Scaffold(
-      appBar: AppBar(title: const Text('Папки библиотеки')),
+      appBar: AppBar(title: const Text('Папки аудиокниг')),
       bottomNavigationBar: AudioMiniPlayer(
         controller: AudioPlayerScope.of(context),
       ),
@@ -280,11 +171,18 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
                                 style: Theme.of(context).textTheme.titleLarge,
                               ),
                               Text('${root.bookIds.length} книг'),
-                              if ((root.data['warnings'] as List? ?? [])
-                                  .isNotEmpty)
-                                Text(
-                                  'Требуют внимания: ${(root.data['warnings'] as List).length}. Нажмите «Обновить» для отчёта.',
+                              FolderScanSummary(
+                                audio: true,
+                                lastScan: DateTime.tryParse(
+                                  '${root.data['lastScan']}',
                                 ),
+                                report: (root.data['lastReport'] as Map?)
+                                    ?.cast<String, dynamic>(),
+                                warnings:
+                                    (root.data['warnings'] as List?)
+                                        ?.cast<String>() ??
+                                    const [],
+                              ),
                               SelectableText(
                                 root.path,
                                 style: const TextStyle(fontSize: 12),
@@ -328,37 +226,6 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
                                     label: const Text('Обновить'),
                                   ),
                                   TextButton.icon(
-                                    onPressed: busy
-                                        ? null
-                                        : () => run(() async {
-                                            await saveAudioSidecar(
-                                              widget.assets,
-                                              AudioFolder(
-                                                root.title,
-                                                [],
-                                                root: root.path,
-                                              ),
-                                            );
-                                            return 'Снимок сохранён в .pepehub';
-                                          }),
-                                    icon: const Icon(Icons.save_outlined),
-                                    label: const Text('Сохранить снимок'),
-                                  ),
-                                  TextButton.icon(
-                                    onPressed: busy
-                                        ? null
-                                        : () => restore(root),
-                                    icon: const Icon(Icons.restore),
-                                    label: const Text('Восстановить снимок'),
-                                  ),
-                                  TextButton.icon(
-                                    onPressed: busy
-                                        ? null
-                                        : () => restoreLogs(root),
-                                    icon: const Icon(Icons.history),
-                                    label: const Text('Восстановить журнал'),
-                                  ),
-                                  TextButton.icon(
                                     onPressed: busy ? null : () => rename(root),
                                     icon: const Icon(Icons.edit),
                                     label: const Text('Переименовать'),
@@ -385,7 +252,7 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
                                   TextButton.icon(
                                     onPressed: busy ? null : () => remove(root),
                                     icon: const Icon(Icons.link_off),
-                                    label: const Text('Убрать из библиотеки'),
+                                    label: const Text('Отключить папку'),
                                   ),
                                 ],
                               ),

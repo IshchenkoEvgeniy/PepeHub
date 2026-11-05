@@ -17,6 +17,9 @@ class ReadingRoot {
   final String key, path, title;
   final List<String> bookIds;
   final List<String>? presentBookIds;
+  final DateTime? lastScan;
+  final List<String> warnings;
+  final Map<String, dynamic>? report;
   List<String> get availableIds => presentBookIds ?? bookIds;
   ReadingRoot(
     this.key,
@@ -24,6 +27,9 @@ class ReadingRoot {
     this.title,
     this.bookIds, {
     this.presentBookIds,
+    this.lastScan,
+    this.warnings = const [],
+    this.report,
   });
 }
 
@@ -51,7 +57,33 @@ class ReadingRoots {
     value['title'] as String,
     (value['bookIds'] as List).cast<String>(),
     presentBookIds: (value['presentBookIds'] as List?)?.cast<String>(),
+    lastScan: DateTime.tryParse('${value['lastScan']}'),
+    warnings: (value['warnings'] as List?)?.cast<String>() ?? const [],
+    report: (value['lastReport'] as Map?)?.cast<String, dynamic>(),
   );
+  Future<void> rename(ReadingRoot root, String title) async {
+    final clean = title.trim();
+    if (clean.isEmpty || clean.length > 500) {
+      throw ArgumentError('Название: от 1 до 500 символов');
+    }
+    await assets.repository.db.transaction(() async {
+      final raw = await assets.repository.meta(root.key);
+      if (raw == null) throw StateError('Папка уже отключена');
+      await assets.repository.setMeta(
+        root.key,
+        jsonEncode({
+          ...jsonDecode(raw) as Map,
+          'title': clean,
+          'displayTitle': clean,
+        }),
+      );
+    });
+    assets.repository.notifyExternalChange();
+  }
+
+  Future<ReadingRoot> refresh(ReadingRoot root) => connectFromScan(root.path);
+  Future<ReadingRoot> connectFromScan(String path) async =>
+      connect(await rescanAudioFolder(path, books: true), skipUnreadable: true);
   Future<void> disconnect(ReadingRoot root) async {
     await assets.repository.db.transaction(() async {
       await LibraryFolderPreference(
@@ -92,58 +124,73 @@ class ReadingRoots {
         }
       }
     });
+    assets.repository.notifyExternalChange();
   }
 
   Future<ReadingRoot> connect(
     AudioFolder folder, {
     Map<String, ({String hash, int bytes})> verified = const {},
+    bool skipUnreadable = false,
   }) async {
     final path = folder.root!;
     final key = 'reading-library-root:${sha256.convert(utf8.encode(path))}';
     final ids = <String>[];
     final present = <String>{};
+    final warnings = <String>[];
+    var added = 0, updated = 0, duplicates = 0;
+    final scannedHashes = <String>{};
     final candidates =
         <({String name, String path, String format, String hash, int size})>[];
     for (final file in folder.files) {
-      final format = bookFormat(file.name);
-      final declaredSize = await file.length();
-      final maxSize = (format == 'pdf' ? 256 : 64) * 1024 * 1024;
-      if (declaredSize > maxSize) {
-        throw StateError('Недопустимый размер: ${file.name}');
+      try {
+        final format = bookFormat(file.name);
+        final declaredSize = await file.length();
+        final maxSize = (format == 'pdf' ? 256 : 64) * 1024 * 1024;
+        if (declaredSize > maxSize) {
+          throw StateError('Недопустимый размер: ${file.name}');
+        }
+        var actualBytes = 0;
+        final known = verified[file.name];
+        if (known != null &&
+            (known.bytes != declaredSize ||
+                !RegExp(r'^[a-f0-9]{64}$').hasMatch(known.hash))) {
+          throw StateError('Файл изменился: ${file.name}');
+        }
+        final hash = known != null
+            ? known.hash
+            : (await sha256
+                      .bind(
+                        file.openRead().map((chunk) {
+                          actualBytes += chunk.length;
+                          if (actualBytes > maxSize ||
+                              declaredSize > 0 && actualBytes > declaredSize) {
+                            throw StateError('Файл изменился: ${file.name}');
+                          }
+                          return chunk;
+                        }),
+                      )
+                      .first)
+                  .toString();
+        if (known != null) actualBytes = known.bytes;
+        if (actualBytes == 0 ||
+            declaredSize > 0 && actualBytes != declaredSize) {
+          throw StateError('Файл изменился: ${file.name}');
+        }
+        if (!scannedHashes.add(hash)) {
+          duplicates++;
+          continue;
+        }
+        candidates.add((
+          name: file.name,
+          path: file.path,
+          format: format,
+          hash: hash,
+          size: actualBytes,
+        ));
+      } catch (e) {
+        if (!skipUnreadable) rethrow;
+        warnings.add('${file.name}: $e');
       }
-      var actualBytes = 0;
-      final known = verified[file.name];
-      if (known != null &&
-          (known.bytes != declaredSize ||
-              !RegExp(r'^[a-f0-9]{64}$').hasMatch(known.hash))) {
-        throw StateError('Файл изменился: ${file.name}');
-      }
-      final hash = known != null
-          ? known.hash
-          : (await sha256
-                    .bind(
-                      file.openRead().map((chunk) {
-                        actualBytes += chunk.length;
-                        if (actualBytes > maxSize ||
-                            declaredSize > 0 && actualBytes > declaredSize) {
-                          throw StateError('Файл изменился: ${file.name}');
-                        }
-                        return chunk;
-                      }),
-                    )
-                    .first)
-                .toString();
-      if (known != null) actualBytes = known.bytes;
-      if (actualBytes == 0 || declaredSize > 0 && actualBytes != declaredSize) {
-        throw StateError('Файл изменился: ${file.name}');
-      }
-      candidates.add((
-        name: file.name,
-        path: file.path,
-        format: format,
-        hash: hash,
-        size: actualBytes,
-      ));
     }
     await assets.repository.db.transaction(() async {
       final previous = await assets.repository.meta(key);
@@ -151,6 +198,7 @@ class ReadingRoots {
         // A temporarily missing file stays associated with its root and retains its notes/history.
         ids.addAll((jsonDecode(previous) as Map)['bookIds'].cast<String>());
       }
+      final knownIds = ids.toSet();
       for (final file in candidates) {
         final hash = file.hash, format = file.format, size = file.size;
         final existing = await assets.byHash(hash);
@@ -162,6 +210,7 @@ class ReadingRoots {
         }
         final id = existing?.bookId ?? uuid.v4();
         if (existing == null) {
+          added++;
           await assets.repository.put('book', id, {
             'title': p.basenameWithoutExtension(file.name),
             'authors': <String>[],
@@ -173,6 +222,7 @@ class ReadingRoots {
             [uuid.v4(), id, p.basename(file.name), file.path, hash, size],
           );
         } else {
+          updated++;
           final managed = await assets.managedBookCopy(existing);
           if (managed != null || assets.isManagedBookPath(existing)) {
             await assets.repository.setMeta('reading-imported:$id', '1');
@@ -195,7 +245,7 @@ class ReadingRoots {
             'relativePath': file.name.replaceAll('\\', '/'),
           }),
         );
-        if (!ids.contains(id)) ids.add(id);
+        if (knownIds.add(id)) ids.add(id);
       }
       // Keep historical IDs for reconnects, while removing absent sources from
       // the shelf. Independently imported copies and other roots remain usable.
@@ -204,7 +254,8 @@ class ReadingRoots {
           .expand((r) => r.availableIds)
           .toSet();
       for (final id in ids.where(
-        (id) => !present.contains(id) && !other.contains(id),
+        (id) =>
+            warnings.isEmpty && !present.contains(id) && !other.contains(id),
       )) {
         if (await assets.restoreManagedBookCopy(id)) {
           await ReadingBookVisibility(assets.repository).available(id);
@@ -215,20 +266,41 @@ class ReadingRoots {
       await assets.repository.setMeta(
         key,
         jsonEncode({
+          if (previous != null) ...jsonDecode(previous) as Map<String, dynamic>,
           'path': path,
-          'title': folder.title,
+          'title': previous == null
+              ? folder.title
+              : (jsonDecode(previous) as Map)['displayTitle'] ?? folder.title,
+          if (previous != null &&
+              (jsonDecode(previous) as Map)['displayTitle'] != null)
+            'displayTitle': (jsonDecode(previous) as Map)['displayTitle'],
+          'lastScan': DateTime.now().toUtc().toIso8601String(),
+          'warnings': warnings,
+          'lastReport': {
+            'found': folder.foundFiles,
+            'supported': folder.files.length,
+            'added': added,
+            'updated': updated,
+            'unsupported': folder.unsupportedFiles,
+            'duplicates': duplicates,
+            'errors': warnings.length,
+            'missing': warnings.isEmpty
+                ? ids.where((id) => !present.contains(id)).length
+                : 0,
+          },
           'bookIds': ids,
           'presentBookIds': present.toList(),
         }),
       );
     });
-    await recoverReadingRoot(assets, path, ids);
-    return ReadingRoot(
+    try {
+      await recoverReadingRoot(assets, path, ids);
+    } finally {
+      assets.repository.notifyExternalChange();
+    }
+    return _root(
       key,
-      path,
-      folder.title,
-      ids,
-      presentBookIds: present.toList(),
+      jsonDecode((await assets.repository.meta(key))!) as Map<String, dynamic>,
     );
   }
 

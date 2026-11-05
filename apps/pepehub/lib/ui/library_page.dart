@@ -1,5 +1,6 @@
 import 'audio_mini_player.dart';
 import 'app_theme.dart';
+import 'app_preferences.dart';
 import 'book_action_menu.dart';
 import 'settings_page.dart';
 import 'activity_page.dart';
@@ -64,7 +65,7 @@ import '../audio/audio_book_actions.dart';
 import '../reader/reading_book_visibility.dart';
 import '../sync/peer/peer_service.dart';
 import 'reading_roots_page.dart';
-import 'reading_hidden_books_page.dart';
+import 'hidden_deleted_page.dart';
 import 'reading_statistics_page.dart';
 import 'reading_book_page.dart';
 import 'reading_plan_page.dart';
@@ -186,7 +187,7 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _initialize() async {
-    final section = await widget.repository.meta('library-section');
+    final section = await startupSection(widget.repository);
     if (!mounted) return;
     reading = section == 'reading';
     metadataSection = section == 'metadata';
@@ -1648,21 +1649,13 @@ class _LibraryPageState extends State<LibraryPage> {
                   }
                   if (value == 'audio') _importAudio();
                   if (value == 'book') _importBook();
-                  if (value == 'deleted') {
-                    setState(() {
-                      statusFilter = 'deleted';
-                      selectedBooks.clear();
-                    });
-                  }
                   if (value == 'export') _export();
-                  if (value == 'hidden' && widget.assets != null) {
+                  if (value == 'hidden') {
                     Navigator.push<void>(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => ReadingHiddenBooksPage(
-                          assets: widget.assets!,
-                          audio: !reading,
-                        ),
+                        builder: (_) =>
+                            HiddenDeletedPage(library: obsidianLibrary),
                       ),
                     ).then((_) => _reload());
                   }
@@ -1678,18 +1671,10 @@ class _LibraryPageState extends State<LibraryPage> {
                       value: 'book',
                       child: Text('Импорт книги'),
                     ),
-                  if (reading && widget.assets != null)
-                    const PopupMenuItem(
-                      value: 'deleted',
-                      child: Text('Удалённые книги'),
-                    ),
-                  if (widget.assets != null)
-                    PopupMenuItem(
-                      value: 'hidden',
-                      child: Text(
-                        reading ? 'Убранные книги' : 'Убранные аудиокниги',
-                      ),
-                    ),
+                  const PopupMenuItem(
+                    value: 'hidden',
+                    child: Text('Скрытое и удалённое'),
+                  ),
                   if (!reading)
                     const PopupMenuItem(
                       value: 'audio',

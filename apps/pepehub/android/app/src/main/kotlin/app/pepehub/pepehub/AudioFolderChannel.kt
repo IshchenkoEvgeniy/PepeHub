@@ -522,6 +522,7 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
             val files = mutableListOf<Map<String, Any>>()
             val visited = mutableSetOf<String>()
             var count = 0
+            var unsupportedFiles = 0
             val rootId = Docs.getTreeDocumentId(tree)
             val root = Docs.buildDocumentUriUsingTree(tree, rootId)
             fun completeFolder(cursor: android.database.Cursor) {
@@ -566,6 +567,8 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
                             val uri = Docs.buildDocumentUriUsingTree(tree, childId).toString()
                             files.add(mapOf("uri" to uri, "name" to relative, "size" to if (it.isNull(3)) -1L else it.getLong(3)))
                             check(files.size <= 10000) { "В выбранной папке допускается не более 10000 файлов" }
+                        } else {
+                            unsupportedFiles++
                         }
                     }
                 }
@@ -574,7 +577,7 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
             val granted = (data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             context.contentResolver.takePersistableUriPermission(tree, granted)
             allowed.addAll(files.map { it["uri"] as String })
-            mapOf("title" to title, "files" to files, "root" to tree.toString())
+            mapOf("title" to title, "files" to files, "root" to tree.toString(), "unsupportedFiles" to unsupportedFiles)
         }
         return true
     }

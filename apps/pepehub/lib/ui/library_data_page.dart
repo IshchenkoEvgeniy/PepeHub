@@ -40,7 +40,12 @@ Future<bool> saveLibraryFile(Uint8List bytes, String name, String mime) async {
 
 class LibraryDataPage extends StatefulWidget {
   final LibraryService library;
-  const LibraryDataPage({super.key, required this.library});
+  final bool embedded;
+  const LibraryDataPage({
+    super.key,
+    required this.library,
+    this.embedded = false,
+  });
   @override
   State<LibraryDataPage> createState() => _LibraryDataPageState();
 }
@@ -130,7 +135,9 @@ class _LibraryDataPageState extends State<LibraryDataPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Экспорт и резервные копии')),
+    appBar: widget.embedded
+        ? null
+        : AppBar(title: const Text('Экспорт и резервные копии')),
     body: ListView(
       padding: const EdgeInsets.all(20),
       children: [
