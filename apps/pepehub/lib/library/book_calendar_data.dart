@@ -1,6 +1,8 @@
-import 'package:drift/drift.dart' show Variable;
+import 'package:drift/drift.dart' show Variable, QueryRow;
 
 import '../audio/audio_journal.dart';
+import '../audio/audio_daily_totals.dart';
+import '../audio/listening_analytics.dart';
 import '../audio/audio_statistics_history.dart';
 import '../data/repository.dart';
 import '../reader/reading_statistics_data.dart';
@@ -45,6 +47,9 @@ class BookCalendarData {
     List<LibraryRecord>? bookRecords,
     ReadingCalendarSummary? readingSummary,
     AudioStatisticsHistory? audioHistory,
+    AudioDailyTotals? nativeAudio,
+    ListeningAnalytics? audioSummary,
+    Map<String, String> readingTitles = const {},
   }) async {
     final data = BookCalendarData();
     final links = {
@@ -66,10 +71,16 @@ class BookCalendarData {
       final entry = links[record.id];
       data.books[record.id] = CalendarBook(
         record.id,
-        record.title,
+        readingTitles[record.id] ?? entry?.item.title ?? record.title,
         record.payload?['format'] == 'audio' ? 'audiobook' : 'book',
         entry,
         entry == null ? coverByBook[record.id] : library?.coverPath(entry.item),
+      );
+    }
+    for (final e in readingTitles.entries) {
+      data.books.putIfAbsent(
+        e.key,
+        () => CalendarBook(e.key, e.value, 'book', null, null),
       );
     }
     final summary =
@@ -79,24 +90,67 @@ class BookCalendarData {
           <String, dynamic>{'sessions': reading, 'year': year},
         );
     for (final book in summary.bookDays.entries) {
+      data.books.putIfAbsent(
+        book.key,
+        () => CalendarBook(
+          book.key,
+          readingTitles[book.key] ?? 'Книга без файла · ${book.key}',
+          'book',
+          null,
+          null,
+        ),
+      );
       for (final e in book.value.entries) {
         if (e.key.startsWith('$year-')) {
           data.add(e.key, book.key, e.value);
         }
       }
     }
-    final audio = await repository.db
-        .customSelect(
-          'SELECT day,book_id,wall_ms FROM audio_daily_totals_v1 WHERE day>=? AND day<? AND wall_ms>0',
-          variables: [Variable('$year-01-01'), Variable('${year + 1}-01-01')],
-        )
-        .get();
+    final audio = nativeAudio == null
+        ? await repository.db
+              .customSelect(
+                'SELECT day,book_id,wall_ms FROM audio_daily_totals_v1 WHERE day>=? AND day<? AND wall_ms>0',
+                variables: [
+                  Variable('$year-01-01'),
+                  Variable('${year + 1}-01-01'),
+                ],
+              )
+              .get()
+        : <QueryRow>[];
     for (final row in audio) {
+      final id = row.read<String>('book_id');
+      data.books.putIfAbsent(
+        id,
+        () => CalendarBook(
+          id,
+          'Аудиокнига без файла · $id',
+          'audiobook',
+          null,
+          null,
+        ),
+      );
       data.add(
         row.read<String>('day'),
         row.read<String>('book_id'),
         row.read<int>('wall_ms'),
       );
+    }
+    if (nativeAudio != null) {
+      for (final book in nativeAudio.bookDays.entries) {
+        data.books.putIfAbsent(
+          book.key,
+          () => CalendarBook(
+            book.key,
+            'Аудиокнига без файла · ${book.key}',
+            'audiobook',
+            null,
+            null,
+          ),
+        );
+        for (final e in book.value.entries) {
+          if (e.key.startsWith('$year-')) data.add(e.key, book.key, e.value);
+        }
+      }
     }
     final supplemental =
         audioHistory ??
@@ -112,11 +166,29 @@ class BookCalendarData {
         () => CalendarBook(title.key, title.value, 'audiobook', null, null),
       );
     }
-    for (final event in supplemental.events) {
-      (audioGroups['${event['bookId']}'] ??= []).add(event);
+    if (audioSummary == null) {
+      for (final event in supplemental.events) {
+        (audioGroups['${event['bookId']}'] ??= []).add(event);
+      }
     }
-    for (final group in audioGroups.entries) {
-      for (final day in AudioStats(group.value).days.entries) {
+    final audioBooks =
+        audioSummary?.byBook ??
+        {
+          for (final group in audioGroups.entries)
+            group.key: AudioStats(group.value),
+        };
+    for (final group in audioBooks.entries) {
+      data.books.putIfAbsent(
+        group.key,
+        () => CalendarBook(
+          group.key,
+          'Аудиокнига без файла · ${group.key}',
+          'audiobook',
+          null,
+          null,
+        ),
+      );
+      for (final day in group.value.days.entries) {
         data.archiveAudioAll[day.key] =
             (data.archiveAudioAll[day.key] ?? 0) + day.value;
         if (day.key.startsWith('$year-')) {
@@ -142,12 +214,21 @@ class BookCalendarData {
             library.coverPath(e.item),
           );
         }
-        for (final slot in await library.history!.entries()) {
+        final missing = standalone.keys
+            .where((id) => !summary.bookDays.containsKey('card:$id'))
+            .toSet();
+        for (final slot
+            in missing.isEmpty
+                ? <Map<String, dynamic>>[]
+                : await library.history!.entries()) {
           final v = slot['value'] as Map;
           if (v['deleted'] == true || !standalone.containsKey(v['itemId'])) {
             continue;
           }
           if (v['mediaType'] == 'audiobook') continue;
+          // The shared reading source already includes these card sessions.
+          // Keep the fallback for callers supplying only native reading rows.
+          if (!missing.contains(v['itemId'])) continue;
           final day = '${v['day']}';
           final ms = (v['durationMs'] as num).toInt();
           final all = v['mediaType'] == 'book'

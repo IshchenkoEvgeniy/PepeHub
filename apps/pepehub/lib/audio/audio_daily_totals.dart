@@ -5,7 +5,22 @@ import '../data/repository.dart';
 
 class AudioDailyTotals {
   final Map<String, int> days, books;
-  const AudioDailyTotals(this.days, this.books);
+  final Map<String, Map<String, int>> bookDays;
+  const AudioDailyTotals(this.days, this.books, [this.bookDays = const {}]);
+
+  AudioDailyTotals forYear(int year) {
+    final days = <String, int>{}, books = <String, int>{};
+    final selected = <String, Map<String, int>>{};
+    for (final book in bookDays.entries) {
+      for (final e in book.value.entries) {
+        if (!e.key.startsWith('$year-')) continue;
+        days[e.key] = (days[e.key] ?? 0) + e.value;
+        books[book.key] = (books[book.key] ?? 0) + e.value;
+        (selected[book.key] ??= {})[e.key] = e.value;
+      }
+    }
+    return AudioDailyTotals(days, books, selected);
+  }
 }
 
 /// Rebuildable read model. The table, its triggers and the time indexes are
@@ -66,12 +81,14 @@ class AudioDailyStore {
 
   AudioDailyTotals _totals(List<QueryRow> rows) {
     final days = <String, int>{}, books = <String, int>{};
+    final bookDays = <String, Map<String, int>>{};
     for (final row in rows) {
       final day = row.read<String>('day'), book = row.read<String>('book_id');
       final wall = row.read<int>('wall_ms');
       days[day] = (days[day] ?? 0) + wall;
       books[book] = (books[book] ?? 0) + wall;
+      (bookDays[book] ??= {})[day] = wall;
     }
-    return AudioDailyTotals(days, books);
+    return AudioDailyTotals(days, books, bookDays);
   }
 }

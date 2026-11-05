@@ -1,4 +1,5 @@
 import 'audio_journal.dart';
+import '../statistics/activity_streak.dart';
 
 /// Derived from immutable intervals, so restoring logs reconstructs sessions.
 class ListeningSession {
@@ -33,19 +34,8 @@ class ListeningAnalytics {
     this.byBook,
   );
 
-  int currentStreak(DateTime now) {
-    var date = DateTime.utc(now.year, now.month, now.day);
-    final days = lifetime.activityDays;
-    if (!days.containsKey(dayKey(date))) {
-      date = date.subtract(const Duration(days: 1));
-    }
-    var count = 0;
-    while (days.containsKey(dayKey(date))) {
-      count++;
-      date = date.subtract(const Duration(days: 1));
-    }
-    return count;
-  }
+  int currentStreak(DateTime now) =>
+      activityStreak(lifetime.activityDays, now).current;
 
   int timeBetween(DateTime start, DateTime end) => lifetime.days.entries
       .where(
@@ -106,13 +96,21 @@ ListeningAnalytics analyzeListening(Map<String, dynamic> request) {
   events.sort((a, b) => (a['at'] as String).compareTo(b['at'] as String));
   final book = request['book'] as String?;
   final cutoff = request['cutoff'] as String?;
+  final startDay = request['startDay'] as String?,
+      endDay = request['endDay'] as String?;
   bool matches(Map<String, dynamic> e) {
     if (book != null && e['bookId'] != book) return false;
     if (e['dateKnown'] == false) {
-      return cutoff == null && rangeStart == null && rangeEnd == null;
+      return cutoff == null &&
+          startDay == null &&
+          endDay == null &&
+          rangeStart == null &&
+          rangeEnd == null;
     }
     final day = e['localDay'] as String;
     if (cutoff != null && day.compareTo(cutoff) < 0) return false;
+    if (startDay != null && day.compareTo(startDay) < 0) return false;
+    if (endDay != null && day.compareTo(endDay) >= 0) return false;
     // A day-only total has no clock time. The synthetic noon used to sort it
     // must not determine which local calendar day/year contains the total.
     if (e['timeKnown'] == false) {

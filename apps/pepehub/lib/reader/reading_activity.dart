@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import '../data/repository.dart';
+import '../statistics/activity_streak.dart';
 import 'reading_library.dart';
 
 /// Counts interaction-based reading, never claims eye tracking.
@@ -411,16 +412,18 @@ class ReadingTotals {
     books[id] = (books[id] ?? 0) + ms;
     var at = from.toLocal();
     final end = to.toLocal();
+    var assigned = 0;
     while (at.isBefore(end)) {
       final midnight = DateTime(at.year, at.month, at.day + 1);
       final until = midnight.isBefore(end) ? midnight : end;
-      final part =
+      final cumulative =
           (ms *
-                  until.difference(at).inMicroseconds /
+                  until.difference(from).inMicroseconds /
                   to.difference(from).inMicroseconds)
               .round();
       final key = readingDay(at);
-      days[key] = (days[key] ?? 0) + part;
+      days[key] = (days[key] ?? 0) + cumulative - assigned;
+      assigned = cumulative;
       at = until;
     }
   }
@@ -431,6 +434,8 @@ ReadingTotals readingTotals(
   DateTime? start,
   DateTime? end,
   String? bookId,
+  String? startDay,
+  String? endDay,
 }) {
   final totals = ReadingTotals();
   final includedGroups = <String>{};
@@ -448,19 +453,47 @@ ReadingTotals readingTotals(
               : DateTime.parse(s['end'] as String);
       final from = start != null && start.isAfter(a) ? start : a;
       final to = end != null && end.isBefore(b) ? end : b;
-      if (!to.isAfter(from) || !b.isAfter(a)) continue;
-      final fraction =
-          to.difference(from).inMicroseconds / b.difference(a).inMicroseconds;
+      if (!b.isAfter(a)) continue;
+      final dayOnly = session['timeKnown'] == false;
+      if (!dayOnly && !to.isAfter(from)) continue;
+      var fraction = dayOnly
+          ? 1.0
+          : to.difference(from).inMicroseconds / b.difference(a).inMicroseconds;
       final ms = s['activeMs'] as int? ?? b.difference(a).inMilliseconds;
+      final part = ReadingTotals();
       if (s['localDay'] is String) {
-        final part = (ms * fraction).round();
-        totals.milliseconds += part;
-        totals.books[id] = (totals.books[id] ?? 0) + part;
         final key = s['localDay'] as String;
-        totals.days[key] = (totals.days[key] ?? 0) + part;
+        if (dayOnly &&
+            ((start != null &&
+                    key.compareTo(readingDay(start.toLocal())) < 0) ||
+                (end != null &&
+                    key.compareTo(
+                          readingDay(
+                            end
+                                .subtract(const Duration(microseconds: 1))
+                                .toLocal(),
+                          ),
+                        ) >
+                        0))) {
+          continue;
+        }
+        part.days[key] = (ms * fraction).round();
       } else {
-        totals.add(id, from, to, (ms * fraction).round());
+        part.add(id, from, to, (ms * fraction).round());
       }
+      var accepted = 0;
+      for (final e in part.days.entries) {
+        if ((startDay != null && e.key.compareTo(startDay) < 0) ||
+            (endDay != null && e.key.compareTo(endDay) >= 0)) {
+          continue;
+        }
+        accepted += e.value;
+        totals.days[e.key] = (totals.days[e.key] ?? 0) + e.value;
+      }
+      if (accepted <= 0) continue;
+      fraction = ms > 0 ? accepted / ms : 0;
+      totals.milliseconds += accepted;
+      totals.books[id] = (totals.books[id] ?? 0) + accepted;
       totals.newChars += ((s['newChars'] as num? ?? 0) * fraction).round();
       totals.repeatChars += ((s['repeatChars'] as num? ?? 0) * fraction)
           .round();
@@ -522,30 +555,5 @@ List<Map<String, dynamic>> groupReadingSessionsForDisplay(
 }
 
 ({int current, int best}) readingStreak(Map<String, int> days, DateTime now) {
-  final dates =
-      days.entries
-          .where((e) => e.value > 0)
-          .map((e) => DateTime.parse(e.key))
-          .toList()
-        ..sort();
-  int best = 0, run = 0;
-  DateTime? prior;
-  for (final date in dates) {
-    run =
-        prior != null &&
-            date == DateTime(prior.year, prior.month, prior.day + 1)
-        ? run + 1
-        : 1;
-    if (run > best) best = run;
-    prior = date;
-  }
-  var at = DateTime(now.year, now.month, now.day), current = 0;
-  if ((days[readingDay(at)] ?? 0) == 0) {
-    at = DateTime(at.year, at.month, at.day - 1);
-  }
-  while ((days[readingDay(at)] ?? 0) > 0) {
-    current++;
-    at = DateTime(at.year, at.month, at.day - 1);
-  }
-  return (current: current, best: best);
+  return activityStreak(days, now);
 }

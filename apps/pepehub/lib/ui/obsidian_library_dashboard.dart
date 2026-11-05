@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import '../library/library_service.dart';
 import '../library/models.dart';
 import '../library/personal_library.dart';
+import '../library/reading_insights.dart';
 import 'library_data_page.dart';
 import 'library_work_page.dart';
 import 'library_cover_search.dart';
@@ -546,6 +547,9 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       _catalogEntries = [];
       final collections = <String>{}, years = <int>{};
       _yearBooks = _yearAudio = _allBooks = _allAudio = 0;
+      final completions = annualCompletionCounts(all, currentYear);
+      _yearBooks = completions.reading;
+      _yearAudio = completions.audio;
       for (final entry in all) {
         final item = entry.item;
         final hidden = item.values['pepehub_hidden'] == true;
@@ -556,13 +560,6 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
             _allAudio++;
           } else {
             _allBooks++;
-          }
-          if (completed?.year == currentYear) {
-            if (audio) {
-              _yearAudio++;
-            } else {
-              _yearBooks++;
-            }
           }
         }
         if (hidden != hiddenOnly || !groupSeries && isUnreadSeriesItem(item)) {
@@ -2229,7 +2226,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'книг и аудиокниг завершено',
+                      'завершений книг и аудиокниг',
                       style: TextStyle(fontSize: 12, color: palette.muted),
                     ),
                   ],

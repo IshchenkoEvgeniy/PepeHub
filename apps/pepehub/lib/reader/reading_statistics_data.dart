@@ -91,10 +91,18 @@ void _read(SendPort ready) {
           end = request['end'] as DateTime?,
           book = request['book'] as String?;
       final now = request['now'] as DateTime;
+      final startDay = request['startDay'] as String?,
+          endDay = request['endDay'] as String?;
       final shown = <Map<String, dynamic>>[];
       for (final session in groupReadingSessionsForDisplay(sessions)) {
         if (book != null && session['bookId'] != book) continue;
-        final totals = readingTotals([session], start: start, end: end);
+        final totals = readingTotals(
+          [session],
+          start: start,
+          end: end,
+          startDay: startDay,
+          endDay: endDay,
+        );
         if (totals.sessions == 0) continue;
         shown.add({
           ...session,
@@ -109,18 +117,26 @@ void _read(SendPort ready) {
       final all = readingTotals(sessions, bookId: book);
       reply.send(
         ReadingStatisticsData(
-          readingTotals(sessions, start: start, end: end, bookId: book),
+          readingTotals(
+            sessions,
+            start: start,
+            end: end,
+            bookId: book,
+            startDay: startDay,
+            endDay: endDay,
+          ),
           all,
           readingTotals(sessions),
           readingTotals(
             sessions,
-            start: DateTime(now.year, now.month, now.day - 6),
+            startDay: readingDay(DateTime(now.year, now.month, now.day - 6)),
+            endDay: readingDay(DateTime(now.year, now.month, now.day + 1)),
             bookId: book,
           ).milliseconds,
           readingTotals(
             sessions,
-            start: DateTime(now.year, now.month, now.day - 13),
-            end: DateTime(now.year, now.month, now.day - 6),
+            startDay: readingDay(DateTime(now.year, now.month, now.day - 13)),
+            endDay: readingDay(DateTime(now.year, now.month, now.day - 6)),
             bookId: book,
           ).milliseconds,
           readingStreak(all.days, now),
@@ -160,6 +176,15 @@ class ReadingCalendarSummary {
   final Map<String, int> days, allDays;
   final Map<String, Map<String, int>> bookDays;
   ReadingCalendarSummary(this.days, this.allDays, this.bookDays);
+
+  ReadingCalendarSummary forYear(int year) => ReadingCalendarSummary(
+    {
+      for (final e in allDays.entries)
+        if (e.key.startsWith('$year-')) e.key: e.value,
+    },
+    allDays,
+    bookDays,
+  );
 }
 
 ReadingCalendarSummary summarizeReadingCalendar(Map<String, dynamic> request) {
@@ -174,17 +199,15 @@ ReadingCalendarSummary summarizeReadingCalendar(Map<String, dynamic> request) {
     final book = bookDays.putIfAbsent(session['bookId'] as String, () => {});
     for (final e in totals.days.entries) {
       allDays[e.key] = (allDays[e.key] ?? 0) + e.value;
-      if (e.key.startsWith('$year-')) {
-        book[e.key] = (book[e.key] ?? 0) + e.value;
-      }
+      book[e.key] = (book[e.key] ?? 0) + e.value;
     }
   }
-  days.addAll(
-    readingTotals(
-      sessions,
-      start: DateTime(year),
-      end: DateTime(year + 1),
-    ).days,
-  );
+  // Calendar summaries use the day saved by the recording device. Clipping
+  // these intervals in the viewing device's timezone can move New Year's time
+  // to a different year and make the calendar disagree with its own totals.
+  days.addAll({
+    for (final e in allDays.entries)
+      if (e.key.startsWith('$year-')) e.key: e.value,
+  });
   return ReadingCalendarSummary(days, allDays, bookDays);
 }

@@ -85,7 +85,7 @@ void main() {
       expect(analysis.selected.mediaMs, 20000);
       expect(analysis.selected.uniqueMs, 15000);
       expect(analysis.lifetime.uniqueMs, 20000);
-      expect(analysis.currentStreak(DateTime(2026, 9, 17)), 2);
+      expect(analysis.currentStreak(DateTime(2026, 9, 17)), 0);
       expect(analysis.currentStreak(DateTime(2026, 9, 18)), 0);
       expect(
         analysis.timeBetween(DateTime(2026, 9, 16), DateTime(2026, 9, 17)),

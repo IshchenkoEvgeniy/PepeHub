@@ -285,7 +285,7 @@ void main() {
         );
         await ready(
           tester,
-          () => find.text('Завершённые книги по месяцам').evaluate().isNotEmpty,
+          () => find.text('Завершения по месяцам').evaluate().isNotEmpty,
         );
         await shot('annual-statistics');
         // Jump into the monthly list and ensure only visible cards are built.
@@ -355,7 +355,7 @@ void main() {
     );
     await tester.tap(find.text('Годовая статистика'));
     await tester.pumpAndSettle();
-    expect(find.text('Завершённые книги по месяцам'), findsOneWidget);
+    expect(find.text('Завершения по месяцам'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(
       MaterialApp(

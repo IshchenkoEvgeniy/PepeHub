@@ -5,6 +5,7 @@ import 'package:drift/drift.dart' show Variable;
 
 import '../data/database_schema.dart';
 import '../data/repository.dart';
+import '../statistics/statistics_period.dart';
 
 class StatisticsHistoryRow {
   final String id, source;
@@ -61,7 +62,7 @@ class StatisticsHistory {
     final query = search.trim().toLowerCase();
     final cutoff = days <= 0
         ? null
-        : DateTime.now().subtract(Duration(days: days)).millisecondsSinceEpoch;
+        : statisticsPeriodStart(DateTime.now(), days).millisecondsSinceEpoch;
     for (final source
         in reading ? ['automatic', 'manual'] : ['audio', 'legacy']) {
       if (reading && filter != 'all' && filter != source ||

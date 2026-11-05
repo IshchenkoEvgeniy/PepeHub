@@ -16,18 +16,21 @@ import '../media/audio_controller.dart';
 import '../reader/reading_library.dart';
 import '../reader/statistics_history.dart';
 import '../reader/reading_log.dart';
+import '../statistics/statistics_period.dart';
 
 /// CRUD for the source records behind both statistics screens.
 class StatisticsManagementPage extends StatefulWidget {
   final Repository repository;
   final AudioController? controller;
   final int initialTab;
+  final String? initialBookId;
 
   const StatisticsManagementPage({
     super.key,
     required this.repository,
     this.controller,
     this.initialTab = 0,
+    this.initialBookId,
   });
 
   @override
@@ -62,6 +65,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
   @override
   void initState() {
     super.initState();
+    selectedBookId = widget.initialBookId;
     _releaseSync = AppSyncUsage.hold(widget.repository.db, 'statistics-edit');
     tabs = TabController(
       length: 2,
@@ -107,11 +111,17 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
           .where((b) => b.payload?['format'] == 'audio')
           .toList();
       final names = {for (final b in allBooks) b.id: b.title};
+      final knownBookIds = names.keys.toSet();
       final history = StatisticsHistory(repository);
       final historyBookIds = await history.bookIds(reading: tabs.index == 0);
+      for (final id in historyBookIds) {
+        names.putIfAbsent(id, () => 'Книга без файла · $id');
+      }
       final nextFilterTitles = {
         for (final book in tabs.index == 0 ? nextReadingBooks : nextAudioBooks)
           if (historyBookIds.contains(book.id)) book.id: book.title,
+        for (final id in historyBookIds)
+          if (!knownBookIds.contains(id)) id: names[id]!,
       };
       final nextSelectedBookId = nextFilterTitles.containsKey(selectedBookId)
           ? selectedBookId
@@ -913,7 +923,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     }
     if (periodDays > 0 &&
         _dateOf(data)
-            .isBefore(DateTime.now().subtract(Duration(days: periodDays)))) {
+            .isBefore(statisticsPeriodStart(DateTime.now(), periodDays))) {
       return false;
     }
     final query = search.text.trim().toLowerCase();
@@ -1089,11 +1099,9 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
                 const SizedBox(width: 10),
                 DropdownButton<int>(
                   value: periodDays,
-                  items: const [
-                    DropdownMenuItem(value: 0, child: Text('Всё время')),
-                    DropdownMenuItem(value: 7, child: Text('7 дней')),
-                    DropdownMenuItem(value: 30, child: Text('30 дней')),
-                    DropdownMenuItem(value: 365, child: Text('Год')),
+                  items: [
+                    for (final (days, label) in statisticsDayPeriods)
+                      DropdownMenuItem(value: days, child: Text(label)),
                   ],
                   onChanged: (value) {
                     periodDays = value ?? 0;
@@ -1199,7 +1207,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     appBar: AppBar(
       title: Text(
         selectedEntries.isEmpty
-            ? 'Управление статистикой'
+            ? 'Журнал · правка сессий'
             : 'Выбрано: ${selectedEntries.length}',
       ),
       bottom: TabBar(

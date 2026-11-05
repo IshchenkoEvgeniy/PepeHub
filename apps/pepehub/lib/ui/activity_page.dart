@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../library/library_service.dart';
+import '../library/journal_days.dart';
+import '../statistics/statistics_period.dart';
 import '../library/models.dart';
 import '../audio/audio_journal.dart' show dayKey;
 import '../library/reading_insights.dart';
 import 'book_activity_summary.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
+import 'statistics_management_page.dart';
 
 String activityTime(num ms) {
   final seconds = (ms / 1000).round(), minutes = seconds ~/ 60;
@@ -33,6 +36,9 @@ class ActivityPage extends StatefulWidget {
 
 class _ActivityPageState extends State<ActivityPage> {
   List<Map<String, dynamic>> slots = [];
+  Map<String, String> nativeTitles = {};
+  Future<void>? _loadingWork;
+  bool _loadAgain = false;
   String type = 'all', search = '';
   int days = 0;
   bool byDay = true;
@@ -43,12 +49,14 @@ class _ActivityPageState extends State<ActivityPage> {
   void initState() {
     super.initState();
     widget.library.addListener(_changed);
+    widget.library.local.externalChanges.addListener(_changed);
     _load();
   }
 
   @override
   void dispose() {
     widget.library.removeListener(_changed);
+    widget.library.local.externalChanges.removeListener(_changed);
     super.dispose();
   }
 
@@ -57,19 +65,51 @@ class _ActivityPageState extends State<ActivityPage> {
   }
 
   Future<void> _load() async {
+    if (_loadingWork != null) {
+      _loadAgain = true;
+      return _loadingWork;
+    }
+    final work = _drainLoads();
+    _loadingWork = work;
+    try {
+      await work;
+    } finally {
+      _loadingWork = null;
+    }
+  }
+
+  Future<void> _drainLoads() async {
+    do {
+      _loadAgain = false;
+      await _loadOnce();
+    } while (_loadAgain && mounted);
+  }
+
+  Future<void> _loadOnce() async {
     try {
       await widget.library.history?.capture();
       final values =
           await widget.library.history?.entries(itemId: widget.itemId) ??
           <Map<String, dynamic>>[];
+      final native = widget.itemId == null
+          ? await JournalDays.outsideArchive(widget.library)
+          : JournalDays([], {});
       if (mounted) {
         setState(() {
           final visible = widget.library.visibleEntries
               .map((e) => e.item.id)
               .toSet();
-          slots = values
-              .where((s) => visible.contains((s['value'] as Map)['itemId']))
-              .toList();
+          slots =
+              [
+                ...values.where(
+                  (s) => visible.contains((s['value'] as Map)['itemId']),
+                ),
+                ...native.slots,
+              ]..sort(
+                (a, b) =>
+                    '${b['value']['day']}'.compareTo('${a['value']['day']}'),
+              );
+          nativeTitles = native.titles;
           loading = false;
           error = null;
         });
@@ -84,16 +124,32 @@ class _ActivityPageState extends State<ActivityPage> {
     }
   }
 
-  Future<void> _run(Future<void> Function() action) async {
+  Future<void> _manage({Map<String, dynamic>? slot}) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StatisticsManagementPage(
+          repository: widget.library.local,
+          initialTab: slot?['value']['mediaType'] == 'audiobook' ? 1 : 0,
+          initialBookId: slot?['nativeBookId'] as String?,
+        ),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  Future<bool> _run(Future<void> Function() action) async {
     try {
       await action();
       await widget.library.reload();
       await _load();
+      return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('$e')));
       }
+      return false;
     }
   }
 
@@ -201,16 +257,33 @@ class _ActivityPageState extends State<ActivityPage> {
       ),
     );
     if (confirmed == true) {
-      await _run(
+      final removed = await _run(
         () => widget.library.history!.edit(value['id'] as String, {
           ...value,
           'deleted': true,
         }),
       );
+      if (removed && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Запись удалена'),
+            action: SnackBarAction(
+              label: 'Отменить',
+              onPressed: () => _run(
+                () => widget.library.history!.edit(value['id'] as String, {
+                  ...value,
+                  'deleted': false,
+                }),
+              ),
+            ),
+          ),
+        );
+      }
     }
   }
 
   String _status(Map<String, dynamic> slot) {
+    if (slot['nativeBookId'] != null) return 'В приложении';
     if (slot['conflict'] == null) return 'В библиотеке';
     final v = slot['value'] as Map;
     return slot['conflict'] != null
@@ -259,7 +332,16 @@ class _ActivityPageState extends State<ActivityPage> {
     final status = _status(slot);
     final deleted = v['deleted'] == true;
     final title = titles[v['itemId']] ?? 'Книга';
-    final menu = conflict == null
+    final menu = slot['nativeBookId'] != null
+        ? IconButton(
+            tooltip: 'Правка сессий',
+            icon: const Icon(Icons.edit_note),
+            onPressed: () {
+              if (closeDetails) Navigator.pop(context);
+              _manage(slot: slot);
+            },
+          )
+        : conflict == null
         ? PopupMenuButton<String>(
             tooltip: 'Действия с записью',
             onSelected: (value) async {
@@ -446,7 +528,7 @@ class _ActivityPageState extends State<ActivityPage> {
       onSelect: (v) => setState(() => type = v),
     );
     final periods = PepeChoices<int>(
-      options: const [(0, 'Всё время'), (7, '7 дней'), (30, '30 дней')],
+      options: statisticsDayPeriods,
       selected: days,
       onSelect: (v) => setState(() => days = v),
     );
@@ -505,10 +587,11 @@ class _ActivityPageState extends State<ActivityPage> {
     final palette = ShelfPalette.of(context);
     final wide = pepeWide(context);
     final titles = {
+      ...nativeTitles,
       for (final e in widget.library.entries) e.item.id: e.item.title,
     };
     final cutoff = dayKey(
-      DateTime.now().subtract(Duration(days: days == 0 ? 0 : days - 1)),
+      statisticsPeriodStart(DateTime.now(), days == 0 ? 1 : days),
     );
     final visible = slots.where((s) {
       final v = s['value'];
@@ -666,6 +749,11 @@ class _ActivityPageState extends State<ActivityPage> {
           ? 'Чтение и прослушивание · ${waiting == 0 ? 'всё синхронизировано' : 'ожидают обмена: $waiting'}'
           : null,
       actions: [
+        IconButton(
+          tooltip: 'Правка журнала',
+          onPressed: _manage,
+          icon: const Icon(Icons.edit_note),
+        ),
         IconButton(
           tooltip: 'Обновить',
           onPressed: widget.library.syncing ? null : widget.library.reload,

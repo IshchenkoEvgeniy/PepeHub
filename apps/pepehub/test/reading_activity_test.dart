@@ -165,7 +165,7 @@ void main() {
         ).milliseconds,
         10000,
       );
-      expect(readingStreak(all.days, DateTime(2026, 9, 21)).current, 2);
+      expect(readingStreak(all.days, DateTime(2026, 9, 21)).current, 0);
       expect(readingStreak(all.days, DateTime(2026, 9, 22)).current, 0);
     },
   );

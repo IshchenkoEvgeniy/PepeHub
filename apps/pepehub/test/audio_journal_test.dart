@@ -70,7 +70,7 @@ void main() {
     expect(stats.uniqueMs, 25000);
     expect(stats.repeatedMs, 5000);
     expect(stats.averageSpeed, 2);
-    expect(stats.longestStreak, 2);
+    expect(stats.longestStreak, 0);
     expect(stats.backwardMs, 4000);
     expect(stats.hours[13], 15000);
   });

@@ -1,5 +1,6 @@
 import 'models.dart';
 import 'metadata_values.dart';
+import 'library_dates.dart';
 
 /// The app owns this schema. Connector aliases never become local field names.
 const personalLibraryNamespace = 'personal';
@@ -96,16 +97,7 @@ bool isFinishedLibraryItem(ObsidianLibraryItem item) =>
     canonicalLibraryStatus(item.value('status')) == 'finished';
 
 DateTime? libraryCompletionDate(ObsidianLibraryItem item) =>
-    _libraryDate(item.value('endDate'));
+    libraryDate(item.value('endDate'));
 
 DateTime? libraryStartDate(ObsidianLibraryItem item) =>
-    _libraryDate(item.value('startDate'));
-
-DateTime? _libraryDate(Object? value) {
-  final text = '${value ?? ''}';
-  final iso = DateTime.tryParse(text);
-  if (iso != null) return iso;
-  final parts = text.split('.').map(int.tryParse).toList();
-  if (parts.length != 3 || parts.any((p) => p == null)) return null;
-  return DateTime(parts[2]!, parts[1]!, parts[0]!);
-}
+    libraryDate(item.value('startDate'));

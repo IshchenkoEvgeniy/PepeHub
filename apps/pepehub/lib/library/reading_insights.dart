@@ -1,6 +1,7 @@
 import 'models.dart';
 import 'library_features.dart';
 import 'personal_library.dart';
+import 'library_dates.dart';
 
 const bookMonths = [
   'Январь',
@@ -17,18 +18,7 @@ const bookMonths = [
   'Декабрь',
 ];
 
-DateTime? bookDate(dynamic value) {
-  final text = '${value ?? ''}'.trim();
-  if (text.isEmpty) return null;
-  final iso = DateTime.tryParse(text);
-  if (iso != null) return text.contains('T') ? iso.toLocal() : iso;
-  final parts = text.split('.').map(int.tryParse).toList();
-  if (parts.length != 3 || parts.any((p) => p == null)) return null;
-  final date = DateTime(parts[2]!, parts[1]!, parts[0]!);
-  return date.year == parts[2] && date.month == parts[1] && date.day == parts[0]
-      ? date
-      : null;
-}
+DateTime? bookDate(dynamic value) => libraryDate(value);
 
 String bookDateLabel(dynamic value) {
   final date = bookDate(value);
@@ -118,6 +108,7 @@ List<YearBook> booksCompletedInYear(
     final item = entry.item;
     if (!isLibraryArchiveItem(item) ||
         isLibraryDeleted(item) ||
+        item.values['pepehub_hidden'] == true ||
         (scope == 'reading' && item.mediaType != 'book') ||
         (scope == 'audio' && item.mediaType != 'audiobook')) {
       continue;
@@ -150,4 +141,21 @@ List<YearBook> booksCompletedInYear(
     result.add(YearBook(entry, dates.last, List.unmodifiable(dates)));
   }
   return result..sort((a, b) => b.date.compareTo(a.date));
+}
+
+/// The annual goal counts completed readings/listenings, including rereads,
+/// independently of the screen's search, media filter or series grouping.
+({int reading, int audio, int total}) annualCompletionCounts(
+  Iterable<LibraryEntry> entries,
+  int year,
+) {
+  var reading = 0, audio = 0;
+  for (final book in booksCompletedInYear(entries, year)) {
+    if (book.entry.item.mediaType == 'audiobook') {
+      audio += book.completions;
+    } else {
+      reading += book.completions;
+    }
+  }
+  return (reading: reading, audio: audio, total: reading + audio);
 }

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../data/repository.dart';
 import '../data/database_schema.dart';
+import '../statistics/activity_streak.dart';
 
 class _JournalChanges extends ValueNotifier<int> {
   _JournalChanges() : super(0);
@@ -474,18 +475,7 @@ class AudioStats {
     }
   }
   int get longestStreak {
-    final sorted = activityDays.keys.toList()..sort();
-    var best = 0, current = 0;
-    DateTime? previous;
-    for (final key in sorted) {
-      final date = DateTime.parse('${key}T00:00:00Z');
-      current = previous != null && date.difference(previous).inDays == 1
-          ? current + 1
-          : 1;
-      if (current > best) best = current;
-      previous = date;
-    }
-    return best;
+    return activityStreak(activityDays, DateTime.now()).best;
   }
 
   int get repeatedMs => mediaMs - uniqueMs - unknownCoverageMs;

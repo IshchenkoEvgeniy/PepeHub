@@ -27,7 +27,9 @@ class BookActivityDayTile extends StatelessWidget {
           if (title != null) bookDateLabel(day.day),
           bookActivityTime(day.durationMs),
           if (day.progressLabel.isNotEmpty) '+ ${day.progressLabel}',
-          '${day.slots.length} записей',
+          day.slots.any((s) => s['nativeBookId'] != null)
+              ? 'Дневной итог'
+              : '${day.slots.length} записей',
           if (day.slots.any((s) => s['conflict'] != null)) 'Есть конфликт',
         ].join(' · '),
       ),

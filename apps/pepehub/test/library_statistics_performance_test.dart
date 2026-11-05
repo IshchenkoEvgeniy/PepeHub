@@ -501,6 +501,23 @@ void main() {
                 'format': 'epub',
               });
               await repo.setMeta('reading-session:s', jsonEncode(session(0)));
+              await repo.setMeta(
+                'reading-session:older',
+                jsonEncode({
+                  'id': 'older',
+                  'bookId': 'book',
+                  'closed': true,
+                  'startedAt': '2025-01-01T12:00:00Z',
+                  'spans': [
+                    {
+                      'start': '2025-01-01T12:00:00Z',
+                      'end': '2025-01-01T12:10:00Z',
+                      'activeMs': 600000,
+                      'localDay': '2025-01-01',
+                    },
+                  ],
+                }),
+              );
             });
             log.clear();
             await tester.pumpWidget(
@@ -524,6 +541,21 @@ void main() {
                 )
                 .length;
             expect(reads(), 1);
+            log.clear();
+            await tester.tap(find.byTooltip('Предыдущий год'));
+            await ready(tester, () => !state.loading);
+            expect(state.year, DateTime.now().year - 1);
+            expect(reads(), 1);
+            expect(
+              log.where(
+                (s) => s.contains('FROM reading_statistics_sessions_v1'),
+              ),
+              isEmpty,
+            );
+            expect(
+              log.where((s) => s.contains('FROM audio_daily_totals_v1')),
+              isEmpty,
+            );
             log.clear();
             for (var i = 0; i < 20; i++) {
               repo.notifyExternalChange();

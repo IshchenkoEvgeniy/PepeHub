@@ -5,13 +5,13 @@ import '../audio/audio_statistics_history.dart';
 import '../audio/listening_analytics.dart';
 import '../audio/audio_daily_totals.dart';
 import '../data/repository.dart';
-import '../library/activity_store.dart';
 import '../library/library_service.dart';
+import '../library/reading_insights.dart' show bookDate;
 import '../library/book_calendar_data.dart';
 import '../media/audio_controller.dart';
-import '../reader/reading_activity.dart';
-import '../reader/reading_library.dart';
 import '../reader/reading_statistics_data.dart';
+import '../reader/reading_statistics_history.dart';
+import '../statistics/activity_streak.dart';
 import 'app_theme.dart';
 import 'audio_statistics_page.dart';
 import 'reading_statistics_page.dart';
@@ -54,6 +54,13 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
   int _request = 0;
   Future<void>? _loadingWork;
   bool _loadAgain = false;
+  bool _historyDirty = true;
+  Map<String, String> _readingTitles = {};
+  ReadingCalendarSummary? _readingSummary;
+  AudioStatisticsHistory? _audioHistory;
+  ListeningAnalytics? _listening;
+  AudioDailyTotals? _nativeAudio;
+  int firstYear = DateTime.now().year;
 
   @override
   void initState() {
@@ -85,8 +92,9 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool refreshHistory = true}) async {
     if (!mounted) return;
+    _historyDirty |= refreshHistory;
     if (_loadingWork != null) {
       _loadAgain = true;
       _request++;
@@ -114,53 +122,57 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
     try {
       final repository = widget.repository;
       final records = await repository.bookHeaders();
-      final library = ReadingLibrary(repository);
-      final automatic = (await library.statisticsSessions()).values;
-      final manual = (await repository.records('session'))
-          .where((s) => s.payload?['kind'] == 'reading');
-      final rows = <Map<String, dynamic>>[
-        ...automatic,
-        ...await ActivityStore.foreignReading(repository),
-        for (final s in manual)
-          {
-            'id': s.id,
-            'bookId': s.payload!['bookId'],
-            'startedAt': s.payload!['startedAt'],
-            'source': 'manual',
-            'closed': true,
-            'spans': ActivityStore.manualSpans(s.payload!),
+      if (_historyDirty || _readingSummary == null) {
+        _historyDirty = false;
+        await widget.audio?.flushJournal();
+        await widget.library?.loadCached();
+        final readingHistory = await ReadingStatisticsHistory.load(repository);
+        _readingTitles = readingHistory.titles;
+        _readingSummary = await compute(
+          summarizeReadingCalendar,
+          <String, dynamic>{
+            'sessions': readingHistory.sessions,
+            'year': selectedYear,
           },
-      ];
-      final reading = await compute(summarizeReadingCalendar, <String, dynamic>{
-        'sessions': rows,
-        'year': selectedYear,
-      });
-
-      await widget.audio?.flushJournal();
-      final totals = AudioDailyStore(repository);
-      final native = await totals.period(
-        DateTime(selectedYear),
-        DateTime(selectedYear + 1),
-      );
-      final nativeAll = await totals.lifetime();
-      await widget.library?.loadCached();
-      final history = await AudioStatisticsHistory.load(repository);
-      final listening = await compute(analyzeListening, <String, dynamic>{
-        'events': history.events,
-        'book': null,
-        'cutoff': null,
-        'start': DateTime(selectedYear).toUtc().toIso8601String(),
-        'end': DateTime(selectedYear + 1).toUtc().toIso8601String(),
-      });
+        );
+        _nativeAudio = await AudioDailyStore(repository).lifetime();
+        final audioHistory = await AudioStatisticsHistory.load(repository);
+        final listening = await compute(analyzeListening, <String, dynamic>{
+          'events': audioHistory.events,
+          'book': null,
+          'cutoff': null,
+        });
+        // Keep numeric summaries and labels, not another copy of every raw
+        // session/event in the UI isolate while browsing years.
+        _audioHistory = AudioStatisticsHistory(const [], audioHistory.titles);
+        _listening = ListeningAnalytics(
+          listening.selected,
+          listening.lifetime,
+          const [],
+          0,
+          0,
+          listening.byBook,
+        );
+      }
+      final reading = _readingSummary!.forYear(selectedYear);
+      final nativeAll = _nativeAudio!, native = nativeAll.forYear(selectedYear);
+      final history = _audioHistory!, listening = _listening!;
+      Map<String, int> inYear(Map<String, int> days) => {
+        for (final e in days.entries)
+          if (e.key.startsWith('$selectedYear-')) e.key: e.value,
+      };
       final calendarData = await BookCalendarData.load(
         repository: repository,
         year: selectedYear,
-        reading: rows,
+        reading: const [],
         foreignAudio: history.events,
         audioHistory: history,
         library: widget.library,
         bookRecords: records,
         readingSummary: reading,
+        nativeAudio: native,
+        audioSummary: listening,
+        readingTitles: _readingTitles,
       );
       if (!mounted || request != _request) return;
       setState(() {
@@ -175,22 +187,39 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
           reading.allDays,
           calendarData.archiveReadingAll,
         );
-        audioDays = _merge(native.days, listening.selected.days);
+        audioDays = _merge(native.days, inYear(listening.lifetime.days));
         audioAllDays = _merge(nativeAll.days, listening.lifetime.days);
         audioActivityDays = _merge(
           native.days,
-          listening.selected.activityDays,
+          inYear(listening.lifetime.activityDays),
         );
         audioActivityAllDays = _merge(
           nativeAll.days,
           listening.lifetime.activityDays,
         );
-        audioEstimateMs = listening.selected.estimatedMs;
+        audioEstimateMs = inYear(listening.lifetime.estimatedDays).values
+            .fold(0, (a, b) => a + b);
         audioUndatedMs = listening.lifetime.undatedMs;
+        final years = <int>[
+          DateTime.now().year,
+          for (final day in {...readingAllDays.keys, ...audioAllDays.keys})
+            if (int.tryParse(day.split('-').first) case final int year) year,
+          for (final book in calendarData.completedDays.keys)
+            if (int.tryParse(book.split('-').first) case final int year) year,
+          for (final e in widget.library?.visibleEntries ?? []) ...[
+            if (bookDate(e.item.value('endDate')) case final DateTime date)
+              date.year,
+            for (final c in e.item.values['pepehub_completions'] as List? ?? [])
+              if (c is Map)
+                if (bookDate(c['date']) case final DateTime date) date.year,
+          ],
+        ];
+        firstYear = years.reduce((a, b) => a < b ? a : b);
         error = null;
         loading = false;
       });
     } catch (e) {
+      _historyDirty = true;
       if (mounted && request == _request) {
         setState(() {
           error = 'Не удалось посчитать статистику: $e';
@@ -209,11 +238,6 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
     'reading' => readingDays,
     'audio' => audioDays,
     _ => _merge(readingDays, audioDays),
-  };
-  Map<String, int> get _allDays => switch (scope) {
-    'reading' => readingAllDays,
-    'audio' => audioActivityAllDays,
-    _ => _merge(readingAllDays, audioActivityAllDays),
   };
   Map<String, int> get _activityDays => switch (scope) {
     'reading' => readingDays,
@@ -248,7 +272,7 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
     final days = _days;
     final total = days.values.fold(0, (sum, ms) => sum + ms);
     final activeDays = _activityDays.values.where((ms) => ms > 0).length;
-    final streak = readingStreak(_allDays, DateTime.now());
+    final streak = activityStreak(_activityDays, DateTime.now(), year: year);
     final top = _books.entries.where((e) => e.value > 0).toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     final topMax = top.isEmpty ? 1 : top.first.value;
@@ -302,8 +326,9 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
                     onYear: (value) {
                       if (loading) return;
                       setState(() => year = value);
-                      _load();
+                      _load(refreshHistory: false);
                     },
+                    firstYear: firstYear,
                   )
                 : RefreshIndicator(
                     onRefresh: _load,
@@ -345,11 +370,11 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
                             ),
                             IconButton(
                               tooltip: 'Предыдущий год',
-                              onPressed: loading
+                              onPressed: loading || year <= firstYear
                                   ? null
                                   : () {
                                       setState(() => year--);
-                                      _load();
+                                      _load(refreshHistory: false);
                                     },
                               icon: const Icon(Icons.chevron_left),
                             ),
@@ -359,7 +384,7 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
                                   ? null
                                   : () {
                                       setState(() => year++);
-                                      _load();
+                                      _load(refreshHistory: false);
                                     },
                               icon: const Icon(Icons.chevron_right),
                             ),
@@ -398,8 +423,10 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
                                 VerticalDivider(color: palette.line, width: 1),
                                 _figure(
                                   palette,
-                                  '${streak.current}',
-                                  'дней подряд, рекорд ${streak.best}',
+                                  '${year == DateTime.now().year ? streak.current : streak.best}',
+                                  year == DateTime.now().year
+                                      ? 'дней подряд, рекорд года ${streak.best} · от 5 мин'
+                                      : 'рекорд дней подряд за $year · от 5 мин',
                                 ),
                               ],
                             ),

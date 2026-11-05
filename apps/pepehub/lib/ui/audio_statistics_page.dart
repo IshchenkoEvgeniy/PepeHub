@@ -4,6 +4,7 @@ import 'audio_mini_player.dart';
 import 'statistics_range.dart';
 import '../audio/listening_analytics.dart';
 import '../audio/listening_worker.dart';
+import '../statistics/statistics_period.dart';
 import '../audio/audio_library_repository.dart';
 
 import 'dart:async';
@@ -216,6 +217,8 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
         'foreign': _foreignHistory,
         'book': requestedBook,
         'cutoff': cutoff,
+        if (requestedPeriod > 0)
+          'endDay': dayKey(DateTime(now.year, now.month, now.day + 1)),
         if (requestedPeriod == -1 && requestedRange != null) ...{
           'start': requestedRange.start.toUtc().toIso8601String(),
           'end': requestedRange.end.toUtc().toIso8601String(),
@@ -368,6 +371,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
     1 => 'за сегодня',
     7 => 'за 7 дней',
     30 => 'за 30 дней',
+    365 => 'за 365 дней',
     0 => 'за всё время',
     _ => customRange == null ? 'за период' : rangeLabel(customRange!),
   };
@@ -555,7 +559,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
           PepeStreak(values: cells, goalMinutes: goals.dailyMinutes),
           const SizedBox(height: 6),
           Text(
-            'последние 30 дней · за всю историю, включая вчера',
+            'последние 30 дней · день серии: от 5 минут, включая вчера',
             style: TextStyle(fontSize: 11, color: palette.muted),
           ),
         ],
@@ -621,7 +625,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
   Widget _comparisons(ShelfPalette palette) {
     final now = DateTime.now();
     final today = DateTime.utc(now.year, now.month, now.day);
-    final week = today.subtract(Duration(days: today.weekday - 1));
+    final week = today.subtract(const Duration(days: 6));
     final month = DateTime.utc(now.year, now.month);
     final previousMonth = DateTime.utc(now.year, now.month - 1);
     final priorMonthEnd = DateTime.utc(
@@ -679,11 +683,11 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
           ),
           const SizedBox(height: 8),
           row(
-            'Эта неделя / те же дни прошлой',
+            '7 дней / предыдущие 7 дней',
             analytics!.timeBetween(week, today.add(const Duration(days: 1))),
             analytics!.timeBetween(
               week.subtract(const Duration(days: 7)),
-              today.subtract(const Duration(days: 6)),
+              week,
             ),
           ),
           row(
@@ -1057,23 +1061,14 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
     final data = analytics;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final barEnd = period == -1 && customRange != null
-        ? DateTime(
-            customRange!.end.year,
-            customRange!.end.month,
-            customRange!.end.day - 1,
-          )
-        : today;
-    final barCount = period == -1 && customRange != null
-        ? customRange!.duration.inDays.clamp(7, 60)
-        : period == 30 || period == 0
-        ? 30
-        : 14;
-    final barDays = [
-      for (var i = barCount - 1; i >= 0; i--)
-        DateTime(barEnd.year, barEnd.month, barEnd.day - i),
-    ];
-    final lifetime = data?.lifetime.days ?? const <String, int>{};
+    final chart = statisticsChartWindow(
+      now,
+      period: period,
+      start: customRange?.start,
+      end: customRange?.end,
+    );
+    final barDays = chart.days;
+    final selectedDays = s?.days ?? const <String, int>{};
 
     final picker = Wrap(
       spacing: 10,
@@ -1081,13 +1076,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         PepeChoices<int>(
-          options: const [
-            (1, '1 день'),
-            (7, '7 дней'),
-            (30, '30 дней'),
-            (0, 'Всё время'),
-            (-1, 'Произвольный'),
-          ],
+          options: const [...statisticsDayPeriods, (-1, 'Произвольный')],
           selected: period,
           onSelect: (p) async {
             if (p != -1) {
@@ -1238,7 +1227,9 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
               (
                 7,
                 PepePanel(
-                  title: 'По дням',
+                  title: chart.limited
+                      ? 'По дням · последние ${barDays.length} дней периода'
+                      : 'По дням',
                   trailing: goals.dailyMinutes > 0
                       ? Text(
                           '- - цель ${goals.dailyMinutes} мин',
@@ -1246,10 +1237,12 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
                         )
                       : null,
                   child: PepeBars(
-                    values: [for (final d in barDays) lifetime[dayKey(d)] ?? 0],
+                    values: [
+                      for (final d in barDays) selectedDays[dayKey(d)] ?? 0,
+                    ],
                     tooltips: [
                       for (final d in barDays)
-                        '${pepeDate(d)} · ${pepeTime(lifetime[dayKey(d)] ?? 0)}',
+                        '${pepeDate(d)} · ${pepeTime(selectedDays[dayKey(d)] ?? 0)}',
                     ],
                     goalMinutes: goals.dailyMinutes,
                     startLabel: pepeDate(barDays.first),

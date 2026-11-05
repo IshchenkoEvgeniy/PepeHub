@@ -10,6 +10,7 @@ class AnnualBookStatistics extends StatefulWidget {
   final Repository repository;
   final LibraryService? library;
   final int year;
+  final int? firstYear;
   final String scope;
   final Map<String, int> readingDays, audioDays;
   final Map<String, int>? audioActivityDays;
@@ -21,6 +22,7 @@ class AnnualBookStatistics extends StatefulWidget {
     required this.repository,
     this.library,
     required this.year,
+    this.firstYear,
     required this.scope,
     required this.readingDays,
     required this.audioDays,
@@ -102,18 +104,29 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
   @override
   Widget build(BuildContext context) {
     final library = widget.library;
-    final completed = booksCompletedInYear(
-      library?.visibleEntries ?? [],
-      widget.year,
-      scope: widget.scope,
-    );
     final allCompleted = booksCompletedInYear(
       library?.visibleEntries ?? [],
       widget.year,
     );
+    final completed = allCompleted
+        .where(
+          (b) =>
+              widget.scope == 'all' ||
+              b.entry.item.mediaType ==
+                  (widget.scope == 'audio' ? 'audiobook' : 'book'),
+        )
+        .toList();
+    final goalProgress = allCompleted.fold<int>(
+      0,
+      (sum, b) => sum + b.completions,
+    );
     final readings = completed
         .where((b) => b.entry.item.mediaType == 'book')
-        .length;
+        .fold<int>(0, (sum, b) => sum + b.completions);
+    final completedCount = completed.fold<int>(
+      0,
+      (sum, b) => sum + b.completions,
+    );
     final ratings = completed.map((b) => b.rating).whereType<double>().toList();
     final average = ratings.isEmpty
         ? '—'
@@ -130,7 +143,9 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
       }
     }
     for (final b in completed) {
-      months[b.date.month - 1]++;
+      for (final date in b.dates) {
+        months[date.month - 1]++;
+      }
     }
     for (final e in days.entries) {
       final date = bookDate(e.key);
@@ -197,7 +212,10 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
           ),
           IconButton(
             tooltip: 'Предыдущий год',
-            onPressed: () => widget.onYear(widget.year - 1),
+            onPressed:
+                widget.firstYear != null && widget.year <= widget.firstYear!
+                ? null
+                : () => widget.onYear(widget.year - 1),
             icon: const Icon(Icons.chevron_left),
           ),
           IconButton(
@@ -210,8 +228,8 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
         ],
       ),
       () => _panel(
-        'Завершённые книги по месяцам',
-        _bars(months, (v) => '$v книг'),
+        'Завершения по месяцам',
+        _bars(months, (v) => '$v завершений'),
       ),
       () => Card(
         child: Padding(
@@ -227,7 +245,7 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
                     child: Text(
                       goal == null
                           ? 'Поставьте цель на год'
-                          : '${allCompleted.length} из $goal книг',
+                          : '$goalProgress из $goal завершений',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
@@ -244,7 +262,7 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
               ),
               if (goal != null)
                 LinearProgressIndicator(
-                  value: (allCompleted.length / goal!).clamp(0, 1).toDouble(),
+                  value: (goalProgress / goal!).clamp(0, 1).toDouble(),
                 ),
             ],
           ),
@@ -254,13 +272,11 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
         spacing: 8,
         runSpacing: 8,
         children: [
-          _figure('${completed.length}', 'Завершено'),
+          _figure('$completedCount', 'Завершений'),
+          _figure('${completed.length}', 'Уникальных произведений'),
+          _figure('$readings / ${completedCount - readings}', 'Книги / аудио'),
           _figure(
-            '$readings / ${completed.length - readings}',
-            'Книги / аудио',
-          ),
-          _figure(
-            (completed.length / denominator).toStringAsFixed(1),
+            (completedCount / denominator).toStringAsFixed(1),
             'В среднем за месяц',
           ),
           _figure(bookActivityTime(totalTime), 'Чтение и прослушивание'),
@@ -269,7 +285,7 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
         ],
       ),
       () => _panel(
-        'Средняя оценка · $average / 10',
+        'Средняя оценка · $average',
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -502,7 +518,7 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
         subtitle: Text(
           [
             item.mediaType == 'audiobook' ? 'Аудиокнига' : 'Книга',
-            if (book.rating != null) '★ ${book.rating} / 10',
+            if (book.rating != null) '★ ${book.rating}',
             '${bookDateLabel(item.value('startDate'))} — ${bookDateLabel(book.date)}',
             if (book.completions > 1) 'Завершений за год: ${book.completions}',
           ].join('\n'),

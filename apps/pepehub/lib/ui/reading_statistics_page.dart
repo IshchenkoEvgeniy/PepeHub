@@ -3,9 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../data/repository.dart';
-import '../library/activity_store.dart';
 import '../reader/reading_activity.dart';
 import '../reader/reading_statistics_data.dart';
+import '../reader/reading_statistics_history.dart';
+import '../statistics/statistics_period.dart';
 import '../reader/reading_library.dart';
 import '../reader/reading_log.dart';
 import 'audio_statistics_page.dart' show statTime;
@@ -41,16 +42,24 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
   bool savingJournal = false;
   List<String> journalFolders = [];
   String? lastJournalSave;
+  Future<void>? _loadingWork;
+  bool _loadAgain = false;
   @override
   void initState() {
     super.initState();
+    widget.repository.externalChanges.addListener(_externalChanged);
     _load();
   }
 
   @override
   void dispose() {
+    widget.repository.externalChanges.removeListener(_externalChanged);
     _worker.dispose();
     super.dispose();
+  }
+
+  void _externalChanged() {
+    if (mounted) unawaited(_load());
   }
 
   Future<void> _calculate({List<Map<String, dynamic>>? rows}) async {
@@ -62,12 +71,14 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
         'sessions': ?rows,
         'book': widget.bookId,
         'now': now,
-        'start': period < 0
-            ? range?.start
-            : period == 0
-            ? null
-            : DateTime(now.year, now.month, now.day - period + 1),
+        'start': period < 0 ? range?.start : null,
         'end': period < 0 ? range?.end : null,
+        'startDay': period > 0
+            ? readingDay(DateTime(now.year, now.month, now.day - period + 1))
+            : null,
+        'endDay': period > 0
+            ? readingDay(DateTime(now.year, now.month, now.day + 1))
+            : null,
       });
       if (mounted && request == _calculation) {
         setState(() {
@@ -86,47 +97,34 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
   }
 
   Future<void> _load() async {
+    if (_loadingWork != null) {
+      _loadAgain = true;
+      return _loadingWork;
+    }
+    final work = _drainLoads();
+    _loadingWork = work;
+    try {
+      await work;
+    } finally {
+      _loadingWork = null;
+    }
+  }
+
+  Future<void> _drainLoads() async {
+    do {
+      _loadAgain = false;
+      await _loadOnce();
+    } while (_loadAgain && mounted);
+  }
+
+  Future<void> _loadOnce() async {
     try {
       final library = ReadingLibrary(widget.repository);
-      final b = (await widget.repository.records('book'))
+      final history = await ReadingStatisticsHistory.load(widget.repository);
+      final b = (await widget.repository.bookHeaders())
           .where((b) => b.payload?['format'] != 'audio')
           .toList();
-      final automatic = (await library.statisticsSessions()).values.toList();
-      final manual = (await widget.repository.records('session'))
-          .where((s) => s.payload?['kind'] == 'reading');
-      final rows = [
-        ...automatic,
-        ...await ActivityStore.foreignReading(widget.repository),
-        for (final s in manual)
-          {
-            'id': s.id,
-            'bookId': s.payload!['bookId'],
-            'startedAt': s.payload!['startedAt'],
-            'source': 'manual',
-            'closed': true,
-            'spans': ActivityStore.manualSpans(s.payload!),
-          },
-      ];
-      final prefs = await library.entries('reading-book:'),
-          index = await library.shelfIndex({});
-      final assets = await widget.repository.db
-          .customSelect(
-            "SELECT a.book_id,a.sha256 FROM local_assets a JOIN records b ON b.id=a.book_id WHERE b.type='book' AND b.deleted=0 AND json_valid(b.payload) AND IFNULL(json_extract(b.payload,'\$.format'),'')!='audio'",
-          )
-          .get();
-      final hashes = {
-        for (final a in assets)
-          a.read<String>('book_id'): a.read<String>('sha256'),
-      };
-      final names = {
-        for (final book in b)
-          book.id:
-              ReadingLibrary.effective({
-                    ...book.payload!,
-                    ...?(index[hashes[book.id]]),
-                  }, prefs[book.id] ?? {})['title']
-                  as String,
-      };
+      final names = history.titles;
       final g =
           int.tryParse(
             await widget.repository.meta('reading-daily-goal') ?? '',
@@ -170,9 +168,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
               ? null
               : 'Данные в приложении сохранены, но журнал в папке не обновлён:\n${logWarnings.join('\n')}';
         });
-        await _calculate(
-          rows: rows.where((s) => names.containsKey(s['bookId'])).toList(),
-        );
+        await _calculate(rows: history.sessions);
       }
     } catch (e) {
       if (mounted) {
@@ -257,6 +253,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
     1 => 'за сегодня',
     7 => 'за 7 дней',
     30 => 'за 30 дней',
+    365 => 'за 365 дней',
     0 => 'за всё время',
     _ => range == null ? 'за период' : rangeLabel(range!),
   };
@@ -294,19 +291,13 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
         ? 0
         : total.milliseconds ~/ total.sessions;
 
-    // Days shown as bars: the chosen period, at least two weeks.
-    final barEnd = period < 0 && range != null
-        ? DateTime(range!.end.year, range!.end.month, range!.end.day - 1)
-        : today;
-    final barCount = period < 0 && range != null
-        ? range!.duration.inDays.clamp(7, 60)
-        : period == 30 || period == 0
-        ? 30
-        : 14;
-    final barDays = [
-      for (var i = barCount - 1; i >= 0; i--)
-        DateTime(barEnd.year, barEnd.month, barEnd.day - i),
-    ];
+    final chart = statisticsChartWindow(
+      now,
+      period: period,
+      start: range?.start,
+      end: range?.end,
+    );
+    final barDays = chart.days;
     final streakDays = [
       for (var i = 29; i >= 0; i--)
         all.days[readingDay(DateTime(now.year, now.month, now.day - i))] ?? 0,
@@ -385,29 +376,43 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           PepeStreak(values: streakDays, goalMinutes: goal),
           const SizedBox(height: 6),
           Text(
-            'последние 30 дней',
+            'последние 30 дней · день серии: от 5 минут',
             style: TextStyle(fontSize: 11, color: palette.muted),
           ),
         ],
       ),
     );
     final barsPanel = PepePanel(
-      title: 'По дням',
+      title: chart.limited
+          ? 'По дням · последние ${barDays.length} дней периода'
+          : 'По дням',
       trailing: goal > 0
           ? Text(
               '- - цель $goal мин',
               style: TextStyle(fontSize: 12, color: palette.muted),
             )
           : null,
-      child: PepeBars(
-        values: [for (final d in barDays) all.days[readingDay(d)] ?? 0],
-        tooltips: [
-          for (final d in barDays)
-            '${pepeDate(d)} · ${statTime(all.days[readingDay(d)] ?? 0)}',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (chart.limited)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text('Итоги выше рассчитаны за весь выбранный период.'),
+            ),
+          PepeBars(
+            values: [for (final d in barDays) total.days[readingDay(d)] ?? 0],
+            tooltips: [
+              for (final d in barDays)
+                '${pepeDate(d)} · ${statTime(total.days[readingDay(d)] ?? 0)}',
+            ],
+            goalMinutes: goal,
+            startLabel: pepeDate(barDays.first),
+            endLabel: barDays.last == today
+                ? 'сегодня'
+                : pepeDate(barDays.last),
+          ),
         ],
-        goalMinutes: goal,
-        startLabel: pepeDate(barDays.first),
-        endLabel: barDays.last == today ? 'сегодня' : pepeDate(barDays.last),
       ),
     );
     final chars = total.newChars + total.repeatChars;
@@ -492,8 +497,8 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
         },
       ),
     );
-    final perBook = books.where((b) => total.books.containsKey(b.id)).toList()
-      ..sort((a, b) => total.books[b.id]!.compareTo(total.books[a.id]!));
+    final perBook = total.books.keys.toList()
+      ..sort((a, b) => total.books[b]!.compareTo(total.books[a]!));
     final booksPanel = PepePanel(
       title: 'По книгам',
       child: perBook.isEmpty
@@ -501,29 +506,36 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
               'За этот период книг нет.',
               style: TextStyle(color: palette.muted),
             )
-          : Column(
-              children: [
-                for (final book in perBook)
-                  PepeShareRow(
-                    leading: PepeSpine(titles[book.id] ?? book.title),
-                    title: titles[book.id] ?? book.title,
-                    value: statTime(total.books[book.id]!),
+          : SizedBox(
+              height: (perBook.length * 84.0).clamp(84, 420),
+              child: ListView.builder(
+                key: const ValueKey('reading-statistics-books'),
+                primary: false,
+                itemCount: perBook.length,
+                itemBuilder: (context, index) {
+                  final id = perBook[index],
+                      title = titles[id] ?? 'Книга без файла · $id';
+                  return PepeShareRow(
+                    key: ValueKey('reading-statistics-book:$id'),
+                    leading: PepeSpine(title),
+                    title: title,
+                    value: statTime(total.books[id]!),
                     note:
-                        '${(total.books[book.id]! * 100 / total.milliseconds.clamp(1, 1 << 62)).round()}%',
+                        '${(total.books[id]! * 100 / total.milliseconds.clamp(1, 1 << 62)).round()}%',
                     share:
-                        total.books[book.id]! /
-                        total.milliseconds.clamp(1, 1 << 62),
+                        total.books[id]! / total.milliseconds.clamp(1, 1 << 62),
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => ReadingStatisticsPage(
                           repository: widget.repository,
-                          bookId: book.id,
+                          bookId: id,
                         ),
                       ),
                     ),
-                  ),
-              ],
+                  );
+                },
+              ),
             ),
     );
     final sessionsPanel = PepePanel(
@@ -560,7 +572,9 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
         if (loading)
           const Padding(
             padding: EdgeInsets.only(bottom: 12),
-            child: LinearProgressIndicator(),
+            child: LinearProgressIndicator(
+              key: ValueKey('reading-statistics-loading'),
+            ),
           ),
         if (error != null)
           Padding(
@@ -574,13 +588,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
             ),
           ),
         PepeChoices<int>(
-          options: const [
-            (1, '1 день'),
-            (7, '7 дней'),
-            (30, '30 дней'),
-            (0, 'Всё время'),
-            (-1, 'Произвольный'),
-          ],
+          options: const [...statisticsDayPeriods, (-1, 'Произвольный')],
           selected: period,
           onSelect: (p) async {
             if (p != -1) {
@@ -840,7 +848,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
   }
 
   Widget _journal(ShelfPalette palette) => PepePanel(
-    title: 'Журнал чтения',
+    title: 'Экспорт чтения в папку · Markdown / JSON',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
