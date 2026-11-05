@@ -622,6 +622,8 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           PepeRow(children: [(7, barsPanel), (4, splitPanel)]),
         ],
         const SizedBox(height: 16),
+        _comparison(),
+        const SizedBox(height: 16),
         PepeRow(
           children: [
             (4, calendarPanel),
@@ -634,6 +636,59 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
         else
           journalPanel,
       ],
+    );
+  }
+
+  Widget _comparison() {
+    final previous = _stats.previousPeriod, current = _stats.total;
+    Widget row(
+      String label,
+      int value,
+      int before,
+      String Function(int) format,
+    ) => ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(label),
+      subtitle: Text('${format(value)} · раньше ${format(before)}'),
+      trailing: Text(
+        before == 0
+            ? (value == 0 ? '0%' : '—')
+            : '${value >= before ? '+' : ''}${((value - before) * 100 / before).toStringAsFixed(0)}%',
+      ),
+    );
+    return PepePanel(
+      title: 'Сравнение периодов',
+      child: previous == null
+          ? const Text(
+              'Выберите 1, 7, 30, 365 дней или произвольный период для сравнения с предыдущим периодом такой же длины.',
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Выбранный период и предыдущий такой же длины. Сегодняшний день ещё не завершён. При нулевой базе процент не рассчитывается.',
+                ),
+                row(
+                  'Время чтения',
+                  current.milliseconds,
+                  previous.milliseconds,
+                  statTime,
+                ),
+                row('Сессии', current.sessions, previous.sessions, (v) => '$v'),
+                row(
+                  'Дни с чтением',
+                  current.days.values.where((v) => v > 0).length,
+                  previous.days.values.where((v) => v > 0).length,
+                  (v) => '$v',
+                ),
+                row(
+                  'Новое продвижение',
+                  current.newChars,
+                  previous.newChars,
+                  pepeChars,
+                ),
+              ],
+            ),
     );
   }
 

@@ -4,6 +4,7 @@ import '../library/library_features.dart';
 import '../library/library_repository.dart';
 import '../library/personal_library.dart';
 import 'reading_library.dart';
+import '../statistics/portable_history.dart';
 
 /// One read-only source for the overview, calendar and reading statistics.
 /// Missing files never erase recorded time or create new library cards.
@@ -28,12 +29,18 @@ class ReadingStatisticsHistory {
             'spans': ActivityStore.manualSpans(s.payload!),
           },
     ];
+    final imported = await portableActivity(repository, 'book');
+    sessions.addAll(imported.map(portableReadingSession));
+    final portable = await portableStatistics(repository);
     final cards =
-        (await LibraryRepository(
+        (await statisticsEntries(
               repository,
-              personalLibraryNamespace,
-              storageKey: personalLibraryKey,
-            ).entries()).values
+              (await LibraryRepository(
+                repository,
+                personalLibraryNamespace,
+                storageKey: personalLibraryKey,
+              ).entries()).values,
+            ))
             .where(
               (e) =>
                   e.item.mediaType == 'book' &&
@@ -42,6 +49,9 @@ class ReadingStatisticsHistory {
             )
             .toList();
     final titles = <String, String>{
+      for (final e in (portable['books'] as Map).entries)
+        '${e.key}': '${e.value['title']}',
+      for (final e in imported) '${e['bookId']}': '${e['title']}',
       // Project only the effective title. Index navigation, book text and audio
       // tracks never need to cross the database boundary for statistics labels.
       for (final row

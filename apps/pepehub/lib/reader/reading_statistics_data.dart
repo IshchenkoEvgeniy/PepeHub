@@ -7,6 +7,7 @@ class ReadingStatisticsData {
   final int week, previous;
   final ({int current, int best}) streak;
   final List<Map<String, dynamic>> shown;
+  final ReadingTotals? previousPeriod;
   ReadingStatisticsData(
     this.total,
     this.all,
@@ -14,8 +15,9 @@ class ReadingStatisticsData {
     this.week,
     this.previous,
     this.streak,
-    this.shown,
-  );
+    this.shown, [
+    this.previousPeriod,
+  ]);
   factory ReadingStatisticsData.empty() => ReadingStatisticsData(
     ReadingTotals(),
     ReadingTotals(),
@@ -115,6 +117,24 @@ void _read(SendPort ready) {
             (b['startedAt'] as String).compareTo(a['startedAt'] as String),
       );
       final all = readingTotals(sessions, bookId: book);
+      ReadingTotals? previousPeriod;
+      if (startDay != null && endDay != null) {
+        final from = DateTime.parse('${startDay}T00:00:00Z');
+        final until = DateTime.parse('${endDay}T00:00:00Z');
+        previousPeriod = readingTotals(
+          sessions,
+          bookId: book,
+          startDay: readingDay(from.subtract(until.difference(from))),
+          endDay: startDay,
+        );
+      } else if (start != null && end != null) {
+        previousPeriod = readingTotals(
+          sessions,
+          bookId: book,
+          start: start.subtract(end.difference(start)),
+          end: start,
+        );
+      }
       reply.send(
         ReadingStatisticsData(
           readingTotals(
@@ -141,6 +161,7 @@ void _read(SendPort ready) {
           ).milliseconds,
           readingStreak(all.days, now),
           shown,
+          previousPeriod,
         ),
       );
     } catch (error, stack) {

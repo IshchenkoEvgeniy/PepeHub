@@ -53,6 +53,16 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
                     }
                     result.success(null)
                 } catch (e: Exception) { result.error("reveal", "Не удалось открыть папку в файловом менеджере", null) }
+            } else if (call.method == "importStatistics") {
+                if (pending != null) result.error("busy", "Закройте текущий выбор файла", null)
+                else try {
+                    pending = result
+                    (owner.get() ?: error("Откройте приложение")).startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/json"
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }, 4715)
+                } catch (e: Exception) { pending = null; result.error("import", e.message, null) }
             } else if (call.method == "exportStatistics") {
                 if (pending != null) result.error("busy", "Закройте текущий выбор файла", null)
                 else try {
@@ -478,6 +488,32 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
     }
 
     fun onActivityResult(request: Int, code: Int, data: Intent?): Boolean {
+        if (request == 4715) {
+            val result = pending ?: return true
+            pending = null
+            val uri = data?.data
+            if (code != Activity.RESULT_OK || uri == null) result.success(null)
+            else work(result) {
+                val file = java.io.File.createTempFile("statistics-import-", ".json", context.cacheDir)
+                try {
+                    (context.contentResolver.openInputStream(uri) ?: error("Файл недоступен")).use { input ->
+                        file.outputStream().use { output ->
+                            val buffer = ByteArray(65536)
+                            var total = 0L
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                total += count
+                                check(total <= 64L * 1024 * 1024) { "Файл больше 64 МиБ" }
+                                output.write(buffer, 0, count)
+                            }
+                        }
+                    }
+                    file.path
+                } catch (e: Exception) { file.delete(); throw e }
+            }
+            return true
+        }
         if (request == 4714) {
             val result = pending ?: return true
             val expected = pendingWriteRoot ?: return true

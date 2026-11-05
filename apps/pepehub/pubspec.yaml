@@ -1,7 +1,7 @@
 name: pepehub
 description: "Offline personal library, reader and activity journal."
 publish_to: 'none'
-version: 0.30.11+91
+version: 0.30.12+92
 
 environment:
   sdk: ^3.13.3
@@ -49,6 +49,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/reminders/windows-reminder.ps1
     - assets/updater/install-windows.ps1
     - assets/fonts/Lora-OFL.txt
     - assets/fonts/Manrope-OFL.txt

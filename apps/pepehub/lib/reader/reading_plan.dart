@@ -7,6 +7,7 @@ import 'package:drift/drift.dart';
 import '../data/repository.dart';
 import 'reading_activity.dart';
 import 'reading_library.dart';
+import '../notifications/reminder_scheduler.dart';
 import 'reading_statistics_data.dart' show prepareReadingSessions;
 
 Future<({ReadingForecast forecast, ReadingTotals totals})> analyzeReadingPlan(
@@ -253,10 +254,13 @@ class ReadingPlans {
       throw StateError('Текстовая книга не найдена');
     }
     await repository.setMeta('reading-plan:$bookId', jsonEncode(plan.toJson()));
+    await ReminderScheduler.restore(repository);
   }
 
-  Future<void> remove(String bookId) => repository.db.customStatement(
-    'DELETE FROM metadata WHERE key=?',
-    ['reading-plan:$bookId'],
-  );
+  Future<void> remove(String bookId) async {
+    await repository.db.customStatement('DELETE FROM metadata WHERE key=?', [
+      'reading-plan:$bookId',
+    ]);
+    await ReminderScheduler.restore(repository);
+  }
 }

@@ -4,6 +4,7 @@ import '../data/repository.dart';
 import '../reader/reading_plan.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
+import 'goal_settings_page.dart';
 
 class ReadingPlanPage extends StatefulWidget {
   final Repository repository;
@@ -113,23 +114,23 @@ class _ReadingPlanPageState extends State<ReadingPlanPage> {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(
-          SnackBar(
-            content: const Text('План удалён. Статистика сохранена.'),
-            action: SnackBarAction(
-              label: 'Отменить',
-              onPressed: () async {
-                try {
-                  await plans.save(widget.bookId, previous);
-                  await _load();
-                } catch (e) {
-                  if (mounted) {
-                    setState(() => error = 'Не удалось вернуть план: $e');
+            SnackBar(
+              content: const Text('План удалён. Статистика сохранена.'),
+              action: SnackBarAction(
+                label: 'Отменить',
+                onPressed: () async {
+                  try {
+                    await plans.save(widget.bookId, previous);
+                    await _load();
+                  } catch (e) {
+                    if (mounted) {
+                      setState(() => error = 'Не удалось вернуть план: $e');
+                    }
                   }
-                }
-              },
+                },
+              ),
             ),
-          ),
-        );
+          );
       }
     } catch (e) {
       if (mounted) setState(() => error = 'Не удалось удалить план: $e');
@@ -306,6 +307,16 @@ class _ReadingPlanPageState extends State<ReadingPlanPage> {
       subtitle: source?.title,
       maxWidth: 1180,
       actions: [
+        IconButton(
+          tooltip: 'Цели и напоминания',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => GoalSettingsPage(repository: widget.repository),
+            ),
+          ),
+          icon: const Icon(Icons.notifications_outlined),
+        ),
         IconButton(
           tooltip: 'Обновить прогноз',
           onPressed: busy ? null : _load,

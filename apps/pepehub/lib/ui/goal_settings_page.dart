@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../audio/statistics_export.dart';
 import '../data/repository.dart';
+import '../notifications/reminder_scheduler.dart';
+import 'goal_reminders.dart';
 import 'settings_components.dart';
 
 /// All entry points edit the same goals through this screen.
@@ -69,6 +71,7 @@ class _GoalSettingsPageState extends State<GoalSettingsPage> {
         if (mounted) setState(() => listening = next);
       }
       if (mounted) setState(() => error = null);
+      await ReminderScheduler.restore(widget.repository);
     } catch (e) {
       if (mounted) setState(() => error = 'Изменение не сохранено: $e');
     } finally {
@@ -118,6 +121,25 @@ class _GoalSettingsPageState extends State<GoalSettingsPage> {
                 'Общие цели для всех книг. 0 — без цели. Музыка не входит в цель прослушивания аудиокниг.',
               ),
               if (error != null) SettingsNotice(error!),
+              ListTile(
+                leading: const Icon(Icons.notifications_outlined),
+                title: const Text('Напоминания о цели и плане'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => Scaffold(
+                      appBar: AppBar(title: const Text('Напоминания')),
+                      body: ListView(
+                        padding: const EdgeInsets.all(20),
+                        children: [
+                          GoalReminderSettings(repository: widget.repository),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               SettingsGroup(
                 children: [
                   _minutes('reading', 'Чтение в день', reading, 1440, 5),

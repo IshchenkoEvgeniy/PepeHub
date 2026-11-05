@@ -50,6 +50,7 @@ class BookCalendarData {
     AudioDailyTotals? nativeAudio,
     ListeningAnalytics? audioSummary,
     Map<String, String> readingTitles = const {},
+    Iterable<LibraryEntry>? completedEntries,
   }) async {
     final data = BookCalendarData();
     final links = {
@@ -237,28 +238,28 @@ class BookCalendarData {
           totals[day] = (totals[day] ?? 0) + ms;
         }
       }
-      for (final completed in booksCompletedInYear(
-        library.visibleEntries,
-        year,
-      )) {
-        final entry = completed.entry;
-        final id = entry.sourceBookId ?? 'card:${entry.item.id}';
-        data.books.putIfAbsent(
+    }
+    for (final completed in booksCompletedInYear(
+      completedEntries ?? library?.visibleEntries ?? [],
+      year,
+    )) {
+      final entry = completed.entry;
+      final id = entry.sourceBookId ?? 'card:${entry.item.id}';
+      data.books.putIfAbsent(
+        id,
+        () => CalendarBook(
           id,
-          () => CalendarBook(
-            id,
-            entry.item.title,
-            entry.item.mediaType,
-            entry,
-            library.coverPath(entry.item),
-          ),
-        );
-        for (final date in completed.dates) {
-          final day =
-              '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-          (data.days[day] ??= {}).putIfAbsent(id, () => 0);
-          (data.completedDays[day] ??= {}).add(id);
-        }
+          entry.item.title,
+          entry.item.mediaType,
+          entry,
+          library?.coverPath(entry.item),
+        ),
+      );
+      for (final date in completed.dates) {
+        final day =
+            '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+        (data.days[day] ??= {}).putIfAbsent(id, () => 0);
+        (data.completedDays[day] ??= {}).add(id);
       }
     }
     return data;

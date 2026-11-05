@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../data/repository.dart';
 import '../library/library_service.dart';
+import '../library/models.dart';
 import '../library/reading_insights.dart';
+import 'year_review_page.dart';
 import 'library_work_page.dart';
 import 'obsidian_library_dashboard.dart' show ShelfBookCover;
 
 class AnnualBookStatistics extends StatefulWidget {
   final Repository repository;
   final LibraryService? library;
+  final List<LibraryEntry>? completedEntries;
   final int year;
   final int? firstYear;
   final String scope;
@@ -21,6 +24,7 @@ class AnnualBookStatistics extends StatefulWidget {
     super.key,
     required this.repository,
     this.library,
+    this.completedEntries,
     required this.year,
     this.firstYear,
     required this.scope,
@@ -105,7 +109,7 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
   Widget build(BuildContext context) {
     final library = widget.library;
     final allCompleted = booksCompletedInYear(
-      library?.visibleEntries ?? [],
+      widget.completedEntries ?? library?.visibleEntries ?? [],
       widget.year,
     );
     final completed = allCompleted
@@ -348,6 +352,18 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
           ],
         ),
       ),
+      () =>
+          AnnualCategoryPanel(title: 'Жанры', field: 'genre', books: completed),
+      () => AnnualCategoryPanel(
+        title: 'Авторы',
+        field: 'author',
+        books: completed,
+      ),
+      () => AnnualCategoryPanel(
+        title: 'Серии',
+        field: 'series',
+        books: completed,
+      ),
       () => _panel(
         'Страницы по книгам',
         Column(
@@ -523,7 +539,9 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
             if (book.completions > 1) 'Завершений за год: ${book.completions}',
           ].join('\n'),
         ),
-        onTap: widget.library == null
+        onTap:
+            widget.library == null ||
+                !widget.library!.entries.any((e) => e.item.id == item.id)
             ? null
             : () => Navigator.push(
                 context,

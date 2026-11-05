@@ -13,6 +13,7 @@ import '../library/reading_insights.dart';
 import '../reader/reading_library.dart';
 import 'audio_journal.dart';
 import 'manual_audio_progress.dart';
+import '../statistics/portable_history.dart';
 
 /// Supplemental statistics are views of saved data, never new journal writes.
 class AudioStatisticsHistory {
@@ -26,12 +27,15 @@ class AudioStatisticsHistory {
     List<Map<String, dynamic>>? foreign,
   }) async {
     final cards =
-        (entries ??
-                (await LibraryRepository(
-                  repository,
-                  personalLibraryNamespace,
-                  storageKey: personalLibraryKey,
-                ).entries()).values)
+        (await statisticsEntries(
+              repository,
+              entries ??
+                  (await LibraryRepository(
+                    repository,
+                    personalLibraryNamespace,
+                    storageKey: personalLibraryKey,
+                  ).entries()).values,
+            ))
             .where(
               (e) => isLibraryArchiveItem(e.item) && !isLibraryDeleted(e.item),
             )
@@ -39,6 +43,24 @@ class AudioStatisticsHistory {
     final result = <Map<String, dynamic>>[
       ...foreign ?? await ActivityStore.foreignAudio(repository),
     ];
+    final imported = await portableActivity(repository, 'audiobook');
+    for (final row in imported) {
+      final v = row['value'] as Map;
+      result.add({
+        'kind': 'journal',
+        'bookId': row['bookId'],
+        'trackId': 'activity:${v['id']}',
+        'at': v['startedAt'] ?? '${v['day']}T12:00:00.000Z',
+        'localDay': v['day'],
+        'timeKnown': v['startedAt'] != null,
+        'offsetMinutes': v['offsetMinutes'] ?? 0,
+        'wallMs': v['durationMs'],
+        'mediaMs': v['mediaMs'],
+        'positionMs': 0,
+        'endMs': v['mediaMs'],
+        'speed': 1.0,
+      });
+    }
     final standalone = {
       for (final e in cards)
         if (e.sourceBookId == null) e.item.id: e,
@@ -70,7 +92,12 @@ class AudioStatisticsHistory {
         .entries('obsidian-auto:$personalLibraryNamespace:');
     final candidates =
         <({LibraryEntry entry, String id, int media, DateTime cutoff})>[];
-    final titles = <String, String>{};
+    final portable = await portableStatistics(repository);
+    final titles = <String, String>{
+      for (final e in (portable['books'] as Map).entries)
+        '${e.key}': '${e.value['title']}',
+      for (final row in imported) '${row['bookId']}': '${row['title']}',
+    };
     for (final entry in cards) {
       final item = entry.item;
       if (item.mediaType != 'audiobook') continue;

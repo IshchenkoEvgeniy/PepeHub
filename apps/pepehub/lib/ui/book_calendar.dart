@@ -282,7 +282,12 @@ class _BookCalendarState extends State<BookCalendar> {
       subtitle: Text(
         '${e.value > 0 ? bookActivityTime(e.value) : 'Время не записано'} · ${book?.mediaType == 'audiobook' ? 'Аудиокнига' : 'Книга'}${widget.data.completedDays[selected]?.contains(e.key) == true ? ' · завершено' : ''}',
       ),
-      onTap: book?.entry == null || widget.library == null
+      onTap:
+          book?.entry == null ||
+              widget.library == null ||
+              !widget.library!.entries.any(
+                (e) => e.item.id == book!.entry!.item.id,
+              )
           ? null
           : () => Navigator.push(
               context,

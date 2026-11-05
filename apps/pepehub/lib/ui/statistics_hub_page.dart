@@ -18,6 +18,11 @@ import 'reading_statistics_page.dart';
 import 'shelf_components.dart';
 import 'book_calendar.dart';
 import 'annual_book_statistics.dart';
+import '../statistics/annual_summary.dart';
+import 'year_review_page.dart';
+import 'statistics_exchange_page.dart';
+import '../statistics/portable_history.dart';
+import '../library/models.dart';
 
 /// Reading and listening for one calendar year, with links to the detailed
 /// statistics pages.
@@ -58,6 +63,7 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
   Future<void>? _loadingWork;
   bool _loadAgain = false;
   bool _historyDirty = true;
+  List<LibraryEntry> _completedEntries = [];
   Map<String, String> _readingTitles = {};
   ReadingCalendarSummary? _readingSummary;
   AudioStatisticsHistory? _audioHistory;
@@ -130,6 +136,10 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
         _historyDirty = false;
         await widget.audio?.flushJournal();
         await widget.library?.loadCached();
+        _completedEntries = await statisticsEntries(
+          repository,
+          widget.library?.visibleEntries ?? [],
+        );
         final readingHistory = await ReadingStatisticsHistory.load(repository);
         _readingTitles = readingHistory.titles;
         _readingSummary = await compute(
@@ -177,6 +187,7 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
         nativeAudio: native,
         audioSummary: listening,
         readingTitles: _readingTitles,
+        completedEntries: _completedEntries,
       );
       if (!mounted || request != _request) return;
       setState(() {
@@ -210,7 +221,7 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
             if (int.tryParse(day.split('-').first) case final int year) year,
           for (final book in calendarData.completedDays.keys)
             if (int.tryParse(book.split('-').first) case final int year) year,
-          for (final e in widget.library?.visibleEntries ?? []) ...[
+          for (final e in _completedEntries) ...[
             if (bookDate(e.item.value('endDate')) case final DateTime date)
               date.year,
             for (final c in e.item.values['pepehub_completions'] as List? ?? [])
@@ -293,6 +304,43 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
       bottomNavigationBar: null,
       actions: [
         IconButton(
+          tooltip: 'Экспорт и импорт всей статистики',
+          icon: const Icon(Icons.import_export),
+          onPressed: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    StatisticsExchangePage(repository: widget.repository),
+              ),
+            );
+            if (mounted) await _load();
+          },
+        ),
+        IconButton(
+          tooltip: 'Итоги года',
+          onPressed: loading
+              ? null
+              : () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => YearReviewPage(
+                      summary: AnnualSummary(
+                        year: year,
+                        scope: scope,
+                        entries: _completedEntries,
+                        readingDays: readingDays,
+                        audioDays: audioDays,
+                        audioActivityDays: audioActivityDays,
+                        bookTimes: _books,
+                        titles: titles,
+                      ),
+                    ),
+                  ),
+                ),
+          icon: const Icon(Icons.auto_awesome_outlined),
+        ),
+        IconButton(
           tooltip: 'Обновить статистику',
           onPressed: loading ? null : _load,
           icon: const Icon(Icons.refresh),
@@ -324,6 +372,7 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
           Expanded(
             child: annual
                 ? AnnualBookStatistics(
+                    completedEntries: _completedEntries,
                     repository: widget.repository,
                     library: widget.library,
                     year: year,

@@ -13,6 +13,7 @@ class MainActivity : AudioServiceActivity() {
         private val peerNetworkChannels = java.util.WeakHashMap<FlutterEngine, PeerNetworkChannel>()
         private val peerBackgroundChannels = java.util.WeakHashMap<FlutterEngine, PeerBackgroundChannel>()
         private val updateChannels = java.util.WeakHashMap<FlutterEngine, UpdateChannel>()
+        private val reminderChannels = java.util.WeakHashMap<FlutterEngine, ReminderChannel>()
     }
     private var folders: AudioFolderChannel? = null
     private var books: BookFileChannel? = null
@@ -21,6 +22,7 @@ class MainActivity : AudioServiceActivity() {
     private var peers: PeerFilesChannel? = null
     private var peerBackground: PeerBackgroundChannel? = null
     private var updates: UpdateChannel? = null
+    private var reminders: ReminderChannel? = null
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState?.getBoolean("bookIntentConsumed") != true) books?.receive(intent)
@@ -35,6 +37,14 @@ class MainActivity : AudioServiceActivity() {
     }
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        reminders = reminderChannels[flutterEngine] ?: ReminderChannel(applicationContext, flutterEngine.dartExecutor.binaryMessenger).also { channel ->
+            reminderChannels[flutterEngine] = channel
+            flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
+                override fun onPreEngineRestart() {}
+                override fun onEngineWillDestroy() { channel.dispose(); reminderChannels.remove(flutterEngine) }
+            })
+        }
+        reminders?.attach(this)
         updates = updateChannels[flutterEngine] ?: UpdateChannel(applicationContext, flutterEngine.dartExecutor.binaryMessenger).also { channel ->
             updateChannels[flutterEngine] = channel
             flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
@@ -127,7 +137,7 @@ class MainActivity : AudioServiceActivity() {
         super.onUserLeaveHint()
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        if (peerBackground?.onPermissions(requestCode, grantResults) != true) super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (reminders?.onPermissions(requestCode, grantResults) != true && peerBackground?.onPermissions(requestCode, grantResults) != true) super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
     override fun onPictureInPictureModeChanged(inPictureInPicture: Boolean, configuration: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(inPictureInPicture, configuration)
@@ -145,6 +155,7 @@ class MainActivity : AudioServiceActivity() {
         peers?.detach(this)
         peerBackground?.detach(this)
         updates?.detach(this)
+        reminders?.detach(this)
         super.onDestroy()
     }
 }
