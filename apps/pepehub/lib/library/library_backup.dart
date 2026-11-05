@@ -42,14 +42,14 @@ class LibraryBackup {
   }
 
   Future<Uint8List> create() async {
-    await library.history!.capture();
-    await library.notes!.capture();
+    await library.history!.capture(includeDeleted: true);
+    await library.notes!.capture(includeDeleted: true);
     final cards = await library.repository.entries();
     final archive = Archive();
     final savedCovers = <String>{}, missingCovers = <String>[];
     var size = 0;
     for (final card in cards.values) {
-      final hash = CoverSync.referenceHash(card.item.value('cover'));
+      final hash = library.coverHash(card.item);
       if (hash == null || !savedCovers.add(hash)) continue;
       final path = library.coverPath(card.item);
       if (path == null) {

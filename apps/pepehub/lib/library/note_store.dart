@@ -211,120 +211,121 @@ class NoteStore extends ActivityStore {
   }
 
   @override
-  Future<void> capture() => local.db.transaction(() async {
-    final links =
-        (await (catalog ?? LibraryRepository(local, namespace)).entries())
-            .values
-            .where(
-              (e) =>
-                  e.state == 'synced' &&
-                  e.sourceBookId != null &&
-                  (catalog == null || isLibraryArchiveItem(e.item)) &&
-                  !isLibraryDeleted(e.item),
-            );
-    final byBook = {for (final e in links) e.sourceBookId!: e.item};
-    await mutate((state) async {
-      final slots = state['slots'] as Map<String, dynamic>;
-      // Materialize notes first when a file was linked after its remote notes arrived.
-      for (final slot in slots.values.toList()) {
-        if (slot['source'] == null &&
-            slot['conflict'] == null &&
-            slot['portable'] != true) {
-          await _apply(slot, Map<String, dynamic>.from(slot['value']));
-        }
-      }
-      final values = <String, Map<String, dynamic>>{},
-          sources = <String, Map<String, dynamic>>{};
-      final priorBySource = <(String, String, String, String), Map>{};
-      for (final slot in slots.values) {
-        final source = slot['source'] as Map?;
-        if (source == null) continue;
-        priorBySource.putIfAbsent((
-          source['kind'] as String,
-          source['id'] as String,
-          source['bookId'] as String,
-          slot['value']['itemId'] as String,
-        ), () => slot);
-      }
-      Map? prior(String kind, String id, String book) =>
-          priorBySource[(kind, id, book, byBook[book]!.id)]?['native'];
-      void add(
-        Map<String, dynamic> value,
-        String kind,
-        String id,
-        String book,
-      ) {
-        values[value['id'] as String] = value;
-        sources[value['id'] as String] = {
-          'kind': kind,
-          'id': id,
-          'bookId': book,
-        };
-      }
-
-      for (final n in await ReadingLibrary(
-        local,
-      ).notes(bookIds: byBook.keys.toSet())) {
-        add(
-          _reader(n, byBook[n.bookId]!, prior('reader', n.id, n.bookId)),
-          'reader',
-          n.id,
-          n.bookId,
-        );
-      }
-      final rows = await local.db
-          .customSelect("SELECT * FROM records WHERE type='audio_note'")
-          .get();
-      final tracksByBook = <String, List<LocalAsset>>{};
-      for (final row in rows) {
-        final note = LibraryRecord.fromRow(row),
-            book = note.payload?['bookId'] as String?;
-        if (book == null || byBook[book] == null) continue;
-        add(
-          await _audio(
-            note,
-            byBook[book]!,
-            prior('audio', note.id, book),
-            tracksByBook[book] ??= await AssetStore(
-              local,
-              Directory('.'),
-            ).audioTracks(book),
-          ),
-          'audio',
-          note.id,
-          book,
-        );
-      }
-      for (final e in values.entries) {
-        final slot = slots[e.key] as Map<String, dynamic>?;
-        if (slot == null) {
-          slots[e.key] = {
-            'value': e.value,
-            'synced': null,
-            'revision': 0,
-            'source': sources[e.key],
-            'native': e.value,
-          };
-        } else {
-          if (!sameMetadataValue(slot['native'], e.value)) {
-            slot['value'] = e.value;
-            slot['native'] = e.value;
+  Future<void> capture({bool includeDeleted = false}) =>
+      local.db.transaction(() async {
+        final links =
+            (await (catalog ?? LibraryRepository(local, namespace)).entries())
+                .values
+                .where(
+                  (e) =>
+                      e.state == 'synced' &&
+                      e.sourceBookId != null &&
+                      (catalog == null || isLibraryArchiveItem(e.item)) &&
+                      (includeDeleted || !isLibraryDeleted(e.item)),
+                );
+        final byBook = {for (final e in links) e.sourceBookId!: e.item};
+        await mutate((state) async {
+          final slots = state['slots'] as Map<String, dynamic>;
+          // Materialize notes first when a file was linked after its remote notes arrived.
+          for (final slot in slots.values.toList()) {
+            if (slot['source'] == null &&
+                slot['conflict'] == null &&
+                slot['portable'] != true) {
+              await _apply(slot, Map<String, dynamic>.from(slot['value']));
+            }
           }
-          slot['source'] = sources[e.key];
-        }
-      }
-      for (final slot in slots.values) {
-        final source = slot['source'] as Map?;
-        if (source != null &&
-            byBook[source['bookId']]?.id == slot['value']['itemId'] &&
-            !values.containsKey(slot['value']['id']) &&
-            slot['value']['deleted'] != true) {
-          slot['value'] = {...slot['value'] as Map, 'deleted': true};
-          slot['native'] = slot['value'];
-        }
-      }
-    });
-  });
+          final values = <String, Map<String, dynamic>>{},
+              sources = <String, Map<String, dynamic>>{};
+          final priorBySource = <(String, String, String, String), Map>{};
+          for (final slot in slots.values) {
+            final source = slot['source'] as Map?;
+            if (source == null) continue;
+            priorBySource.putIfAbsent((
+              source['kind'] as String,
+              source['id'] as String,
+              source['bookId'] as String,
+              slot['value']['itemId'] as String,
+            ), () => slot);
+          }
+          Map? prior(String kind, String id, String book) =>
+              priorBySource[(kind, id, book, byBook[book]!.id)]?['native'];
+          void add(
+            Map<String, dynamic> value,
+            String kind,
+            String id,
+            String book,
+          ) {
+            values[value['id'] as String] = value;
+            sources[value['id'] as String] = {
+              'kind': kind,
+              'id': id,
+              'bookId': book,
+            };
+          }
+
+          for (final n in await ReadingLibrary(
+            local,
+          ).notes(bookIds: byBook.keys.toSet())) {
+            add(
+              _reader(n, byBook[n.bookId]!, prior('reader', n.id, n.bookId)),
+              'reader',
+              n.id,
+              n.bookId,
+            );
+          }
+          final rows = await local.db
+              .customSelect("SELECT * FROM records WHERE type='audio_note'")
+              .get();
+          final tracksByBook = <String, List<LocalAsset>>{};
+          for (final row in rows) {
+            final note = LibraryRecord.fromRow(row),
+                book = note.payload?['bookId'] as String?;
+            if (book == null || byBook[book] == null) continue;
+            add(
+              await _audio(
+                note,
+                byBook[book]!,
+                prior('audio', note.id, book),
+                tracksByBook[book] ??= await AssetStore(
+                  local,
+                  Directory('.'),
+                ).audioTracks(book),
+              ),
+              'audio',
+              note.id,
+              book,
+            );
+          }
+          for (final e in values.entries) {
+            final slot = slots[e.key] as Map<String, dynamic>?;
+            if (slot == null) {
+              slots[e.key] = {
+                'value': e.value,
+                'synced': null,
+                'revision': 0,
+                'source': sources[e.key],
+                'native': e.value,
+              };
+            } else {
+              if (!sameMetadataValue(slot['native'], e.value)) {
+                slot['value'] = e.value;
+                slot['native'] = e.value;
+              }
+              slot['source'] = sources[e.key];
+            }
+          }
+          for (final slot in slots.values) {
+            final source = slot['source'] as Map?;
+            if (source != null &&
+                byBook[source['bookId']]?.id == slot['value']['itemId'] &&
+                !values.containsKey(slot['value']['id']) &&
+                slot['value']['deleted'] != true) {
+              slot['value'] = {...slot['value'] as Map, 'deleted': true};
+              slot['native'] = slot['value'];
+            }
+          }
+        });
+      });
   Future<bool> _apply(
     Map<String, dynamic> slot,
     Map<String, dynamic> next,

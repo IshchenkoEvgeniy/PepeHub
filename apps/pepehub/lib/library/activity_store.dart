@@ -333,7 +333,9 @@ class ActivityStore {
   }
 
   /// Only explicitly linked books enter this journal. Local book files never upload.
-  Future<void> capture() => local.db.transaction(() async {
+  Future<void> capture({
+    bool includeDeleted = false,
+  }) => local.db.transaction(() async {
     final links =
         (await (catalog ?? LibraryRepository(local, namespace)).entries())
             .values
@@ -342,7 +344,7 @@ class ActivityStore {
                   e.sourceBookId != null &&
                   (catalog == null || isLibraryArchiveItem(e.item)) &&
                   e.state == 'synced' &&
-                  !isLibraryDeleted(e.item),
+                  (includeDeleted || !isLibraryDeleted(e.item)),
             );
     final byBook = {for (final link in links) link.sourceBookId!: link.item};
     final values = <String, Map<String, dynamic>>{},

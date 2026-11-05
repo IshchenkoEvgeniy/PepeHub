@@ -57,11 +57,10 @@ class LibraryService extends ChangeNotifier {
   Future<void>? _refresh;
   bool _refreshAgain = false;
   Future<void> get idle => _reloadTail;
-  String? coverPath(ObsidianLibraryItem item) {
+  String? coverHash(ObsidianLibraryItem item) {
     final cover = '${item.value('cover') ?? ''}';
-    if (CoverSync.referenceHash(cover) != null) {
-      return coverReferencePath(cover);
-    }
+    final reference = CoverSync.referenceHash(cover);
+    if (reference != null) return reference;
     // The imported copy also belongs to an unchanged HTTP(S) reference and is
     // usable offline. A cover edit explicitly clears this value, including on
     // legacy items that still carry a top-level coverAsset.
@@ -69,7 +68,12 @@ class LibraryService extends ChangeNotifier {
         ? item.values['pepehub_cover_asset']
         : item.coverAsset;
     final hash = stored is Map ? stored['hash'] : null;
-    return coverReferencePath('pepehub-cover:$hash');
+    return CoverSync.referenceHash('pepehub-cover:$hash');
+  }
+
+  String? coverPath(ObsidianLibraryItem item) {
+    final hash = coverHash(item);
+    return hash == null ? null : coverReferencePath('pepehub-cover:$hash');
   }
 
   String? coverReferencePath(String value) {
