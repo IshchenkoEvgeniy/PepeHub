@@ -10,6 +10,8 @@ import 'package:path_provider/path_provider.dart';
 import '../audio/audio_folder.dart';
 import '../library/library_backup.dart';
 import '../library/library_service.dart';
+import '../library/library_folder_storage.dart';
+import '../sync/peer/peer_files.dart';
 
 Future<bool> saveLibraryFile(Uint8List bytes, String name, String mime) async {
   if (Platform.isAndroid) {
@@ -58,7 +60,126 @@ class _LibraryDataPageState extends State<LibraryDataPage> {
   @override
   void initState() {
     super.initState();
+    widget.library.folderStorage.addListener(_folderChanged);
+    widget.library.folderStorage
+        .initialize()
+        .then((_) => _folderChanged())
+        .catchError((Object e) {
+          if (mounted) {
+            setState(
+              () => message = 'Не удалось загрузить настройки папки: $e',
+            );
+          }
+        });
     _load();
+  }
+
+  void _folderChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.library.folderStorage.removeListener(_folderChanged);
+    super.dispose();
+  }
+
+  Future<String?> _folderAction({String? selected}) async {
+    final folder = widget.library.folderStorage;
+    Future<void> apply({LibraryFolderPreference? preference}) async {
+      if (selected == null) {
+        await folder.synchronize(force: true, preference: preference);
+        await widget.library.loadCached();
+      } else {
+        await folder.connect(selected, preference: preference);
+      }
+    }
+
+    try {
+      await apply();
+    } on LibraryFolderConflict catch (conflict) {
+      if (!mounted) return null;
+      final choice = await showDialog<LibraryFolderPreference>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Выбрать версию изменений'),
+          content: Text(
+            'Здесь и в папке различаются ${conflict.documents.length} записей. '
+            'Остальные изменения объединятся. Если удаление произведения совпало с новой заметкой или историей, '
+            'выбирается версия произведения целиком. Перед заменой автоматически сохранится ZIP текущей библиотеки.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Отмена'),
+            ),
+            TextButton(
+              onPressed: () =>
+                  Navigator.pop(context, LibraryFolderPreference.local),
+              child: const Text('Версия с этого устройства'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.pop(context, LibraryFolderPreference.folder),
+              child: const Text('Версия из папки'),
+            ),
+          ],
+        ),
+      );
+      if (choice == null) return null;
+      await storage.saveLocal();
+      await apply(preference: choice);
+    }
+    return 'Библиотека сохранена в папке. Данные папки загружены.'
+        '${folder.warning == null ? '' : '\n${folder.warning}'}';
+  }
+
+  Future<String?> _chooseFolder() async {
+    final String? selected;
+    if (Platform.isAndroid) {
+      selected =
+          (await peerFilesChannel.invokeMapMethod<String, dynamic>(
+                'pick',
+              ))?['root']
+              as String?;
+    } else {
+      selected = await getDirectoryPath(
+        confirmButtonText: 'Выбрать папку библиотеки',
+      );
+    }
+    if (selected == null) return null;
+    return _folderAction(selected: selected);
+  }
+
+  Future<String?> _disconnectFolder() async {
+    final folder = widget.library.folderStorage;
+    if (!mounted) return null;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Отключить папку библиотеки?'),
+        content: const Text(
+          'Текущие карточки, цитаты, история и обложки останутся на устройстве. '
+          'Файлы в папке сохранятся. Новые изменения будут храниться только на этом устройстве.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Отключить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return null;
+    final saved = await folder.disconnect();
+    return saved
+        ? 'Папка отключена. Последние изменения сохранены в папке и на устройстве.'
+        : 'Папка отключена. Последние изменения остались на устройстве: '
+              'записать их в папку не удалось.';
   }
 
   Future<void> _load() async {
@@ -142,6 +263,57 @@ class _LibraryDataPageState extends State<LibraryDataPage> {
       padding: const EdgeInsets.all(20),
       children: [
         const Text(
+          'Папка библиотеки',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Выберите папку для хранения библиотеки: карточек, состава серий, цитат, истории, настроек и обложек. '
+          'Можно выбрать готовую PepeHub-library или её родительскую папку. Для новой библиотеки создастся подпапка PepeHub-library. '
+          'Изменения сохраняются автоматически; данные из папки проверяются каждые 3 секунды и при обновлении библиотеки. '
+          'Файлы книг и аудио хранятся отдельно.',
+        ),
+        const SizedBox(height: 10),
+        SelectableText(
+          widget.library.folderStorage.displayPath ??
+              'Хранится на этом устройстве. Папка не выбрана.',
+        ),
+        if (widget.library.folderStorage.warning != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(widget.library.folderStorage.warning!),
+          ),
+        if (widget.library.folderStorage.error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Не удалось обновить папку. Локальные данные сохранены. ${widget.library.folderStorage.error}',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        Wrap(
+          spacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: busy ? null : () => _run(_chooseFolder),
+              icon: const Icon(Icons.folder_open),
+              label: const Text('Выбрать папку…'),
+            ),
+            if (widget.library.folderStorage.enabled) ...[
+              OutlinedButton.icon(
+                onPressed: busy ? null : () => _run(() => _folderAction()),
+                icon: const Icon(Icons.sync),
+                label: const Text('Обновить из папки'),
+              ),
+              TextButton(
+                onPressed: busy ? null : () => _run(_disconnectFolder),
+                child: const Text('Отключить папку'),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 24),
+        const Text(
           'Резервная копия библиотеки',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
         ),
@@ -220,7 +392,8 @@ class _LibraryDataPageState extends State<LibraryDataPage> {
               ),
           ],
         ),
-        if (busy) const LinearProgressIndicator(),
+        if (busy || widget.library.folderStorage.working)
+          const LinearProgressIndicator(),
         if (message != null)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),

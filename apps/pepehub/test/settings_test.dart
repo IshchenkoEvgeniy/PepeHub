@@ -7,6 +7,7 @@ import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/settings_page.dart';
+import 'package:pepehub/ui/library_data_page.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 void main() {
@@ -110,7 +111,17 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('settings-entry:data')));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Создать резервную копию'));
+      expect(find.text('Папка библиотеки'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Создать резервную копию'),
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byType(LibraryDataPage),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       appearance.dispose();

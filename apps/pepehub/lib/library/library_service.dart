@@ -24,12 +24,14 @@ import 'note_store.dart';
 import 'metadata_values.dart';
 import 'library_features.dart';
 import 'series_draft.dart';
+import 'library_folder_storage.dart';
 
 class LibraryService extends ChangeNotifier {
   final Repository local;
   final http.Client client;
   final AssetStore? assets;
   LibraryService(this.local, this.client, {this.assets});
+  late final folderStorage = LibraryFolderStorage(this);
   ObsidianConfig? config;
   LibraryRepository get repository => LibraryRepository(
     local,
@@ -456,7 +458,14 @@ class LibraryService extends ChangeNotifier {
     final generation = _generation;
     loading = true;
     error = null;
-    // Show the durable catalog before inspecting any connected files.
+    // Paint the working copy even while an external folder is reconnecting.
+    await loadCached();
+    try {
+      await folderStorage.synchronize();
+    } catch (e) {
+      error = 'Не удалось обновить папку библиотеки: $e';
+    }
+    // Show imported cards before inspecting any connected book files.
     await loadCached();
     try {
       if (!_migrated) {
@@ -1141,6 +1150,7 @@ class LibraryService extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    folderStorage.dispose();
     super.dispose();
   }
 }

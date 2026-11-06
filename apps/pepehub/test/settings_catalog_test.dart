@@ -12,6 +12,7 @@ import 'package:pepehub/sync/peer/peer_service.dart';
 import 'package:pepehub/sync/peer/peer_store.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/settings_page.dart';
+import 'package:pepehub/ui/library_data_page.dart';
 import 'package:pepehub/updates/update_service.dart';
 
 import 'peer_sync_test.dart' show MemorySecrets;
@@ -217,6 +218,17 @@ void main() {
         await tester.pageBack();
         await tester.pumpAndSettle();
         await open('data');
+        expect(find.text('Папка библиотеки'), findsOneWidget);
+        await tester.scrollUntilVisible(
+          find.text('Создать резервную копию'),
+          200,
+          scrollable: find
+              .descendant(
+                of: find.byType(LibraryDataPage),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
         expect(find.text('Создать резервную копию'), findsOneWidget);
         expect(find.text('Обменять с Obsidian'), findsNothing);
         expect(await f.repo.meta('peer-sync-interval'), '180');
