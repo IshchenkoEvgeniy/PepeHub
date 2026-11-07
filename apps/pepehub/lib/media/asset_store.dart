@@ -64,9 +64,15 @@ class AssetStore {
     required String root,
     required String title,
     String? replaceBookId,
+    bool restoreRemoved = false,
   }) async {
-    final id = await AudioLinkService(repository)
-        .connect(files, root: root, title: title, replaceBookId: replaceBookId);
+    final id = await AudioLinkService(repository).connect(
+      files,
+      root: root,
+      title: title,
+      replaceBookId: replaceBookId,
+      restoreRemoved: restoreRemoved,
+    );
     await repository.db.customStatement('DELETE FROM metadata WHERE key=?', [
       'audio-cover-missing:$id',
     ]);
@@ -451,6 +457,7 @@ class AssetStore {
         if (root != null && destination != null) {
           await folder.registerBook(root, destination.relative, asset);
         }
+        await repository.restoreRemovedShelfBook(bookId, audio: false);
         await repository.setMeta('reading-user-hidden:$bookId', '0');
         await ReadingBookVisibility(repository).available(bookId);
         return asset;

@@ -2,9 +2,9 @@ import '../data/repository.dart';
 
 class HiddenFile {
   final String id, title;
-  final bool audio;
+  final bool audio, hasSource;
   final int tab;
-  const HiddenFile(this.id, this.title, this.audio, this.tab);
+  const HiddenFile(this.id, this.title, this.audio, this.tab, this.hasSource);
 }
 
 /// List projections only: never load track lists, file bytes or text indexes.
@@ -22,7 +22,9 @@ Future<List<HiddenFile>> hiddenFiles(Repository repository) async {
     LEFT JOIN metadata u ON u.key=CASE WHEN json_extract(b.payload,'\$.format')='audio' THEN 'audio-user-hidden:' ELSE 'reading-user-hidden:' END||b.id
     LEFT JOIN metadata d ON d.key=CASE WHEN json_extract(b.payload,'\$.format')='audio' THEN 'audio-source-missing:' ELSE 'reading-deleted:' END||b.id
     LEFT JOIN metadata s ON s.key='audio-library-superseded:'||b.id
+    LEFT JOIN metadata removed ON removed.key='${Repository.removedShelfBookPrefix}'||b.id
     WHERE b.type='book' AND b.deleted=0 AND json_valid(b.payload) AND IFNULL(s.value,'0')!='1'
+      AND IFNULL(removed.value,'0')!='1'
     ORDER BY title,b.id
   ''').get();
   return [
@@ -39,6 +41,7 @@ Future<List<HiddenFile>> hiddenFiles(Repository repository) async {
               : row.read<int>('hidden') == 1
               ? 0
               : 2,
+          row.read<int>('has_source') == 1,
         ),
   ];
 }

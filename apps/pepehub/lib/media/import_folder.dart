@@ -222,6 +222,7 @@ class ImportFolder {
           "SELECT b.id FROM records b WHERE b.type='book' AND b.deleted=0 AND json_valid(b.payload) "
           "AND IFNULL(json_extract(b.payload,'\$.format'),'')!='audio' AND "
           "NOT EXISTS(SELECT 1 FROM metadata WHERE key='reading-deleted:'||b.id AND value='1') AND "
+          "NOT EXISTS(SELECT 1 FROM metadata WHERE key='${Repository.removedShelfBookPrefix}'||b.id AND value='1') AND "
           "EXISTS(SELECT 1 FROM metadata WHERE key='reading-imported:'||b.id AND value='1') ORDER BY b.id",
         )
         .get();

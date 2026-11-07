@@ -46,12 +46,38 @@ class LibraryRecord {
 }
 
 class Repository {
+  static const removedShelfBookPrefix = 'book-shelf-removed:';
+
   static final _externalChanges = Expando<ValueNotifier<int>>();
   ValueListenable<int> get externalChanges =>
       _externalChanges[db] ??= ValueNotifier(0);
   void notifyExternalChange() {
     final notifier = _externalChanges[db] ??= ValueNotifier(0);
     notifier.value++;
+  }
+
+  /// Local shelf removal keeps the identity used by progress and notes.
+  Future<void> removeShelfBooks(Iterable<String> ids) async {
+    final selected = ids.toSet();
+    if (selected.isEmpty) return;
+    await db.customStatement(
+      "INSERT OR REPLACE INTO metadata(key,value) SELECT ?||value,'1' FROM json_each(?)",
+      [removedShelfBookPrefix, jsonEncode(selected.toList())],
+    );
+    notifyExternalChange();
+  }
+
+  /// Only an explicit add can return a removed work to the shelf.
+  Future<void> restoreRemovedShelfBook(String id, {required bool audio}) async {
+    final marker = '$removedShelfBookPrefix$id';
+    if (await meta(marker) == null) return;
+    final kind = audio ? 'audio' : 'reading';
+    await db.customStatement('DELETE FROM metadata WHERE key IN (?,?,?,?)', [
+      marker,
+      '$kind-user-hidden:$id',
+      '$kind-library-hidden:$id',
+      audio ? 'audio-source-missing:$id' : 'reading-deleted:$id',
+    ]);
   }
 
   final AppDatabase db;

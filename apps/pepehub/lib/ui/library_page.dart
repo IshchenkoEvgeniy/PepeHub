@@ -383,8 +383,9 @@ class _LibraryPageState extends State<LibraryPage> {
       final overrides = <String, String>{};
       final flags = await widget.repository.metadataPrefixes(
         readingSection
-            ? ['reading-library-hidden:']
+            ? [Repository.removedShelfBookPrefix, 'reading-library-hidden:']
             : [
+                Repository.removedShelfBookPrefix,
                 'audio-status-override:',
                 'audio-library-superseded:',
                 'audio-library-hidden:',
@@ -392,6 +393,9 @@ class _LibraryPageState extends State<LibraryPage> {
               ],
       );
       for (final book in allBooks) {
+        if (flags['${Repository.removedShelfBookPrefix}${book.id}'] == '1') {
+          continue;
+        }
         if ((book.payload!['format'] != 'audio') != readingSection) continue;
         if (readingSection) {
           if (deleted.contains(book.id) ||

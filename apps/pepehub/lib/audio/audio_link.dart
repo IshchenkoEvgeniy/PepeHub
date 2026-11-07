@@ -19,6 +19,7 @@ class AudioLinkService {
     required String root,
     required String title,
     String? replaceBookId,
+    bool restoreRemoved = false,
   }) async {
     if (files.isEmpty || files.length > 1000 || root.isEmpty) {
       throw ArgumentError('Выберите папку с 1–1000 аудиофайлов');
@@ -89,6 +90,9 @@ class AudioLinkService {
         }
         await repository.setMeta(key, existingId);
         await repository.setMeta('audio-folder-book:$existingId', key);
+        if (restoreRemoved) {
+          await repository.restoreRemovedShelfBook(existingId, audio: true);
+        }
         return existingId;
       }
       final bookId = uuid.v4(), editionId = uuid.v4();

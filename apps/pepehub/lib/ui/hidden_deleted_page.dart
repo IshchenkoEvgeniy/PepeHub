@@ -4,7 +4,9 @@ import '../audio/audio_book_actions.dart';
 import '../library/hidden_files.dart';
 import '../library/library_service.dart';
 import '../library/models.dart';
+import '../media/audio_player_scope.dart';
 import '../reader/reading_book_actions.dart';
+import '../sync/peer/peer_service.dart';
 import 'audio_roots_page.dart';
 import 'reading_roots_page.dart';
 import 'audio_mini_player.dart';
@@ -153,6 +155,100 @@ class _HiddenDeletedPageState extends State<HiddenDeletedPage> {
         ),
       ) ??
       false;
+
+  Future<void> _removeFilesFromShelf(List<HiddenFile> targets) async {
+    if (busy || targets.isEmpty) return;
+    final assets = widget.library.assets;
+    final canDeleteFiles =
+        assets != null && targets.any((file) => file.hasSource);
+    final player = canDeleteFiles ? AudioPlayerScope.of(context) : null;
+    final peer = canDeleteFiles ? PeerSyncScope.of(context) : null;
+    setState(() => _removing = true);
+    var removed = 0;
+    HiddenFile? current;
+    String? failure;
+    try {
+      final withFiles = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          scrollable: true,
+          title: Text(
+            targets.length == 1
+                ? 'Удалить «${targets.single.title}»?'
+                : 'Удалить выбранные записи (${targets.length})?',
+          ),
+          content: Text(
+            'Записи исчезнут с полок и из этой панели. Прогресс, заметки и '
+            'карточки личной библиотеки сохранятся.'
+            '${canDeleteFiles ? '\n\nЕсли выбрать удаление с файлами, будут удалены и оригиналы в подключённых папках. Сторонняя синхронизация может повторить удаление на других устройствах.' : ''}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Отмена'),
+            ),
+            FilledButton.tonal(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Удалить только запись'),
+            ),
+            if (canDeleteFiles)
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Удалить вместе с файлами'),
+              ),
+          ],
+        ),
+      );
+      if (withFiles == null || !mounted) return;
+      final repository = widget.library.local;
+      if (!withFiles) {
+        await repository.removeShelfBooks(targets.map((file) => file.id));
+        removed = targets.length;
+      } else {
+        setState(() => _working = true);
+        final books = ReadingBookActions(assets!);
+        final audio = AudioBookActions(assets);
+        for (final file in targets) {
+          if (!mounted) break;
+          current = file;
+          if (file.hasSource) {
+            if (player != null && player.current?.bookId == file.id) {
+              await player.stop();
+            }
+            if (!mounted ||
+                !await deleteBookFilesWithAccess(
+                  context,
+                  file.audio ? audio : books,
+                  file.id,
+                )) {
+              break;
+            }
+            peer?.localFilesChanged();
+          }
+          await repository.removeShelfBooks([file.id]);
+          removed++;
+        }
+      }
+    } catch (e) {
+      final message = readingBookActionMessage(e);
+      failure = current == null ? message : '«${current.title}». $message';
+    } finally {
+      if (mounted && removed > 0) await _load();
+      if (mounted) {
+        setState(() {
+          _working = false;
+          _removing = false;
+          if (failure != null) error = failure;
+        });
+        if (removed > 0) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Удалено записей: $removed')));
+        }
+      }
+    }
+  }
+
   Future<void> _purge(List<String> ids, {bool withFiles = false}) async {
     if (busy) return;
     setState(() => _removing = true);
@@ -325,19 +421,19 @@ class _HiddenDeletedPageState extends State<HiddenDeletedPage> {
                           Wrap(
                             spacing: 8,
                             children: [
-                              if (tab == 0 || tab == 3) ...[
-                                TextButton(
-                                  onPressed: busy || ids.isEmpty
-                                      ? null
-                                      : () => setState(() {
-                                          selected
-                                            ..clear()
-                                            ..addAll(ids);
-                                        }),
-                                  child: Text(
-                                    'Выбрать найденные (${ids.length})',
-                                  ),
+                              TextButton(
+                                onPressed: busy || ids.isEmpty
+                                    ? null
+                                    : () => setState(() {
+                                        selected
+                                          ..clear()
+                                          ..addAll(ids);
+                                      }),
+                                child: Text(
+                                  'Выбрать найденные (${ids.length})',
                                 ),
+                              ),
+                              if (tab == 0 || tab == 3)
                                 TextButton(
                                   onPressed: busy || targets.isEmpty
                                       ? null
@@ -348,7 +444,21 @@ class _HiddenDeletedPageState extends State<HiddenDeletedPage> {
                                         : 'Вернуть выбранные (${targets.length})',
                                   ),
                                 ),
-                              ],
+                              if (tab != 3 && selected.isNotEmpty)
+                                TextButton(
+                                  onPressed: busy || targets.isEmpty
+                                      ? null
+                                      : () => _removeFilesFromShelf(
+                                          fileRows
+                                              .where(
+                                                (f) => selected.contains(f.id),
+                                              )
+                                              .toList(),
+                                        ),
+                                  child: Text(
+                                    'Удалить выбранные (${targets.length})…',
+                                  ),
+                                ),
                               if (tab == 3)
                                 TextButton(
                                   onPressed: busy || trash.isEmpty
@@ -401,48 +511,52 @@ class _HiddenDeletedPageState extends State<HiddenDeletedPage> {
                           )?.toLocal();
                     return ListTile(
                       key: ValueKey('hidden-row:$id'),
-                      leading: tab == 0 || tab == 3
-                          ? Checkbox(
-                              value: selected.contains(id),
-                              onChanged: busy ? null : (v) => _toggle(id, v),
-                            )
-                          : Icon(
-                              file!.audio ? Icons.headphones : Icons.menu_book,
-                            ),
+                      leading: Checkbox(
+                        value: selected.contains(id),
+                        onChanged: busy ? null : (v) => _toggle(id, v),
+                      ),
                       title: Text(card?.item.title ?? file!.title),
                       subtitle: card == null
                           ? null
                           : Text(
                               '${card.item.authors}${deleted == null ? '\nДата удаления неизвестна' : '\nУдалено: ${deleted.day}.${deleted.month}.${deleted.year}'}',
                             ),
-                      trailing: tab == 0 || tab == 3
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  tooltip: tab == 3
-                                      ? 'Восстановить'
-                                      : 'Вернуть в список',
-                                  onPressed: busy ? null : () => _restore([id]),
-                                  icon: const Icon(Icons.restore),
-                                ),
-                                if (tab == 3)
-                                  IconButton(
-                                    tooltip: 'Удалить окончательно',
-                                    onPressed: busy
-                                        ? null
-                                        : () => _purge([id], withFiles: true),
-                                    icon: const Icon(Icons.delete_forever),
-                                  ),
-                              ],
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (tab == 0 || tab == 3)
+                            IconButton(
+                              tooltip: tab == 3
+                                  ? 'Восстановить'
+                                  : 'Вернуть в список',
+                              onPressed: busy ? null : () => _restore([id]),
+                              icon: const Icon(Icons.restore),
                             )
-                          : IconButton(
+                          else
+                            IconButton(
                               tooltip: 'Открыть папки',
                               icon: const Icon(Icons.folder_open),
                               onPressed: busy
                                   ? null
                                   : () => _folders(file!.audio),
                             ),
+                          IconButton(
+                            tooltip: tab == 3
+                                ? 'Удалить окончательно'
+                                : 'Удалить запись',
+                            onPressed: busy
+                                ? null
+                                : tab == 3
+                                ? () => _purge([id], withFiles: true)
+                                : () => _removeFilesFromShelf([file!]),
+                            icon: Icon(
+                              tab == 3
+                                  ? Icons.delete_forever
+                                  : Icons.delete_outline,
+                            ),
+                          ),
+                        ],
+                      ),
                     );
                   }, childCount: ids.length),
                 ),

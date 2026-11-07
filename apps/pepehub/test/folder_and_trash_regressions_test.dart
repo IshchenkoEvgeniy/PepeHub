@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
+import 'package:pepehub/audio/audio_book_actions.dart';
 import 'package:pepehub/audio/audio_catalog.dart';
 import 'package:pepehub/audio/audio_folder.dart';
 import 'package:pepehub/audio/audio_roots.dart';
@@ -16,6 +17,8 @@ import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/library/models.dart';
 import 'package:pepehub/library/personal_library.dart';
 import 'package:pepehub/media/asset_store.dart';
+import 'package:pepehub/media/import_folder.dart';
+import 'package:pepehub/reader/reading_book_actions.dart';
 import 'package:pepehub/reader/reading_roots.dart';
 import 'package:pepehub/ui/hidden_deleted_page.dart';
 import 'package:pepehub/ui/library_card_actions.dart';
@@ -328,7 +331,7 @@ void main() {
   }
 
   testWidgets(
-    '2000 hidden books/audio stay lazy; filtered bulk restore changes only the two selected files',
+    '2000 hidden books/audio stay lazy; bulk actions affect only selected records',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1;
@@ -343,7 +346,11 @@ void main() {
               'book-$i',
               'book',
               jsonEncode({
-                'title': i < 2 ? 'Pair $i' : 'Book $i',
+                'title': i < 2
+                    ? 'Pair $i'
+                    : i < 4
+                    ? 'Remove $i'
+                    : 'Book $i',
                 'format': audio ? 'audio' : 'txt',
               }),
             ],
@@ -379,7 +386,101 @@ void main() {
       expect(await repo.meta('reading-library-hidden:book-0'), '0');
       expect(await repo.meta('audio-library-hidden:book-1'), '0');
       expect(await repo.meta('reading-library-hidden:book-2'), '1');
+      await tester.enterText(find.byType(TextField), 'Remove');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Выбрать найденные (2)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Удалить выбранные (2)…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Удалить только запись'));
+      await ready(tester, () => !state.busy);
+      final remaining = await hiddenFiles(repo);
+      expect(remaining.map((file) => file.id), isNot(contains('book-2')));
+      expect(remaining.map((file) => file.id), isNot(contains('book-3')));
+      expect(remaining.map((file) => file.id), contains('book-4'));
       expect(library.entries, isEmpty);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'removed shelf entries can keep their originals or delete selected files',
+    (tester) async {
+      final text = File('${root.path}/Original.txt');
+      final track = File('${root.path}/Chapter.mp3');
+      final other = File('${root.path}/Other.txt');
+      final (book, audiobook) = (await tester.runAsync(() async {
+        await text.writeAsString('Original text.');
+        await track.writeAsString('ID3 a chapter.');
+        await other.writeAsString('Another work.');
+        final book = await assets.addBook(
+          FolderAudioFile(text.path, 'Original.txt'),
+        );
+        final audiobook = await assets.connectAudioFolder(
+          [FolderAudioFile(track.path, 'Chapter.mp3')],
+          root: root.path,
+          title: 'Audiobook',
+        );
+        await ReadingBookActions(assets).hide(book.bookId);
+        await AudioBookActions(assets).hide(audiobook.bookId);
+        return (book, audiobook);
+      }))!;
+      await library.repository.mutate((entries) async {
+        entries['archive'] = card('archive', sourceBookId: book.bookId);
+      });
+      await repo.setMeta('reader:${book.hash}', '{"chapter":2}');
+      await tester.pumpWidget(
+        MaterialApp(home: HiddenDeletedPage(library: library)),
+      );
+      final dynamic state = tester.state(find.byType(HiddenDeletedPage));
+      await ready(tester, () => !state.loading);
+      Future<void> open(String id) async {
+        final row = find.byKey(ValueKey('hidden-row:$id'));
+        final button = find.descendant(
+          of: row,
+          matching: find.byTooltip('Удалить запись'),
+        );
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+      }
+
+      await open(book.bookId);
+      await tester.tap(find.text('Удалить только запись'));
+      await ready(tester, () => !state.busy);
+      expect(await tester.runAsync(text.exists), true);
+      expect(await repo.meta('reader:${book.hash}'), '{"chapter":2}');
+      expect(library.visibleEntries.single.item.id, 'archive');
+      expect(library.trash, isEmpty);
+      expect(await ImportFolder(assets).candidates(), isEmpty);
+      await tester.runAsync(
+        () => ReadingRoots(assets).connectFromScan(root.path),
+      );
+      expect((await hiddenFiles(repo)).map((file) => file.id), [
+        audiobook.bookId,
+      ]);
+
+      await open(audiobook.bookId);
+      await tester.tap(find.text('Отмена'));
+      await tester.pumpAndSettle();
+      expect(await tester.runAsync(track.exists), true);
+      await open(audiobook.bookId);
+      await tester.tap(find.text('Удалить вместе с файлами'));
+      await ready(tester, () => !state.busy);
+      expect(await tester.runAsync(track.exists), false);
+      expect(await tester.runAsync(other.exists), true);
+      expect(await hiddenFiles(repo), isEmpty);
+
+      final readded = await tester.runAsync(
+        () => assets.addBook(FolderAudioFile(text.path, 'Original.txt')),
+      );
+      expect(readded!.bookId, book.bookId);
+      expect(
+        await repo.meta('${Repository.removedShelfBookPrefix}${book.bookId}'),
+        isNull,
+      );
+      expect(await repo.meta('reader:${book.hash}'), '{"chapter":2}');
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },

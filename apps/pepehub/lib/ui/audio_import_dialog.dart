@@ -52,6 +52,7 @@ class _AudioImportDialogState extends State<AudioImportDialog> {
               files,
               root: widget.sourceRoot!,
               title: title.text,
+              restoreRemoved: true,
             )
           : await widget.assets.importAudioBook(
               files,

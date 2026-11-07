@@ -144,6 +144,7 @@ Future<int> connectAudioCatalog(
         draft.files,
         root: source,
         title: draft.title,
+        restoreRemoved: true,
       );
       await repository.setMeta(
         'audio-source-path:${asset.bookId}',

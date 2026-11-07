@@ -231,6 +231,7 @@ class AudioImportService {
                 'Эта книга удалена. Автоматическое восстановление отключено.',
               );
             }
+            await repository.restoreRemovedShelfBook(id, audio: true);
             return id;
           }
         }
