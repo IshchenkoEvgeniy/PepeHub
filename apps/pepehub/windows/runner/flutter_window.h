@@ -36,6 +36,11 @@ class FlutterWindow : public Win32Window {
   bool ResizeVideoFullscreen();
   bool SetVideoMiniWindow(bool enabled);
   bool video_mini_window_ = false;
+  // Video playback and an active reader both keep the display on.
+  bool video_playing_ = false;
+  bool video_visual_ = false;
+  bool reading_awake_ = false;
+  void ApplyExecutionState();
   LONG_PTR video_mini_style_ = 0;
   LONG_PTR video_mini_ex_style_ = 0;
   WINDOWPLACEMENT video_mini_placement_ = {sizeof(WINDOWPLACEMENT)};

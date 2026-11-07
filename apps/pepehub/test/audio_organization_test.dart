@@ -116,6 +116,23 @@ void main() {
         await tester.tap(finder);
       }
 
+      Future<void> openFilters() async {
+        await tapVisible(find.byKey(const ValueKey('shelf-filters')));
+        await settle();
+      }
+
+      Future<void> closeFilters() async {
+        await tester.tap(find.text('Готово'));
+        await settle();
+      }
+
+      Future<void> toggleFavorites() async {
+        await openFilters();
+        await tester.tap(find.byKey(const ValueKey('filter-favorites')));
+        await settle();
+        await closeFilters();
+      }
+
       Future<void> bookMenu(String label) async {
         await tapVisible(find.byTooltip('Действия с книгой').first);
         await settle();
@@ -137,9 +154,12 @@ void main() {
       );
       await bookMenu('В избранное');
       expect(find.text('★ Alpha audio'), findsOneWidget);
-      await tester.tap(find.text('Избранное'));
-      await settle();
+      await toggleFavorites();
       expect(find.text('Beta audio'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('active-favorites-filter')),
+        findsOneWidget,
+      );
       await bookMenu('Коллекции книги');
       expect(find.text('Reading only'), findsNothing);
       await tester.tap(find.text('Создать коллекцию'));
@@ -175,18 +195,22 @@ void main() {
       );
       await tester.tapAt(const Offset(5, 50));
       await settle();
-      await tester.tap(find.text('Все коллекции').first);
+      await openFilters();
+      await tester.tap(find.widgetWithText(ChoiceChip, 'В дороге'));
       await settle();
-      await tester.tap(find.text('В дороге').last);
-      await settle();
+      await closeFilters();
+      expect(
+        find.byKey(const ValueKey('active-collection-filter')),
+        findsOneWidget,
+      );
       expect(find.text('★ Alpha audio'), findsOneWidget);
       expect(find.text('Beta audio'), findsNothing);
       await switchSection('Книги');
       expect(find.text('★ Text book'), findsOneWidget);
       expect(find.text('Audio only'), findsNothing);
       expect(
-        tester.widget<FilterChip>(find.byType(FilterChip).first).selected,
-        false,
+        find.byKey(const ValueKey('active-favorites-filter')),
+        findsNothing,
       );
       await switchSection('Аудиокниги');
       await tester.tap(find.byTooltip('Сортировка аудиокниг'));
@@ -233,7 +257,8 @@ void main() {
         tester.getTopLeft(find.text('Beta audio')).dy,
         lessThan(tester.getTopLeft(find.text('Aardvark audio')).dy),
       );
-      await tapVisible(find.text('Коллекции'));
+      await openFilters();
+      await tester.tap(find.byKey(const ValueKey('manage-collections')));
       await settle();
       final row = find.ancestor(
         of: find.text('В дороге'),
@@ -295,8 +320,10 @@ void main() {
       expect((await repo.records('book')).length, 4);
       await tester.tapAt(const Offset(5, 50));
       await settle();
-      await tester.tap(find.text('Избранное'));
+      // The filters sheet is still open beneath the collections sheet.
+      await tester.tap(find.byKey(const ValueKey('filter-favorites')));
       await settle();
+      await closeFilters();
       await bookMenu('Убрать из избранного');
       expect(find.text('Ничего не найдено'), findsOneWidget);
       expect(tester.takeException(), isNull);

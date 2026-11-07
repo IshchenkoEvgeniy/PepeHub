@@ -273,18 +273,37 @@ void main() {
       );
       expect(find.text('Аудио'), findsNothing);
       expect(find.text('Альфа'), findsOneWidget);
-      await tester.tap(find.text('Избранное'));
-      await tester.pumpAndSettle();
+      Future<void> filters(Finder option) async {
+        await tester.tap(find.byKey(const ValueKey('shelf-filters')));
+        await tester.pumpAndSettle();
+        await tester.tap(option);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Готово'));
+        await tester.pumpAndSettle();
+      }
+
+      await filters(find.byKey(const ValueKey('filter-favorites')));
       expect(find.text('Альфа'), findsNothing);
       expect(find.text('★ Зебра'), findsOneWidget);
-      await tester.tap(find.text('Избранное'));
+      // Removing the chip under the search field restores the full list.
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('active-favorites-filter')),
+          matching: find.byIcon(Icons.clear),
+        ),
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Все коллекции').first);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Путешествия').last);
-      await tester.pumpAndSettle();
+      expect(find.text('Альфа'), findsOneWidget);
+      await filters(find.widgetWithText(ChoiceChip, 'Путешествия'));
       expect(find.text('Альфа'), findsNothing);
       expect(find.text('★ Зебра'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('shelf-reset-filters')));
+      await tester.pumpAndSettle();
+      expect(find.text('Альфа'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('active-collection-filter')),
+        findsNothing,
+      );
       await tester.pumpWidget(
         MaterialApp(
           home: Builder(

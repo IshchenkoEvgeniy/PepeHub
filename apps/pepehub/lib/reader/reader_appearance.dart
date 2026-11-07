@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'reader_layout.dart';
@@ -187,6 +188,13 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
         10,
         (v) => change(value.copy(spacing: v)),
         display: value.spacing.toStringAsFixed(1),
+      ),
+      const SizedBox(height: 8),
+      choices(
+        'Выравнивание',
+        const {'left': 'По левому краю', 'justify': 'По ширине'},
+        value.textAlign,
+        (v) => change(value.copy(textAlign: v)),
       ),
     ],
   );
@@ -383,6 +391,23 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
           ),
           child: const Text('Сбросить зоны'),
         ),
+        SwitchListTile.adaptive(
+          key: const ValueKey('reader-keep-awake'),
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Не гасить экран'),
+          subtitle: const Text('Экран погаснет через 10 минут без действий'),
+          value: value.keepAwake,
+          onChanged: (v) => change(value.copy(keepAwake: v)),
+        ),
+        if (!widget.pdf && defaultTargetPlatform == TargetPlatform.android)
+          SwitchListTile.adaptive(
+            key: const ValueKey('reader-volume-keys'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Листать кнопками громкости'),
+            subtitle: const Text('Громкость вниз — вперёд, вверх — назад'),
+            value: value.volumeKeys,
+            onChanged: (v) => change(value.copy(volumeKeys: v)),
+          ),
         if (!widget.pdf)
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
@@ -428,6 +453,9 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   'Їжак і ґанок. Є вечір.\nТихий вечер у реки.\nA quiet evening.',
+                  textAlign: value.textAlign == 'justify'
+                      ? TextAlign.justify
+                      : TextAlign.left,
                   maxLines: 3,
                   overflow: TextOverflow.fade,
                   style: value.style(foreground),

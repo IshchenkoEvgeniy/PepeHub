@@ -33,6 +33,7 @@ class VideoWindowChannel(activity: Activity, messenger: BinaryMessenger) {
     private val actionName = "${context.packageName}.VIDEO_PIP_CONTROL"
     private var playing = false
     private var visual = false
+    private var readingAwake = false
     private var aspect = 16.0 / 9.0
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -53,10 +54,14 @@ class VideoWindowChannel(activity: Activity, messenger: BinaryMessenger) {
                     playing = arguments["playing"] == true
                     visual = arguments["visual"] == true
                     aspect = ((arguments["aspectRatio"] as? Number)?.toDouble() ?: aspect).coerceIn(0.5, 2.35)
-                    val window = owner.get()?.window
-                    if (playing && visual) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    else window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    applyKeepScreenOn()
                     updatePip()
+                    result.success(null)
+                  }
+                  "setReadingAwake" -> {
+                    check(call.arguments is Boolean) { "Expected a reading wake boolean" }
+                    readingAwake = call.arguments as Boolean
+                    applyKeepScreenOn()
                     result.success(null)
                   }
                   "enterPip" -> result.success(enterPip())
@@ -69,6 +74,12 @@ class VideoWindowChannel(activity: Activity, messenger: BinaryMessenger) {
                 }
             } catch (e: Exception) { result.error("window", e.message, null) }
         }
+    }
+    /** Video playback and an active reader share one window flag. */
+    private fun applyKeepScreenOn() {
+        val window = owner.get()?.window ?: return
+        if (playing && visual || readingAwake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
     private fun pipParameters(): PictureInPictureParams {
         check(Build.VERSION.SDK_INT >= 26)
@@ -104,6 +115,7 @@ class VideoWindowChannel(activity: Activity, messenger: BinaryMessenger) {
             barsBehavior = null
         }
         owner = WeakReference(activity)
+        applyKeepScreenOn()
     }
     fun detach(activity: Activity) { if (owner.get() === activity) owner.clear() }
     fun reapply() {
@@ -153,7 +165,7 @@ class VideoWindowChannel(activity: Activity, messenger: BinaryMessenger) {
         fullscreen = enabled
     }
     fun reset() {
-        playing = false; visual = false
+        playing = false; visual = false; readingAwake = false
         owner.get()?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         updatePip()
         if (owner.get() != null) apply(false) else fullscreen = false

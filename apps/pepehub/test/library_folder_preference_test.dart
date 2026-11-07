@@ -93,7 +93,7 @@ void main() {
           tester,
           () =>
               find
-                  .byKey(const ValueKey('library-folder'))
+                  .byKey(const ValueKey('shelf-filters'))
                   .evaluate()
                   .isNotEmpty &&
               tester
@@ -103,10 +103,29 @@ void main() {
         );
       }
 
+      // The folder choice lives in the «Фильтры» sheet.
+      Future<void> openFilters() async {
+        await tester.tap(find.byKey(const ValueKey('shelf-filters')));
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> closeFilters() async {
+        await tester.tap(find.text('Готово'));
+        await tester.pumpAndSettle();
+      }
+
       DropdownButton<String?> dropdown() =>
           tester.widget(find.byKey(const ValueKey('library-folder')));
+      Future<String?> folder() async {
+        await openFilters();
+        final value = dropdown().value;
+        await closeFilters();
+        return value;
+      }
+
       await open();
-      expect(dropdown().value, isNull);
+      expect(await folder(), isNull);
+      await openFilters();
       await tester.tap(find.byKey(const ValueKey('library-folder')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('English').last);
@@ -119,6 +138,11 @@ void main() {
             .evaluate()
             .isNotEmpty,
       );
+      await closeFilters();
+      expect(
+        find.byKey(const ValueKey('active-folder-filter')),
+        findsOneWidget,
+      );
       expect(
         await tester.runAsync(
           () => LibraryFolderPreference(repo, reading: false).load(),
@@ -126,12 +150,13 @@ void main() {
         rootA,
       );
       await section(tester, PepeSection.books);
-      expect(dropdown().value, readingRoot);
+      expect(await folder(), readingRoot);
       await section(tester, PepeSection.video);
       await section(tester, PepeSection.audio);
-      expect(dropdown().value, rootA);
+      expect(await folder(), rootA);
       await open();
-      expect(dropdown().value, rootA);
+      expect(await folder(), rootA);
+      await openFilters();
       await tester.tap(find.byKey(const ValueKey('library-pin-folder')));
       await ready(
         tester,
@@ -140,8 +165,9 @@ void main() {
             .evaluate()
             .isNotEmpty,
       );
+      await closeFilters();
       await open();
-      expect(dropdown().value, isNull);
+      expect(await folder(), isNull);
       expect(
         await tester.runAsync(
           () => LibraryFolderPreference(repo, reading: true).load(),
