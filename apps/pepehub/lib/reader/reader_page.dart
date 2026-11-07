@@ -7,6 +7,7 @@ import 'reader_routes.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 
 import '../audio/audio_folder.dart';
@@ -36,6 +37,7 @@ import 'reader_layout_frame.dart';
 import 'reading_daily_totals.dart';
 import 'reader_shortcuts.dart';
 import 'reader_progress_panel.dart';
+import 'reader_keep_awake.dart';
 
 class _SeamlessBook {
   final String text;
@@ -161,6 +163,7 @@ class _ReaderPageState extends State<ReaderPage>
   Timer? todayTimer;
   Future<void>? todayWork;
   final positionChanges = ValueNotifier(0);
+  final keepAwake = ReaderKeepAwake();
   final panelPosition = ValueNotifier((chapter: 0, percent: 0));
   final noteChapter = ValueNotifier(0);
   ReaderDocument? _titlesDocument;
@@ -173,7 +176,16 @@ class _ReaderPageState extends State<ReaderPage>
     return _chapterTitles;
   }
 
+  void _pointerActivity(PointerEvent event) {
+    if (event is PointerDownEvent) keepAwake.touch();
+  }
+
+  void _syncKeepAwake() {
+    keepAwake.enabled = preferences.keepAwake && foreground && routeVisible;
+  }
+
   void _notifyPosition() {
+    keepAwake.touch();
     positionChanges.value++;
     noteChapter.value = chapter;
     final length = document!.texts[chapter].length;
@@ -232,6 +244,8 @@ class _ReaderPageState extends State<ReaderPage>
       releaseNotes();
     };
     WidgetsBinding.instance.addObserver(this);
+    // Any touch while reading extends the screen wake period.
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_pointerActivity);
     _load();
   }
 
@@ -248,18 +262,22 @@ class _ReaderPageState extends State<ReaderPage>
   void didPushNext() {
     settledMoves.flush();
     routeVisible = false;
+    _syncKeepAwake();
     activity?.pause('another_screen');
   }
 
   @override
   void didPopNext() {
     routeVisible = true;
+    _syncKeepAwake();
     if (foreground && panels == 0 && viewportReady) activity?.resume();
   }
 
   @override
   void dispose() {
     todayTimer?.cancel();
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(_pointerActivity);
+    keepAwake.dispose();
     todayReading.dispose();
     positionChanges.dispose();
     panelPosition.dispose();
@@ -283,6 +301,7 @@ class _ReaderPageState extends State<ReaderPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     foreground = state == AppLifecycleState.resumed;
+    _syncKeepAwake();
     if (!foreground) {
       settledMoves.flush();
       activity?.pause('background');
@@ -1258,6 +1277,7 @@ class _ReaderPageState extends State<ReaderPage>
 
   @override
   Widget build(BuildContext context) {
+    _syncKeepAwake();
     final d = document;
     if (d == null) {
       return Scaffold(

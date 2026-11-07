@@ -9,6 +9,7 @@ import 'library_link_review.dart';
 import 'obsidian_notes_page.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
+import 'shelf_book_details.dart';
 import 'recommendations_page.dart';
 import 'statistics_hub_page.dart';
 import '../video/video_library_page.dart';
@@ -146,6 +147,12 @@ class _LibraryPageState extends State<LibraryPage> {
   final Set<String> selectedBooks = {};
   String readingSort = 'title';
   String audioSort = 'title';
+  bool readingSortReverse = false, audioSortReverse = false;
+  bool get sortReverse => reading ? readingSortReverse : audioSortReverse;
+
+  /// Characters per minute measured for each book, and over all books.
+  Map<String, double> readingRates = {};
+  double? overallReadingRate;
   Map<String, DateTime> audioRecent = {};
   Map<String, Map<String, dynamic>> audioPrefs = {},
       audioCollections = {},
@@ -453,16 +460,35 @@ class _LibraryPageState extends State<LibraryPage> {
           'reading-source-path:',
         );
         final groups = await readingLibrary.entries('reading-collection:');
+        final dates = await readingLibrary.entries('reading-dates:');
         final order = await widget.repository.meta('reading-sort') ?? 'title';
+        final reverse = await widget.repository.meta('reading-sort-reverse');
         final view = await widget.repository.meta('reading-shelf-view');
+        var speeds = <String, ({int ms, int chars})>{};
+        try {
+          speeds = await readingLibrary.speedSamples();
+        } catch (_) {
+          /* Time estimates are optional; the shelf still lists books. */
+        }
         if (mounted && reading == readingSection) {
           effectiveReadingInfo = {
             for (final book in b)
               book.id: ReadingLibrary.effective(
                 index[sources.first(book.id)?.hash] ?? {},
                 prefs[book.id] ?? {},
+                dates[book.id] ?? {},
               ),
           };
+          var totalMs = 0, totalChars = 0;
+          readingRates = {};
+          for (final MapEntry(:key, :value) in speeds.entries) {
+            totalMs += value.ms;
+            totalChars += value.chars;
+            final rate = readingRate(value.ms, value.chars);
+            if (rate != null) readingRates[key] = rate;
+          }
+          overallReadingRate = readingRate(totalMs, totalChars);
+          readingSortReverse = reverse == '1';
           readingIndex = index;
           readingPositions = positions;
           readingPrefs = prefs;
@@ -479,6 +505,7 @@ class _LibraryPageState extends State<LibraryPage> {
         final groups = await readingLibrary.entries('audio-collection:');
         final sourcePaths = await readingLibrary.entries('audio-source-path:');
         final order = await widget.repository.meta('audio-sort') ?? 'title';
+        final reverse = await widget.repository.meta('audio-sort-reverse');
         final view = await widget.repository.meta('audio-shelf-view');
         final recent = await AudioLibraryRepository(widget.repository.db)
             .lastPlayed();
@@ -487,6 +514,7 @@ class _LibraryPageState extends State<LibraryPage> {
           audioCollections = groups;
           audioSourcePaths = sourcePaths;
           audioSort = order;
+          audioSortReverse = reverse == '1';
           audioView = const ['list', 'covers'].contains(view) ? view! : 'auto';
           audioRecent = recent;
           if (!groups.containsKey(collectionFilter)) collectionFilter = null;
@@ -607,6 +635,31 @@ class _LibraryPageState extends State<LibraryPage> {
           .join(', ');
   double _fraction(LibraryRecord b) =>
       readingFraction(_textInfo(b), _textPosition(b));
+
+  /// ISO date the book was finished, or '' (sorts after any date).
+  String _finishedKey(LibraryRecord b) =>
+      _status(b) == 'finished' ? '${_textInfo(b)['finishedAt'] ?? ''}' : '';
+
+  /// Text length in characters; a PDF is estimated from its page count.
+  int? _textLength(LibraryRecord b) {
+    final length = (_textInfo(b)['length'] as num?)?.toInt() ?? 0;
+    if (length > 0) return length;
+    final pages = (_textInfo(b)['pdfPages'] as num?)?.toInt() ?? 0;
+    return pages > 0 ? pages * 1800 : null;
+  }
+
+  String? _textRemaining(LibraryRecord b) {
+    if (_status(b) == 'finished') return null;
+    final length = (_textInfo(b)['length'] as num?)?.toInt() ?? 0;
+    return textRemainingLabel(
+      length: length,
+      fraction: _fraction(b),
+      rate: readingRates[b.id] ?? overallReadingRate,
+    );
+  }
+
+  String? _lastOpened(LibraryRecord b) =>
+      lastOpenedLabel(_textPosition(b)['updatedAt'], DateTime.now());
 
   Future<void> _allNotes() async {
     await Navigator.push<void>(
@@ -1466,6 +1519,360 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
+  /// Filters other than the status tabs and the search text.
+  int get _activeFilterCount => [
+    selectedRoot != null,
+    reading && filter != 'all',
+    collectionFilter != null,
+    favoritesOnly,
+  ].where((active) => active).length;
+
+  void _resetFilters() => setState(() {
+    selectedRoot = null;
+    filter = 'all';
+    collectionFilter = null;
+    favoritesOnly = false;
+  });
+
+  Future<void> _setSortReverse(bool value) async {
+    final key = reading ? 'reading-sort-reverse' : 'audio-sort-reverse';
+    await _action(() => widget.repository.setMeta(key, value ? '1' : '0'));
+  }
+
+  Widget _shelfToolbar() {
+    final count = _activeFilterCount;
+    final sort = reading ? readingSort : audioSort;
+    final orders = {
+      'added': 'Недавно добавленные',
+      'title': 'По названию',
+      'author': 'По автору',
+      if (reading) 'series': 'По серии',
+      'progress': 'По прогрессу',
+      'recent': reading ? 'Недавно открытые' : 'Недавняя активность',
+      if (reading) 'finished': 'По дате прочтения',
+      if (reading) 'length': 'Сначала короткие',
+      if (reading) 'length-desc': 'Сначала длинные',
+      if (!reading) 'duration': 'Сначала короткие',
+      if (!reading) 'duration-desc': 'Сначала длинные',
+    };
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Badge(
+          isLabelVisible: count > 0,
+          label: Text('$count'),
+          child: OutlinedButton.icon(
+            key: const ValueKey('shelf-filters'),
+            onPressed: busy ? null : _showFilters,
+            icon: const Icon(Icons.tune, size: 18),
+            label: const Text('Фильтры'),
+          ),
+        ),
+        PopupMenuButton<String>(
+          tooltip: reading ? 'Сортировка книг' : 'Сортировка аудиокниг',
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+          icon: const Icon(Icons.sort),
+          onSelected: (v) async {
+            if (v == 'reverse') {
+              await _setSortReverse(!sortReverse);
+              return;
+            }
+            final key = reading ? 'reading-sort' : 'audio-sort';
+            await _action(() => widget.repository.setMeta(key, v));
+          },
+          itemBuilder: (_) => [
+            for (final e in orders.entries)
+              CheckedPopupMenuItem(
+                value: e.key,
+                checked: sort == e.key,
+                child: Text(e.value),
+              ),
+            const PopupMenuDivider(),
+            CheckedPopupMenuItem(
+              key: const ValueKey('sort-reverse'),
+              value: 'reverse',
+              checked: sortReverse,
+              child: const Text('Обратный порядок'),
+            ),
+          ],
+        ),
+        _viewChoices(),
+        if (reading)
+          IconButton(
+            tooltip: 'Все заметки',
+            visualDensity: VisualDensity.compact,
+            onPressed: _allNotes,
+            icon: const Icon(Icons.edit_note),
+          ),
+        IconButton(
+          tooltip: 'Обновить список',
+          visualDensity: VisualDensity.compact,
+          onPressed: busy
+              ? null
+              : reading
+              ? _refreshReadingFolders
+              : _reload,
+          icon: const Icon(Icons.refresh),
+        ),
+      ],
+    );
+  }
+
+  /// Active filters as removable chips under the search field.
+  List<Widget> _activeFilters() {
+    if (_activeFilterCount == 0) return const [SizedBox(height: 12)];
+    final root = roots.where((r) => r.key == selectedRoot).firstOrNull;
+    final collection = collections[collectionFilter]?['name'] as String?;
+    return [
+      const SizedBox(height: 6),
+      Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (selectedRoot != null)
+            InputChip(
+              key: const ValueKey('active-folder-filter'),
+              avatar: const Icon(Icons.folder_outlined, size: 18),
+              label: Text(
+                'Папка: ${root?.title ?? selectedRoot}',
+                overflow: TextOverflow.ellipsis,
+              ),
+              onDeleted: () => setState(() => selectedRoot = null),
+              deleteButtonTooltipMessage: 'Показать всю библиотеку',
+            ),
+          if (reading && filter != 'all')
+            InputChip(
+              key: const ValueKey('active-format-filter'),
+              label: Text('Формат: ${formatLabel(filter)}'),
+              onDeleted: () => setState(() => filter = 'all'),
+              deleteButtonTooltipMessage: 'Сбросить формат',
+            ),
+          if (collectionFilter != null)
+            InputChip(
+              key: const ValueKey('active-collection-filter'),
+              avatar: const Icon(Icons.collections_bookmark_outlined, size: 18),
+              label: Text('Коллекция: ${collection ?? ''}'),
+              onDeleted: () => setState(() => collectionFilter = null),
+              deleteButtonTooltipMessage: 'Сбросить коллекцию',
+            ),
+          if (favoritesOnly)
+            InputChip(
+              key: const ValueKey('active-favorites-filter'),
+              avatar: const Icon(Icons.star, size: 18),
+              label: const Text('Только избранное'),
+              onDeleted: () => setState(() => favoritesOnly = false),
+              deleteButtonTooltipMessage: 'Показать все книги',
+            ),
+          TextButton(
+            key: const ValueKey('shelf-reset-filters'),
+            onPressed: _resetFilters,
+            child: const Text('Сбросить всё'),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+    ];
+  }
+
+  Future<void> _showFilters() => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    constraints: const BoxConstraints(maxWidth: 640),
+    builder: (sheetContext) => StatefulBuilder(
+      builder: (sheetContext, setSheet) {
+        void apply(VoidCallback change) {
+          setState(change);
+          setSheet(() {});
+        }
+
+        final labelStyle = Theme.of(sheetContext).textTheme.labelLarge;
+        Widget section(String title, List<Widget> children) => Padding(
+          padding: const EdgeInsets.only(bottom: 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: labelStyle),
+              const SizedBox(height: 8),
+              ...children,
+            ],
+          ),
+        );
+        Widget choices<T>(
+          Map<T, String> options,
+          T selected,
+          ValueChanged<T> select,
+        ) => Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final entry in options.entries)
+              ChoiceChip(
+                label: Text(entry.value),
+                selected: selected == entry.key,
+                showCheckmark: false,
+                onSelected: (_) => apply(() => select(entry.key)),
+              ),
+          ],
+        );
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Фильтры',
+                        style: Theme.of(sheetContext).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 16),
+                      if (roots.isNotEmpty)
+                        section('Папка', [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButton<String?>(
+                                  key: const ValueKey('library-folder'),
+                                  isExpanded: true,
+                                  value: selectedRoot,
+                                  items: [
+                                    const DropdownMenuItem<String?>(
+                                      value: null,
+                                      child: Text('Вся библиотека'),
+                                    ),
+                                    for (final root in roots)
+                                      DropdownMenuItem(
+                                        value: root.key,
+                                        child: Text(
+                                          root.title,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                  ],
+                                  onChanged: (v) =>
+                                      apply(() => selectedRoot = v),
+                                ),
+                              ),
+                              IconButton(
+                                key: const ValueKey('library-pin-folder'),
+                                tooltip: selectedRoot == null
+                                    ? 'Открывать всю библиотеку по умолчанию'
+                                    : selectedRoot == pinnedRoot
+                                    ? 'Открепить папку по умолчанию'
+                                    : 'Открывать эту папку по умолчанию',
+                                onPressed:
+                                    busy ||
+                                        (selectedRoot == null &&
+                                            pinnedRoot == null)
+                                    ? null
+                                    : () async {
+                                        await _pinFolder();
+                                        setSheet(() {});
+                                      },
+                                icon: Icon(
+                                  selectedRoot != null &&
+                                          selectedRoot == pinnedRoot
+                                      ? Icons.push_pin
+                                      : Icons.push_pin_outlined,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ]),
+                      if (reading)
+                        section('Формат', [
+                          choices<String>(
+                            {'all': 'Все форматы', ...bookFormats},
+                            filter,
+                            (v) => filter = v,
+                          ),
+                        ]),
+                      section('Коллекция', [
+                        if (collections.isNotEmpty)
+                          choices<String?>(
+                            {
+                              null: 'Все коллекции',
+                              for (final e in collections.entries)
+                                e.key: e.value['name'] as String,
+                            },
+                            collectionFilter,
+                            (v) => collectionFilter = v,
+                          ),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            key: const ValueKey('manage-collections'),
+                            onPressed: () async {
+                              await showLibraryCollections(
+                                sheetContext,
+                                widget.repository,
+                                audio: !reading,
+                              );
+                              await _reload();
+                              if (sheetContext.mounted) setSheet(() {});
+                            },
+                            icon: const Icon(
+                              Icons.collections_bookmark_outlined,
+                            ),
+                            label: Text(
+                              collections.isEmpty
+                                  ? 'Создать коллекцию'
+                                  : 'Управлять коллекциями',
+                            ),
+                          ),
+                        ),
+                      ]),
+                      SwitchListTile.adaptive(
+                        key: const ValueKey('filter-favorites'),
+                        contentPadding: EdgeInsets.zero,
+                        secondary: const Icon(Icons.star_outline),
+                        title: const Text('Только избранное'),
+                        value: favoritesOnly,
+                        onChanged: (v) => apply(() => favoritesOnly = v),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Kept outside the scroll view: always reachable with large text.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                child: OverflowBar(
+                  alignment: MainAxisAlignment.spaceBetween,
+                  overflowAlignment: OverflowBarAlignment.end,
+                  overflowSpacing: 4,
+                  children: [
+                    TextButton(
+                      onPressed: _activeFilterCount == 0
+                          ? null
+                          : () {
+                              _resetFilters();
+                              setSheet(() {});
+                            },
+                      child: const Text('Сбросить всё'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      child: const Text('Готово'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
+
   Widget _viewChoices() => LayoutBuilder(
     builder: (context, size) {
       final grid = _useCovers(size.maxWidth);
@@ -1474,6 +1881,7 @@ class _LibraryPageState extends State<LibraryPage> {
         children: [
           IconButton(
             tooltip: 'Список',
+            visualDensity: VisualDensity.compact,
             isSelected: !grid,
             onPressed: busy || savingView ? null : () => _setShelfView('list'),
             icon: const Icon(Icons.view_list_outlined),
@@ -1481,6 +1889,7 @@ class _LibraryPageState extends State<LibraryPage> {
           ),
           IconButton(
             tooltip: 'Обложки',
+            visualDensity: VisualDensity.compact,
             isSelected: grid,
             onPressed: busy || savingView
                 ? null
@@ -1509,6 +1918,8 @@ class _LibraryPageState extends State<LibraryPage> {
       query,
       readingSort,
       audioSort,
+      readingSortReverse,
+      audioSortReverse,
       bookPrefs,
       audioSummaries,
       audioRecent,
@@ -1560,28 +1971,44 @@ class _LibraryPageState extends State<LibraryPage> {
         .toList();
     if (reading) {
       visible.sort((a, b) {
-        final result = switch (readingSort) {
-          'added' => (b.localOrder ?? 0).compareTo(a.localOrder ?? 0),
-          'author' => naturalAudioOrder(_authors(a), _authors(b)),
-          'series' => naturalAudioOrder(
-            '${_textInfo(a)['series'] ?? ''}',
-            '${_textInfo(b)['series'] ?? ''}',
-          ),
-          'progress' => _fraction(b).compareTo(_fraction(a)),
-          'recent' => '${_textPosition(b)['updatedAt'] ?? ''}'.compareTo(
-            '${_textPosition(a)['updatedAt'] ?? ''}',
-          ),
-          _ => naturalAudioOrder(_readingOrderKey(a), _readingOrderKey(b)),
+        // Books without a finish date or an indexed size stay last whichever
+        // direction is chosen.
+        final missing = switch (readingSort) {
+          'finished' => (_finishedKey(a).isEmpty, _finishedKey(b).isEmpty),
+          'length' ||
+          'length-desc' => (_textLength(a) == null, _textLength(b) == null),
+          _ => (false, false),
         };
+        if (missing.$1 != missing.$2) return missing.$1 ? 1 : -1;
+        var result = missing.$1
+            ? 0
+            : switch (readingSort) {
+                'added' => (b.localOrder ?? 0).compareTo(a.localOrder ?? 0),
+                'author' => naturalAudioOrder(_authors(a), _authors(b)),
+                'series' => naturalAudioOrder(
+                  '${_textInfo(a)['series'] ?? ''}',
+                  '${_textInfo(b)['series'] ?? ''}',
+                ),
+                'progress' => _fraction(b).compareTo(_fraction(a)),
+                'recent' => '${_textPosition(b)['updatedAt'] ?? ''}'.compareTo(
+                  '${_textPosition(a)['updatedAt'] ?? ''}',
+                ),
+                'finished' => _finishedKey(b).compareTo(_finishedKey(a)),
+                'length' => _textLength(a)!.compareTo(_textLength(b)!),
+                'length-desc' => _textLength(b)!.compareTo(_textLength(a)!),
+                _ => naturalAudioOrder(
+                  _readingOrderKey(a),
+                  _readingOrderKey(b),
+                ),
+              };
         if (result == 0 && readingSort == 'series') {
-          final number =
-              (double.tryParse('${_textInfo(a)['seriesNumber']}') ?? 0)
-                  .compareTo(
-                    double.tryParse('${_textInfo(b)['seriesNumber']}') ?? 0,
-                  );
-          if (number != 0) return number;
+          result = (double.tryParse('${_textInfo(a)['seriesNumber']}') ?? 0)
+              .compareTo(
+                double.tryParse('${_textInfo(b)['seriesNumber']}') ?? 0,
+              );
         }
-        return result != 0 ? result : naturalAudioOrder(_title(a), _title(b));
+        if (result != 0) return readingSortReverse ? -result : result;
+        return naturalAudioOrder(_title(a), _title(b));
       });
     }
     if (!reading) {
@@ -1602,6 +2029,12 @@ class _LibraryPageState extends State<LibraryPage> {
           recent: audioRecent,
         );
       });
+      if (audioSortReverse) {
+        final reversed = visible.reversed.toList();
+        visible
+          ..clear()
+          ..addAll(reversed);
+      }
     }
     _visibleInputs = inputs;
     return _visibleCache = visible;
@@ -1655,7 +2088,7 @@ class _LibraryPageState extends State<LibraryPage> {
         .where((b) => !deletedReadingBooks.contains(b.id) && !_remoteOnly(b))
         .length;
     final visible = _visibleBooks();
-    final heroCandidate =
+    final heroCandidates =
         statusFilter == 'all' &&
             filter == 'all' &&
             query.isEmpty &&
@@ -1664,15 +2097,22 @@ class _LibraryPageState extends State<LibraryPage> {
             !favoritesOnly &&
             selectedBooks.isEmpty &&
             !loading
-        ? _heroBook()
-        : null;
-    final hero =
-        heroCandidate != null && visible.any((b) => b.id == heroCandidate.id)
-        ? heroCandidate
-        : null;
-    final listed = hero == null
+        ? _heroBooks()
+        : const <LibraryRecord>[];
+    final visibleIds = heroCandidates.isEmpty
+        ? const <String>{}
+        : {for (final book in visible) book.id};
+    // The most recent book is the hero; other started books form a ribbon.
+    final current = heroCandidates
+        .where((b) => visibleIds.contains(b.id))
+        .take(8)
+        .toList();
+    final hero = current.firstOrNull;
+    final alsoCurrent = current.skip(1).toList();
+    final shown = {for (final book in current) book.id};
+    final listed = shown.isEmpty
         ? visible
-        : visible.where((b) => b.id != hero.id).toList();
+        : visible.where((b) => !shown.contains(b.id)).toList();
     return ShelfShell(
       title: selectedBooks.isNotEmpty
           ? 'Выбрано: ${selectedBooks.length}'
@@ -1862,6 +2302,10 @@ class _LibraryPageState extends State<LibraryPage> {
                             child: _hero(hero),
                           ),
                         ],
+                        if (alsoCurrent.isNotEmpty) ...[
+                          const SizedBox(height: 14),
+                          _continueRibbon(alsoCurrent),
+                        ],
                       ],
                     ),
                   ),
@@ -1872,86 +2316,6 @@ class _LibraryPageState extends State<LibraryPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                  maxWidth: 360,
-                                ),
-                                child: DropdownButton<String?>(
-                                  key: const ValueKey('library-folder'),
-                                  isExpanded: true,
-                                  underline: const SizedBox(),
-                                  value: selectedRoot,
-                                  items: [
-                                    const DropdownMenuItem<String?>(
-                                      value: null,
-                                      child: Text('Вся библиотека'),
-                                    ),
-                                    for (final root in roots)
-                                      DropdownMenuItem(
-                                        value: root.key,
-                                        child: Text(
-                                          root.title,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                  ],
-                                  onChanged: (v) =>
-                                      setState(() => selectedRoot = v),
-                                ),
-                              ),
-                            ),
-                            if (roots.isNotEmpty)
-                              IconButton(
-                                key: const ValueKey('library-pin-folder'),
-                                tooltip: selectedRoot == null
-                                    ? 'Открывать всю библиотеку по умолчанию'
-                                    : selectedRoot == pinnedRoot
-                                    ? 'Открепить папку по умолчанию'
-                                    : 'Открывать эту папку по умолчанию',
-                                onPressed:
-                                    busy ||
-                                        (selectedRoot == null &&
-                                            pinnedRoot == null)
-                                    ? null
-                                    : _pinFolder,
-                                icon: Icon(
-                                  selectedRoot != null &&
-                                          selectedRoot == pinnedRoot
-                                      ? Icons.push_pin
-                                      : Icons.push_pin_outlined,
-                                ),
-                              ),
-                            if (reading)
-                              PopupMenuButton<String>(
-                                tooltip: 'Формат книг',
-                                icon: const Icon(Icons.filter_list),
-                                onSelected: (v) => setState(() => filter = v),
-                                itemBuilder: (_) => [
-                                  const PopupMenuItem(
-                                    value: 'all',
-                                    child: Text('Все форматы'),
-                                  ),
-                                  for (final entry in bookFormats.entries)
-                                    PopupMenuItem(
-                                      value: entry.key,
-                                      child: Text(entry.value),
-                                    ),
-                                ],
-                              ),
-                            IconButton(
-                              tooltip: 'Обновить список',
-                              onPressed: busy
-                                  ? null
-                                  : reading
-                                  ? _refreshReadingFolders
-                                  : _reload,
-                              icon: const Icon(Icons.refresh),
-                            ),
-                          ],
-                        ),
                         if (books.isEmpty)
                           TextButton.icon(
                             onPressed: busy ? null : _addBook,
@@ -1995,110 +2359,10 @@ class _LibraryPageState extends State<LibraryPage> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        ...[
-                          if (reading && indexing)
-                            const LinearProgressIndicator(),
-                          Wrap(
-                            spacing: 8,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              if (reading && filter != 'all')
-                                InputChip(
-                                  key: const ValueKey('active-format-filter'),
-                                  label: Text('Формат: ${formatLabel(filter)}'),
-                                  onDeleted: () =>
-                                      setState(() => filter = 'all'),
-                                  deleteButtonTooltipMessage: 'Сбросить формат',
-                                ),
-                              _viewChoices(),
-                              FilterChip(
-                                label: const Text('Избранное'),
-                                avatar: const Icon(
-                                  Icons.star_outline,
-                                  size: 18,
-                                ),
-                                selected: favoritesOnly,
-                                onSelected: (v) =>
-                                    setState(() => favoritesOnly = v),
-                              ),
-                              PopupMenuButton<String>(
-                                tooltip: reading
-                                    ? 'Сортировка книг'
-                                    : 'Сортировка аудиокниг',
-                                icon: const Icon(Icons.sort),
-                                onSelected: (v) async {
-                                  final key = reading
-                                      ? 'reading-sort'
-                                      : 'audio-sort';
-                                  await _action(
-                                    () => widget.repository.setMeta(key, v),
-                                  );
-                                },
-                                itemBuilder: (_) => [
-                                  for (final e in {
-                                    'added': 'Недавно добавленные',
-                                    'title': 'По названию',
-                                    'author': 'По автору',
-                                    if (reading) 'series': 'По серии',
-                                    'progress': 'По прогрессу',
-                                    'recent': reading
-                                        ? 'Недавно открытые'
-                                        : 'Недавняя активность',
-                                    if (!reading)
-                                      'duration': 'Сначала короткие',
-                                    if (!reading)
-                                      'duration-desc': 'Сначала длинные',
-                                  }.entries)
-                                    CheckedPopupMenuItem(
-                                      value: e.key,
-                                      checked:
-                                          (reading ? readingSort : audioSort) ==
-                                          e.key,
-                                      child: Text(e.value),
-                                    ),
-                                ],
-                              ),
-                              if (reading)
-                                TextButton.icon(
-                                  onPressed: _allNotes,
-                                  icon: const Icon(Icons.edit_note),
-                                  label: const Text('Заметки'),
-                                ),
-                              TextButton.icon(
-                                onPressed: () async {
-                                  await showLibraryCollections(
-                                    context,
-                                    widget.repository,
-                                    audio: !reading,
-                                  );
-                                  await _reload();
-                                },
-                                icon: const Icon(
-                                  Icons.collections_bookmark_outlined,
-                                ),
-                                label: const Text('Коллекции'),
-                              ),
-                              if (collections.isNotEmpty)
-                                DropdownButton<String>(
-                                  value: collectionFilter,
-                                  hint: const Text('Все коллекции'),
-                                  items: [
-                                    const DropdownMenuItem(
-                                      value: null,
-                                      child: Text('Все коллекции'),
-                                    ),
-                                    for (final e in collections.entries)
-                                      DropdownMenuItem(
-                                        value: e.key,
-                                        child: Text(e.value['name'] as String),
-                                      ),
-                                  ],
-                                  onChanged: (v) =>
-                                      setState(() => collectionFilter = v),
-                                ),
-                            ],
-                          ),
-                        ],
+                        if (reading && indexing)
+                          const LinearProgressIndicator(),
+                        _shelfToolbar(),
+                        ..._activeFilters(),
                         const SizedBox(height: 12),
                       ],
                     ),
@@ -2610,6 +2874,9 @@ class _LibraryPageState extends State<LibraryPage> {
               summary.position == null
         ? null
         : (summary.position! / summary.total!).clamp(0.0, 1.0);
+    final details = audio
+        ? ''
+        : [_textRemaining(book), _lastOpened(book)].nonNulls.join(' · ');
     return Material(
       key: ValueKey('book-card:${book.id}'),
       color: selected ? scheme.primaryContainer : scheme.surface,
@@ -2752,6 +3019,20 @@ class _LibraryPageState extends State<LibraryPage> {
                           ),
                         ),
                       ),
+                    if (!audio && !deleted && details.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          details,
+                          key: ValueKey('book-details:${book.id}'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
                     if (fraction != null) ...[
                       const SizedBox(height: 9),
                       ClipRRect(
@@ -2868,7 +3149,8 @@ class _LibraryPageState extends State<LibraryPage> {
     );
   }
 
-  LibraryRecord? _heroBook() {
+  /// Started books, most recently read or played first.
+  List<LibraryRecord> _heroBooks() {
     final active = books
         .where(
           (b) =>
@@ -2877,12 +3159,144 @@ class _LibraryPageState extends State<LibraryPage> {
               _status(b) == 'active',
         )
         .toList();
-    if (active.isEmpty) return null;
     String recency(LibraryRecord b) => reading
         ? '${_textPosition(b)['updatedAt'] ?? ''}'
         : audioRecent[b.id]?.toIso8601String() ?? '';
-    return active.reduce(
-      (a, b) => recency(a).compareTo(recency(b)) >= 0 ? a : b,
+    final keys = {for (final book in active) book.id: recency(book)};
+    return active..sort((a, b) => keys[b.id]!.compareTo(keys[a.id]!));
+  }
+
+  double _shelfFraction(LibraryRecord book) {
+    if (book.payload!['format'] != 'audio') {
+      return _fraction(book).clamp(0.0, 1.0);
+    }
+    final summary = audioSummaries[book.id];
+    final total = summary?.total, position = summary?.position;
+    return total == null || position == null || total <= 0
+        ? 0.0
+        : (position / total).clamp(0.0, 1.0);
+  }
+
+  Widget _continueRibbon(List<LibraryRecord> items) {
+    final colors = PepeColors.of(context);
+    final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          reading ? 'ТАКЖЕ ЧИТАЮ' : 'ТАКЖЕ СЛУШАЮ',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: .6,
+            color: colors.muted,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 100 + 44 * (scale - 1).clamp(0.0, 2.0),
+          child: ListView.separated(
+            key: const ValueKey('continue-ribbon'),
+            scrollDirection: Axis.horizontal,
+            itemCount: items.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (_, i) => _continueCard(items[i]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _continueCard(LibraryRecord book) {
+    final colors = PepeColors.of(context);
+    final audio = book.payload!['format'] == 'audio';
+    final asset = shelfSources.first(book.id);
+    final fraction = _shelfFraction(book);
+    final remaining = audio
+        ? audioRemainingLabel(audioSummaries[book.id])
+        : _textRemaining(book);
+    final cover = _textInfo(book)['cover'];
+    return SizedBox(
+      width: 250,
+      child: Material(
+        key: ValueKey('continue:${book.id}'),
+        color: colors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: busy
+              ? null
+              : asset == null
+              ? () => _bookSource(book)
+              : () => audio ? _openAudio(asset) : _openReader(asset),
+          onLongPress: busy ? null : () => _toggleBook(book.id),
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: audio ? 64 : 52,
+                  height: audio ? 64 : 78,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: audio && widget.assets != null
+                        ? AudioCover(
+                            key: ValueKey(
+                              'continue:${book.id}:${_coverVersions[book.id]}',
+                            ),
+                            assets: widget.assets!,
+                            bookId: book.id,
+                          )
+                        : !audio && cover != null
+                        ? Image.file(
+                            File(cover as String),
+                            fit: BoxFit.cover,
+                            cacheWidth: 160,
+                            errorBuilder: (_, _, _) =>
+                                _coverPlaceholder(audio, colors),
+                          )
+                        : _coverPlaceholder(audio, colors),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _title(book),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppFonts.book(colors.text, size: 14),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        [
+                          '${(fraction * 100).round()}%',
+                          ?remaining,
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, color: colors.muted),
+                      ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: LinearProgressIndicator(
+                          value: fraction,
+                          minHeight: 3,
+                          color: colors.accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -3092,11 +3506,16 @@ class _LibraryPageState extends State<LibraryPage> {
                       '${(fraction * 100).round()}%',
                       style: AppFonts.title(colors.onAccent, size: 40),
                     ),
-                    if (audio && audioRemainingLabel(summary) != null)
+                    if ((audio
+                            ? audioRemainingLabel(summary)
+                            : _textRemaining(book)) !=
+                        null)
                       Padding(
                         padding: const EdgeInsets.only(top: 6),
                         child: Text(
-                          audioRemainingLabel(summary)!,
+                          audio
+                              ? audioRemainingLabel(summary)!
+                              : _textRemaining(book)!,
                           style: TextStyle(
                             fontSize: 12,
                             color: colors.onAccent,
@@ -3254,6 +3673,16 @@ class _LibraryPageState extends State<LibraryPage> {
                         child: Text(
                           audioRemainingLabel(summary)!,
                           maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, color: colors.muted),
+                        ),
+                      ),
+                    if (!audio && !deleted && _textRemaining(book) != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          _textRemaining(book)!,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 11, color: colors.muted),
                         ),

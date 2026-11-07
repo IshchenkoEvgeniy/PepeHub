@@ -65,12 +65,17 @@ bool FlutterWindow::OnCreate() {
             const auto* value = std::get_if<bool>(&entry->second);
             return value && *value;
           };
-          EXECUTION_STATE state = ES_CONTINUOUS;
-          if (flag("playing")) {
-            state |= ES_SYSTEM_REQUIRED;
-            if (flag("visual")) state |= ES_DISPLAY_REQUIRED;
-          }
-          SetThreadExecutionState(state);
+          video_playing_ = flag("playing");
+          video_visual_ = flag("visual");
+          ApplyExecutionState();
+          result->Success();
+          return;
+        }
+        if (call.method_name() == "setReadingAwake") {
+          const auto* enabled = call.arguments() ? std::get_if<bool>(call.arguments()) : nullptr;
+          if (!enabled) { result->Error("arguments", "Expected a reading wake boolean"); return; }
+          reading_awake_ = *enabled;
+          ApplyExecutionState();
           result->Success();
           return;
         }
@@ -99,6 +104,15 @@ bool FlutterWindow::OnCreate() {
   flutter_controller_->ForceRedraw();
 
   return true;
+}
+
+void FlutterWindow::ApplyExecutionState() {
+  EXECUTION_STATE state = ES_CONTINUOUS;
+  if (video_playing_) state |= ES_SYSTEM_REQUIRED;
+  if ((video_playing_ && video_visual_) || reading_awake_) {
+    state |= ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED;
+  }
+  SetThreadExecutionState(state);
 }
 
 void FlutterWindow::OnDestroy() {

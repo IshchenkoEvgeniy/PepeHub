@@ -263,8 +263,11 @@ void main() {
         );
         await tester.pumpWidget(app());
         await tester.pumpAndSettle();
-        await tapVisible(tester, find.byTooltip('Формат книг'));
-        await tester.tap(find.text('PDF'));
+        await tapVisible(tester, find.byKey(const ValueKey('shelf-filters')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(ChoiceChip, 'PDF'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Готово'));
         await tester.pumpAndSettle();
         expect(find.text('Формат: PDF'), findsOneWidget);
         expect(find.byKey(const ValueKey('book-card:older')), findsNothing);
@@ -287,6 +290,21 @@ void main() {
             .map((e) => (e.widget.key! as ValueKey<String>).value)
             .toList();
         expect(keys.first, 'book-card:newer');
+        await tapVisible(tester, find.byTooltip('Сортировка книг'));
+        await tester.tap(find.byKey(const ValueKey('sort-reverse')));
+        await tester.pumpAndSettle();
+        expect(await repo.meta('reading-sort-reverse'), '1');
+        expect(
+          shelfCards()
+              .evaluate()
+              .map((e) => (e.widget.key! as ValueKey<String>).value)
+              .first,
+          isNot('book-card:newer'),
+        );
+        await tapVisible(tester, find.byTooltip('Сортировка книг'));
+        await tester.tap(find.byKey(const ValueKey('sort-reverse')));
+        await tester.pumpAndSettle();
+        expect(await repo.meta('reading-sort-reverse'), '0');
         final reads = repo.shelfReads;
         await tapVisible(tester, find.byTooltip('Обложки'));
         expect(find.byType(SliverGrid), findsOneWidget);

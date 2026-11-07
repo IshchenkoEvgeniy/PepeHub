@@ -133,6 +133,32 @@ class ReadingLibrary {
         : jsonDecode(row.read<String>('value')) as Map<String, dynamic>;
   }
 
+  /// Measured reading speed samples (active milliseconds and characters) per
+  /// book, aggregated in SQL so a large shelf never decodes every session.
+  Future<Map<String, ({int ms, int chars})>> speedSamples() async {
+    final rows = await repository.db
+        .customSelect(
+          "SELECT book_id AS book, SUM(ms) AS ms, SUM(chars) AS chars FROM ("
+          "SELECT book_id,"
+          " CAST(json_extract(value,'\$.speedActiveMs') AS INTEGER) AS ms,"
+          " CAST(json_extract(value,'\$.speedChars') AS INTEGER) AS chars,"
+          " CAST(json_extract(value,'\$.speedMoves') AS INTEGER) AS moves"
+          " FROM reading_statistics_sessions_v1"
+          " WHERE json_extract(value,'\$.speedVersion')=1"
+          " AND COALESCE(json_extract(value,'\$.source'),'')<>'manual')"
+          " WHERE book_id IS NOT NULL AND ms>0 AND chars>0 AND moves>0"
+          " GROUP BY book_id",
+        )
+        .get();
+    return {
+      for (final row in rows)
+        row.read<String>('book'): (
+          ms: row.read<int>('ms'),
+          chars: row.read<int>('chars'),
+        ),
+    };
+  }
+
   Future<Map<String, Map<String, dynamic>>> statisticsSessions({
     String? bookId,
   }) async {

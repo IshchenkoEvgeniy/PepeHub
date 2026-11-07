@@ -7,6 +7,15 @@ class ReaderPreferences {
   final double size, spacing, margin, pageHeightFactor, columnWidth;
   final String font, palette, mode;
   final bool showScrollbar, showHighlights;
+
+  /// 'left' or 'justify'. Body text only: headings and code keep their own.
+  final String textAlign;
+
+  /// Keeps the screen on while the reader is used (released after idling).
+  final bool keepAwake;
+
+  /// Android: hardware volume buttons turn pages.
+  final bool volumeKeys;
   final String highlightColor;
   static const highlightColors = ['yellow', 'green', 'blue', 'pink'];
   final String leftTap, centerTap, rightTap;
@@ -27,6 +36,9 @@ class ReaderPreferences {
     this.centerTap = 'controls',
     this.rightTap = 'next',
     this.zoneWidth = .25,
+    this.textAlign = 'left',
+    this.keepAwake = true,
+    this.volumeKeys = false,
   });
   factory ReaderPreferences.fromJson(
     Map<String, dynamic> data,
@@ -58,6 +70,9 @@ class ReaderPreferences {
     centerTap: _tap(data['centerTap'], 'controls'),
     rightTap: _tap(data['rightTap'], 'next'),
     zoneWidth: ((data['zoneWidth'] as num?)?.toDouble() ?? .25).clamp(.15, .4),
+    textAlign: data['textAlign'] == 'justify' ? 'justify' : 'left',
+    keepAwake: data['keepAwake'] != false,
+    volumeKeys: data['volumeKeys'] == true,
   );
   ReaderPreferences copy({
     double? size,
@@ -75,6 +90,9 @@ class ReaderPreferences {
     String? centerTap,
     String? rightTap,
     double? zoneWidth,
+    String? textAlign,
+    bool? keepAwake,
+    bool? volumeKeys,
   }) => ReaderPreferences(
     size: size ?? this.size,
     spacing: spacing ?? this.spacing,
@@ -91,6 +109,9 @@ class ReaderPreferences {
     centerTap: centerTap ?? this.centerTap,
     rightTap: rightTap ?? this.rightTap,
     zoneWidth: zoneWidth ?? this.zoneWidth,
+    textAlign: textAlign ?? this.textAlign,
+    keepAwake: keepAwake ?? this.keepAwake,
+    volumeKeys: volumeKeys ?? this.volumeKeys,
   );
   Map<String, dynamic> toJson() => {
     'size': size,
@@ -108,6 +129,9 @@ class ReaderPreferences {
     'centerTap': centerTap,
     'rightTap': rightTap,
     'zoneWidth': zoneWidth,
+    'textAlign': textAlign,
+    'keepAwake': keepAwake,
+    'volumeKeys': volumeKeys,
   };
   static String _tap(dynamic v, String fallback) =>
       const ['previous', 'next', 'controls', 'none'].contains(v)

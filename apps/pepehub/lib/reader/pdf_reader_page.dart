@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:drift/drift.dart' show Variable;
 import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -20,6 +21,7 @@ import 'pdf_image_regions.dart';
 import 'pdf_search_page.dart';
 import 'pdf_view_limits.dart';
 import 'reader_layout.dart';
+import 'reader_keep_awake.dart';
 import 'reader_appearance.dart';
 import 'pdf_page_tools.dart';
 
@@ -93,6 +95,15 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   ReadingActivity? activity;
   Future<void> activityStart = Future.value();
   ReaderPreferences preferences = const ReaderPreferences(mode: 'scroll');
+  final keepAwake = ReaderKeepAwake();
+  void _pointerActivity(PointerEvent event) {
+    if (event is PointerDownEvent) keepAwake.touch();
+  }
+
+  void _syncKeepAwake() {
+    keepAwake.enabled = preferences.keepAwake && foreground && routeVisible;
+  }
+
   List<ReadingNote> _pageNotes = [];
   final notesByPage = <int, List<ReadingNote>>{};
   List<ReadingNote> get notes => _pageNotes;
@@ -135,6 +146,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   @override
   void initState() {
     super.initState();
+    // Any touch while reading extends the screen wake period.
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_pointerActivity);
     final releasePosition = AppSyncUsage.hold(
       widget.repository.db,
       'p:reader:${widget.asset.hash}',
@@ -364,6 +377,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     foreground = state == AppLifecycleState.resumed;
+    _syncKeepAwake();
     if (foreground && routeVisible && ready && panels == 0) {
       activity?.resume();
       _prepareIndex();
@@ -384,12 +398,14 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   @override
   void didPushNext() {
     routeVisible = false;
+    _syncKeepAwake();
     activity?.pause('another_screen');
   }
 
   @override
   void didPopNext() {
     routeVisible = true;
+    _syncKeepAwake();
     if (foreground && panels == 0 && ready) {
       activity?.resume();
       _prepareIndex();
@@ -398,6 +414,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
 
   @override
   void dispose() {
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(_pointerActivity);
+    keepAwake.dispose();
     positionDelay?.cancel();
     final savedPosition = ready ? _save() : writes;
     indexDelay?.cancel();
@@ -462,6 +480,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   }
 
   void _changed(int? value) {
+    keepAwake.touch();
     if (value == null || !mounted || !ready || value == page) return;
     if (!navigating) {
       activity?.move(
@@ -1623,6 +1642,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
 
   @override
   Widget build(BuildContext context) {
+    _syncKeepAwake();
     final dark = preferences.isDark(MediaQuery.platformBrightnessOf(context));
     final pepe = PepeColors.of(context);
     final background = dark

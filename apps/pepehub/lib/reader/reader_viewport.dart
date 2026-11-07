@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +15,9 @@ import 'reader_shortcuts.dart';
 import 'reader_selectable_paragraph.dart';
 import 'reader_selection_toolbar.dart';
 export 'reader_selection_toolbar.dart' show readerSelectionToolbar;
+
+/// Appended (transparent) after a justified slice that ends mid-paragraph.
+const justifyFillerText = ' ..';
 
 /// Allows deliberate navigation inside the already measured source window.
 /// A false result asks the owner to open a new window near the target instead.
@@ -209,8 +213,20 @@ class _ReaderViewportState extends State<ReaderViewport> {
     return 0;
   }
 
+  bool get _justify => widget.preferences?.textAlign == 'justify';
+
+  /// Body text alignment chosen in the reader preferences.
+  TextAlign _bodyAlignment(int at) {
+    if (!_justify) return TextAlign.left;
+    final block = _blockAt(at);
+    return block?.code == true || block?.block == 'pre'
+        ? TextAlign.left
+        : TextAlign.justify;
+  }
+
   TextAlign _alignment(int at) {
-    if (!widget.scrolling) return TextAlign.left;
+    // A page holds several paragraphs, so per-paragraph markup cannot apply.
+    if (!widget.scrolling) return _bodyAlignment(at);
     final align = _markupOverlapping(at, at + 1)
         .where((r) => r.start <= at && r.end > at && r.align != null)
         .firstOrNull
@@ -219,17 +235,47 @@ class _ReaderViewportState extends State<ReaderViewport> {
       return switch (align) {
         'center' => TextAlign.center,
         'right' => TextAlign.right,
-        // Full justification creates distracting gaps on narrow phone screens.
-        'justify' => TextAlign.left,
-        _ => TextAlign.left,
+        // Book-requested justification follows the reader's own choice:
+        // without hyphenation it leaves gaps on narrow phone screens.
+        'left' => TextAlign.left,
+        _ => _bodyAlignment(at),
       };
     }
     return (_blockAt(at)?.heading ?? 0) > 0
         ? TextAlign.center
-        : _blockAt(at)?.code == true
-        ? TextAlign.left
-        : TextAlign.left;
+        : _bodyAlignment(at);
   }
+
+  /// True when a justified slice stops inside a paragraph (a page or screen
+  /// boundary). Its last line must stay justified like the lines above it.
+  bool _needsJustifyFiller(int start, int length) {
+    if (_alignment(start) != TextAlign.justify) return false;
+    final text = widget.text;
+    for (var i = start + length; i < text.length; i++) {
+      final unit = text.codeUnitAt(i);
+      if (unit == 10) return false;
+      if (unit != 32 && unit != 9 && unit != 0xA0 && unit != 13) return true;
+    }
+    return false;
+  }
+
+  /// Flutter never justifies the last line of a text. A transparent word that
+  /// cannot fit on that line moves to a new (clipped) line, so the real last
+  /// line is justified. It is appended after the text and shifts no offsets.
+  InlineSpan _withJustifyFiller(InlineSpan span, double width) => TextSpan(
+    children: [
+      span,
+      TextSpan(
+        text: justifyFillerText,
+        style: widget.style.copyWith(
+          color: const Color(0x00000000),
+          backgroundColor: const Color(0x00000000),
+          letterSpacing: width * .35,
+          decoration: TextDecoration.none,
+        ),
+      ),
+    ],
+  );
 
   @override
   void initState() {
@@ -457,7 +503,12 @@ class _ReaderViewportState extends State<ReaderViewport> {
   }
 
   TextPainter _painter(String text, {int start = 0}) => TextPainter(
-    text: _richText(start, start + text.length),
+    text: _needsJustifyFiller(start, text.length)
+        ? _withJustifyFiller(
+            _richText(start, start + text.length),
+            _measuredTextWidth(start),
+          )
+        : _richText(start, start + text.length),
     textDirection: TextDirection.ltr,
     textScaler: widget.scaler,
     textAlign: _alignment(start),
@@ -1081,6 +1132,19 @@ class _ReaderViewportState extends State<ReaderViewport> {
       return TextSpan(children: spans);
     }
 
+    TextSpan justifiedSpan(ReaderSlice segment) {
+      final text = span(segment) as TextSpan;
+      return _needsJustifyFiller(segment.start, _text(segment).length)
+          ? _withJustifyFiller(text, _measuredTextWidth(segment.start))
+                as TextSpan
+          : text;
+    }
+
+    double? fillerHeight(ReaderSlice segment) =>
+        _needsJustifyFiller(segment.start, _text(segment).length)
+        ? segment.height
+        : null;
+
     Widget selectionToolbar(
       BuildContext context,
       TextSelection savedSelection,
@@ -1228,10 +1292,13 @@ class _ReaderViewportState extends State<ReaderViewport> {
           ),
           child: SizedBox(
             width: textWidth - _indent(segment.start),
+            // The justification filler line falls below the measured height
+            // and is clipped by the text itself.
+            height: fillerHeight(segment),
             child: widget.scrolling
                 ? ReaderSelectableParagraph(
                     key: ValueKey((segment.start, segment.end)),
-                    span: span(segment) as TextSpan,
+                    span: justifiedSpan(segment),
                     style: widget.style,
                     scaler: widget.scaler,
                     alignment: _alignment(segment.start),
@@ -1239,16 +1306,19 @@ class _ReaderViewportState extends State<ReaderViewport> {
                       if (range == null || range.isCollapsed) {
                         selectedRanges.remove(segment.start);
                       } else {
+                        final length = _text(segment).length;
                         selectedRanges[segment.start] = TextSelection(
-                          baseOffset: segment.start + range.start,
-                          extentOffset: segment.start + range.end,
+                          baseOffset:
+                              segment.start + range.start.clamp(0, length),
+                          extentOffset:
+                              segment.start + range.end.clamp(0, length),
                         );
                       }
                       hasSelection = selectedRanges.isNotEmpty;
                     },
                   )
                 : SelectableText.rich(
-                    span(segment) as TextSpan,
+                    justifiedSpan(segment),
                     key: ValueKey((segment.start, segment.end)),
                     style: widget.style.copyWith(
                       inherit: false,
@@ -1266,13 +1336,39 @@ class _ReaderViewportState extends State<ReaderViewport> {
                     onSelectionChanged: (s, cause) =>
                         hasSelection = !s.isCollapsed,
                     contextMenuBuilder: (context, state) {
+                      // The justification filler is not book text.
+                      final length = _text(segment).length;
+                      final raw = state.textEditingValue.selection;
+                      final selection = TextSelection(
+                        baseOffset: raw.baseOffset.clamp(0, length),
+                        extentOffset: raw.extentOffset.clamp(0, length),
+                      );
                       return selectionToolbar(
                         context,
-                        state.textEditingValue.selection,
+                        selection,
                         segment.start,
                         state.contextMenuAnchors,
                         state.hideToolbar,
-                        state.contextMenuButtonItems,
+                        [
+                          for (final item in state.contextMenuButtonItems)
+                            item.type == ContextMenuButtonType.copy &&
+                                    !selection.isCollapsed
+                                ? ContextMenuButtonItem(
+                                    type: ContextMenuButtonType.copy,
+                                    onPressed: () {
+                                      Clipboard.setData(
+                                        ClipboardData(
+                                          text: widget.text.substring(
+                                            segment.start + selection.start,
+                                            segment.start + selection.end,
+                                          ),
+                                        ),
+                                      );
+                                      state.hideToolbar();
+                                    },
+                                  )
+                                : item,
+                        ],
                       );
                     },
                   ),
@@ -1395,6 +1491,14 @@ class _ReaderViewportState extends State<ReaderViewport> {
         const SingleActivator(LogicalKeyboardKey.home): () =>
             _keyBoundary(false),
         const SingleActivator(LogicalKeyboardKey.end): () => _keyBoundary(true),
+        // Bound only when enabled: an unbound key keeps changing the volume.
+        if (widget.preferences?.volumeKeys == true &&
+            defaultTargetPlatform == TargetPlatform.android) ...{
+          const SingleActivator(LogicalKeyboardKey.audioVolumeDown): () =>
+              _keyStep(1),
+          const SingleActivator(LogicalKeyboardKey.audioVolumeUp): () =>
+              _keyStep(-1),
+        },
       },
       child: Listener(
         behavior: HitTestBehavior.opaque,
