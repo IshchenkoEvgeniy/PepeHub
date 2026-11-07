@@ -139,6 +139,7 @@ class _PendingAssets extends AssetStore {
     required String root,
     required String title,
     String? replaceBookId,
+    bool restoreRemoved = false,
   }) async {
     calls++;
     return saved.future;

@@ -55,6 +55,8 @@ class DocumentationPlayer extends ChangeNotifier implements AudioController {
   @override
   Uri? artwork;
   @override
+  int seekStepSeconds = 10;
+  @override
   String title = 'Северный ветер',
       error = '',
       sidecarError = '',
