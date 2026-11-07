@@ -3414,8 +3414,8 @@ class _LibraryPageState extends State<LibraryPage> {
     final colors = PepeColors.of(context);
     final cover = _textInfo(book)['cover'];
     return SizedBox(
-      width: 92,
-      height: audio ? 92 : 138,
+      width: audio ? 72 : 60,
+      height: audio ? 72 : 90,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: audio && widget.assets != null
@@ -3468,12 +3468,13 @@ class _LibraryPageState extends State<LibraryPage> {
         onTap: open,
         onLongPress: busy ? null : () => _toggleBook(book.id),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 4, 16),
+          // Compact: the shelf below must stay visible on a phone.
+          padding: const EdgeInsets.fromLTRB(14, 12, 0, 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _heroCover(book),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -3481,56 +3482,74 @@ class _LibraryPageState extends State<LibraryPage> {
                     Text(
                       audio ? 'Сейчас слушаю' : 'Сейчас читаю',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: FontWeight.w800,
                         letterSpacing: .4,
                         color: colors.onAccent,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Text(
                       '${bookPrefs[book.id]?['favorite'] == true ? '★ ' : ''}${_title(book)}',
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: AppFonts.book(colors.onAccent, size: 20),
+                      style: AppFonts.book(colors.onAccent, size: 17),
                     ),
                     if (_authors(book).isNotEmpty)
                       Text(
                         _authors(book),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 13, color: colors.onAccent),
+                        style: TextStyle(fontSize: 12, color: colors.onAccent),
                       ),
                     const SizedBox(height: 8),
-                    Text(
-                      '${(fraction * 100).round()}%',
-                      style: AppFonts.title(colors.onAccent, size: 40),
+                    Row(
+                      children: [
+                        Text(
+                          '${(fraction * 100).round()}%',
+                          style: AppFonts.title(colors.onAccent, size: 22),
+                        ),
+                        const Spacer(),
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: colors.onAccent,
+                            foregroundColor: colors.accent,
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                          ),
+                          onPressed: open,
+                          child: Text(audio ? 'Слушать' : 'Читать'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value: fraction,
+                        minHeight: 3,
+                        color: colors.onAccent,
+                        backgroundColor: colors.onAccent.withValues(alpha: .2),
+                      ),
                     ),
                     if ((audio
                             ? audioRemainingLabel(summary)
                             : _textRemaining(book)) !=
                         null)
                       Padding(
-                        padding: const EdgeInsets.only(top: 6),
+                        padding: const EdgeInsets.only(top: 4),
                         child: Text(
                           audio
                               ? audioRemainingLabel(summary)!
                               : _textRemaining(book)!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: 11,
                             color: colors.onAccent,
                           ),
                         ),
                       ),
-                    const SizedBox(height: 10),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: colors.onAccent,
-                        foregroundColor: colors.accent,
-                      ),
-                      onPressed: open,
-                      child: Text(audio ? 'Слушать' : 'Читать'),
-                    ),
                   ],
                 ),
               ),

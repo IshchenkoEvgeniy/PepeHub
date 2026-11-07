@@ -469,4 +469,49 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'pinned chapter chip shows only from another chapter and unpins',
+    (tester) async {
+      size(tester, const Size(390, 844));
+      final db = AppDatabase(NativeDatabase.memory());
+      final repo = Repository(db);
+      await repo.setMeta('reader:appearance', jsonEncode({'mode': 'pages'}));
+      await repo.setMeta(
+        'reader:${asset.hash}',
+        jsonEncode({
+          'layoutVersion': 2,
+          'chapter': 1,
+          'textOffset': 7,
+          'pinnedChapter': {'chapter': 1, 'offset': 4},
+        }),
+      );
+      try {
+        await tester.pumpWidget(reader(repo));
+        await settle(tester);
+        final chip = find.byKey(const ValueKey('pinned-chapter-chip'));
+        // Reading on inside the pinned chapter must not cover the text.
+        expect(chip, findsNothing);
+        tester
+            .widget<ReaderViewport>(find.byType(ReaderViewport))
+            .onChapter(-1);
+        await settle(tester);
+        expect(chip, findsOneWidget);
+        expect(find.text('К главе 2'), findsOneWidget);
+        await tester.tap(
+          find.descendant(of: chip, matching: find.byIcon(Icons.clear)),
+        );
+        await settle(tester);
+        expect(chip, findsNothing);
+        final position =
+            jsonDecode((await repo.meta('reader:${asset.hash}'))!) as Map;
+        expect(position.containsKey('pinnedChapter'), isFalse);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox());
+        await settle(tester);
+        await db.close();
+      }
+    },
+  );
 }
