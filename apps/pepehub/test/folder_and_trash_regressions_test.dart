@@ -11,12 +11,14 @@ import 'package:pepehub/audio/audio_roots.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/hidden_files.dart';
+import 'package:pepehub/library/library_exchange.dart';
 import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/library/models.dart';
 import 'package:pepehub/library/personal_library.dart';
 import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/reader/reading_roots.dart';
 import 'package:pepehub/ui/hidden_deleted_page.dart';
+import 'package:pepehub/ui/library_card_actions.dart';
 import 'package:pepehub/ui/reading_roots_page.dart';
 
 import 'video_player_tools_widget_test.dart' show ready;
@@ -47,6 +49,7 @@ void main() {
     String? deleted,
     String title = 'Card',
     bool audio = false,
+    String? sourceBookId,
   }) => LibraryEntry(
     personalLibraryItem(id, audio ? 'audiobook' : 'book', {
       'title': title,
@@ -55,6 +58,7 @@ void main() {
       'notes': 'Keep notes',
       'cover': 'pepehub-cover:${'a' * 64}',
     }),
+    sourceBookId: sourceBookId,
   );
 
   test('reading scan reports unsupported, duplicate and unreadable files; refresh preserves a custom name and history', () async {
@@ -238,6 +242,91 @@ void main() {
     },
   );
 
+  for (final withFiles in [false, true]) {
+    testWidgets(
+      'permanent removal from an active card ${withFiles ? 'with' : 'without'} its source',
+      (tester) async {
+        final file = File('${root.path}/original.txt');
+        final cover = File(library.covers!.path('a' * 64));
+        final source = (await tester.runAsync(() async {
+          await file.writeAsString('original');
+          await cover.parent.create(recursive: true);
+          await cover.writeAsBytes([1, 2, 3]);
+          return assets.importBook(FolderAudioFile(file.path, 'original.txt'));
+        }))!;
+        await library.repository.mutate((entries) async {
+          entries['one'] = card('one', sourceBookId: source.bookId);
+          if (!withFiles) entries['two'] = card('two');
+        });
+        await repo.setMeta(
+          'library-exchange:legacy',
+          jsonEncode({
+            'one': {
+              'remoteId': 'remote-one',
+              'base': {'title': 'Card'},
+            },
+          }),
+        );
+        await library.loadCached();
+        var completed = false;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () async {
+                    completed = await deleteLibraryCards(context, library, [
+                      'one',
+                    ]);
+                  },
+                  child: const Text('Открыть удаление'),
+                ),
+              ),
+            ),
+          ),
+        );
+        Future<void> open() async {
+          await tester.tap(find.text('Открыть удаление'));
+          await tester.pumpAndSettle();
+        }
+
+        await open();
+        if (withFiles) {
+          await tester.tap(find.text('Удалить карточку и файлы…'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Отмена'));
+          await tester.pumpAndSettle();
+          expect(library.visibleEntries, hasLength(1));
+          expect(await tester.runAsync(() => File(source.path).exists()), true);
+          await open();
+          await tester.tap(find.text('Удалить карточку и файлы…'));
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(
+          find.text(
+            withFiles ? 'Удалить карточку и файлы' : 'Удалить только карточку',
+          ),
+        );
+        await ready(tester, () => completed);
+        expect((await library.repository.entries()).containsKey('one'), false);
+        expect(library.trash, isEmpty);
+        expect(
+          await tester.runAsync(() => File(source.path).exists()),
+          !withFiles,
+        );
+        expect(await tester.runAsync(file.exists), true);
+        expect(await tester.runAsync(cover.exists), !withFiles);
+        final bindings = await LibraryExchange(
+          repo,
+          library.repository,
+          'legacy',
+        ).bindings();
+        expect((bindings['one'] as Map)['detached'], true);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
+
   testWidgets(
     '2000 hidden books/audio stay lazy; filtered bulk restore changes only the two selected files',
     (tester) async {
@@ -332,7 +421,7 @@ void main() {
         expect(library.trash, hasLength(2));
         await tester.tap(find.byTooltip('Удалить окончательно'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Подтвердить'));
+        await tester.tap(find.text('Удалить только карточку'));
         await ready(
           tester,
           () =>

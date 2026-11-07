@@ -53,7 +53,12 @@ const bookMenuActions = [
   ),
   BookMenuAction('reconnect', 'Указать папку заново', BookActionGroup.files),
   BookMenuAction('hide-book', 'Убрать из списка', BookActionGroup.removal),
-  BookMenuAction('delete-book', 'Удалить навсегда…', BookActionGroup.removal),
+  BookMenuAction(
+    'delete-library-card',
+    'Удалить карточку библиотеки…',
+    BookActionGroup.removal,
+  ),
+  BookMenuAction('delete-book', 'Удалить файл книги…', BookActionGroup.removal),
 ];
 
 const bookMenuHiddenKey = 'book-menu-hidden-actions';
@@ -269,7 +274,9 @@ class _BookActionMenuState extends State<_BookActionMenu> {
                                     'book-menu-action:${action.id}',
                                   ),
                                   title: Text(widget.available[action.id]!),
-                                  textColor: action.id == 'delete-book'
+                                  textColor:
+                                      (action.id == 'delete-book' ||
+                                          action.id == 'delete-library-card')
                                       ? scheme.error
                                       : null,
                                   onTap: () =>

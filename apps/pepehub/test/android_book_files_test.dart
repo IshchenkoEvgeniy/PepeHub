@@ -11,26 +11,31 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   tearDown(() => messenger.setMockMethodCallHandler(bookFilesChannel, null));
 
-  test('incoming queue stays serial during warm arrival and releases failed imports', () async {
+  Map<String, Object> book(String name, {bool persistent = true}) => {
+    'path': 'content://books/document/$name',
+    'name': name,
+    'bytes': 100,
+    'persistent': persistent,
+  };
+
+  test('incoming document queue stays serial through failed adds', () async {
     final first = Completer<void>();
     final started = Completer<void>();
     var next = 0;
-    final opened = <String>[], released = <String>[], errors = <Object>[];
+    final opened = <String>[], errors = <Object>[];
     messenger.setMockMethodCallHandler(bookFilesChannel, (call) async {
       if (call.method == 'next') {
         next++;
-        if (next <= 2) return {'path': '/book$next.pdf', 'token': '$next'};
+        if (next <= 2) return book('book$next.pdf');
         return null;
       }
-      if (call.method == 'release') {
-        released.add(call.arguments['token'] as String);
-      }
-      return null;
+      throw StateError('Unexpected native call ${call.method}');
     });
     final receiver = AndroidBookFiles(
       onError: errors.add,
-      onFile: (path) async {
-        opened.add(path);
+      onFile: (source) async {
+        expect(source.persistent, true);
+        opened.add(source.file.name);
         if (opened.length == 1) {
           started.complete();
           await first.future;
@@ -45,8 +50,7 @@ void main() {
     expect(next, 1);
     first.complete();
     await draining;
-    expect(opened, ['/book1.pdf', '/book2.pdf']);
-    expect(released, ['1', '2']);
+    expect(opened, ['book1.pdf', 'book2.pdf']);
     expect(errors, hasLength(1));
     receiver.dispose();
     await receiver.drain();
@@ -64,18 +68,33 @@ void main() {
             message: 'permission lost',
           );
         }
-        if (next == 2) return {'path': '/valid.epub', 'token': 'ok'};
+        if (next == 2) return book('valid.epub', persistent: false);
       }
       return null;
     });
     final receiver = AndroidBookFiles(
       onError: errors.add,
-      onFile: (p) async => opened.add(p),
+      onFile: (source) async {
+        expect(source.persistent, false);
+        opened.add(source.file.name);
+      },
     );
     await receiver.drain();
     expect(errors, hasLength(1));
-    expect(opened, ['/valid.epub']);
+    expect(opened, ['valid.epub']);
     receiver.dispose();
+  });
+
+  test('picker returns the original document URI', () async {
+    messenger.setMockMethodCallHandler(bookFilesChannel, (call) async {
+      expect(call.method, 'pick');
+      expect(call.arguments['mimeTypes'], ['application/epub+zip']);
+      return book('original.epub');
+    });
+    final source = (await pickAndroidBook(['application/epub+zip']))!;
+    expect(source.persistent, true);
+    expect(source.file.path, 'content://books/document/original.epub');
+    expect(await source.file.length(), 100);
   });
 
   test(

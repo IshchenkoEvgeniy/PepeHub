@@ -6,13 +6,13 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
-import java.util.UUID
 import java.util.concurrent.Executors
 
 /** Only user-supplied document URIs enter this queue; never accept arbitrary private paths. */
@@ -22,8 +22,10 @@ class BookFileChannel(activity: Activity, messenger: BinaryMessenger) {
     private val channel = MethodChannel(messenger, "app.pepehub/book_files")
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
-    private val incoming = java.util.ArrayDeque<Uri>()
-    private val staged = mutableMapOf<String, File>()
+    private data class Incoming(val uri: Uri, val flags: Int)
+    private val incoming = java.util.ArrayDeque<Incoming>()
+    private val pickRequest = 4724
+    private var pendingPick: MethodChannel.Result? = null
     private val extensions = setOf("pdf", "epub", "fb2", "zip", "txt", "md", "markdown", "html", "htm", "xhtml", "docx", "rtf")
     @Volatile private var disposed = false
 
@@ -32,7 +34,8 @@ class BookFileChannel(activity: Activity, messenger: BinaryMessenger) {
 
     @Suppress("DEPRECATION")
     fun receive(intent: Intent?) {
-        val uri: Uri = when (intent?.action) {
+        if (intent == null) return
+        val uri: Uri = when (intent.action) {
             Intent.ACTION_VIEW -> intent.data
             Intent.ACTION_SEND -> intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
             else -> null
@@ -40,8 +43,8 @@ class BookFileChannel(activity: Activity, messenger: BinaryMessenger) {
         // File managers on supported Android versions use content URIs. Reject our own
         // provider to prevent exported activity from becoming a private-file read proxy.
         if (uri.scheme != "content" || uri.authority == "${context.packageName}.bookfiles") return
-        if (incoming.size >= 16 || incoming.contains(uri)) return
-        incoming.addLast(uri)
+        if (incoming.size >= 16 || incoming.any { it.uri == uri }) return
+        incoming.addLast(Incoming(uri, intent.flags))
         channel.invokeMethod("available", null)
     }
 
@@ -49,14 +52,25 @@ class BookFileChannel(activity: Activity, messenger: BinaryMessenger) {
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "next" -> {
-                    val uri = incoming.pollFirst()
-                    if (uri == null) result.success(null)
-                    else work(result) { stage(uri) }
+                    val entry = incoming.pollFirst()
+                    if (entry == null) result.success(null)
+                    else work(result) { describe(entry.uri, entry.flags) }
                 }
-                "release" -> work(result) {
-                    val token = call.argument<String>("token") ?: error("Нет файла")
-                    staged.remove(token)?.let { file -> file.delete(); file.parentFile?.delete() }
-                    null
+                "pick" -> if (pendingPick != null) {
+                    result.error("book_file", "Выбор книги уже открыт", null)
+                } else try {
+                    val mimeTypes = call.argument<List<String>>("mimeTypes") ?: emptyList()
+                    val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                        putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.toTypedArray())
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                    }
+                    pendingPick = result
+                    (owner.get() ?: error("Откройте приложение")).startActivityForResult(picker, pickRequest)
+                } catch (e: Exception) {
+                    pendingPick = null
+                    result.error("book_file", e.message, null)
                 }
                 "share" -> try {
                     val paths = call.argument<List<String>>("paths") ?: error("Нет файлов")
@@ -89,19 +103,18 @@ class BookFileChannel(activity: Activity, messenger: BinaryMessenger) {
         }
     }
 
-    private fun stage(uri: Uri): Map<String, Any> {
-        // Recover staging left by a killed process. This root contains only our
-        // UUID-named incoming transfers; never traverse provider/source folders.
-        val incomingRoot = File(context.cacheDir, "incoming-books").canonicalFile
-        val expired = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
-        incomingRoot.listFiles()?.filter { folder ->
-            folder.isDirectory && folder.canonicalFile.parentFile == incomingRoot &&
-                folder.name.matches(Regex("[a-f0-9-]{36}")) && folder.lastModified() < expired
-        }?.forEach { folder ->
-            folder.listFiles()?.filter { it.isFile && it.canonicalFile.parentFile == folder.canonicalFile }
-                ?.forEach { it.delete() }
-            folder.delete()
-        }
+    fun onActivityResult(request: Int, code: Int, data: Intent?): Boolean {
+        if (request != pickRequest) return false
+        val result = pendingPick ?: return true
+        pendingPick = null
+        val uri = data?.data
+        if (code != Activity.RESULT_OK || uri == null) {
+            result.success(null)
+        } else work(result) { describe(uri, data.flags) }
+        return true
+    }
+
+    private fun describe(uri: Uri, flags: Int): Map<String, Any> {
         val resolver = context.contentResolver
         var name: String? = null
         var declaredSize = -1L
@@ -128,29 +141,19 @@ class BookFileChannel(activity: Activity, messenger: BinaryMessenger) {
         check(ext in extensions) { "Этот формат книги не поддерживается" }
         val limit = (if (ext == "pdf") 256L else 64L) * 1024 * 1024
         check(declaredSize <= limit) { "Книга превышает лимит ${limit / 1024 / 1024} МиБ" }
-        val token = UUID.randomUUID().toString()
-        val folder = File(context.cacheDir, "incoming-books/$token")
-        check(folder.mkdirs()) { "Не удалось подготовить файл" }
-        val file = File(folder, safeName)
-        try {
-            var size = 0L
-            resolver.openInputStream(uri)?.use { input ->
-                file.outputStream().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        check(!disposed) { "Приложение закрыто" }
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        size += read
-                        check(size <= limit) { "Книга превышает лимит размера" }
-                        output.write(buffer, 0, read)
-                    }
+        val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val modes = flags and (read or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        val persistent = if (DocumentsContract.isDocumentUri(context, uri)) {
+            if (modes and read != 0) {
+                try {
+                    resolver.takePersistableUriPermission(uri, modes)
+                } catch (_: SecurityException) {
+                    runCatching { resolver.takePersistableUriPermission(uri, read) }
                 }
-            } ?: error("Нет доступа к файлу книги")
-            check(size > 0 && (declaredSize < 0 || size == declaredSize)) { "Файл пуст или изменился при чтении" }
-            staged[token] = file
-            return mapOf("token" to token, "path" to file.path, "name" to safeName)
-        } catch (e: Exception) { file.delete(); folder.delete(); throw e }
+            }
+            resolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+        } else false
+        return mapOf("path" to uri.toString(), "name" to safeName, "bytes" to declaredSize, "persistent" to persistent)
     }
 
     private fun work(result: MethodChannel.Result, operation: () -> Any?) {
@@ -165,10 +168,8 @@ class BookFileChannel(activity: Activity, messenger: BinaryMessenger) {
     fun dispose() {
         disposed = true
         channel.setMethodCallHandler(null)
-        worker.execute {
-            staged.values.forEach { file -> file.delete(); file.parentFile?.delete() }
-            staged.clear()
-        }
+        pendingPick?.success(null)
+        pendingPick = null
         worker.shutdown()
         owner.clear()
     }

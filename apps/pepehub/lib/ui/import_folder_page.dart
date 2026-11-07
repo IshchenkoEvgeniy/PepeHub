@@ -73,6 +73,11 @@ class _ImportFolderPageState extends State<ImportFolderPage> {
     message = 'Скопировано книг: $copied. Прогресс и история сохранены.';
   });
 
+  Future<void> _clear() => _run(() async {
+    await store.clear();
+    message = 'Новые книги будут открываться из исходного расположения.';
+  });
+
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: !busy,
@@ -85,7 +90,7 @@ class _ImportFolderPageState extends State<ImportFolderPage> {
         padding: const EdgeInsets.all(20),
         children: [
           const Text(
-            'Текстовые книги, добавленные отдельными файлами, собираются в одной папке. Рядом сохраняются журналы чтения в .pepehub. Эту папку можно выбрать в Syncthing.',
+            'Без папки импорта PepeHub открывает добавленные файлы на их месте. Выберите папку, если хотите собирать книги и журналы чтения в одном месте для Syncthing.',
           ),
           const SizedBox(height: 20),
           Card(
@@ -100,8 +105,16 @@ class _ImportFolderPageState extends State<ImportFolderPage> {
                   ),
                   const SizedBox(height: 8),
                   SelectableText(
-                    root ?? 'Не выбрана. Файлы сохраняются во внутреннем хранилище приложения.',
+                    root ?? 'Не выбрана. Приложение открывает оригиналы.',
                   ),
+                  if (root != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        onPressed: busy ? null : _clear,
+                        child: const Text('Отключить папку импорта'),
+                      ),
+                    ),
                   const SizedBox(height: 16),
                   Align(
                     alignment: Alignment.centerLeft,

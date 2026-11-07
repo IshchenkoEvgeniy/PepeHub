@@ -197,6 +197,12 @@ void main() {
         expect(b.trash.single.sourceBookId, isNull);
         expect(await b.notes!.entries(), hasLength(1));
         expect(await b.history!.entries(), hasLength(1));
+        final named = jsonDecode(
+          await File('${shared.path}/PepeHub-library/Корзина/В архиве.json')
+              .readAsString(),
+        ) as Map;
+        expect(named['notes'], hasLength(1));
+        expect(named['history'], hasLength(1));
         expect(
           await File(b.coverPath(b.trash.single.item)!).readAsBytes(),
           png,
@@ -224,8 +230,19 @@ void main() {
     () async {
       final a = device();
       final id = await add(a);
-      await add(a, audio: true);
+      final audio = await add(a, audio: true);
       await a.folderStorage.connect(shared.path);
+      final namedIds = <String>{};
+      await for (final file in Directory(
+        '${shared.path}/PepeHub-library/Книги/Серия',
+      ).list()) {
+        if (file is File) {
+          namedIds.add(
+            jsonDecode(await file.readAsString())['card']['id'] as String,
+          );
+        }
+      }
+      expect(namedIds, {id, audio});
       final before = await manifest();
       final file = File('${shared.path}/PepeHub-library/library.json');
       final stamp = (await file.stat()).modified;
@@ -236,6 +253,90 @@ void main() {
       final after = await manifest();
       final old = before['documents'] as Map, next = after['documents'] as Map;
       expect(next.keys.where((key) => next[key] != old[key]), ['cards/$id']);
+    },
+  );
+
+  test(
+    'upgrades a legacy folder and keeps only archive cards in named files',
+    () async {
+      final app = device();
+      final archived = await add(app, title: 'Первый том');
+      await app.folderStorage.connect(shared.path);
+      final folder = '${shared.path}/PepeHub-library';
+      final excluded = <String, ObsidianLibraryItem>{};
+      for (final status in ['planned', 'active']) {
+        final id = uuid.v4();
+        excluded[id] = personalLibraryItem(id, 'book', {
+          'title': status,
+          'status': status,
+        });
+        await putDocument('cards/$id', excluded[id]!.toJson());
+      }
+      final legacy = (await manifest())..['version'] = 1;
+      await File('$folder/library.json').writeAsString(jsonEncode(legacy));
+      await File('$folder/objects/book-files.json').delete();
+      await app.repository.mutate((cards) async {
+        for (final e in excluded.entries) {
+          cards[e.key] = LibraryEntry(e.value);
+        }
+      });
+      await app.folderStorage.synchronize(force: true);
+      expect(app.folderStorage.error, isNull);
+      final after = await manifest();
+      expect(after['version'], 2);
+      expect(
+        (after['documents'] as Map).keys.where((k) => k.startsWith('cards/')),
+        ['cards/$archived'],
+      );
+      expect((await app.repository.entries()).keys, containsAll(excluded.keys));
+      expect(
+        jsonDecode(
+          await File('$folder/objects/library-before-named-books.json')
+              .readAsString(),
+        ),
+        legacy,
+      );
+      expect(
+        await File('$folder/Книги/Серия/Первый том.json').exists(),
+        isTrue,
+      );
+      expect(
+        await Directory('$folder/Книги')
+            .list(recursive: true)
+            .where((entry) => entry is File)
+            .length,
+        1,
+      );
+    },
+  );
+
+  test(
+    'moves a renamed book to its new series and preserves unrelated files',
+    () async {
+      final app = device();
+      final id = await add(app, title: 'Первый том');
+      await app.folderStorage.connect(shared.path);
+      final folder = '${shared.path}/PepeHub-library/Книги';
+      final other = File('$folder/Серия/Свои данные.json');
+      await other.writeAsString('unchanged');
+      await app.repository.mutate((cards) async {
+        final entry = cards[id]!;
+        cards[id] = LibraryEntry(
+          entry.item.withValues({
+            ...entry.item.values,
+            'title': 'Том: новый?',
+            'series': 'Другая / серия',
+          }),
+        );
+      });
+      await app.folderStorage.synchronize();
+      expect(app.folderStorage.error, isNull);
+      expect(await File('$folder/Серия/Первый том.json').exists(), isFalse);
+      expect(
+        await File('$folder/Другая серия/Том новый.json').exists(),
+        isTrue,
+      );
+      expect(await other.readAsString(), 'unchanged');
     },
   );
 
@@ -450,11 +551,11 @@ void main() {
       final id = await add(a);
       await a.folderStorage.connect(shared.path);
       await b.folderStorage.connect(shared.path);
-      await a.deleteCards([id]);
-      await a.purgeCards([id]);
+      await a.purgeCards([id], includeVisible: true);
       await a.folderStorage.synchronize();
       await b.folderStorage.synchronize();
       expect(await b.repository.entries(), isEmpty);
+      expect((await manifest())['documents'], isNot(contains('cards/$id')));
       b.dispose();
       services.remove(b);
       final restarted = device(database: b.local.db);
@@ -515,6 +616,9 @@ void main() {
           case 'stage_discard':
             await stages[path]!.discard();
             return null;
+          case 'remove':
+            await disk.remove(path!, args['expected'] as String?);
+            return null;
           default:
             throw StateError('Unexpected folder method ${call.method}');
         }
@@ -531,6 +635,12 @@ void main() {
       await a.folderStorage.synchronize();
       await b.folderStorage.synchronize();
       expect((await b.repository.entries())[id]!.item.title, 'Через SAF');
+      expect(a.folderStorage.error, isNull);
+      expect(
+        await File('${shared.path}/PepeHub-library/Книги/Серия/Книга.json')
+            .exists(),
+        isFalse,
+      );
     },
   );
 
@@ -808,6 +918,7 @@ void main() {
       expect(find.text('Обновить из папки'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.ensureVisible(find.text('Отключить папку'));
+      await tester.pumpAndSettle();
       await tester.runAsync(() => tester.tap(find.text('Отключить папку')));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Отключить папку библиотеки?'), findsOneWidget);

@@ -38,8 +38,9 @@ Future<void> editLibraryEntry(
               LibraryCoverSearch(library: library, item: entry.item),
         ),
       ),
-      onDelete: () =>
-          deleteLibraryCards(routeContext, library, [entry.item.id]),
+      onDelete: () => deleteLibraryCards(routeContext, library, [
+        entry.item.id,
+      ], fromTrash: isLibraryDeleted(entry.item)),
       onSave: (values) =>
           library.save(entry.item.id, values, original: entry.item.values),
     ),
@@ -239,7 +240,13 @@ class _LibraryWorkPageState extends State<LibraryWorkPage> {
             enabled: !busy,
             onSelected: (action) async {
               if (action == 'delete') {
-                await deleteLibraryCards(context, library, [item.id]);
+                final removed = await deleteLibraryCards(context, library, [
+                  item.id,
+                ], fromTrash: isLibraryDeleted(item));
+                if (removed && context.mounted) {
+                  await Navigator.maybePop(context);
+                }
+                return;
               }
               if (!context.mounted) return;
               if (action == 'cover') {
@@ -265,7 +272,7 @@ class _LibraryWorkPageState extends State<LibraryWorkPage> {
                 value: 'cover',
                 child: Text('Найти обложку в интернете'),
               ),
-              PopupMenuItem(value: 'delete', child: Text('В корзину')),
+              PopupMenuItem(value: 'delete', child: Text('Удалить…')),
             ],
           ),
         ],

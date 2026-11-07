@@ -183,7 +183,7 @@ void main() {
         await tester.tap(find.byTooltip('Действия с книгой').first);
         await tester.pumpAndSettle();
         expect(find.text('Добавить файл заново'), findsOneWidget);
-        expect(find.text('Удалить навсегда…'), findsNothing);
+        expect(find.text('Удалить файл книги…'), findsNothing);
         if (find.text('Карточка книги').evaluate().isEmpty) {
           await tester.tap(find.text('Книга и коллекции'));
           await tester.pumpAndSettle();

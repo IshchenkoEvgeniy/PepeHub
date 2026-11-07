@@ -2,14 +2,33 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../audio/audio_folder.dart';
 import 'asset_store.dart';
 
 const bookFilesChannel = MethodChannel('app.pepehub/book_files');
 
-/// Cold-start drain and warm intents share a serial queue. Native staging is
-/// released even if validation/import fails; it contains only the incoming file.
+typedef AndroidBookSource = ({SafAudioFile file, bool persistent});
+
+AndroidBookSource _bookSource(Map<String, dynamic> data) => (
+  file: SafAudioFile(
+    data['path'] as String,
+    data['name'] as String,
+    data['bytes'] as int,
+  ),
+  persistent: data['persistent'] == true,
+);
+
+Future<AndroidBookSource?> pickAndroidBook(List<String> mimeTypes) async {
+  final result = await bookFilesChannel.invokeMapMethod<String, dynamic>(
+    'pick',
+    {'mimeTypes': mimeTypes},
+  );
+  return result == null ? null : _bookSource(result);
+}
+
+/// Cold-start drain and warm intents share a serial queue of document URIs.
 class AndroidBookFiles {
-  final Future<void> Function(String path) onFile;
+  final Future<void> Function(AndroidBookSource source) onFile;
   final void Function(Object error) onError;
   bool disposed = false, draining = false, requested = false;
   AndroidBookFiles({required this.onFile, required this.onError});
@@ -43,13 +62,9 @@ class AndroidBookFiles {
           }
           if (file == null) break;
           try {
-            if (!disposed) await onFile(file['path'] as String);
+            if (!disposed) await onFile(_bookSource(file));
           } catch (e) {
             if (!disposed) onError(e);
-          } finally {
-            await bookFilesChannel.invokeMethod<void>('release', {
-              'token': file['token'],
-            });
           }
         }
       } while (requested && !disposed);

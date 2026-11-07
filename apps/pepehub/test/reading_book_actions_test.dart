@@ -242,8 +242,8 @@ void main() {
       await tester.ensureVisible(find.byTooltip('Действия с книгой').first);
       await tester.tap(find.byTooltip('Действия с книгой').first);
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Удалить навсегда…'));
-      await tester.tap(find.text('Удалить навсегда…'));
+      await tester.ensureVisible(find.text('Удалить файл книги…'));
+      await tester.tap(find.text('Удалить файл книги…'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Удалить файл'));
       await tester.pumpAndSettle();
@@ -332,10 +332,10 @@ void main() {
       expect(find.text('Показать в проводнике'), findsOneWidget);
       await tester.tap(find.text('Файлы и обмен'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Удалить навсегда…'));
-      await tester.tap(find.text('Удалить навсегда…'));
+      await tester.ensureVisible(find.text('Удалить файл книги…'));
+      await tester.tap(find.text('Удалить файл книги…'));
       await tester.pumpAndSettle();
-      expect(find.text('Удалить книгу навсегда?'), findsOneWidget);
+      expect(find.text('Удалить файл книги?'), findsOneWidget);
       await tester.tap(find.text('Отмена'));
       await tester.pumpAndSettle();
       expect(await tester.runAsync(file.exists), true);

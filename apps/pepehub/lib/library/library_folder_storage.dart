@@ -13,6 +13,7 @@ import '../sync/peer/peer_files.dart';
 import '../sync/peer/peer_models.dart';
 import 'activity_store.dart';
 import 'cover_sync.dart';
+import 'library_features.dart';
 import 'library_service.dart';
 import 'models.dart';
 import 'note_store.dart';
@@ -23,7 +24,20 @@ const _baselineKey = 'library-storage-baseline-v1';
 const _layoutKey = 'library-storage-layout-v1';
 const _prefix = 'PepeHub-library/';
 const _manifestPath = '${_prefix}library.json';
+const _bookFilesPath = '${_prefix}objects/book-files.json';
+const _beforeNamedBooks = '${_prefix}objects/library-before-named-books.json';
 const _folderReadme = '''# PepeHub Library
+
+Книги/ — файлы с названиями произведений, разложенные по сериям.
+Корзина/ — файлы удалённых карточек, пока они хранятся в корзине.
+library.json и objects/ — служебный каталог и версии данных для обмена.
+covers/<SHA-256>.png — сохранённые обложки.
+
+Именованные JSON-файлы содержат карточку, заметки и историю. Изменяйте данные в PepeHub.
+Синхронизируйте всю папку PepeHub-library. Исходные книги и аудио хранятся отдельно.
+Служебные версии сохраняются для восстановления и обмена.
+''';
+const _legacyFolderReadme = '''# PepeHub Library
 
 library.json — каталог переносимой личной библиотеки (формат 1).
 objects/xx/<SHA-256>.json — неизменяемые карточки, история, цитаты и настройки.
@@ -68,6 +82,80 @@ Map<String, String> _snapshot(
 ) => _documents(input.$1, input.$2, input.$3, input.$4);
 Map<String, String> _hashDocuments(Map<String, String> documents) =>
     documents.map((key, raw) => MapEntry(key, _digest(raw)));
+
+String _fileName(String title, String fallback) {
+  final clean = title
+      .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1f\x7f]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  final shortened = StringBuffer();
+  var bytes = 0;
+  for (final rune in clean.runes) {
+    final character = String.fromCharCode(rune);
+    bytes += utf8.encode(character).length;
+    if (bytes > 175) break;
+    shortened.write(character);
+  }
+  final name = shortened.toString().replaceAll(RegExp(r'^\.+|[. ]+$'), '');
+  if (name.isEmpty) return fallback;
+  try {
+    return peerPath(name);
+  } on FormatException {
+    return '_$name';
+  }
+}
+
+String _uniqueName(String base, String suffix, Set<String> used) {
+  var name = base;
+  var attempt = 1;
+  while (!used.add(name.toLowerCase())) {
+    name = '$base [$suffix${attempt == 1 ? '' : '-$attempt'}]';
+    attempt++;
+  }
+  return name;
+}
+
+Map<String, ({String id, String raw})> _namedBooks(Map<String, dynamic> data) {
+  final items = [
+    for (final key
+        in data.keys.where((key) => key.startsWith('cards/')).toList()..sort())
+      ObsidianLibraryItem.fromJson(data[key]),
+  ];
+  final seriesNames = <String, String>{};
+  final usedSeries = <String>{};
+  final usedPaths = <String>{};
+  final books = <String, ({String id, String raw})>{};
+  for (final item in items) {
+    final series = '${item.value('series') ?? ''}'.trim();
+    var directory = isLibraryDeleted(item) ? 'Корзина' : 'Книги';
+    if (series.isNotEmpty) {
+      final key = librarySeriesKey(item);
+      final name = seriesNames.putIfAbsent(
+        key,
+        () => _uniqueName(
+          _fileName(series, 'Серия'),
+          _digest(key).substring(0, 12),
+          usedSeries,
+        ),
+      );
+      directory += '/$name';
+    }
+    final title = _fileName(item.title, 'Без названия');
+    final path = '${_uniqueName('$directory/$title', item.id, usedPaths)}.json';
+    final document = _ordered({
+      'format': 'pepehub-book',
+      'version': 1,
+      'card': data['cards/${item.id}'],
+      'history': data['history/${item.id}'] ?? <String, dynamic>{},
+      'notes': data['notes/${item.id}'] ?? <String, dynamic>{},
+    });
+    books[path] = (
+      id: item.id,
+      raw: '${const JsonEncoder.withIndent('  ').convert(document)}\n',
+    );
+  }
+  return books;
+}
 
 /// Only portable values go into the folder. Native links, queues and credentials
 /// belong to this device's database and survive reconnecting the same archive.
@@ -115,7 +203,7 @@ class _Manifest {
   const _Manifest(this.id, this.documents, this.covers);
   Map<String, dynamic> toJson() => {
     'format': 'pepehub-library-folder',
-    'version': 1,
+    'version': 2,
     'id': id,
     'documents': documents,
     'covers': covers.toList()..sort(),
@@ -124,7 +212,7 @@ class _Manifest {
     final data = jsonDecode(raw);
     if (data is! Map ||
         data['format'] != 'pepehub-library-folder' ||
-        data['version'] != 1 ||
+        ![1, 2].contains(data['version']) ||
         data['id'] is! String ||
         !_uuid.hasMatch(data['id']) ||
         data['documents'] is! Map ||
@@ -162,6 +250,8 @@ class _FolderFiles {
       files.read(_path(path), offset, count);
   Future<PeerStagingFile> stage(PeerFileEntry entry) =>
       files.stage(entry.withClock(entry.clock, path: _path(entry.path)));
+  Future<void> remove(String path, String expected) =>
+      files.remove(_path(path), expected);
 }
 
 class _LibraryChangedDuringSave implements Exception {}
@@ -502,7 +592,8 @@ class LibraryFolderStorage extends ChangeNotifier {
       revision = snapshot.revision;
       final cards = snapshot.cards;
       final items = {
-        for (final e in cards.entries) e.key: e.value.item.toJson(),
+        for (final e in cards.entries)
+          if (isSeriesCatalogItem(e.value.item)) e.key: e.value.item.toJson(),
       };
       final local = await _folderWork(_snapshot, (
         items,
@@ -588,6 +679,25 @@ class LibraryFolderStorage extends ChangeNotifier {
         }
       }
       final decoded = await _folderWork(_validate, data);
+      final nonArchiveIds = {
+        for (final e in decoded.entries)
+          if (e.key.startsWith('cards/') &&
+              !isSeriesCatalogItem(ObsidianLibraryItem.fromJson(e.value)))
+            e.key.substring('cards/'.length),
+      };
+      for (final id in nonArchiveIds) {
+        for (final kind in ['cards', 'history', 'notes']) {
+          final key = '$kind/$id';
+          decoded.remove(key);
+          merged.remove(key);
+        }
+      }
+      final firstNamedSave = await fs.hash(_bookFilesPath) == null;
+      if (raw != null &&
+          firstNamedSave &&
+          await fs.hash(_beforeNamedBooks) == null) {
+        await _write(fs, _beforeNamedBooks, utf8.encode(raw), null);
+      }
       final availableCovers = await _covers(fs, decoded, remote?.covers ?? {});
       for (final e in merged.entries) {
         if (_disposed) throw StateError('Хранилище библиотеки закрыто');
@@ -602,12 +712,13 @@ class LibraryFolderStorage extends ChangeNotifier {
         }
       }
       final next = _Manifest(remote?.id ?? uuid.v4(), merged, availableCovers);
-      if (remote == null && await fs.hash('${_prefix}README.md') == null) {
+      final readme = await fs.hash('${_prefix}README.md');
+      if (readme == null || readme == _digest(_legacyFolderReadme)) {
         await _write(
           fs,
           '${_prefix}README.md',
           utf8.encode(_folderReadme),
-          null,
+          readme,
         );
       }
       final encoded = _encode(next.toJson());
@@ -645,6 +756,17 @@ class LibraryFolderStorage extends ChangeNotifier {
       _direct = direct;
       savedAt = DateTime.now();
       error = null;
+      try {
+        await _publishNamedBooks(
+          fs,
+          decoded,
+          encoded,
+          force: force || connecting,
+        );
+      } catch (e) {
+        _lastManifest = null;
+        error = 'Не удалось обновить именованные файлы книг: $e';
+      }
       _status();
       return imported;
     } catch (e) {
@@ -668,6 +790,96 @@ class LibraryFolderStorage extends ChangeNotifier {
       working = false;
       _status();
     }
+  }
+
+  Future<void> _publishNamedBooks(
+    _FolderFiles fs,
+    Map<String, dynamic> data,
+    String manifest, {
+    required bool force,
+  }) async {
+    final bytes = await _read(fs, _bookFilesPath, 16777216);
+    final raw = bytes == null ? null : utf8.decode(bytes);
+    final previous = raw == null
+        ? <String, String>{}
+        : Map<String, String>.from(jsonDecode(raw) as Map);
+    for (final entry in previous.entries) {
+      if (!RegExp(r'^(Книги|Корзина)/(?:[^/]+/)?[^/]+\.json$')
+              .hasMatch(entry.key) ||
+          !_hash.hasMatch(entry.value)) {
+        throw const FormatException('Повреждён список именованных файлов книг');
+      }
+      peerPath(entry.key);
+    }
+    final previousPaths = {
+      for (final path in previous.keys) path.toLowerCase(): path,
+    };
+    final previousDirectories = {
+      for (final path in previous.keys)
+        p.posix.dirname(path).toLowerCase(): p.posix.dirname(path),
+    };
+    final books = await _folderWork(_namedBooks, data);
+    final used = {
+      for (final path in books.keys)
+        p.posix.withoutExtension(path).toLowerCase(),
+    };
+    final next = <String, String>{};
+    for (final entry in books.entries) {
+      if (_disposed) return;
+      final directory = p.posix.dirname(entry.key);
+      var path =
+          previousPaths[entry.key.toLowerCase()] ??
+          p.posix.join(
+            previousDirectories[directory.toLowerCase()] ?? directory,
+            p.posix.basename(entry.key),
+          );
+      final content = utf8.encode(entry.value.raw);
+      final digest = sha256.convert(content).toString();
+      if (force || previous[path] != digest) {
+        var existing = await fs.hash('$_prefix$path');
+        if (existing != null &&
+            existing != digest &&
+            existing != previous[path]) {
+          // A manually edited or unrelated file stays in place.
+          final base = _fileName(
+            p.posix.basenameWithoutExtension(path),
+            'Без названия',
+          );
+          final directory = p.posix.dirname(path);
+          final occupied = p.posix.join(directory, base);
+          used.add(occupied.toLowerCase());
+          path = '${_uniqueName(occupied, entry.value.id, used)}.json';
+          existing = await fs.hash('$_prefix$path');
+          if (existing != null &&
+              existing != digest &&
+              existing != previous[path]) {
+            throw StateError('Именованный файл уже занят: $path');
+          }
+        }
+        if (existing != digest) {
+          await _write(fs, '$_prefix$path', content, existing);
+        }
+      }
+      next[path] = digest;
+    }
+    final encoded = _encode(next);
+    if (encoded == raw) return;
+    if (await fs.hash(_manifestPath) != _digest(manifest)) {
+      throw StateError('Каталог изменился во время записи именованных файлов');
+    }
+    final paths = next.keys.map((path) => path.toLowerCase()).toSet();
+    for (final entry in previous.entries) {
+      if (!paths.contains(entry.key.toLowerCase()) &&
+          await fs.hash('$_prefix${entry.key}') == entry.value) {
+        await fs.remove('$_prefix${entry.key}', entry.value);
+      }
+    }
+    await _write(
+      fs,
+      _bookFilesPath,
+      utf8.encode(encoded),
+      raw == null ? null : _digest(raw),
+    );
   }
 
   static Map<String, dynamic> _validate(Map<String, String> documents) {
@@ -817,7 +1029,7 @@ class LibraryFolderStorage extends ChangeNotifier {
     Map<String, LibraryEntry> existing,
   ) async {
     await library.repository.mutate((cards) async {
-      cards.clear();
+      cards.removeWhere((_, entry) => isSeriesCatalogItem(entry.item));
       for (final e in data.entries.where((e) => e.key.startsWith('cards/'))) {
         final item = ObsidianLibraryItem.fromJson(
           Map<String, dynamic>.from(e.value as Map),
@@ -836,7 +1048,13 @@ class LibraryFolderStorage extends ChangeNotifier {
     ]) {
       await pair.$1.mutate((state) async {
         final old = Map<String, dynamic>.from(state['slots'] as Map);
-        final slots = <String, dynamic>{};
+        final slots = <String, dynamic>{
+          for (final e in old.entries)
+            if (existing[e.value['value']['itemId']] case final card?)
+              if (!isSeriesCatalogItem(card.item) &&
+                  !data.containsKey('cards/${card.item.id}'))
+                e.key: e.value,
+        };
         for (final e in data.entries.where(
           (e) => e.key.startsWith('${pair.$2}/'),
         )) {

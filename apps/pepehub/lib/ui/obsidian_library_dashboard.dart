@@ -846,6 +846,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                                                   context,
                                                   service,
                                                   selectedBooks.toList(),
+                                                  allowFileDeletion: false,
                                                 ) &&
                                                 mounted) {
                                               setState(() {
@@ -855,7 +856,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                                             }
                                           },
                                     icon: const Icon(Icons.delete_outline),
-                                    label: const Text('В корзину'),
+                                    label: const Text('Удалить…'),
                                   ),
                                   TextButton(
                                     onPressed: () => setState(() {
@@ -1790,7 +1791,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
               : 'В избранное',
         ),
       ),
-      const PopupMenuItem(value: 'delete', child: Text('В корзину')),
+      const PopupMenuItem(value: 'delete', child: Text('Удалить…')),
     ],
   );
 

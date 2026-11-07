@@ -45,6 +45,20 @@ class CoverSync {
       value is String && RegExp(r'^pepehub-cover:[a-f0-9]{64}$').hasMatch(value)
       ? value.substring(14)
       : null;
+
+  Future<void> discardCached(String hash) async {
+    final file = File(path(hash)).absolute;
+    try {
+      if (await FileSystemEntity.type(file.path, followLinks: false) ==
+              FileSystemEntityType.file &&
+          p.equals(await file.resolveSymbolicLinks(), p.normalize(file.path))) {
+        await file.delete();
+      }
+    } on FileSystemException {
+      // A cache file may be locked or already removed. The archive is saved.
+    }
+  }
+
   static bool validPng(Uint8List bytes) =>
       bytes.length >= 24 &&
       bytes.length <= 2097152 &&

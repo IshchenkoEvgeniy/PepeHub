@@ -15,7 +15,7 @@ Future<void> libraryBatchAction(
   if (ids.isEmpty) return;
   try {
     if (action == 'delete') {
-      await deleteLibraryCards(context, library, ids);
+      await deleteLibraryCards(context, library, ids, allowFileDeletion: false);
       return;
     }
     if (action == 'favorite' || action == 'hide' || action == 'show') {

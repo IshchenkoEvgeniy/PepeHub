@@ -23,10 +23,37 @@ class LibraryExchange {
 
   Future<Map<String, dynamic>> bindings() => ReadingLibrary(local).value(key);
 
+  static Future<void> detachRemovedCards(
+    Repository local,
+    Set<String> ids,
+  ) async {
+    const prefix = 'library-exchange:';
+    final connectors = await ReadingLibrary(local).entries(prefix);
+    for (final connector in connectors.entries) {
+      final links = connector.value;
+      var changed = false;
+      for (final id in ids) {
+        final link = links[id];
+        if (link is! Map || link['remoteId'] is! String) continue;
+        links[id] = {
+          'remoteId': link['remoteId'],
+          'detached': true,
+          'state': 'purged',
+        };
+        changed = true;
+      }
+      if (changed) {
+        await local.setMeta('$prefix${connector.key}', jsonEncode(links));
+      }
+    }
+  }
+
   Future<void> journals({bool send = false}) async {
     final links = await bindings();
     final byRemote = {
-      for (final e in links.entries) (e.value as Map)['remoteId']: e.key,
+      for (final e in links.entries)
+        if ((e.value as Map)['state'] != 'purged')
+          (e.value as Map)['remoteId']: e.key,
     };
     for (final notes in [false, true]) {
       final ActivityStore source = notes

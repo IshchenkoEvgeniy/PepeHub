@@ -19,6 +19,7 @@ import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/media/import_folder.dart';
 import 'package:pepehub/reader/reading_roots.dart';
 import 'package:pepehub/reader/reading_book_actions.dart';
+import 'package:pepehub/reader/text_book.dart';
 import 'package:pepehub/sync/peer/peer_files.dart';
 import 'package:pepehub/sync/peer/peer_models.dart';
 import 'package:pepehub/ui/app_theme.dart';
@@ -66,26 +67,107 @@ void main() {
   test('new text imports use selected folder, preserve source and identity and keep same-name books separate', () async {
     await folder.configure(destination.path);
     final source = await text('Story.txt', 'A book to read.');
-    final first = await assets.importBook(source);
+    final first = await assets.addBook(source);
     expect(p.isWithin(destination.path, first.path), isTrue);
     expect(await File(first.path).readAsString(), 'A book to read.');
     expect(await File(source.path).exists(), isTrue);
     await repo.setMeta('reader:${first.hash}', '{"chapter":2}');
-    final repeated = await assets.importBook(source);
+    final repeated = await assets.addBook(source);
     expect(repeated.bookId, first.bookId);
     expect(repeated.path, first.path);
+    final renamed = await assets.addBook(
+      await text('Renamed.txt', 'A book to read.'),
+    );
+    expect(renamed.bookId, first.bookId);
+    expect(renamed.path, first.path);
     expect(await repo.meta('reader:${first.hash}'), '{"chapter":2}');
     final other = await assets.importBook(
       await text('story.txt', 'Another book.'),
     );
     expect(other.path.toLowerCase(), isNot(first.path.toLowerCase()));
     expect(await repo.records('book'), hasLength(2));
+    expect(await assets.directory.exists(), false);
     expect(
       (await ReadingRoots(assets).list()).single.bookIds,
       containsAll([first.bookId, other.bookId]),
     );
     expect(await repo.meta(personalLibraryKey), isNull);
   });
+
+  test(
+    'adds original in place and reuses a file already in the import folder',
+    () async {
+      final source = await text('original.txt', 'A book to read in place.');
+      final added = await assets.addBook(source);
+      expect(added.path, source.path);
+      expect(await assets.directory.exists(), false);
+      expect(await repo.meta(personalLibraryKey), isNull);
+      await repo.setMeta('reader:${added.hash}', '{"chapter":3}');
+      final nested = await Directory(p.join(destination.path, 'Series'))
+          .create();
+      final inside = await File(source.path)
+          .copy(p.join(nested.path, source.name));
+      await folder.configure(destination.path);
+      final reused = await assets.addBook(XFile(inside.path));
+      expect(reused.path, inside.path);
+      expect(reused.bookId, added.bookId);
+      expect(await repo.meta('reader:${added.hash}'), '{"chapter":3}');
+      expect(
+        await destination.list(recursive: true).where((f) => f is File).length,
+        1,
+      );
+      expect(await assets.directory.exists(), false);
+      await folder.clear();
+      final directAgain = await assets.addBook(source);
+      expect(directAgain.path, source.path);
+      expect(directAgain.bookId, added.bookId);
+    },
+  );
+
+  test(
+    'SAF text uses the original URI without a staged file or reading cache',
+    () async {
+      const uri = 'content://test/document/original.txt';
+      final bytes = Uint8List.fromList(utf8.encode('Read from the original.'));
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      var read = false;
+      messenger.setMockMethodCallHandler(audioFolderChannel, (call) async {
+        switch (call.method) {
+          case 'open':
+            expect(call.arguments['uri'], uri);
+            read = false;
+            return 'handle';
+          case 'read':
+            if (read) return null;
+            read = true;
+            return bytes;
+          case 'close':
+            return null;
+          default:
+            throw StateError('Unexpected native call ${call.method}');
+        }
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(audioFolderChannel, null),
+      );
+      final document = SafAudioFile(uri, 'original.txt', -1);
+      await expectLater(
+        assets.addBook(document, persistent: false),
+        throwsStateError,
+      );
+      final saved = await assets.addBook(document);
+      expect(saved.path, uri);
+      expect(saved.bytes, bytes.length);
+      final data = await readLinkedTextBook(
+        SafAudioFile(saved.path, saved.filename, saved.bytes),
+        saved.hash,
+      );
+      expect(data, bytes);
+      await loadTextBook(saved.path, saved.filename, sourceBytes: data);
+      expect(await assets.directory.exists(), false);
+    },
+  );
 
   test('copying old imports preserves history, writes logs, excludes connected sources and is repeatable', () async {
     final old = await assets.importBook(

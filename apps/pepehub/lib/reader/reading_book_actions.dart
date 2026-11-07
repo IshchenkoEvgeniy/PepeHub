@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
-import 'package:drift/drift.dart' show Variable;
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
@@ -71,15 +70,9 @@ class ReadingBookActions {
   }
 
   Future<List<ReadingBookSource>> sources(String id) async {
-    final rows = await assets.repository.db
-        .customSelect(
-          'SELECT * FROM local_assets WHERE book_id=?',
-          variables: [Variable(id)],
-        )
-        .get();
+    final files = await assets.localBookAssets(id);
     final result = <String, ReadingBookSource>{};
-    for (final row in rows) {
-      final asset = LocalAsset.fromRow(row);
+    for (final asset in files) {
       result[asset.path] = ReadingBookSource(
         asset.path,
         asset.hash,
@@ -103,14 +96,14 @@ class ReadingBookActions {
       }
     }
     final raw = await assets.repository.meta('reading-source-path:$id');
-    if (raw != null && rows.isNotEmpty) {
+    if (raw != null && files.isNotEmpty) {
       final value = jsonDecode(raw) as Map;
       final root = value['root'] as String,
           relative = value['relativePath'] as String;
       if ((await ReadingRoots(
         assets,
       ).list()).any((r) => r.path == root && r.bookIds.contains(id))) {
-        final current = rows.map(LocalAsset.fromRow).first;
+        final current = files.first;
         if (root.startsWith('content:')) {
           final folder = await rescanAudioFolder(root, books: true);
           final source = folder.files
@@ -141,6 +134,9 @@ class ReadingBookActions {
     }
     return result.values.toList();
   }
+
+  Future<bool> hasRegisteredFiles(String id) async =>
+      (await assets.localBookAssets(id, firstOnly: true)).isNotEmpty;
 
   Future<void> _delete(
     ReadingBookSource source, {

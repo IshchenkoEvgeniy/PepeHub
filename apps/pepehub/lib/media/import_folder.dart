@@ -37,6 +37,13 @@ class ImportFolder {
     if (root != null) await peerFileSystem(root).checkRoot();
   }
 
+  Future<void> clear() async {
+    await repo.db.customStatement('DELETE FROM metadata WHERE key=?', [
+      settingKey,
+    ]);
+    repo.notifyExternalChange();
+  }
+
   static String safeName(String value) {
     var name = value
         .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1f\x7f]'), '_')
@@ -87,7 +94,11 @@ class ImportFolder {
         if (offset != asset.bytes || await stage.hash() != asset.hash) {
           throw StateError('Копия книги не прошла проверку');
         }
-        await stage.publish(null);
+        try {
+          await stage.publish(null);
+        } catch (_) {
+          if (await files.hash(relative) != asset.hash) rethrow;
+        }
       } finally {
         await stage.discard();
       }
@@ -119,42 +130,89 @@ class ImportFolder {
     );
   }
 
-  Future<LocalAsset> placeBook(LocalAsset asset) async {
-    final root = await load();
-    if (root == null) return asset;
-    final extension = asset.filename.toLowerCase().endsWith('.fb2.zip')
+  Future<({String path, String relative})> prepareBook(
+    String root,
+    LocalAsset asset, {
+    String? previousName,
+  }) async {
+    final path = asset.path;
+    if (!root.startsWith('content:') && p.isWithin(root, path)) {
+      final relative = p.split(p.relative(path, from: root)).join('/');
+      if (await peerFileSystem(root).hash(relative) == asset.hash) {
+        return (path: path, relative: relative);
+      }
+      throw StateError('Файл изменился во время добавления');
+    }
+    if (root.startsWith('content:') && path.startsWith('content:')) {
+      final tree = Uri.parse(root), source = Uri.parse(path);
+      if (tree.authority == source.authority &&
+          tree.pathSegments.length == 2 &&
+          source.pathSegments.length >= 2) {
+        final treeId = tree.pathSegments.last;
+        final docId = source.pathSegments.last;
+        final prefix = treeId.endsWith(':') ? treeId : '$treeId/';
+        final relative = docId.startsWith(prefix)
+            ? docId.substring(prefix.length)
+            : p.basename(asset.filename);
+        if (relative.isNotEmpty &&
+            relative
+                .split('/')
+                .every(
+                  (part) => part.isNotEmpty && part != '.' && part != '..',
+                ) &&
+            !relative.contains(r'\')) {
+          final files = peerFileSystem(root);
+          final inside = await files.source(relative);
+          if (inside != null && Uri.parse(inside).pathSegments.last == docId) {
+            if (await files.hash(relative) != asset.hash) {
+              throw StateError('Файл изменился во время добавления');
+            }
+            return (path: inside, relative: relative);
+          }
+        }
+      }
+    }
+    final name = previousName ?? asset.filename;
+    final extension = name.toLowerCase().endsWith('.fb2.zip')
         ? '.fb2.zip'
-        : p.extension(asset.filename).toLowerCase();
-    final stem = asset.filename.substring(
-      0,
-      asset.filename.length - extension.length,
-    );
+        : p.extension(name).toLowerCase();
+    final stem = name.substring(0, name.length - extension.length);
     final relative =
         '${safeName(stem)} [${asset.hash.substring(0, 16)}]$extension';
-    final path = await _copy(root, relative, asset);
+    return (path: await _copy(root, relative, asset), relative: relative);
+  }
+
+  Future<void> registerBook(
+    String root,
+    String relative,
+    LocalAsset asset,
+  ) async {
+    await repo.setMeta(
+      'reading-source-path:${asset.bookId}',
+      jsonEncode({'root': root, 'relativePath': relative}),
+    );
+    await _register(root, asset.bookId);
+  }
+
+  Future<void> placeBook(LocalAsset asset) async {
+    final root = await load();
+    if (root == null) return;
+    final destination = await prepareBook(root, asset);
     await repo.db.transaction(() async {
       await repo.db.customStatement(
         'UPDATE local_assets SET path=? WHERE id=?',
-        [path, asset.id],
+        [destination.path, asset.id],
       );
       await repo.setMeta(
         'reading-import-location:${asset.bookId}',
-        jsonEncode({'path': path, 'hash': asset.hash, 'bytes': asset.bytes}),
+        jsonEncode({
+          'path': destination.path,
+          'hash': asset.hash,
+          'bytes': asset.bytes,
+        }),
       );
-      await repo.setMeta(
-        'reading-source-path:${asset.bookId}',
-        jsonEncode({'root': root, 'relativePath': relative}),
-      );
-      await _register(root, asset.bookId);
+      await registerBook(root, destination.relative, asset);
     });
-    return LocalAsset(
-      id: asset.id,
-      bookId: asset.bookId,
-      filename: asset.filename,
-      path: path,
-      hash: asset.hash,
-      bytes: asset.bytes,
-    );
   }
 
   /// Only compact headers are read; no audio tracks or full text indexes.

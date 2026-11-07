@@ -78,6 +78,7 @@ import '../library/library_service.dart';
 import '../library/personal_library.dart';
 import '../library/library_features.dart';
 import 'library_data_page.dart';
+import 'library_card_actions.dart';
 import 'library_work_page.dart';
 import 'obsidian_library_page.dart';
 
@@ -304,10 +305,13 @@ class _LibraryPageState extends State<LibraryPage> {
   AndroidBookFiles? incomingBooks;
   final openReaderHashes = <String>{};
 
-  Future<void> _receiveBook(String path) async {
+  Future<void> _receiveBook(AndroidBookSource source) async {
     if (!mounted || widget.assets == null) return;
     setState(() => message = 'Открытие полученной книги…');
-    final asset = await widget.assets!.importBook(XFile(path));
+    final asset = await widget.assets!.addBook(
+      source.file,
+      persistent: source.persistent,
+    );
     if (!mounted) return;
     if (openReaderHashes.contains(asset.hash)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -810,30 +814,42 @@ class _LibraryPageState extends State<LibraryPage> {
   });
 
   Future<void> _importBook() => _action(() async {
+    const mimeTypes = [
+      'application/epub+zip',
+      'application/pdf',
+      'application/rtf',
+      'text/rtf',
+      'text/plain',
+      'text/markdown',
+      'text/html',
+      'application/xml',
+      'text/xml',
+      'application/x-fictionbook+xml',
+      'application/zip',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/octet-stream',
+    ];
+    if (Platform.isAndroid) {
+      final source = await pickAndroidBook(mimeTypes);
+      if (source == null || !mounted) return;
+      final asset = await widget.assets!.addBook(
+        source.file,
+        persistent: source.persistent,
+      );
+      if (mounted) await _openReader(asset);
+      return;
+    }
     final file = await openFile(
       acceptedTypeGroups: [
         const XTypeGroup(
           label: 'Книги: EPUB, FB2, TXT, Markdown, HTML, DOCX, RTF, PDF',
           extensions: bookExtensions,
-          mimeTypes: [
-            'application/epub+zip',
-            'application/pdf',
-            'application/rtf',
-            'text/rtf',
-            'text/plain',
-            'text/markdown',
-            'text/html',
-            'application/xml',
-            'text/xml',
-            'application/x-fictionbook+xml',
-            'application/zip',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          ],
+          mimeTypes: mimeTypes,
         ),
       ],
     );
     if (file == null) return;
-    final asset = await widget.assets!.importBook(file);
+    final asset = await widget.assets!.addBook(file);
     if (mounted) await _openReader(asset);
   });
 
@@ -847,18 +863,6 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _showReader(LocalAsset asset, {ReadingNote? note}) async {
-    try {
-      if (bookFormat(asset.filename) != 'pdf') {
-        asset = await ReadingRoots(widget.assets!).forReading(asset);
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось открыть книгу: $error')),
-        );
-      }
-      return;
-    }
     await widget.audio?.pause();
     if (!mounted) return;
     await Navigator.push<void>(
@@ -2247,45 +2251,12 @@ class _LibraryPageState extends State<LibraryPage> {
     if (add == true && mounted) await _importBook();
   }
 
-  Future<bool> _deleteBookWithAccess(
-    ReadingBookActions actions,
-    String id,
-  ) async {
-    final requested = <String>{};
-    while (mounted) {
-      try {
-        await actions.deleteForever(id);
-        return true;
-      } on ReadingBookWriteAccessRequired catch (failure) {
-        final root = failure.root;
-        if (root == null || !requested.add(root)) rethrow;
-        if (!mounted) return false;
-        final confirm = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Нужен доступ к папке'),
-            content: const Text(
-              'Android не разрешает удалять файлы из этой папки. Нажмите «Выбрать папку» и подтвердите доступ к той же папке в системном окне. После этого удаление книги продолжится. Выбор другой папки не изменит библиотеку.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Отмена'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Выбрать папку'),
-              ),
-            ],
-          ),
-        );
-        if (confirm != true || !mounted) return false;
-        if (!await actions.requestWriteAccess(failure)) return false;
-        // Repeat every preflight, including SHA-256: permission selection may
-        // take time, and the file can be edited while the picker is open.
-      }
+  void _checkBookClosed(String id) {
+    if (localAssets.any(
+      (asset) => asset.bookId == id && openReaderHashes.contains(asset.hash),
+    )) {
+      throw StateError('Сначала закройте эту книгу');
     }
-    return false;
   }
 
   Future<void> _bookSource(LibraryRecord book) async {
@@ -2409,6 +2380,18 @@ class _LibraryPageState extends State<LibraryPage> {
       await _importBook();
       return;
     }
+    if (value == 'delete-library-card') {
+      final entry = obsidianLibrary.sourceDraft(book.id);
+      if (entry == null || !isSeriesCatalogItem(entry.item)) return;
+      await deleteLibraryCards(
+        context,
+        obsidianLibrary,
+        [entry.item.id],
+        fromTrash: isLibraryDeleted(entry.item),
+        checkBookClosed: () => _checkBookClosed(book.id),
+      );
+      return;
+    }
     if (value == 'hide-book' ||
         value == 'delete-book' ||
         value == 'reveal-book') {
@@ -2426,13 +2409,14 @@ class _LibraryPageState extends State<LibraryPage> {
           context: context,
           builder: (context) => AlertDialog(
             title: Text(
-              audio ? 'Удалить файлы аудиокниги?' : 'Удалить книгу навсегда?',
+              audio ? 'Удалить файлы аудиокниги?' : 'Удалить файл книги?',
             ),
             content: SingleChildScrollView(
               child: Text(
-                audio
-                    ? '«${book.title}»\n\nАудиофайлы этой книги будут удалены с устройства. Карточка в библиотеке, обложка, прогресс, заметки и история сохранятся. Для прослушивания файлы понадобится добавить заново.'
-                    : '«${book.title}»\n\nЛокальный файл в подключённой папке, импортированная копия и кеш чтения будут удалены. Прогресс, заметки и статистика сохранятся.\n\nЕсли папка общая, удаление на другом устройстве потребует отдельного подтверждения.',
+                '«${book.title}»\n\n'
+                '${audio ? 'Аудиофайлы этой книги будут удалены с устройства.' : 'Локальный файл в подключённой папке, импортированная копия и кеш чтения будут удалены.'} '
+                'Карточка библиотеки, обложка, прогресс, заметки и история сохранятся.\n\n'
+                'Если папку синхронизирует стороннее приложение, удаление может распространиться на другие устройства.',
               ),
             ),
             actions: [
@@ -2454,14 +2438,10 @@ class _LibraryPageState extends State<LibraryPage> {
         if (audio && widget.audio?.current?.bookId == book.id) {
           await widget.audio!.stop();
         }
-        if (openReaderHashes.any(
-          (hash) =>
-              localAssets.any((a) => a.hash == hash && a.bookId == book.id),
-        )) {
-          throw StateError('Сначала закройте эту книгу');
-        }
+        _checkBookClosed(book.id);
         if (value == 'delete-book') {
-          if (await _deleteBookWithAccess(actions, book.id)) {
+          if (mounted &&
+              await deleteBookFilesWithAccess(context, actions, book.id)) {
             peer?.localFilesChanged();
           }
         } else {
@@ -2841,6 +2821,9 @@ class _LibraryPageState extends State<LibraryPage> {
                 ? 'Убрать из избранного'
                 : 'В избранное',
             'collections': 'Коллекции книги',
+            if (obsidianLibrary.sourceDraft(book.id) case final entry?
+                when isSeriesCatalogItem(entry.item))
+              'delete-library-card': 'Удалить карточку библиотеки…',
             if (!audio) ...{
               'source': 'Источник и файл',
               if (widget.assets != null &&
@@ -2857,7 +2840,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 'metadata': 'Обновить сведения из файла',
               if (!deleted && widget.assets != null) ...{
                 'hide-book': 'Убрать из списка',
-                if (asset != null) 'delete-book': 'Удалить навсегда…',
+                if (asset != null) 'delete-book': 'Удалить файл книги…',
               },
             },
             'planned': 'Отметить новой',

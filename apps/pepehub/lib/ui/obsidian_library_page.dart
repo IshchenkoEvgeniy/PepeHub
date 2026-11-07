@@ -1240,7 +1240,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
         actions: [
           if (widget.onDelete != null)
             IconButton(
-              tooltip: 'В корзину',
+              tooltip: 'Удалить…',
               icon: const Icon(Icons.delete_outline),
               onPressed: saving
                   ? null

@@ -11,6 +11,11 @@ class AudioBookActions extends ReadingBookActions {
   AudioBookActions(super.assets);
 
   @override
+  Future<bool> hasRegisteredFiles(String id) async =>
+      (await assets.audioTracks(id, firstOnly: true)).isNotEmpty ||
+      await super.hasRegisteredFiles(id);
+
+  @override
   Future<void> hideMany(Iterable<String> ids, {bool hidden = true}) async {
     await assets.repository.db.transaction(() async {
       for (final id in ids.toSet()) {
@@ -30,15 +35,27 @@ class AudioBookActions extends ReadingBookActions {
   @override
   Future<void> deleteForever(String id) async {
     final tracks = await assets.audioTracks(id);
+    final trackIds = tracks.map((track) => track.id).toSet();
+    final legacy = await assets.localBookAssets(id);
     final selected = <String, ReadingBookSource>{};
-    for (final track in tracks) {
+    for (final track in [
+      ...tracks,
+      ...legacy.where((a) => !trackIds.contains(a.id)),
+    ]) {
+      if (selected.containsKey(track.path)) continue;
       // A shared physical file must not disappear from another book/edition.
       final shared = await assets.repository.db
           .customSelect(
             'SELECT 1 FROM audio_tracks t JOIN audio_editions e ON e.id=t.edition_id '
             'JOIN audio_resources r ON r.sha256=t.asset_hash '
-            'WHERE r.path=? AND e.book_id<>? LIMIT 1',
-            variables: [Variable(track.path), Variable(id)],
+            'WHERE r.path=? AND e.book_id<>? '
+            'UNION ALL SELECT 1 FROM local_assets WHERE path=? AND book_id<>? LIMIT 1',
+            variables: [
+              Variable(track.path),
+              Variable(id),
+              Variable(track.path),
+              Variable(id),
+            ],
           )
           .getSingleOrNull();
       if (shared != null) {
@@ -46,7 +63,6 @@ class AudioBookActions extends ReadingBookActions {
           'Файл используется другой аудиокнигой. Уберите книгу из списка.',
         );
       }
-      if (selected.containsKey(track.path)) continue;
       var hash = track.hash;
       // Folder links have opaque external: IDs. Hash only on explicit deletion,
       // streaming one file at a time; never read audio bytes for a shelf screen.

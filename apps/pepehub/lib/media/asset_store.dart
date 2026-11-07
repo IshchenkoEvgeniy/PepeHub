@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../reader/reading_book_visibility.dart';
 
@@ -10,13 +11,14 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../data/repository.dart';
-import '../audio/audio_library_repository.dart';
+import '../sync/peer/peer_files.dart';
 import '../audio/audio_import.dart';
 import '../audio/audio_link.dart';
 import '../reader/epub.dart';
 import '../reader/book_formats.dart';
 import '../reader/text_book.dart';
 import '../reader/pdf_support.dart';
+import '../reader/pdf_file_source.dart';
 import '../audio/audio_folder.dart' show audioSourceExists;
 import 'import_folder.dart';
 
@@ -255,195 +257,209 @@ class AssetStore {
           .map(LocalAsset.fromRow)
           .toList();
 
+  Future<List<LocalAsset>> localBookAssets(
+    String bookId, {
+    bool firstOnly = false,
+  }) async =>
+      (await repository.db
+              .customSelect(
+                'SELECT * FROM local_assets WHERE book_id=? ${firstOnly ? 'LIMIT 1' : ''}',
+                variables: [Variable(bookId)],
+              )
+              .get())
+          .map(LocalAsset.fromRow)
+          .toList();
+
   Future<LocalAsset> importEpub(XFile selected) => importBook(selected);
 
-  Future<LocalAsset> importBook(XFile selected) async {
-    final format = bookFormat(selected.name);
-    await ImportFolder(this).check();
-    final asset = await _importFile(
-      selected,
-      maxBytes: (format == 'pdf' ? 256 : 64) * 1024 * 1024,
-      format: format,
-    );
-    return ImportFolder(this).placeBook(asset);
-  }
+  Future<LocalAsset> importBook(XFile selected) =>
+      _storeBook(selected, keepPrivateCopy: true);
 
-  Future<LocalAsset> _importFile(
+  /// Adds a picked original, or writes it directly to the chosen import folder.
+  Future<LocalAsset> addBook(XFile selected, {bool persistent = true}) =>
+      _storeBook(selected, persistent: persistent);
+
+  Future<LocalAsset> _storeBook(
     XFile selected, {
-    required int maxBytes,
-    required String format,
+    bool keepPrivateCopy = false,
+    bool persistent = true,
   }) async {
-    final audio = format == 'audio';
-    final extension = _bookExtension(selected.name);
-    if (audio && !audioExtensions.contains(extension.substring(1))) {
-      throw ArgumentError('Неподдерживаемый аудиоформат');
+    final filename = p.basename(selected.name);
+    final format = bookFormat(filename);
+    final limit = (format == 'pdf' ? 256 : 64) * 1024 * 1024;
+    final isDocument = selected.path.startsWith('content:');
+    final folder = ImportFolder(this);
+    final root = await folder.load();
+    if (root == null && !persistent) {
+      throw StateError(
+        'Android предоставил временный доступ. Выберите оригинал через '
+        '«Добавить файл книги» или настройте папку импорта.',
+      );
     }
+    if (root != null) await peerFileSystem(root).checkRoot();
+
     final expected = await selected.length();
-    if (expected < (audio ? 12 : 1) || expected > maxBytes) {
+    if (expected > limit || (!isDocument && expected <= 0)) {
       throw ArgumentError('Недопустимый размер файла');
     }
-    await directory.create(recursive: true);
-    final temporary = File(p.join(directory.path, '${uuid.v4()}.part'));
-    final digestSink = _DigestSink(), header = <int>[];
+    final privateCopy = root == null && keepPrivateCopy;
+    if (privateCopy) await directory.create(recursive: true);
+    final temporary = privateCopy
+        ? File(p.join(directory.path, '${uuid.v4()}.part'))
+        : null;
+    final sink = temporary?.openWrite();
+    final digestSink = _DigestSink();
     final hasher = sha256.startChunkedConversion(digestSink);
-    final sink = temporary.openWrite();
+    final header = <int>[];
+    final textBytes = !privateCopy && format != 'pdf'
+        ? BytesBuilder(copy: false)
+        : null;
     var size = 0;
     try {
       await for (final chunk in selected.openRead()) {
         size += chunk.length;
-        if (size > maxBytes) {
-          throw ArgumentError('Файл превышает лимит размера');
-        }
-        if (header.length < 12) header.addAll(chunk.take(12 - header.length));
+        if (size > limit) throw ArgumentError('Файл превышает лимит размера');
+        if (header.length < 5) header.addAll(chunk.take(5 - header.length));
         hasher.add(chunk);
-        sink.add(chunk);
-        // Backpressure: keep memory bounded while copying multi-gigabyte audio.
-        await sink.flush();
-      }
-      await sink.close();
-      hasher.close();
-      if (size != expected) throw StateError('Файл изменился во время импорта');
-      final mp3 =
-          header.length >= 3 &&
-          ((header[0] == 73 && header[1] == 68 && header[2] == 51) ||
-              (header[0] == 255 && (header[1] & 224) == 224));
-      final mp4 =
-          header.length >= 8 &&
-          String.fromCharCodes(header.sublist(4, 8)) == 'ftyp';
-      final signature = String.fromCharCodes(header);
-      final validAudio = switch (extension) {
-        '.mp3' => mp3,
-        '.m4a' || '.m4b' => mp4,
-        '.aac' =>
-          header.length >= 2 && header[0] == 255 && (header[1] & 246) == 240,
-        '.ogg' || '.opus' => signature.startsWith('OggS'),
-        '.flac' => signature.startsWith('fLaC'),
-        '.wav' =>
-          signature.startsWith('RIFF') && signature.substring(8, 12) == 'WAVE',
-        _ => false,
-      };
-      if (audio && !validAudio) {
-        throw ArgumentError('Содержимое файла не соответствует аудиоформату');
-      }
-      final temporaryPath = temporary.path;
-      EpubBook? parsed;
-      if (format == 'pdf') {
-        if (!signature.startsWith('%PDF-')) {
-          throw const FormatException('Это не PDF');
+        textBytes?.add(chunk);
+        if (sink != null) {
+          sink.add(chunk);
+          await sink.flush();
         }
-        await validatePdf(temporaryPath);
-      } else if (!audio) {
-        parsed = await loadTextBook(temporaryPath, selected.name);
+      }
+      await sink?.close();
+      hasher.close();
+      if (size == 0 || expected > 0 && size != expected) {
+        throw StateError('Файл пуст или изменился во время добавления');
       }
       final hash = digestSink.digest!.toString();
-      final existing = await byHash(hash);
-      if (existing != null) {
-        if ((await repository.record(existing.bookId))?.deleted != false) {
-          throw StateError(
-            'Эта книга удалена из библиотеки. Автоматическое восстановление отключено.',
-          );
-        }
-        if (!audio) {
-          final target = File(_managedBookPath(existing));
-          await _publishCopy(temporary, target, hash, size);
-          await repository.db.transaction(() async {
-            await repository.db.customStatement(
-              'UPDATE local_assets SET path=?,bytes=? WHERE id=?',
-              [target.path, size, existing.id],
-            );
-            await repository.setMeta(
-              'reading-imported:${existing.bookId}',
-              '1',
-            );
-            await repository.setMeta(
-              'reading-library-hidden:${existing.bookId}',
-              '0',
-            );
-            await repository.setMeta(
-              'reading-user-hidden:${existing.bookId}',
-              '0',
-            );
-            await ReadingBookVisibility(repository).available(existing.bookId);
-          });
-          return LocalAsset(
-            id: existing.id,
-            bookId: existing.bookId,
-            filename: existing.filename,
-            path: target.path,
-            hash: hash,
-            bytes: size,
-          );
-        }
-        // Re-import can repair a removed local file, but never overwrites an existing one.
-        if (!existing.path.startsWith('content:') &&
-            !await File(existing.path).exists()) {
-          await temporary.rename(existing.path);
-        }
-        return existing;
-      }
-      final target = File(p.join(directory.path, '$hash$extension'));
-      await _publishCopy(temporary, target, hash, size);
-      final asset = LocalAsset(
+      final original = LocalAsset(
         id: uuid.v4(),
         bookId: uuid.v4(),
-        filename: p.basename(selected.name),
-        path: target.path,
+        filename: filename,
+        path: isDocument
+            ? selected.path
+            : p.normalize(p.absolute(selected.path)),
         hash: hash,
         bytes: size,
       );
-      final title = (parsed?.title ?? p.basenameWithoutExtension(selected.name))
-          .replaceAll(RegExp(r'[\x00-\x1f\x7f]'), ' ')
-          .trim();
-      await repository.db.transaction(() async {
-        await repository.put('book', asset.bookId, {
-          'title': title.isEmpty
-              ? 'Книга'
-              : title.substring(0, title.length.clamp(0, 500)),
-          'authors':
-              parsed?.authors
-                  .map(
-                    (a) => a.replaceAll(RegExp(r'[\x00-\x1f\x7f]'), ' ').trim(),
-                  )
-                  .where((a) => a.isNotEmpty)
-                  .map((a) => a.substring(0, a.length.clamp(0, 200)))
-                  .toList() ??
-              <String>[],
-          'format': format,
-          'status': 'planned',
-        });
-        await repository.db.customStatement(
-          'INSERT INTO local_assets(id,book_id,filename,path,sha256,bytes) VALUES(?,?,?,?,?,?)',
-          [
-            asset.id,
-            asset.bookId,
-            asset.filename,
-            asset.path,
-            asset.hash,
-            asset.bytes,
-          ],
+      final path = temporary?.path ?? original.path;
+      EpubBook? parsed;
+      if (format == 'pdf') {
+        if (String.fromCharCodes(header) != '%PDF-') {
+          throw const FormatException('Это не PDF');
+        }
+        if (isDocument && temporary == null) {
+          final source = await PdfFileSource.open(original, this);
+          try {
+            await validatePdf(source.path);
+          } finally {
+            await source.close();
+          }
+        } else {
+          await validatePdf(path);
+        }
+      } else {
+        parsed = await loadTextBook(
+          path,
+          filename,
+          sourceBytes: textBytes?.takeBytes(),
         );
-        if (!audio) {
-          await repository.setMeta('reading-imported:${asset.bookId}', '1');
+      }
+
+      Future<LocalAsset?> existingBook() async {
+        final asset = await byHash(hash);
+        if (asset != null &&
+            (await repository.record(asset.bookId))?.deleted != false) {
+          throw StateError(
+            'Эта книга удалена. Автоматическое восстановление отключено.',
+          );
+        }
+        return asset;
+      }
+
+      final previous = await existingBook();
+      final destination = root == null
+          ? null
+          : await folder.prepareBook(
+              root,
+              original,
+              previousName: previous?.filename,
+            );
+      return await repository.db.transaction(() async {
+        final existing = await existingBook();
+        final assetId = existing?.id ?? original.id;
+        final bookId = existing?.bookId ?? original.bookId;
+        var storedPath = destination?.path ?? original.path;
+        if (temporary != null) {
+          final target = File(
+            existing == null
+                ? p.join(directory.path, '$hash${_bookExtension(filename)}')
+                : _managedBookPath(existing),
+          );
+          await _publishCopy(temporary, target, hash, size);
+          storedPath = target.path;
+        }
+        final asset = LocalAsset(
+          id: assetId,
+          bookId: bookId,
+          filename: root == null && temporary == null
+              ? filename
+              : existing?.filename ?? filename,
+          path: storedPath,
+          hash: hash,
+          bytes: size,
+        );
+        if (existing == null) {
+          final title = (parsed?.title ?? p.basenameWithoutExtension(filename))
+              .replaceAll(RegExp(r'[\x00-\x1f\x7f]'), ' ')
+              .trim();
+          await repository.put('book', bookId, {
+            'title': title.isEmpty
+                ? 'Книга'
+                : title.substring(0, title.length.clamp(0, 500)),
+            'authors':
+                parsed?.authors
+                    .map(
+                      (a) =>
+                          a.replaceAll(RegExp(r'[\x00-\x1f\x7f]'), ' ').trim(),
+                    )
+                    .where((a) => a.isNotEmpty)
+                    .map((a) => a.substring(0, a.length.clamp(0, 200)))
+                    .toList() ??
+                <String>[],
+            'format': format,
+            'status': 'planned',
+          });
+          await repository.db.customStatement(
+            'INSERT INTO local_assets(id,book_id,filename,path,sha256,bytes) VALUES(?,?,?,?,?,?)',
+            [asset.id, bookId, asset.filename, storedPath, hash, size],
+          );
+        } else {
+          await repository.db.customStatement(
+            'UPDATE local_assets SET path=?,filename=?,bytes=? WHERE id=?',
+            [storedPath, asset.filename, size, asset.id],
+          );
+        }
+        await repository.setMeta('reading-imported:$bookId', '1');
+        if (temporary == null) {
           await repository.setMeta(
-            'reading-library-hidden:${asset.bookId}',
-            '0',
+            'reading-import-location:$bookId',
+            jsonEncode({'path': storedPath, 'hash': hash, 'bytes': size}),
           );
         }
-        if (audio) {
-          await AudioLibraryRepository(repository.db).registerSingleTrack(
-            bookId: asset.bookId,
-            assetId: asset.id,
-            hash: asset.hash,
-            path: asset.path,
-            filename: asset.filename,
-            bytes: asset.bytes,
-          );
+        if (root != null && destination != null) {
+          await folder.registerBook(root, destination.relative, asset);
         }
+        await repository.setMeta('reading-user-hidden:$bookId', '0');
+        await ReadingBookVisibility(repository).available(bookId);
+        return asset;
       });
-      return asset;
     } finally {
-      await sink.close();
-      if (await temporary.exists()) await temporary.delete();
+      await sink?.close();
+      if (temporary != null && await temporary.exists()) {
+        await temporary.delete();
+      }
     }
   }
 }

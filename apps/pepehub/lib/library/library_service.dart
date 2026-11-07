@@ -167,16 +167,22 @@ class LibraryService extends ChangeNotifier {
     await loadCached();
   }
 
-  /// Permanent removal concerns the archive card and its own journal/notes.
-  /// Native reader/player data, physical covers and source files are untouched.
-  Future<int> _purgeCards(Iterable<String> ids) async {
+  Future<({int count, Set<String> covers})> _purgeCards(
+    Iterable<String> ids, {
+    bool includeVisible = false,
+  }) async {
     final removed = <String>{};
+    final coverHashes = <String>{};
     await repository.mutate((cards) async {
       for (final id in ids.toSet()) {
         final card = cards[id];
-        if (card != null && isLibraryDeleted(card.item)) {
+        if (card != null &&
+            (isLibraryDeleted(card.item) ||
+                includeVisible && isSeriesCatalogItem(card.item))) {
           cards.remove(id);
           removed.add(id);
+          final hash = coverHash(card.item);
+          if (hash != null) coverHashes.add(hash);
         }
       }
       if (removed.isEmpty) return;
@@ -187,29 +193,68 @@ class LibraryService extends ChangeNotifier {
           );
         });
       }
+      await LibraryExchange.detachRemovedCards(local, removed);
       for (final id in removed) {
-        await local.db.customStatement('DELETE FROM metadata WHERE key=?', [
-          'obsidian-policy:$personalLibraryNamespace:$id',
-        ]);
+        await local.db.customStatement(
+          'DELETE FROM metadata WHERE key IN (?,?)',
+          [
+            'obsidian-policy:$personalLibraryNamespace:$id',
+            'obsidian-auto:$personalLibraryNamespace:$id',
+          ],
+        );
       }
     });
-    return removed.length;
+    return (count: removed.length, covers: coverHashes);
   }
 
-  Future<int> purgeCards(Iterable<String> ids) async {
-    final count = await _purgeCards(ids);
+  Future<void> _discardUnusedCovers(Set<String> hashes) async {
+    final storage = covers;
+    if (storage == null || hashes.isEmpty) return;
+    await local.db.transaction(() async {
+      final cards = await repository.entries();
+      final referenced = cards.values.map((card) => coverHash(card.item));
+      for (final hash in hashes.difference(referenced.nonNulls.toSet())) {
+        await storage.discardCached(hash);
+      }
+    });
+  }
+
+  /// Removes archive data without changing the source files or native history.
+  Future<int> purgeCards(
+    Iterable<String> ids, {
+    bool includeVisible = false,
+  }) async {
+    final removed = await _purgeCards(ids, includeVisible: includeVisible);
+    await _discardUnusedCovers(removed.covers);
     await loadCached();
-    return count;
+    return removed.count;
+  }
+
+  Iterable<String> _expiredCards(Iterable<LibraryEntry> entries, int days) {
+    if (![7, 30, 90].contains(days)) return const [];
+    final cutoff = DateTime.now().toUtc().subtract(Duration(days: days));
+    return entries
+        .where((entry) {
+          final deleted = DateTime.tryParse(
+            '${entry.item.values['pepehub_deleted_at']}',
+          );
+          return deleted != null && deleted.isBefore(cutoff);
+        })
+        .map((entry) => entry.item.id);
   }
 
   Future<void> setTrashRetention(int days) async {
     if (![0, 7, 30, 90].contains(days)) {
       throw ArgumentError('Срок хранения: 0, 7, 30 или 90 дней');
     }
-    await local.db.transaction(() async {
+    final removed = await local.db.transaction(() async {
       await local.setMeta('library-trash-retention-days', '$days');
-      await loadCached();
+      return _purgeCards(
+        _expiredCards((await repository.entries()).values, days),
+      );
     });
+    await _discardUnusedCovers(removed.covers);
+    await loadCached();
   }
 
   Future<void> favorite(String id) async {
@@ -535,21 +580,11 @@ class LibraryService extends ChangeNotifier {
     final retention =
         int.tryParse(await local.meta('library-trash-retention-days') ?? '') ??
         0;
-    if ([7, 30, 90].contains(retention)) {
-      final cutoff = DateTime.now().toUtc().subtract(Duration(days: retention));
-      final expired = values.values
-          .where((entry) {
-            final deleted = DateTime.tryParse(
-              '${entry.item.values['pepehub_deleted_at']}',
-            );
-            return deleted != null && deleted.isBefore(cutoff);
-          })
-          .map((entry) => entry.item.id)
-          .toList();
-      if (expired.isNotEmpty) {
-        await _purgeCards(expired);
-        values = await repository.entries();
-      }
+    final expired = _expiredCards(values.values, retention).toList();
+    if (expired.isNotEmpty) {
+      final removed = await _purgeCards(expired);
+      await _discardUnusedCovers(removed.covers);
+      values = await repository.entries();
     }
     if (await local.meta('library-manual-archive-v1') != '1') {
       if (values.values.any(

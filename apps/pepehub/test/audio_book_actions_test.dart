@@ -112,6 +112,25 @@ void main() {
     expect(await second.exists(), true);
   });
   test(
+    'deletes registered legacy audio files without edition tracks',
+    () async {
+      final tracks = await assets.audioTracks(id);
+      for (final track in tracks) {
+        await db.customStatement(
+          'INSERT INTO local_assets(id,book_id,filename,path,sha256,bytes) VALUES(?,?,?,?,?,?)',
+          [track.id, id, track.filename, track.path, track.hash, track.bytes],
+        );
+      }
+      await db.customStatement('DELETE FROM audio_tracks');
+      final actions = AudioBookActions(assets);
+      expect(await actions.hasRegisteredFiles(id), true);
+      await actions.deleteForever(id);
+      expect(await first.exists(), false);
+      expect(await second.exists(), false);
+      expect(await unrelated.exists(), true);
+    },
+  );
+  test(
     'Android preflights every document and forwards write access failure',
     () async {
       final tracks = await assets.audioTracks(id);

@@ -8,6 +8,7 @@ import '../reader/reading_book_actions.dart';
 import 'audio_roots_page.dart';
 import 'reading_roots_page.dart';
 import 'audio_mini_player.dart';
+import 'library_card_actions.dart';
 
 class HiddenDeletedPage extends StatefulWidget {
   final LibraryService library;
@@ -32,7 +33,8 @@ class _HiddenDeletedPageState extends State<HiddenDeletedPage> {
   String query = '';
   late String media = widget.initialMedia;
   String? error;
-  bool loading = true, busy = false;
+  bool loading = true, _working = false, _removing = false;
+  bool get busy => _working || _removing;
   int retention = 0;
   @override
   void initState() {
@@ -83,7 +85,7 @@ class _HiddenDeletedPageState extends State<HiddenDeletedPage> {
   Future<void> _run(Future<void> Function() action) async {
     if (busy) return;
     setState(() {
-      busy = true;
+      _working = true;
       error = null;
     });
     try {
@@ -92,7 +94,7 @@ class _HiddenDeletedPageState extends State<HiddenDeletedPage> {
     } catch (e) {
       if (mounted) setState(() => error = '$e');
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) setState(() => _working = false);
     }
   }
 
@@ -151,16 +153,21 @@ class _HiddenDeletedPageState extends State<HiddenDeletedPage> {
         ),
       ) ??
       false;
-  Future<void> _purge(List<String> ids) async {
-    if (!await _confirm(
-      'Удалить окончательно: ${ids.length}?',
-      'Карточки и связанные с ними цитаты и записи журнала библиотеки будут удалены. Восстановление возможно только из резервной копии. Файлы книг, обложки и история читалки/плеера сохранятся.',
-    )) {
-      return;
+  Future<void> _purge(List<String> ids, {bool withFiles = false}) async {
+    if (busy) return;
+    setState(() => _removing = true);
+    try {
+      final removed = await deleteLibraryCards(
+        context,
+        widget.library,
+        ids,
+        fromTrash: true,
+        allowFileDeletion: withFiles,
+      );
+      if (removed && mounted) await _load();
+    } finally {
+      if (mounted) setState(() => _removing = false);
     }
-    await _run(() async {
-      await widget.library.purgeCards(ids);
-    });
   }
 
   Future<void> _retention(int days) async {
@@ -240,7 +247,7 @@ class _HiddenDeletedPageState extends State<HiddenDeletedPage> {
               SliverToBoxAdapter(
                 child: Column(
                   children: [
-                    if (loading || busy) const LinearProgressIndicator(),
+                    if (loading || _working) const LinearProgressIndicator(),
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -422,7 +429,9 @@ class _HiddenDeletedPageState extends State<HiddenDeletedPage> {
                                 if (tab == 3)
                                   IconButton(
                                     tooltip: 'Удалить окончательно',
-                                    onPressed: busy ? null : () => _purge([id]),
+                                    onPressed: busy
+                                        ? null
+                                        : () => _purge([id], withFiles: true),
                                     icon: const Icon(Icons.delete_forever),
                                   ),
                               ],

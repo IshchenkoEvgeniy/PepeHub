@@ -4,12 +4,14 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:enough_convert/enough_convert.dart';
+import 'package:crypto/crypto.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html;
 import 'package:markdown/markdown.dart' as md;
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
+import '../audio/audio_folder.dart';
 import 'book_archive.dart';
 import 'book_formats.dart';
 import 'epub.dart';
@@ -27,14 +29,28 @@ const currentBookLayout = 7;
 Future<EpubBook> loadTextBook(
   String path,
   String filename, {
+  Uint8List? sourceBytes,
   bool legacyProjection = false,
   int layout = currentBookLayout,
-}) => Isolate.run(() {
-  final file = File(path);
-  if (file.lengthSync() > 64 * 1024 * 1024) {
+}) {
+  final transferred = sourceBytes == null
+      ? null
+      : TransferableTypedData.fromList([sourceBytes]);
+  return _loadTextBook(path, filename, transferred, legacyProjection, layout);
+}
+
+Future<EpubBook> _loadTextBook(
+  String path,
+  String filename,
+  TransferableTypedData? source,
+  bool legacyProjection,
+  int layout,
+) => Isolate.run(() {
+  final file = source == null ? File(path) : null;
+  if (file != null && file.lengthSync() > 64 * 1024 * 1024) {
     throw const FormatException('Книга превышает 64 МБ');
   }
-  final bytes = file.readAsBytesSync();
+  final bytes = source?.materialize().asUint8List() ?? file!.readAsBytesSync();
   final localImages = <String, Uint8List>{};
   dom.Document? preparedDocument;
   String? preparedSource;
@@ -50,7 +66,10 @@ Future<EpubBook> loadTextBook(
     preparedSource = source;
     preparedDocument = html.parse(source);
     var total = 0;
-    for (final image in preparedDocument.querySelectorAll('img')) {
+    for (final image
+        in path.startsWith('content:')
+            ? const <dom.Element>[]
+            : preparedDocument.querySelectorAll('img')) {
       final href = image.attributes['src'] ?? '';
       final relative = bookResourcePath(p.basename(path), href);
       if (relative == null ||
@@ -76,6 +95,24 @@ Future<EpubBook> loadTextBook(
     preparedHtml: preparedSource,
   );
 });
+
+Future<Uint8List> readLinkedTextBook(SafAudioFile file, String hash) async {
+  if (file.bytes <= 0 || file.bytes > 64 * 1024 * 1024) {
+    throw const FormatException('Недопустимый размер книги');
+  }
+  final data = BytesBuilder(copy: false);
+  await for (final chunk in file.openRead()) {
+    if (data.length + chunk.length > file.bytes) {
+      throw StateError('Файл книги изменился. Добавьте его заново.');
+    }
+    data.add(chunk);
+  }
+  final bytes = data.takeBytes();
+  if (bytes.length != file.bytes || sha256.convert(bytes).toString() != hash) {
+    throw StateError('Файл книги изменился. Добавьте его заново.');
+  }
+  return bytes;
+}
 
 String decodeBookText(Uint8List bytes) {
   String result;

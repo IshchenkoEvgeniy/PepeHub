@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../audio/audio_folder.dart';
 import '../data/repository.dart';
 import '../media/asset_store.dart';
 import 'text_book.dart';
@@ -296,51 +297,41 @@ class _ReaderPageState extends State<ReaderPage>
 
   Future<void> _load() async {
     try {
-      final parsed =
-          widget.suppliedDocument ??
-          ReaderDocument(
-            await loadTextBook(widget.asset.path, widget.asset.filename),
-          );
+      final asset = widget.asset;
+      final bytes =
+          widget.suppliedDocument == null && asset.path.startsWith('content:')
+          ? await readLinkedTextBook(
+              SafAudioFile(asset.path, asset.filename, asset.bytes),
+              asset.hash,
+            )
+          : null;
+      Future<ReaderDocument> load({
+        int layout = currentBookLayout,
+        bool legacy = false,
+      }) async => ReaderDocument(
+        await loadTextBook(
+          asset.path,
+          asset.filename,
+          sourceBytes: bytes,
+          legacyProjection: legacy,
+          layout: layout,
+        ),
+      );
+
+      final parsed = widget.suppliedDocument ?? await load();
       if (widget.suppliedDocument == null) {
+        final format = bookFormat(asset.filename);
         await migrateReaderLayout(
           library,
-          widget.asset.hash,
+          asset.hash,
           parsed,
-          () async => ReaderDocument(
-            await loadTextBook(
-              widget.asset.path,
-              widget.asset.filename,
-              legacyProjection: true,
-              layout: 2,
-            ),
-          ),
-          previous:
-              const ['fb2', 'txt'].contains(bookFormat(widget.asset.filename))
-              ? () async => ReaderDocument(
-                  await loadTextBook(
-                    widget.asset.path,
-                    widget.asset.filename,
-                    layout: 2,
-                  ),
-                )
+          () => load(legacy: true, layout: 2),
+          previous: const ['fb2', 'txt'].contains(format)
+              ? () => load(layout: 2)
               : null,
-          prior: bookFormat(widget.asset.filename) == 'txt'
-              ? () async => ReaderDocument(
-                  await loadTextBook(
-                    widget.asset.path,
-                    widget.asset.filename,
-                    layout: 3,
-                  ),
-                )
-              : null,
-          sourceLayout: bookFormat(widget.asset.filename) == 'txt'
-              ? (layout) async => ReaderDocument(
-                  await loadTextBook(
-                    widget.asset.path,
-                    widget.asset.filename,
-                    layout: layout,
-                  ),
-                )
+          prior: format == 'txt' ? () => load(layout: 3) : null,
+          sourceLayout: format == 'txt'
+              ? (layout) => load(layout: layout)
               : null,
         );
       }

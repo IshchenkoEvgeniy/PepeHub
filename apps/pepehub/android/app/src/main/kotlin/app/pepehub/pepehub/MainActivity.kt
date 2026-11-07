@@ -127,6 +127,7 @@ class MainActivity : AudioServiceActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         if (updates?.onActivityResult(requestCode) != true &&
             peers?.onActivityResult(requestCode, resultCode, data) != true &&
+            books?.onActivityResult(requestCode, resultCode, data) != true &&
             videos?.onActivityResult(requestCode, resultCode, data) != true &&
             folders?.onActivityResult(requestCode, resultCode, data) != true) {
             super.onActivityResult(requestCode, resultCode, data)
