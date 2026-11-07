@@ -860,7 +860,7 @@ class _LibraryPageState extends State<LibraryPage> {
   Future<void> _manageRoots() => _action(() async {
     if (!reading) await widget.audio?.stop();
     if (!mounted) return;
-    await Navigator.push<void>(
+    final picked = await Navigator.push<String>(
       context,
       MaterialPageRoute(
         builder: (_) => reading
@@ -868,6 +868,13 @@ class _LibraryPageState extends State<LibraryPage> {
             : AudioRootsPage(assets: widget.assets!),
       ),
     );
+    // A folder tapped on the folders screen opens the shelf filtered by it.
+    if (picked != null && reading) {
+      await _reload();
+      if (mounted && roots.any((r) => r.key == picked)) {
+        setState(() => selectedRoot = picked);
+      }
+    }
   });
 
   Future<void> _importBook() => _action(() async {

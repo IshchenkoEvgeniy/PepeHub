@@ -12,6 +12,10 @@ import '../reader/reading_statistics_history.dart';
 import '../statistics/statistics_period.dart';
 import '../reader/reading_library.dart';
 import '../reader/reading_log.dart';
+import '../reader/reading_plan.dart';
+
+import 'dart:io';
+
 import 'audio_statistics_page.dart' show statTime;
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
@@ -46,6 +50,12 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
   String? lastJournalSave;
   Future<void>? _loadingWork;
   bool _loadAgain = false;
+  Map<String, String> covers = {};
+
+  /// Per-book page only: progress, remaining time and expected finish.
+  ReadingForecast? forecast;
+  ReadingPlan bookPlan = const ReadingPlan();
+  int bookLength = 0;
   @override
   void initState() {
     super.initState();
@@ -148,6 +158,30 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
       final warnings = await widget.repository.metadataPrefixes([
         'reading-log-error:',
       ]);
+      var coverPaths = <String, String>{};
+      try {
+        coverPaths = await library.coverPaths();
+      } catch (_) {
+        /* Covers are decoration; spines remain. */
+      }
+      ReadingForecast? bookForecast;
+      var plan = const ReadingPlan();
+      var length = 0;
+      if (widget.bookId != null) {
+        try {
+          final data = await ReadingPlans(widget.repository)
+              .load(widget.bookId!);
+          bookForecast = (await analyzeReadingPlan(
+            data,
+            widget.bookId!,
+            DateTime.now(),
+          )).forecast;
+          plan = data.saved ?? const ReadingPlan();
+          length = data.length;
+        } catch (_) {
+          /* A card without a file has no text to forecast. */
+        }
+      }
       for (final book in b.where(
         (b) => widget.bookId == null || b.id == widget.bookId,
       )) {
@@ -164,6 +198,10 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
             ..clear()
             ..addAll(names);
           goal = g.clamp(0, 1440);
+          covers = coverPaths;
+          forecast = bookForecast;
+          bookPlan = plan;
+          bookLength = length;
           journalFolders = folders;
           lastJournalSave = lastSave;
           error = logWarnings.isEmpty
@@ -254,7 +292,6 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
     final streak = _stats.streak;
     final todayMs = global.days[readingDay(today)] ?? 0;
     final shown = _stats.shown;
-    final week = _stats.week, previous = _stats.previous;
     final activeDays = total.days.values.where((v) => v > 0).length;
     final average = total.sessions == 0
         ? 0
@@ -278,28 +315,12 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
       total.sessions,
       activeDays,
       average,
-      week,
-      previous,
     );
     final goalPanel = PepePanel(
       title: 'Цель на сегодня · вся библиотека',
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (widget.bookId != null)
-            IconButton(
-              tooltip: 'План чтения',
-              icon: const Icon(Icons.event_note, size: 20),
-              onPressed: () => Navigator.push<void>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ReadingPlanPage(
-                    repository: widget.repository,
-                    bookId: widget.bookId!,
-                  ),
-                ),
-              ),
-            ),
           IconButton(
             tooltip: 'Настроить цели',
             onPressed: _goal,
@@ -436,7 +457,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
             children: [
               Expanded(
                 child: PepeFigure(
-                  pepeChars(total.newChars),
+                  pepePages(total.newChars),
                   'Новое продвижение',
                   size: 24,
                   color: palette.accent,
@@ -444,17 +465,12 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
               ),
               Expanded(
                 child: PepeFigure(
-                  pepeChars(total.repeatChars),
+                  pepePages(total.repeatChars),
                   'Повторное чтение',
                   size: 24,
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Продвижение — оценка по обычному перелистыванию и прокрутке. Поиск и быстрые переходы не засчитываются. Ручные сессии добавляют только время.',
-            style: TextStyle(fontSize: 11.5, height: 1.4, color: palette.muted),
           ),
         ],
       ),
@@ -505,7 +521,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                       title = titles[id] ?? 'Книга без файла';
                   return PepeShareRow(
                     key: ValueKey('reading-statistics-book:$id'),
-                    leading: PepeSpine(title),
+                    leading: _cover(id, title),
                     title: title,
                     value: statTime(total.books[id]!),
                     note:
@@ -534,7 +550,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
       ),
       child: _sessions(palette, shown, start, end),
     );
-    final journalPanel = _journal(palette);
+    final bookPanel = widget.bookId == null ? null : _bookPanel(palette);
 
     return PepeSubpage(
       title: widget.bookId == null
@@ -542,9 +558,13 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           : titles[widget.bookId] ?? 'Статистика книги',
       back: widget.bookId == null ? 'Статистика' : 'Чтение',
       section: PepeSection.statistics,
-      subtitle: 'Учёт приостанавливается в фоне, в поиске/настройках и после 2 минут без действий.',
       onRefresh: _load,
       actions: [
+        IconButton(
+          tooltip: 'О статистике и экспорт журнала',
+          onPressed: _info,
+          icon: const Icon(Icons.info_outline),
+        ),
         IconButton(
           tooltip: 'Управление статистикой',
           onPressed: _manage,
@@ -603,38 +623,49 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
             ),
           ),
         const SizedBox(height: 18),
+        // Everyday figures first: today's goal and the streak, then totals.
         if (MediaQuery.sizeOf(context).width < 1100) ...[
-          hero,
-          const SizedBox(height: 16),
-          splitPanel,
-          const SizedBox(height: 16),
+          if (bookPanel != null) ...[bookPanel, const SizedBox(height: 16)],
           goalPanel,
           const SizedBox(height: 16),
           streakPanel,
           const SizedBox(height: 16),
+          hero,
+          const SizedBox(height: 16),
           barsPanel,
+          const SizedBox(height: 16),
+          widget.bookId == null ? booksPanel : sessionsPanel,
+          const SizedBox(height: 16),
+          calendarPanel,
+          const SizedBox(height: 16),
+          _comparison(),
+          const SizedBox(height: 16),
+          splitPanel,
+          if (widget.bookId == null) ...[
+            const SizedBox(height: 16),
+            sessionsPanel,
+          ],
         ] else ...[
+          if (bookPanel != null) ...[bookPanel, const SizedBox(height: 16)],
           PepeRow(
             breakpoint: 0,
-            children: [(6, hero), (4, goalPanel), (4, streakPanel)],
+            children: [(4, goalPanel), (4, streakPanel), (6, hero)],
           ),
           const SizedBox(height: 16),
-          PepeRow(children: [(7, barsPanel), (4, splitPanel)]),
+          PepeRow(children: [(7, barsPanel), (4, calendarPanel)]),
+          const SizedBox(height: 16),
+          PepeRow(
+            children: [
+              (7, widget.bookId == null ? booksPanel : sessionsPanel),
+              (4, _comparison()),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (widget.bookId == null)
+            PepeRow(children: [(7, sessionsPanel), (4, splitPanel)])
+          else
+            splitPanel,
         ],
-        const SizedBox(height: 16),
-        _comparison(),
-        const SizedBox(height: 16),
-        PepeRow(
-          children: [
-            (4, calendarPanel),
-            if (widget.bookId == null) (7, booksPanel) else (7, sessionsPanel),
-          ],
-        ),
-        const SizedBox(height: 16),
-        if (widget.bookId == null)
-          PepeRow(children: [(7, sessionsPanel), (4, journalPanel)])
-        else
-          journalPanel,
       ],
     );
   }
@@ -665,8 +696,12 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Выбранный период и предыдущий такой же длины. Сегодняшний день ещё не завершён. При нулевой базе процент не рассчитывается.',
+                Text(
+                  'С предыдущим периодом такой же длины.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: ShelfPalette.of(context).muted,
+                  ),
                 ),
                 row(
                   'Время чтения',
@@ -685,29 +720,20 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                   'Новое продвижение',
                   current.newChars,
                   previous.newChars,
-                  pepeChars,
+                  pepePages,
                 ),
               ],
             ),
     );
   }
 
-  Widget _hero(
-    ShelfPalette palette,
-    int ms,
-    int count,
-    int days,
-    int average,
-    int week,
-    int previous,
-  ) {
+  Widget _hero(ShelfPalette palette, int ms, int count, int days, int average) {
     final ink = palette.onAccent;
     final soft = ink.withValues(alpha: .72);
-    final diff = week - previous;
     Widget figure(String value, String label) => Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(value, style: AppFonts.title(ink, size: 24)),
+        Text(value, style: AppFonts.title(ink, size: 20)),
         const SizedBox(height: 2),
         Text(label, style: TextStyle(fontSize: 12, color: soft)),
       ],
@@ -716,7 +742,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
       color: palette.accent,
       borderRadius: BorderRadius.circular(22),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -733,39 +759,20 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
-              child: Text(statTime(ms), style: AppFonts.title(ink, size: 58)),
+              child: Text(statTime(ms), style: AppFonts.title(ink, size: 34)),
             ),
             Text(
               'Активное чтение · аудио не учитывается',
               style: TextStyle(fontSize: 13, color: soft),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 12),
             Wrap(
-              spacing: 28,
+              spacing: 24,
               runSpacing: 12,
               children: [
                 figure('$count', 'Сессий за период'),
                 figure('$days', 'Активных дней'),
                 figure(count == 0 ? '—' : statTime(average), 'Средняя сессия'),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Container(height: 1, color: ink.withValues(alpha: .25)),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  diff >= 0 ? Icons.north_east : Icons.south_east,
-                  size: 16,
-                  color: ink,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Последние 7 дней: ${statTime(week)} · предыдущие: ${statTime(previous)}',
-                    style: TextStyle(fontSize: 12.5, color: ink),
-                  ),
-                ),
               ],
             ),
           ],
@@ -815,13 +822,12 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
           ),
         );
       }
+      // Tracked sessions need no label; only other sources are marked.
       final kind = session['source'] == 'obsidian'
           ? 'Obsidian'
           : session['source'] == 'manual'
           ? 'Вручную'
-          : session['closed'] == true
-          ? 'Завершена'
-          : 'Сохранённый интервал';
+          : null;
       rows.add(
         Container(
           padding: const EdgeInsets.symmetric(vertical: 9),
@@ -845,18 +851,23 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                   style: AppFonts.book(palette.text, size: 16),
                 ),
               ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  border: Border.all(color: palette.strongLine),
-                  borderRadius: BorderRadius.circular(20),
+              if (kind != null) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: palette.strongLine),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    kind,
+                    style: TextStyle(fontSize: 11, color: palette.muted),
+                  ),
                 ),
-                child: Text(
-                  kind,
-                  style: TextStyle(fontSize: 11, color: palette.muted),
-                ),
-              ),
+              ],
               const SizedBox(width: 10),
               SizedBox(
                 width: 76,
@@ -890,61 +901,245 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
     );
   }
 
-  Widget _journal(ShelfPalette palette) => PepePanel(
-    title: 'Экспорт чтения в папку · Markdown / JSON',
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          journalFolders.isEmpty
-              ? 'Сессии хранятся в приложении. Подключите папку книг, чтобы рядом с книгами появился каталог .pepehub/reading/logs.'
-              : 'При открытии книги и затем примерно каждые 30 секунд данные записываются в .pepehub/reading/logs. Также сохраняются при закрытии и переходах.',
-          style: TextStyle(fontSize: 12.5, height: 1.4, color: palette.muted),
-        ),
-        for (final folder in journalFolders)
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: palette.raised,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.folder_outlined, size: 16, color: palette.muted),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: SelectableText(
-                    folder,
-                    style: const TextStyle(fontSize: 12),
+  Widget _journal(ShelfPalette palette, StateSetter? setSheet) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(
+        'Экспорт в папку · Markdown / JSON',
+        style: Theme.of(context).textTheme.titleSmall,
+      ),
+      const SizedBox(height: 6),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            journalFolders.isEmpty
+                ? 'Сессии хранятся в приложении. Подключите папку книг, чтобы рядом с книгами появился каталог .pepehub/reading/logs.'
+                : 'При открытии книги и затем примерно каждые 30 секунд данные записываются в .pepehub/reading/logs. Также сохраняются при закрытии и переходах.',
+            style: TextStyle(fontSize: 12.5, height: 1.4, color: palette.muted),
+          ),
+          for (final folder in journalFolders)
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: palette.raised,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.folder_outlined, size: 16, color: palette.muted),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: SelectableText(
+                      folder,
+                      style: const TextStyle(fontSize: 12),
+                    ),
                   ),
+                ],
+              ),
+            ),
+          if (lastJournalSave != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Последнее сохранение: ${_savedAt(lastJournalSave!)}',
+                style: TextStyle(fontSize: 12, color: palette.muted),
+              ),
+            ),
+          if (journalFolders.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.tonalIcon(
+                  onPressed: savingJournal
+                      ? null
+                      : () async {
+                          await _saveJournal();
+                          setSheet?.call(() {});
+                        },
+                  icon: const Icon(Icons.save_outlined, size: 18),
+                  label: const Text('Записать журнал сейчас'),
                 ),
+              ),
+            ),
+        ],
+      ),
+    ],
+  );
+
+  /// Service details kept off the main page: how time is counted and the
+  /// journal export.
+  Future<void> _info() => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    constraints: const BoxConstraints(maxWidth: 640),
+    builder: (sheetContext) => StatefulBuilder(
+      builder: (sheetContext, setSheet) {
+        final palette = ShelfPalette.of(sheetContext);
+        final muted = TextStyle(
+          fontSize: 13,
+          height: 1.4,
+          color: palette.muted,
+        );
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'О статистике',
+                  style: Theme.of(sheetContext).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Учёт приостанавливается в фоне, в поиске и настройках, а также после 2 минут без действий. Аудиокниги здесь не учитываются.',
+                  style: muted,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Продвижение — оценка по обычному перелистыванию и прокрутке. Поиск и быстрые переходы не засчитываются, ручные сессии добавляют только время. Страница — около $pepeCharsPerPage знаков.',
+                  style: muted,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Сравнение идёт с предыдущим периодом такой же длины. Сегодняшний день ещё не завершён; при нулевой базе процент не рассчитывается.',
+                  style: muted,
+                ),
+                const Divider(height: 32),
+                _journal(palette, setSheet),
               ],
             ),
           ),
-        if (lastJournalSave != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              'Последнее сохранение: ${_savedAt(lastJournalSave!)}',
-              style: TextStyle(fontSize: 12, color: palette.muted),
-            ),
-          ),
-        if (journalFolders.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.tonalIcon(
-                onPressed: savingJournal ? null : _saveJournal,
-                icon: const Icon(Icons.save_outlined, size: 18),
-                label: const Text('Записать журнал сейчас'),
-              ),
-            ),
-          ),
-      ],
+        );
+      },
     ),
   );
+
+  Widget _cover(String id, String title) {
+    final path = covers[id];
+    final spine = PepeSpine(title);
+    if (path == null) return spine;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: Image.file(
+        File(path),
+        width: 32,
+        height: 48,
+        fit: BoxFit.cover,
+        cacheWidth: 96,
+        errorBuilder: (_, _, _) => spine,
+      ),
+    );
+  }
+
+  /// Progress, remaining time and expected finish of the opened book.
+  Widget _bookPanel(ShelfPalette palette) {
+    final f = forecast;
+    final title = titles[widget.bookId] ?? 'Книга';
+    final target = f?.targetChars;
+    final covered = f?.coveredChars ?? 0;
+    final progress = bookLength <= 0
+        ? null
+        : (covered / bookLength).clamp(0.0, 1.0);
+    final lines = <String>[];
+    String headline;
+    if (f == null || target == null) {
+      headline = 'Нет текста для прогноза';
+      lines.add(
+        'Откройте книгу на этом устройстве, чтобы появились прогресс и прогноз.',
+      );
+    } else if (f.remainingChars == 0) {
+      headline = bookPlan.targetPercent < 100
+          ? 'Цель ${bookPlan.targetPercent}% достигнута'
+          : 'Книга прочитана';
+    } else {
+      final remainingPages = pepePages(f.remainingChars!);
+      if (f.remainingMinutes == null) {
+        headline = 'Осталось $remainingPages';
+        lines.add(
+          'Время появится, когда наберётся минута обычного чтения этой книги.',
+        );
+      } else {
+        headline = 'Осталось ≈ ${statTime(f.remainingMinutes! * 60000)}';
+        lines.add(
+          '$remainingPages · ${(f.charsPerMinute! * 60 / pepeCharsPerPage).round()} стр. в час',
+        );
+      }
+      if (f.expectedDate != null) {
+        final d = f.expectedDate!;
+        lines.add(
+          'Закончите ≈ ${d.day} ${pepeMonthGenitive[d.month - 1]}${d.year == DateTime.now().year ? '' : ' ${d.year}'} при ${bookPlan.dailyMinutes} мин в день',
+        );
+      }
+      if (f.overdue) lines.add('Срок плана уже прошёл.');
+    }
+    return PepePanel(
+      title: title,
+      trailing: IconButton(
+        tooltip: 'План чтения',
+        icon: const Icon(Icons.event_note, size: 20),
+        onPressed: () => Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ReadingPlanPage(
+              repository: widget.repository,
+              bookId: widget.bookId!,
+            ),
+          ),
+        ).then((_) => _load()),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 48, height: 72, child: _cover(widget.bookId!, title)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (progress != null)
+                  Text(
+                    '${(progress * 100).round()}% прочитано',
+                    style: AppFonts.title(palette.text, size: 22),
+                  ),
+                const SizedBox(height: 2),
+                Text(
+                  headline,
+                  key: const ValueKey('reading-book-forecast'),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                for (final line in lines)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      line,
+                      style: TextStyle(fontSize: 12.5, color: palette.muted),
+                    ),
+                  ),
+                if (progress != null) ...[
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 4,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   String _savedAt(String value) {
     final at = DateTime.tryParse(value)?.toLocal();
