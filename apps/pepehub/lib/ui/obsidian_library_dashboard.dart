@@ -118,7 +118,8 @@ String _duration(num value) {
   return [
     if (hours > 0) '$hours ч',
     if (minutes > 0) '$minutes мин',
-    if (seconds > 0) '$seconds с',
+    // Seconds only matter for short spans: «2 ч 30 мин», «4 мин 10 с».
+    if (seconds > 0 && hours == 0) '$seconds с',
     if (total == 0) '0 мин',
   ].join(' ');
 }
@@ -146,6 +147,8 @@ String metadataProgressLabel(ObsidianLibraryItem item) {
         ? _duration(total! * factor)
         : total == null
         ? _duration(progress * factor)
+        : _duration(progress * factor) == _duration(total * factor)
+        ? _duration(total * factor)
         : '${_duration(progress * factor)} / ${_duration(total * factor)}';
   }
   final label = unit.isEmpty || unit == 'pages' ? 'стр.' : unit;
@@ -158,6 +161,24 @@ String metadataProgressLabel(ObsidianLibraryItem item) {
 
 String metadataSeriesListeningLabel(LibrarySeriesGroup group) =>
     'Прослушано: ${_duration(group.listenedMinutes)}';
+
+/// «9 аудиокниг», «2 книги · 3 аудиокниги»: types with zero items are skipped.
+String metadataSeriesCountLabel(int books, int audiobooks) {
+  String count(int n, String one, String few, String many) {
+    final last = n % 10, lastTwo = n % 100;
+    return '$n ${last == 1 && lastTwo != 11
+        ? one
+        : last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14)
+        ? few
+        : many}';
+  }
+
+  return [
+    if (books > 0 || audiobooks == 0) count(books, 'книга', 'книги', 'книг'),
+    if (audiobooks > 0)
+      count(audiobooks, 'аудиокнига', 'аудиокниги', 'аудиокниг'),
+  ].join(' · ');
+}
 
 class ShelfBookCover extends StatelessWidget {
   final String title, mediaType;
@@ -1382,10 +1403,8 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
               crossAxisCount: columns,
               crossAxisSpacing: gap,
               mainAxisSpacing: gap,
-              mainAxisExtent:
-                  width * 1.5 +
-                  228 * MediaQuery.textScalerOf(context).scale(1) -
-                  64,
+              // Exactly the text below the cover: no empty band on cards.
+              mainAxisExtent: width * 1.5 + _gridTextExtent(context),
             ),
             itemBuilder: (_, i) {
               final slot = slots[i];
@@ -1429,6 +1448,36 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     );
   }
 
+  /// Height of a grid card below its cover: two title lines, the author or
+  /// count line, the status row and the progress line, at the current text
+  /// scale and fonts.
+  double _gridTextExtent(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final base = DefaultTextStyle.of(context).style;
+    double lines(TextStyle style, [int count = 1]) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: List.filled(count, 'Ég').join('\n'),
+          style: base.merge(style),
+        ),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+      )..layout();
+      final height = painter.height;
+      painter.dispose();
+      return height;
+    }
+
+    final title = lines(
+      AppFonts.book(ShelfPalette.of(context).text, size: 15),
+      2,
+    );
+    final meta = lines(const TextStyle(fontSize: 12));
+    final small = lines(const TextStyle(fontSize: 11));
+    // Padding 10 + 10, gaps 3 + 8 + 5, status chip = text + 10, slack 4.
+    return 40 + title + meta + (small + 10) + small;
+  }
+
   Widget _seriesCard(LibrarySeriesGroup group, {double? width}) {
     final palette = ShelfPalette.of(context);
     final expanded = expandedSeries.contains(group.key);
@@ -1439,6 +1488,9 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
         .where((e) => e.item.mediaType == 'audiobook')
         .length;
     final count = 'Книг: ${group.entries.length - audio} · Аудиокниг: $audio';
+    final author = group.entries
+        .map((e) => e.item.authors)
+        .firstWhere((a) => a.isNotEmpty, orElse: () => '');
     void toggle() => setState(() {
       if (!expandedSeries.add(group.key)) expandedSeries.remove(group.key);
     });
@@ -1468,7 +1520,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       group.name,
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
-      style: AppFonts.book(palette.text, size: 17),
+      style: AppFonts.book(palette.text, size: width == null ? 17 : 15),
     );
     final summary = Text(
       '$count\nЗавершено: $finished из ${group.entries.length}'
@@ -1542,6 +1594,8 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                       height: width * 1.5,
                       child: Stack(
                         children: [
+                          // The stack fills the cover area like a single
+                          // book's cover; covers are cropped slightly.
                           for (
                             var i = group.entries.length.clamp(1, 3) - 1;
                             i >= 0;
@@ -1552,8 +1606,12 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                               top: 12 + i * 12,
                               child: cover(
                                 group.entries[i],
-                                width - 48,
-                                (width - 48) * 1.5,
+                                width -
+                                    24 -
+                                    (group.entries.length.clamp(1, 3) - 1) * 12,
+                                width * 1.5 -
+                                    20 -
+                                    (group.entries.length.clamp(1, 3) - 1) * 12,
                               ),
                             ),
                           if (selecting)
@@ -1581,13 +1639,66 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                     ),
                     Expanded(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             heading,
-                            const SizedBox(height: 4),
-                            summary,
+                            const SizedBox(height: 3),
+                            Text(
+                              author.isEmpty ? 'Серия' : author,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: palette.muted,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const Spacer(),
+                            Row(
+                              children: [
+                                Flexible(
+                                  flex: 3,
+                                  child: Text(
+                                    'Завершено $finished из ${group.entries.length}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  flex: 2,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: LinearProgressIndicator(
+                                      value: group.entries.isEmpty
+                                          ? 0
+                                          : finished / group.entries.length,
+                                      minHeight: 4,
+                                      backgroundColor: palette.line,
+                                      color: palette.accent,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              [
+                                metadataSeriesCountLabel(
+                                  group.entries.length - audio,
+                                  audio,
+                                ),
+                                if (audio > 0) _duration(group.listenedMinutes),
+                              ].join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: palette.muted,
+                                fontSize: 11,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -2041,7 +2152,14 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                     const Spacer(),
                     Row(
                       children: [
-                        Flexible(child: _status(entry)),
+                        // Shrinks instead of wrapping: the card height is exact.
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: _status(entry),
+                          ),
+                        ),
                         if (item.values['pepehub_favorite'] == true)
                           Padding(
                             padding: const EdgeInsets.only(left: 4),

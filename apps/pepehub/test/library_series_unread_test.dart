@@ -355,10 +355,7 @@ void main() {
       ]);
       expect(group.listenedMinutes, 150.5);
       expect(metadataProgress(group.entries[2].item), 0);
-      expect(
-        metadataSeriesListeningLabel(group),
-        'Прослушано: 2 ч 30 мин 30 с',
-      );
+      expect(metadataSeriesListeningLabel(group), 'Прослушано: 2 ч 30 мин');
     },
   );
 
@@ -468,8 +465,15 @@ void main() {
           await tester.pumpAndSettle();
         }
         expect(find.byTooltip('Добавить тома в серию'), findsNothing);
-        expect(find.textContaining('Завершено: 1 из 3'), findsOneWidget);
-        expect(find.textContaining('Прослушано: 2 ч'), findsOneWidget);
+        // The grid card shows the count and listened time on one line.
+        expect(
+          find.textContaining(grid ? 'Завершено 1 из 3' : 'Завершено: 1 из 3'),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining(grid ? '2 аудиокниги · 2 ч' : 'Прослушано: 2 ч'),
+          findsOneWidget,
+        );
         final series = find.byKey(
           const ValueKey('library-series:series-id:cycle'),
         );
