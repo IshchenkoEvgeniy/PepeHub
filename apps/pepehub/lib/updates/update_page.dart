@@ -8,12 +8,20 @@ class UpdatePage extends StatelessWidget {
   final UpdateService service;
   final bool embedded, details;
   final VoidCallback? onDetails;
+
+  /// Heading of the main view; settings show it as «О приложении».
+  final String heading;
+
+  /// Widgets appended after the update controls in the main view.
+  final List<Widget> extra;
   const UpdatePage({
     super.key,
     required this.service,
     this.embedded = false,
     this.details = false,
     this.onDetails,
+    this.heading = 'Обновление приложения',
+    this.extra = const [],
   });
   String _size(int bytes) => '${(bytes / 1048576).toStringAsFixed(1)} МБ';
   String _checked(BuildContext context) {
@@ -160,9 +168,11 @@ class UpdatePage extends StatelessWidget {
         asset = service.artifact,
         phase = service.phase;
     return [
-      const SettingsHeading(
-        'Обновление приложения',
-        'Обновление устанавливается поверх текущей версии. Книги и настройки сохраняются.',
+      SettingsHeading(
+        heading,
+        extra.isEmpty
+            ? 'Обновление устанавливается поверх текущей версии. Книги и настройки сохраняются.'
+            : 'PepeHub — личная библиотека, читалка и журнал чтения и прослушивания. Обновления ставятся поверх текущей версии, книги и настройки сохраняются.',
       ),
       _stages(context),
       SettingsGroup(
@@ -330,6 +340,8 @@ class UpdatePage extends StatelessWidget {
         ],
       ),
       const Text('Удалять приложение перед установкой обновления не нужно.'),
+      if (extra.isNotEmpty) const SizedBox(height: 24),
+      ...extra,
     ];
   }
 

@@ -49,6 +49,21 @@ export async function createUpdateManifest(directory: string, notes: string, now
   writeFileSync(path.join(directory, 'update.json'), envelope);
   return {tag, version: input.version, build: input.build, files: [...(androidOnly ? [] : ['PepeHub-windows-x64.zip']), 'PepeHub-android-arm64.apk', ...patchFiles, 'update.json']};
 }
+/** «fetch failed» alone hides the reason; Node keeps it in `cause` (e.g. ENOTFOUND, ECONNRESET, cert errors). */
+export function describeError(error: unknown): string {
+  const parts: string[] = [];
+  for (let current: unknown = error, depth = 0; current && depth < 5; depth++) {
+    if (current instanceof Error) {
+      const code = (current as {code?: unknown}).code;
+      parts.push(typeof code === 'string' && !current.message.includes(code) ? `${current.message} [${code}]` : current.message);
+      current = current.cause;
+    } else {
+      parts.push(String(current));
+      break;
+    }
+  }
+  return parts.join(' ← ') || 'unknown error';
+}
 function githubCredential(): string {
   const output = execFileSync('git', ['credential', 'fill'], {input: 'protocol=https\nhost=github.com\n\n', encoding: 'utf8',
     env: {...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never'}, stdio: ['pipe', 'pipe', 'pipe'], timeout: 15000});
@@ -61,8 +76,20 @@ async function publish(directory: string, release: Awaited<ReturnType<typeof cre
   const headers = {Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json',
     'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'PepeHub release publisher'};
   async function api(route: string, method = 'GET', body?: unknown, allow404 = false): Promise<any> {
-    const response = await fetch(`https://api.github.com${route}`, {method, headers,
-      ...(body === undefined ? {} : {body: JSON.stringify(body)}), signal: AbortSignal.timeout(30000)});
+    // Network failures (DNS, TLS, reset, timeout) are retried for requests that are safe to repeat.
+    // POST is not repeated: a lost response could otherwise create a second draft.
+    const attempts = method === 'POST' ? 1 : 4;
+    let response: Response | undefined;
+    for (let attempt = 1; !response; attempt++) {
+      try {
+        response = await fetch(`https://api.github.com${route}`, {method, headers,
+          ...(body === undefined ? {} : {body: JSON.stringify(body)}), signal: AbortSignal.timeout(30000)});
+      } catch (error) {
+        if (attempt >= attempts) throw new Error(`GitHub ${method} ${route}: ${describeError(error)}`);
+        console.log(`GitHub ${method} ${route}: ${describeError(error)}; retry ${attempt}/${attempts - 1} in ${attempt * 5} s`);
+        await new Promise(resolve => setTimeout(resolve, attempt * 5000));
+      }
+    }
     if (allow404 && response.status === 404) return null;
     if (!response.ok) throw new Error(`GitHub ${method} ${route}: HTTP ${response.status}`);
     if (response.status === 204) return null;
@@ -94,7 +121,9 @@ async function publish(directory: string, release: Awaited<ReturnType<typeof cre
     const blob = await openAsBlob(path.join(directory, name));
     const response = await fetch(`https://uploads.github.com/repos/${owner}/${repo}/releases/${draft.id}/assets?name=${encodeURIComponent(name)}`,
       {method: 'POST', headers: {...headers, 'Content-Type': name.endsWith('.json') ? 'application/json' : 'application/octet-stream'},
-        body: blob, signal: AbortSignal.timeout(600000)});
+        body: blob, signal: AbortSignal.timeout(600000)}).catch(error => {
+        throw new Error(`GitHub upload ${name}: ${describeError(error)}. Draft retained for retry.`);
+      });
     if (!response.ok) throw new Error(`GitHub upload ${name}: HTTP ${response.status}. Draft retained for retry.`);
   }
   const published = await api(`/repos/${owner}/${repo}/releases/${draft.id}`, 'PATCH', {draft: false, make_latest: 'true'});
@@ -110,5 +139,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(`Signed update manifest ready: ${directory}`);
     if (process.argv.includes('--publish')) await publish(directory, release, notes);
     else console.log('Nothing uploaded. Use --publish after reviewing the packages and notes.');
-  } catch (error) { console.error(error instanceof Error ? error.message : 'Release preparation failed'); process.exitCode = 1; }
+  } catch (error) { console.error(error instanceof Error ? describeError(error) : 'Release preparation failed'); process.exitCode = 1; }
 }

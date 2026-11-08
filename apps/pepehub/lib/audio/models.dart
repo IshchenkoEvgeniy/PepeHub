@@ -76,6 +76,12 @@ class AudioChapter {
   }
 }
 
+/// Allowed rewind and fast-forward steps of the audiobook player, in seconds.
+const audioSeekSteps = [5, 10, 15, 30, 60];
+
+/// Speeds offered as the default for audiobooks without saved progress.
+const audioDefaultSpeeds = [0.75, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
+
 class AudioProgress {
   final AudioLocator locator;
   final double speed;

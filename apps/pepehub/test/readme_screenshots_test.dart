@@ -55,7 +55,9 @@ class DocumentationPlayer extends ChangeNotifier implements AudioController {
   @override
   Uri? artwork;
   @override
-  int seekStepSeconds = 10;
+  int seekStepSeconds = 10, seekForwardSeconds = 10;
+  @override
+  double defaultSpeed = 1;
   @override
   String title = 'Северный ветер',
       error = '',
@@ -651,12 +653,7 @@ void main() {
         );
         await capture(
           'settings',
-          SettingsPage(
-            library: service,
-            onConnection: () async {},
-            onJournal: () {},
-            onNotes: () {},
-          ),
+          SettingsPage(library: service),
           size: const Size(1200, 1000),
         );
       } finally {

@@ -31,8 +31,9 @@ abstract final class AppFonts {
   );
 }
 
-/// Colour palettes for the dark interface. Every palette is a complete set of
-/// tokens, so screens never derive colours of their own.
+/// Colour palettes for the interface. Every palette is a complete set of
+/// tokens, so screens never derive colours of their own. Most palettes are
+/// dark; [light] palettes are used for daytime and when following the system.
 enum AppStyle {
   dusk(
     'Сумерки',
@@ -173,6 +174,34 @@ enum AppStyle {
     text: 0xffffffff,
     muted: 0xffa0a0a0,
     navigation: 0xff0a0a0a,
+  ),
+  paper(
+    'Бумага',
+    background: 0xfff6f1e7,
+    surface: 0xfffffbf4,
+    raised: 0xffece4d6,
+    line: 0xffe2d8c6,
+    strongLine: 0xffc9bba3,
+    accent: 0xffa8481f,
+    accentSoft: 0xffd27a52,
+    onAccent: 0xffffffff,
+    text: 0xff2a2118,
+    muted: 0xff6f604f,
+    navigation: 0xffefe7da,
+  ),
+  daylight(
+    'День',
+    background: 0xfff3f5f9,
+    surface: 0xffffffff,
+    raised: 0xffe7ebf2,
+    line: 0xffdce1ea,
+    strongLine: 0xffc0c8d6,
+    accent: 0xff2a56c6,
+    accentSoft: 0xff6b8be0,
+    onAccent: 0xffffffff,
+    text: 0xff151a24,
+    muted: 0xff5a6579,
+    navigation: 0xffe9edf4,
   );
 
   final String label;
@@ -203,6 +232,12 @@ enum AppStyle {
   });
 
   static const fallback = AppStyle.blue;
+  static const fallbackLight = AppStyle.paper;
+
+  bool get light =>
+      ThemeData.estimateBrightnessForColor(Color(background)) ==
+      Brightness.light;
+  Brightness get brightness => light ? Brightness.light : Brightness.dark;
 }
 
 /// The active palette as colours, reachable from any widget through the theme.
@@ -300,9 +335,14 @@ class PepeColors extends ThemeExtension<PepeColors> {
 
 class AppTheme extends ChangeNotifier {
   final Repository repository;
+
+  /// The palette the user picked last.
   AppStyle style = AppStyle.fallback;
+
+  /// The last picked dark and light palettes, used when [followSystem] is on.
+  AppStyle darkStyle = AppStyle.fallback, lightStyle = AppStyle.fallbackLight;
   double textScale = 1;
-  bool compact = false, reduceMotion = false;
+  bool compact = false, reduceMotion = false, followSystem = false;
   bool _closed = false;
   @override
   void dispose() {
@@ -321,17 +361,28 @@ class AppTheme extends ChangeNotifier {
             ? decoded
             : <String, dynamic>{};
         // Styles from earlier versions are not palettes any more.
-        style =
-            AppStyle.values
-                .where((s) => s.name == settings['style'])
-                .firstOrNull ??
-            AppStyle.fallback;
+        AppStyle? named(Object? name) =>
+            AppStyle.values.where((s) => s.name == name).firstOrNull;
+        style = named(settings['style']) ?? AppStyle.fallback;
+        final dark = named(settings['darkStyle']);
+        final light = named(settings['lightStyle']);
+        darkStyle = dark != null && !dark.light
+            ? dark
+            : style.light
+            ? AppStyle.fallback
+            : style;
+        lightStyle = light != null && light.light
+            ? light
+            : style.light
+            ? style
+            : AppStyle.fallbackLight;
         textScale =
             (settings['textScale'] is num ? settings['textScale'] as num : 1)
                 .toDouble()
                 .clamp(0.9, 1.3);
         compact = settings['compact'] == true;
         reduceMotion = settings['reduceMotion'] == true;
+        followSystem = settings['followSystem'] == true;
       } on FormatException {
         /* Keep usable defaults for older preferences. */
       }
@@ -344,37 +395,82 @@ class AppTheme extends ChangeNotifier {
     double? textScale,
     bool? compact,
     bool? reduceMotion,
+    bool? followSystem,
   }) async {
     if (_closed) return;
-    this.style = style ?? this.style;
+    if (style != null) {
+      this.style = style;
+      if (style.light) {
+        lightStyle = style;
+      } else {
+        darkStyle = style;
+      }
+    }
     this.textScale = (textScale ?? this.textScale).clamp(0.9, 1.3);
     this.compact = compact ?? this.compact;
     this.reduceMotion = reduceMotion ?? this.reduceMotion;
+    this.followSystem = followSystem ?? this.followSystem;
     notifyListeners();
-    await repository.setMeta(
-      'appearance-settings',
-      jsonEncode({
-        'style': this.style.name,
-        'textScale': this.textScale,
-        'compact': this.compact,
-        'reduceMotion': this.reduceMotion,
-      }),
-    );
+    await repository.setMeta('appearance-settings', jsonEncode(_json));
   }
 
-  /// The interface is dark only; [brightness] is accepted for older callers
-  /// and ignored.
+  Map<String, Object> get _json => {
+    'style': style.name,
+    'darkStyle': darkStyle.name,
+    'lightStyle': lightStyle.name,
+    'textScale': textScale,
+    'compact': compact,
+    'reduceMotion': reduceMotion,
+    'followSystem': followSystem,
+  };
+
+  /// Restores the default interface settings.
+  Future<void> reset() async {
+    if (_closed) return;
+    style = darkStyle = AppStyle.fallback;
+    lightStyle = AppStyle.fallbackLight;
+    textScale = 1;
+    compact = reduceMotion = followSystem = false;
+    notifyListeners();
+    await repository.setMeta('appearance-settings', jsonEncode(_json));
+  }
+
+  /// The palette shown for the given system brightness.
+  AppStyle effective(Brightness system) => followSystem
+      ? (system == Brightness.light ? lightStyle : darkStyle)
+      : style;
+
+  /// Light theme for [MaterialApp.theme].
+  ThemeData get lightTheme => AppTheme.data(
+    Brightness.light,
+    style: followSystem ? lightStyle : style,
+    compact: compact,
+  );
+
+  /// Dark theme for [MaterialApp.darkTheme].
+  ThemeData get darkTheme => AppTheme.data(
+    Brightness.dark,
+    style: followSystem ? darkStyle : style,
+    compact: compact,
+  );
+
+  ThemeMode get themeMode => followSystem
+      ? ThemeMode.system
+      : style.light
+      ? ThemeMode.light
+      : ThemeMode.dark;
+
+  /// The brightness follows the palette; [brightness] is accepted for older
+  /// callers and ignored.
   static ThemeData data(
     Brightness brightness, {
     AppStyle style = AppStyle.fallback,
     bool compact = false,
   }) {
     final c = PepeColors.from(style);
-    final scheme =
-        ColorScheme.fromSeed(
-          seedColor: c.accent,
-          brightness: Brightness.dark,
-        ).copyWith(
+    final tone = style.brightness;
+    final scheme = ColorScheme.fromSeed(seedColor: c.accent, brightness: tone)
+        .copyWith(
           primary: c.accent,
           onPrimary: c.onAccent,
           primaryContainer: Color.lerp(c.background, c.accent, .22),
@@ -393,20 +489,24 @@ class AppTheme extends ChangeNotifier {
           surfaceContainerHighest: c.raised,
           outline: c.strongLine,
           outlineVariant: c.line,
-          error: const Color(0xffff7a70),
-          onError: const Color(0xff2a0705),
+          error: style.light
+              ? const Color(0xffb3261e)
+              : const Color(0xffff7a70),
+          onError: style.light
+              ? const Color(0xffffffff)
+              : const Color(0xff2a0705),
         );
     final pill = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(22),
     );
     final textTheme = ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
+      brightness: tone,
       fontFamily: AppFonts.body,
     ).textTheme.apply(bodyColor: c.text, displayColor: c.text);
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
+      brightness: tone,
       visualDensity: compact ? VisualDensity.compact : VisualDensity.standard,
       fontFamily: AppFonts.body,
       colorScheme: scheme,

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -19,6 +20,20 @@ class GoalReminderPreferences {
     this.goals = true,
     this.plans = true,
   });
+  GoalReminderPreferences copyWith({
+    bool? enabled,
+    int? minute,
+    bool? systemNotifications,
+    bool? goals,
+    bool? plans,
+  }) => GoalReminderPreferences(
+    enabled: enabled ?? this.enabled,
+    minute: minute ?? this.minute,
+    systemNotifications: systemNotifications ?? this.systemNotifications,
+    goals: goals ?? this.goals,
+    plans: plans ?? this.plans,
+  );
+
   Map<String, dynamic> get json => {
     'enabled': enabled,
     'minute': minute,
@@ -101,7 +116,12 @@ class GoalReminderService {
 
 class GoalReminderSettings extends StatefulWidget {
   final Repository repository;
-  const GoalReminderSettings({super.key, required this.repository});
+  final bool heading;
+  const GoalReminderSettings({
+    super.key,
+    required this.repository,
+    this.heading = true,
+  });
   @override
   State<GoalReminderSettings> createState() => _GoalReminderSettingsState();
 }
@@ -147,108 +167,92 @@ class _GoalReminderSettingsState extends State<GoalReminderSettings> {
     }
   }
 
+  String get _platformNote => Platform.isAndroid
+      ? 'Android может отложить уведомление ради экономии заряда. После принудительной остановки откройте PepeHub заново.'
+      : Platform.isWindows
+      ? 'Windows показывает уведомление после входа в учётную запись, в том числе после выхода из сна.'
+      : 'Системные уведомления на этой платформе недоступны — напоминание появится в открытом приложении.';
+
+  Future<void> _pickTime(GoalReminderPreferences current) async {
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: current.minute ~/ 60,
+        minute: current.minute % 60,
+      ),
+    );
+    if (time != null && mounted) {
+      await _save(current.copyWith(minute: time.hour * 60 + time.minute));
+    }
+  }
+
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      const SettingsHeading(
-        'Напоминания о целях',
-        'Ежедневное напоминание в выбранное местное время.',
-      ),
-      const SettingsNotice(
-        'Можно получать системное уведомление даже после закрытия приложения. Android может отложить его ради экономии заряда; после принудительной остановки откройте PepeHub заново. Windows показывает уведомления при входе в учётную запись, в том числе после выхода из сна. Разрешите уведомления PepeHub в настройках системы.',
-      ),
-      if (error != null) SettingsNotice(error!),
-      if (value != null) ...[
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Напоминать о чтении и аудиокнигах'),
-          value: value!.enabled,
-          onChanged: saving
-              ? null
-              : (enabled) => _save(
-                  GoalReminderPreferences(
-                    enabled: enabled,
-                    minute: value!.minute,
-                    systemNotifications: value!.systemNotifications,
-                    goals: value!.goals,
-                    plans: value!.plans,
-                  ),
+  Widget build(BuildContext context) {
+    final current = value;
+    final active = current != null && current.enabled && !saving;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.heading)
+          const SettingsHeading(
+            'Напоминания',
+            'Ежедневное напоминание в выбранное местное время.',
+          ),
+        if (error != null) SettingsNotice(error!),
+        if (current == null && error == null)
+          const Center(child: CircularProgressIndicator()),
+        if (current != null)
+          SettingsGroup(
+            children: [
+              SwitchListTile(
+                key: const ValueKey('goal-reminder-enabled'),
+                title: const Text('Напоминать о чтении и аудиокнигах'),
+                value: current.enabled,
+                onChanged: saving
+                    ? null
+                    : (enabled) => _save(current.copyWith(enabled: enabled)),
+              ),
+              ListTile(
+                enabled: active,
+                title: const Text('Время напоминания'),
+                trailing: Text(
+                  TimeOfDay(
+                    hour: current.minute ~/ 60,
+                    minute: current.minute % 60,
+                  ).format(context),
                 ),
-        ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Системные уведомления'),
-          subtitle: const Text(
-            'Если выключено — напоминание только внутри приложения',
-          ),
-          value: value!.systemNotifications,
-          onChanged: saving || !ReminderScheduler.supported
-              ? null
-              : (system) => _save(
-                  GoalReminderPreferences(
-                    enabled: value!.enabled,
-                    minute: value!.minute,
-                    systemNotifications: system,
-                    goals: value!.goals,
-                    plans: value!.plans,
+                onTap: active ? () => _pickTime(current) : null,
+              ),
+              for (final field in ['goals', 'plans'])
+                CheckboxListTile(
+                  title: Text(
+                    field == 'goals' ? 'О ежедневных целях' : 'О планах чтения',
                   ),
+                  value: field == 'goals' ? current.goals : current.plans,
+                  onChanged: active
+                      ? (selected) => _save(
+                          field == 'goals'
+                              ? current.copyWith(goals: selected)
+                              : current.copyWith(plans: selected),
+                        )
+                      : null,
                 ),
-        ),
-        for (final field in ['goals', 'plans'])
-          CheckboxListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              field == 'goals'
-                  ? 'Напоминать о ежедневных целях'
-                  : 'Напоминать о планах чтения',
-            ),
-            value: field == 'goals' ? value!.goals : value!.plans,
-            onChanged: saving
-                ? null
-                : (selected) => _save(
-                    GoalReminderPreferences(
-                      enabled: value!.enabled,
-                      minute: value!.minute,
-                      systemNotifications: value!.systemNotifications,
-                      goals: field == 'goals' ? selected! : value!.goals,
-                      plans: field == 'plans' ? selected! : value!.plans,
-                    ),
-                  ),
+              SwitchListTile(
+                title: const Text('Системные уведомления'),
+                subtitle: Text(
+                  ReminderScheduler.supported
+                      ? 'Приходят и при закрытом приложении. $_platformNote'
+                      : _platformNote,
+                ),
+                value: current.systemNotifications,
+                onChanged: active && ReminderScheduler.supported
+                    ? (system) =>
+                          _save(current.copyWith(systemNotifications: system))
+                    : null,
+              ),
+            ],
           ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Время напоминания'),
-          trailing: Text(
-            TimeOfDay(
-              hour: value!.minute ~/ 60,
-              minute: value!.minute % 60,
-            ).format(context),
-          ),
-          onTap: saving
-              ? null
-              : () async {
-                  final time = await showTimePicker(
-                    context: context,
-                    initialTime: TimeOfDay(
-                      hour: value!.minute ~/ 60,
-                      minute: value!.minute % 60,
-                    ),
-                  );
-                  if (time != null && mounted) {
-                    await _save(
-                      GoalReminderPreferences(
-                        enabled: value!.enabled,
-                        minute: time.hour * 60 + time.minute,
-                        systemNotifications: value!.systemNotifications,
-                        goals: value!.goals,
-                        plans: value!.plans,
-                      ),
-                    );
-                  }
-                },
-        ),
       ],
-    ],
-  );
+    );
+  }
 }

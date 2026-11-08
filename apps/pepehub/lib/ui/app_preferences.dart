@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/repository.dart';
 import '../media/asset_store.dart';
 import '../updates/update_service.dart';
 import 'settings_components.dart';
+import '../diagnostics/error_log.dart';
 import '../diagnostics/user_message.dart';
 
 const startupSections = {
@@ -28,6 +32,8 @@ Future<String?> startupSection(Repository repository) async {
 class StartupSettings extends StatefulWidget {
   final Repository repository;
   const StartupSettings({super.key, required this.repository});
+  static Future<void> reset(Repository repository) =>
+      repository.setMeta('startup-section', 'last');
   @override
   State<StartupSettings> createState() => _StartupSettingsState();
 }
@@ -74,36 +80,18 @@ class _StartupSettingsState extends State<StartupSettings> {
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      const SettingsHeading(
-        'Запуск приложения',
-        'Выбранная вкладка откроется при следующем запуске.',
-      ),
-      if (error != null) SettingsNotice(error!),
-      if (value == null && error == null)
-        const Center(child: CircularProgressIndicator()),
-      if (value != null)
-        DropdownButtonFormField<String>(
-          key: ValueKey(value),
-          initialValue: value,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Начальная вкладка'),
-          items: [
-            for (final entry in startupSections.entries)
-              DropdownMenuItem(value: entry.key, child: Text(entry.value)),
-          ],
-          onChanged: saving
-              ? null
-              : (next) {
-                  if (next != null) _save(next);
-                },
-        ),
-    ],
+  Widget build(BuildContext context) => SettingsDropdownTile<String>(
+    key: const ValueKey('startup-section'),
+    title: 'Начальная вкладка',
+    subtitle: error ?? 'Открывается при запуске приложения',
+    value: value,
+    items: startupSections.keys.toList(),
+    label: (key) => startupSections[key]!,
+    onChanged: saving ? null : _save,
   );
 }
 
+/// Where PepeHub keeps its data, plus a copyable diagnostic summary.
 class AboutAppSettings extends StatefulWidget {
   final Repository repository;
   final AssetStore? assets;
@@ -141,38 +129,72 @@ class _AboutAppSettingsState extends State<AboutAppSettings> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final updates = UpdateScope.of(context);
-    final info = updates?.app;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SettingsHeading(
-          'О приложении',
-          'PepeHub — личная библиотека, читалка и журнал чтения и прослушивания.',
-        ),
-        SelectableText(
-          info == null
-              ? 'Версия недоступна в этой сборке'
-              : 'Версия ${info.version} (${info.versionCode}) · ${info.platform}',
-        ),
-        const SizedBox(height: 24),
-        Text('База данных', style: Theme.of(context).textTheme.titleMedium),
-        SelectableText(databasePath ?? error ?? 'Определяем расположение…'),
-        const SizedBox(height: 20),
-        Text(
-          'Локальное хранилище файлов',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        SelectableText(
-          widget.assets?.directory.path ?? 'Хранилище файлов не подключено',
-        ),
-        const SizedBox(height: 20),
-        const SettingsNotice(
-          'Подключённые папки книг и аудиокниг могут находиться отдельно. Их пути доступны в разделе «Файлы и библиотека». Экспорт и резервные копии сохраняются в выбранное вами место.',
-        ),
+  Future<void> _copy() async {
+    final info = UpdateScope.of(context)?.app;
+    final log = await ErrorLog.read().catchError((_) => '');
+    final recent = log
+        .split('\n')
+        .where((line) => line.trim().isNotEmpty)
+        .toList()
+        .reversed
+        .take(40)
+        .toList()
+        .reversed
+        .join('\n');
+    final text = [
+      'PepeHub ${info?.version ?? '—'} (${info?.versionCode ?? '—'}) · ${info?.platform ?? Platform.operatingSystem}',
+      'ОС: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+      'База данных: ${databasePath ?? error ?? '—'}',
+      'Хранилище: ${widget.assets?.directory.path ?? '—'}',
+      if (recent.isNotEmpty) ...[
+        '',
+        'Последние записи журнала ошибок:',
+        recent,
       ],
-    );
+    ].join('\n');
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Сведения для отладки скопированы')),
+      );
+    }
   }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const SettingsSubheading('Расположение данных'),
+      SettingsGroup(
+        children: [
+          ListTile(
+            title: const Text('База данных'),
+            subtitle: SelectableText(
+              databasePath ?? error ?? 'Определяем расположение…',
+            ),
+          ),
+          ListTile(
+            title: const Text('Локальное хранилище файлов'),
+            subtitle: SelectableText(
+              widget.assets?.directory.path ?? 'Хранилище файлов не подключено',
+            ),
+          ),
+        ],
+      ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: OutlinedButton.icon(
+          key: const ValueKey('about-copy-debug'),
+          onPressed: _copy,
+          icon: const Icon(Icons.copy_all_outlined),
+          label: const Text('Скопировать сведения для отладки'),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        'Версия, система, пути и последние ошибки — чтобы приложить к сообщению о проблеме. Перед отправкой просмотрите текст: в путях бывают названия книг.',
+        style: TextStyle(color: Theme.of(context).hintColor),
+      ),
+    ],
+  );
 }

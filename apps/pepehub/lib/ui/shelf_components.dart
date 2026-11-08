@@ -9,8 +9,10 @@ class ShelfPalette {
   final bool dark;
   final ThemeData? theme;
   const ShelfPalette(this.dark, [this.theme]);
-  factory ShelfPalette.of(BuildContext context) =>
-      ShelfPalette(true, Theme.of(context));
+  factory ShelfPalette.of(BuildContext context) => ShelfPalette(
+    Theme.of(context).brightness == Brightness.dark,
+    Theme.of(context),
+  );
   PepeColors get colors =>
       theme?.extension<PepeColors>() ?? PepeColors.from(AppStyle.fallback);
   Color get background => colors.background;

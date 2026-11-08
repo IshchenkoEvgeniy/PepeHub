@@ -56,6 +56,11 @@ void main() {
     expect((await repository.records('book')).length, 1);
     expect(await repository.pendingCount(), 1);
     final library = AudioLibraryRepository(db);
+    // A book without progress starts at the player's default speed.
+    await repository.setMeta('audio-sleep-settings', '{"defaultSpeed":1.25}');
+    expect((await library.progressForTrack(first.id)).speed, 1.25);
+    await repository.setMeta('audio-sleep-settings', '{"defaultSpeed":9}');
+    expect((await library.progressForTrack(first.id)).speed, 1);
     final initial = (await library.progressForTrack(first.id)).locator;
     await library.saveProgress(
       AudioProgress(

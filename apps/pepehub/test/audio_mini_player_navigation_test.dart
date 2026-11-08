@@ -221,7 +221,7 @@ void main() {
           await tester.pumpAndSettle();
         }
 
-        await openSetting('updates');
+        await openSetting('about');
         await ready(
           tester,
           () =>

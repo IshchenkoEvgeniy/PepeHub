@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
@@ -171,7 +173,29 @@ class AudioLibraryRepository {
       manifestRevision:
           row?.read<int>('manifest_revision') ?? parent.manifestRevision,
     );
-    return AudioProgress(locator, row?.read<double>('speed') ?? 1);
+    return AudioProgress(
+      locator,
+      row?.read<double>('speed') ?? await _defaultSpeed(),
+    );
+  }
+
+  /// The player's default speed, applied to books without saved progress.
+  Future<double> _defaultSpeed() async {
+    try {
+      final raw = await db
+          .customSelect(
+            "SELECT value FROM metadata WHERE key='audio-sleep-settings'",
+          )
+          .getSingleOrNull();
+      final value = raw == null
+          ? null
+          : (jsonDecode(raw.read<String>('value')) as Map)['defaultSpeed'];
+      return value is num && audioDefaultSpeeds.contains(value)
+          ? value.toDouble()
+          : 1;
+    } catch (_) {
+      return 1;
+    }
   }
 
   Future<void> saveProgress(AudioProgress progress) => db.transaction(() async {

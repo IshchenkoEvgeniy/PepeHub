@@ -892,10 +892,10 @@ class _LibraryDataPageState extends State<LibraryDataPage> {
     if (widget.embedded) {
       return Scaffold(
         body: ListView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
           children: [
             const SettingsHeading(
-              'Экспорт и резервные копии',
+              'Резервные копии и экспорт',
               'Папка для синхронизации библиотеки между устройствами, резервные копии и экспорт.',
             ),
             ..._children(palette),

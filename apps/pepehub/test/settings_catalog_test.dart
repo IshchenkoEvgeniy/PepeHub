@@ -137,11 +137,7 @@ void main() {
                         ),
                         child: child!,
                       ),
-                      home: SettingsPage(
-                        library: library,
-                        onConnection: () async {},
-                        onJournal: () {},
-                      ),
+                      home: SettingsPage(library: library),
                     ),
                   ),
                 ),
@@ -234,9 +230,17 @@ void main() {
         expect(await f.repo.meta('peer-sync-interval'), '180');
         await tester.pageBack();
         await tester.pumpAndSettle();
-        await open('updates');
+        await open('about');
         expect(find.text('Проверить обновления'), findsOneWidget);
-        await capture('updates');
+        expect(find.text('О приложении'), findsWidgets);
+        await capture('about');
+        await tester.scrollUntilVisible(
+          find.text('База данных'),
+          250,
+          scrollable: find.byType(Scrollable).last,
+        );
+        expect(find.text('База данных'), findsOneWidget);
+        expect(find.byKey(const ValueKey('about-copy-debug')), findsOneWidget);
         await tap('Источник обновлений');
         expect(find.text(updates.feed), findsOneWidget);
         expect(find.byType(SelectableText), findsWidgets);
@@ -250,17 +254,35 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('reader-appearance-done')));
         await tester.pumpAndSettle();
         expect(await f.repo.meta('reader:appearance'), isNotNull);
-        await tap('Цели чтения и прослушивания');
-        await tester.tap(find.byTooltip('Увеличить: Чтение в день'));
+        await tap('Цели и напоминания');
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('goal:reading:60')),
+        );
         await tester.pumpAndSettle();
-        expect(await f.repo.meta('reading-daily-goal'), '35');
+        await tester.tap(find.byKey(const ValueKey('goal:reading:60')));
+        await tester.pumpAndSettle();
+        expect(await f.repo.meta('reading-daily-goal'), '60');
+        expect(find.text('1 ч'), findsWidgets);
+        await tester.ensureVisible(
+          find.text('Напоминать о чтении и аудиокнигах'),
+        );
+        await tester.pumpAndSettle();
         await capture('goals');
         await tester.pageBack();
         await tester.pumpAndSettle();
+        await tap('Плеер аудиокниг');
+        expect(find.textContaining('Аудиоплеер недоступен'), findsOneWidget);
         await tester.pageBack();
         await tester.pumpAndSettle();
-        await open('startup');
-        await capture('startup');
+        expect(find.text('Настройки читалки'), findsOneWidget);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await open('interface');
+        await tester.scrollUntilVisible(
+          find.text('Начальная вкладка'),
+          250,
+          scrollable: find.byType(Scrollable).last,
+        );
         expect(find.text('Начальная вкладка'), findsOneWidget);
         await tester.pageBack();
         await tester.pumpAndSettle();
@@ -269,6 +291,7 @@ void main() {
         await ready(tester, () => !storage.busy);
         expect(storage.error, isNull);
         expect(storage.usage, isNotNull);
+        expect(storage.databaseBytes, greaterThan(0));
         await capture('storage');
         await tester.scrollUntilVisible(
           find.text('Очистить временные копии'),
@@ -283,27 +306,36 @@ void main() {
         expect(find.text('Очистить временные копии'), findsOneWidget);
         await tester.pageBack();
         await tester.pumpAndSettle();
-        await open('about');
-        await capture('about');
-        expect(find.text('База данных'), findsOneWidget);
-        await tester.pageBack();
-        await tester.pumpAndSettle();
-        await open('reminders');
-        expect(find.text('Напоминать о чтении и аудиокнигах'), findsOneWidget);
-        await tester.pageBack();
-        await tester.pumpAndSettle();
         await open('help');
+        expect(find.text('Журнал чтения и прослушивания'), findsNothing);
+        expect(find.text('Обновление приложения'), findsNothing);
         await tap('Почему книга без файла?');
         expect(find.text('Проверить подключённые папки'), findsOneWidget);
         await tester.pageBack();
         await tester.pumpAndSettle();
-        await tap('История файлов и очистка');
-        expect(find.textContaining('Общих папок пока нет'), findsOneWidget);
+        await tap('Горячие клавиши');
+        expect(find.text('Ctrl + K'), findsOneWidget);
+        await capture('hotkeys');
         await tester.pageBack();
         await tester.pumpAndSettle();
         await tester.pageBack();
         await tester.pumpAndSettle();
-        await open('appearance');
+        await open('files');
+        expect(find.text('Источники рекомендаций'), findsOneWidget);
+        expect(find.text('Словарь Anki'), findsNothing);
+        expect(find.text('Цитаты и заметки'), findsNothing);
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await open('interface');
+        await capture('interface');
+        await tester.ensureVisible(find.byKey(const ValueKey('palette:paper')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('palette:paper')));
+        await tester.pumpAndSettle();
+        expect(appearance.style, AppStyle.paper);
+        await tester.drag(find.byType(Scrollable).last, const Offset(0, 3000));
+        await tester.pumpAndSettle();
+        await capture('interface-light');
         await tester.ensureVisible(find.byType(Slider));
         await tester.pumpAndSettle();
         await tester.drag(find.byType(Slider), const Offset(600, 0));
@@ -313,6 +345,35 @@ void main() {
         await restored.load();
         expect(restored.textScale, 1.3);
         restored.dispose();
+        // Search finds nested settings and opens their page.
+        if (size.width < 960) {
+          await tester.pageBack();
+          await tester.pumpAndSettle();
+        }
+        await tester.enterText(
+          find.byKey(const ValueKey('settings-search')),
+          'скорость',
+        );
+        await tester.pumpAndSettle();
+        await capture('search');
+        await tester.tap(
+          find.byKey(
+            const ValueKey('settings-search-result:Скорость для новых книг'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Плеер аудиокниг'), findsWidgets);
+        expect(find.textContaining('Аудиоплеер недоступен'), findsOneWidget);
+        if (size.width < 960) {
+          await tester.pageBack();
+          await tester.pumpAndSettle();
+        }
+        await tester.enterText(
+          find.byKey(const ValueKey('settings-search')),
+          'несуществующее',
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Ничего не найдено'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();

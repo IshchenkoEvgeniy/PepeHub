@@ -145,6 +145,20 @@ class ErrorLog {
     }
   }
 
+  /// Total size of all log files in bytes. Does not wait for queued writes:
+  /// the figure is informational.
+  static Future<int> size() async {
+    var total = 0;
+    for (final file in await _files()) {
+      try {
+        total += await file.length();
+      } catch (_) {
+        // Missing file counts as empty.
+      }
+    }
+    return total;
+  }
+
   static Future<void> clear() async {
     await flush();
     for (final file in await _files()) {

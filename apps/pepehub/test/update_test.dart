@@ -488,6 +488,63 @@ void main() {
     service.dispose();
   });
 
+  test('Windows helper may verify slowly after starting and reports its failure reason', () async {
+    final archive = Archive()
+      ..addFile(ArchiveFile.string('pepehub.exe', 'exe'))
+      ..addFile(ArchiveFile.string('flutter_windows.dll', 'dll'))
+      ..addFile(ArchiveFile.string('data/app.so', 'app'));
+    f.bytes = ZipEncoder().encode(archive);
+    final envelope = await f.sign(f.payload());
+    var mode = 'slow';
+    final service = UpdateService(
+      f.repo,
+      platform: f.native,
+      publicKey: f.publicKey,
+      now: () => updateNow,
+      observeLifecycle: false,
+      helperStartTimeout: const Duration(milliseconds: 300),
+      helperReadyTimeout: const Duration(seconds: 5),
+      directory: () async => f.cache,
+      client: MockClient((_) async => http.Response.bytes(envelope, 200)),
+      downloadClient: () =>
+          MockClient((_) async => http.Response.bytes(f.bytes, 200)),
+      executable: () =>
+          p.join(f.cache.parent.path, 'installed-pepehub', 'pepehub.exe'),
+      launchHelper: (config, helper) async {
+        final dir = config.parent.path;
+        if (mode == 'silent') return;
+        await File(p.join(dir, 'started')).writeAsString('started');
+        // Verification takes longer than the start timeout.
+        unawaited(
+          Future<void>.delayed(const Duration(milliseconds: 800), () async {
+            if (mode == 'slow') {
+              await File(p.join(dir, 'ready')).writeAsString('ready');
+            } else {
+              await File(p.join(dir, 'failure.txt')).writeAsString(
+                'Close all other PepeHub windows before updating.',
+              );
+            }
+          }),
+        );
+      },
+    );
+    await service.initialize();
+    await service.check();
+    await service.download();
+    await service.install();
+    expect(service.error, null);
+    expect(service.phase, UpdatePhase.installerOpened);
+    mode = 'failure';
+    service.phase = UpdatePhase.ready;
+    await service.install();
+    expect(service.error, contains('Закройте другие окна PepeHub'));
+    mode = 'silent';
+    await service.install();
+    expect(service.error, contains('не запустился'));
+    expect(service.phase, UpdatePhase.ready);
+    service.dispose();
+  });
+
   test('Windows extraction accepts complete bundles and blocks traversal, links and personal database files', () async {
     List<int> zip(String? extra, {bool link = false}) {
       final archive = Archive()

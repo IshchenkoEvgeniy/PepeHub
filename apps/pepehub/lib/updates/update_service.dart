@@ -99,6 +99,10 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
   final DateTime Function() now;
   final bool observeLifecycle;
   final Duration installTimeout;
+
+  /// How long PowerShell may take to start, and then to verify the staged
+  /// files (hashing ~150 MB, slower while an antivirus scans them).
+  final Duration helperStartTimeout, helperReadyTimeout;
   final Future<void> Function()? prepareRestart;
   final Future<void> Function(File config, File helper)? launchHelper;
   final String Function() executable;
@@ -113,6 +117,8 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
     DateTime Function()? now,
     this.observeLifecycle = true,
     this.installTimeout = const Duration(seconds: 45),
+    this.helperStartTimeout = const Duration(seconds: 30),
+    this.helperReadyTimeout = const Duration(minutes: 3),
     this.prepareRestart,
     this.launchHelper,
     String Function()? executable,
@@ -731,20 +737,10 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
             'files': files,
           }),
         );
+        installStep = 'Запускаем помощник обновления…';
+        _notify();
         await (launchHelper ?? _launchHelper)(config, helper);
-        final ready = File(p.join(transaction.path, 'ready'));
-        for (var i = 0; i < 100 && !await ready.exists(); i++) {
-          final failure = File(p.join(transaction.path, 'failure.txt'));
-          if (await failure.exists()) {
-            throw const UpdateException(
-              'Не удалось подготовить установку. Проверьте права на папку приложения.',
-            );
-          }
-          await Future<void>.delayed(const Duration(milliseconds: 100));
-        }
-        if (!await ready.exists()) {
-          throw const UpdateException('Помощник обновления не запустился');
-        }
+        await _waitForHelper(transaction);
         await prepareRestart?.call();
         await platform.exitForUpdate();
         phase = UpdatePhase.installerOpened;
@@ -767,6 +763,50 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
     } finally {
       installStep = null;
       _notify();
+    }
+  }
+
+  /// The helper marks `started` at once, then verifies every staged file
+  /// before writing `ready`. Earlier versions gave it 10 s in total, which a
+  /// cold PowerShell plus hashing the package often exceeded.
+  Future<void> _waitForHelper(Directory transaction) async {
+    File marker(String name) => File(p.join(transaction.path, name));
+    final watch = Stopwatch()..start();
+    var started = false;
+    while (true) {
+      if (await marker('ready').exists()) return;
+      final failure = marker('failure.txt');
+      if (await failure.exists()) {
+        final reason = (await failure.readAsString()).trim();
+        ErrorLog.record(
+          StateError('Windows update helper: $reason'),
+          StackTrace.current,
+          context: 'update: helper failure',
+        );
+        throw UpdateException(
+          reason.contains('Close all other PepeHub windows') ||
+                  reason.contains('Another application instance')
+              ? 'Закройте другие окна PepeHub и повторите обновление.'
+              : 'Не удалось подготовить установку: $reason',
+        );
+      }
+      if (!started &&
+          (await marker('started').exists() ||
+              await marker('status.json').exists())) {
+        started = true;
+        installStep = 'Проверяем файлы обновления…';
+        _notify();
+      }
+      final limit = started ? helperReadyTimeout : helperStartTimeout;
+      if (watch.elapsed >= limit || _disposed) {
+        throw UpdateException(
+          started
+              ? 'Помощник обновления не успел проверить файлы. Повторите попытку.'
+              : 'Помощник обновления не запустился: Windows PowerShell не ответил. '
+                    'Проверьте, не блокирует ли его антивирус.',
+        );
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 150));
     }
   }
 

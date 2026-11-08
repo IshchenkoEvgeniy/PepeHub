@@ -296,7 +296,7 @@ try {
 
     # ------------------------------------------------------------------
     Write-Step 'Публикация на GitHub'
-    if (-not (Confirm-Release "Опубликовать $tag в $releaseOwner/$releaseRepo? После публикации выпуск неизменяем.")) {
+    if (-not (Confirm-Release "Опубликовать $tag в $releaseOwner/${releaseRepo}? После публикации выпуск неизменяем.")) {
         Write-Note 'Публикация отменена. Пакеты остались в dist\online.' Yellow
         Write-Note 'Опубликовать позже: node .\scripts\publish-update.ts --publish'
         return

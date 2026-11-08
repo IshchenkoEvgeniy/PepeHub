@@ -822,7 +822,7 @@ class _AudioPageState extends State<AudioPage> {
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: _playButton(palette, wide ? 84 : 68),
         ),
-        _skip(controller.seekStepSeconds, compact: !wide),
+        _skip(controller.seekForwardSeconds, compact: !wide),
         _skip(60, compact: !wide),
         IconButton(
           tooltip: 'Следующая глава',

@@ -62,6 +62,8 @@ function Restore-PepeFiles {
 
 try {
     $pepeConfigFile = [IO.Path]::GetFullPath($ConfigPath)
+    # Tells the application the helper is alive before the slow verification.
+    if (-not $NoLaunch -and -not $Rollback) { [IO.File]::WriteAllText((Join-Path ([IO.Path]::GetDirectoryName($pepeConfigFile)) 'started'), 'started') }
     $pepeConfig = [IO.File]::ReadAllText($pepeConfigFile) | ConvertFrom-Json
     $pepeTxn = [IO.Path]::GetFullPath($pepeConfig.transactionDir).TrimEnd('\')
     $pepeInstall = [IO.Path]::GetFullPath($pepeConfig.installDir).TrimEnd('\')

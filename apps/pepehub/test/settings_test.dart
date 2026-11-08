@@ -16,7 +16,11 @@ void main() {
     addTearDown(db.close);
     final appearance = AppTheme(repo);
     addTearDown(appearance.dispose);
-    expect(AppStyle.values.length, 10);
+    expect(AppStyle.values.length, 12);
+    expect(AppStyle.values.where((s) => s.light).toList(), [
+      AppStyle.paper,
+      AppStyle.daylight,
+    ]);
     expect(
       AppStyle.values
           .map(
@@ -24,7 +28,11 @@ void main() {
           )
           .toSet()
           .length,
-      10,
+      12,
+    );
+    expect(
+      AppTheme.data(Brightness.dark, style: AppStyle.paper).brightness,
+      Brightness.light,
     );
     for (final style in AppStyle.values) {
       await appearance.preferences(
@@ -41,6 +49,38 @@ void main() {
       expect(restored.reduceMotion, true);
       restored.dispose();
     }
+    // Following the system keeps the last dark and light palettes.
+    await appearance.preferences(style: AppStyle.pine);
+    await appearance.preferences(style: AppStyle.daylight, followSystem: true);
+    final paired = AppTheme(repo);
+    await paired.load();
+    expect(paired.followSystem, true);
+    expect(paired.darkStyle, AppStyle.pine);
+    expect(paired.lightStyle, AppStyle.daylight);
+    expect(paired.themeMode, ThemeMode.system);
+    expect(paired.effective(Brightness.light), AppStyle.daylight);
+    expect(paired.effective(Brightness.dark), AppStyle.pine);
+    expect(paired.lightTheme.brightness, Brightness.light);
+    expect(paired.darkTheme.brightness, Brightness.dark);
+    paired.dispose();
+    await appearance.reset();
+    final reset = AppTheme(repo);
+    await reset.load();
+    expect(reset.style, AppStyle.fallback);
+    expect(reset.followSystem, false);
+    expect(reset.textScale, 1);
+    expect(reset.compact, false);
+    expect(reset.themeMode, ThemeMode.dark);
+    reset.dispose();
+    // Settings saved before light palettes existed keep their dark palette.
+    await repo.setMeta(
+      'appearance-settings',
+      '{"style":"embers","textScale":1.1}',
+    );
+    await appearance.load();
+    expect(appearance.style, AppStyle.embers);
+    expect(appearance.darkStyle, AppStyle.embers);
+    expect(appearance.lightStyle, AppStyle.fallbackLight);
     await repo.setMeta(
       'appearance-settings',
       '{"textScale":"invalid","style":"missing"}',
@@ -72,20 +112,17 @@ void main() {
                     .copyWith(textScaler: const TextScaler.linear(1.4)),
                 child: child!,
               ),
-              home: SettingsPage(
-                library: library,
-                onConnection: () async {},
-                onJournal: () {},
-              ),
+              home: SettingsPage(library: library),
             ),
           ),
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('settings-entry:appearance')));
+      await tester.tap(find.byKey(const ValueKey('settings-entry:interface')));
       await tester.pumpAndSettle();
       for (final style in AppStyle.values) {
         await tester.ensureVisible(find.text(style.label));
+        await tester.pumpAndSettle();
         await tester.tap(find.text(style.label));
         await tester.pumpAndSettle();
         expect(appearance.style, style);

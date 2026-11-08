@@ -549,6 +549,8 @@ void main() {
     await h.controller.updateSleepOptions(
       rewindSeconds: 45,
       seekStepSeconds: 30,
+      seekForwardSeconds: 60,
+      defaultSpeed: 1.5,
       resume: const AudioRewindSettings(
         shortSeconds: 5,
         mediumSeconds: 15,
@@ -559,7 +561,13 @@ void main() {
     await h.restart();
     expect(h.controller.sleepRewindSeconds, 45);
     expect(h.controller.seekStepSeconds, 30);
+    expect(h.controller.seekForwardSeconds, 60);
+    expect(h.controller.defaultSpeed, 1.5);
     expect(h.controller.rewindSettings.longSeconds, 60);
+    await expectLater(
+      h.controller.updateSleepOptions(seekForwardSeconds: 7),
+      throwsArgumentError,
+    );
     await h.repo.setMeta(
       'audio-sleep-settings',
       '{"fade":false,"rewind":false}',
@@ -568,6 +576,9 @@ void main() {
     expect(h.controller.sleepRewind, false);
     expect(h.controller.sleepFade, false);
     expect(h.controller.seekStepSeconds, 10);
+    // Older preferences without a forward step reuse the back step.
+    expect(h.controller.seekForwardSeconds, 10);
+    expect(h.controller.defaultSpeed, 1);
   });
   test('chapter boundary pauses at the boundary; manual chapter navigation cancels it', () async {
     await h.controller.seek(const Duration(seconds: 10));

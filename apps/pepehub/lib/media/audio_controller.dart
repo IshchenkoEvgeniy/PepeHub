@@ -246,6 +246,12 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   bool _sleepFiring = false, _sleepStopped = false;
   bool sleepFade = true, sleepRewind = true;
   int seekStepSeconds = 10;
+
+  /// Step for the forward button; equals [seekStepSeconds] unless set apart.
+  int seekForwardSeconds = 10;
+
+  /// Speed for audiobooks that have no saved progress yet.
+  double defaultSpeed = 1;
   bool resumeAfterInterruption = false;
   int sleepRewindSeconds = 10;
   AudioRewindSettings rewindSettings = const AudioRewindSettings();
@@ -557,9 +563,15 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     try {
       final settings = jsonDecode(raw) as Map;
       final step = settings['seekStepSeconds'];
-      seekStepSeconds = const [5, 10, 15, 30, 60].contains(step)
-          ? step as int
-          : 10;
+      seekStepSeconds = audioSeekSteps.contains(step) ? step as int : 10;
+      final forward = settings['seekForwardSeconds'];
+      seekForwardSeconds = audioSeekSteps.contains(forward)
+          ? forward as int
+          : seekStepSeconds;
+      final speed = settings['defaultSpeed'];
+      defaultSpeed = speed is num && audioDefaultSpeeds.contains(speed)
+          ? speed.toDouble()
+          : 1;
       sleepFade = settings['fade'] != false;
       sleepRewind = settings['rewind'] != false;
       final seconds = settings['rewindSeconds'];
@@ -1357,7 +1369,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
   @override
   Future<void> rewind() => _skipRelative(-seekStepSeconds);
   @override
-  Future<void> fastForward() => _skipRelative(seekStepSeconds);
+  Future<void> fastForward() => _skipRelative(seekForwardSeconds);
   @override
   Future<void> setSpeed(double speed) => _command(() => _setSpeed(speed));
   Future<void> _setSpeed(double speed) async {
@@ -1502,6 +1514,8 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     bool? rewind,
     int? rewindSeconds,
     int? seekStepSeconds,
+    int? seekForwardSeconds,
+    double? defaultSpeed,
     AudioRewindSettings? resume,
     bool? resumeAfterInterruption,
   }) async {
@@ -1517,11 +1531,17 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         ].any((v) => v < 0 || v > 300)) {
       throw ArgumentError('Возврат от 0 до 300 секунд');
     }
-    if (seekStepSeconds != null &&
-        !const [5, 10, 15, 30, 60].contains(seekStepSeconds)) {
-      throw ArgumentError('Недопустимый шаг перемотки');
+    for (final step in [seekStepSeconds, seekForwardSeconds]) {
+      if (step != null && !audioSeekSteps.contains(step)) {
+        throw ArgumentError('Недопустимый шаг перемотки');
+      }
+    }
+    if (defaultSpeed != null && !audioDefaultSpeeds.contains(defaultSpeed)) {
+      throw ArgumentError('Недопустимая скорость');
     }
     this.seekStepSeconds = seekStepSeconds ?? this.seekStepSeconds;
+    this.seekForwardSeconds = seekForwardSeconds ?? this.seekForwardSeconds;
+    this.defaultSpeed = defaultSpeed ?? this.defaultSpeed;
     sleepFade = fade ?? sleepFade;
     sleepRewind = rewind ?? sleepRewind;
     sleepRewindSeconds = rewindSeconds ?? sleepRewindSeconds;
@@ -1537,6 +1557,8 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         'audio-sleep-settings',
         jsonEncode({
           'seekStepSeconds': this.seekStepSeconds,
+          'seekForwardSeconds': this.seekForwardSeconds,
+          'defaultSpeed': this.defaultSpeed,
           'fade': sleepFade,
           'rewind': sleepRewind,
           'rewindSeconds': sleepRewindSeconds,

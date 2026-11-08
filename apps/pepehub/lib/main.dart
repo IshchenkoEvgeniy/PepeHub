@@ -282,12 +282,9 @@ class _PepeHubAppState extends State<PepeHubApp> {
         scaffoldMessengerKey: messenger,
         navigatorObservers: [readerRoutes],
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.data(
-          Brightness.dark,
-          style: theme.style,
-          compact: theme.compact,
-        ),
-        themeMode: ThemeMode.dark,
+        theme: theme.lightTheme,
+        darkTheme: theme.darkTheme,
+        themeMode: theme.themeMode,
         builder: (context, child) {
           final media = MediaQuery.of(context);
           return MediaQuery(

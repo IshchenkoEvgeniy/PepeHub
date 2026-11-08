@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../ui/audio_mini_player.dart';
+import '../../ui/library_data_page.dart' show libraryCount;
 import '../../ui/settings_components.dart';
 
 import 'peer_files.dart';
@@ -392,7 +393,7 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       title: const Text('Автообмен в открытом приложении'),
       subtitle: const Text(
-        'Только при изменениях и не чаще выбранного интервала. Входящий обмен с разрешённых устройств остаётся доступен. Фон Android включается отдельно. Для согласованного интервала обновите оба приложения.',
+        'При изменениях, не чаще выбранного интервала. Входящий обмен работает всегда.',
       ),
       value: service.autoSync,
       onChanged: disabled
@@ -428,8 +429,9 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
                   },
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Ручной обмен работает сразу. Интервал ограничивает автоматические проверки и фоновые задания.',
+          Text(
+            'Ограничивает автоматические проверки и фоновые задания. Ручной обмен — сразу. Для одинакового интервала обновите оба приложения.',
+            style: TextStyle(color: Theme.of(context).hintColor),
           ),
         ],
       ),
@@ -439,7 +441,7 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         title: const Text('Фоновый обмен данными приложения'),
         subtitle: const Text(
-          'Android запускает задания с выбранным интервалом или позже. Медиафайлы в этих заданиях не скачиваются. После принудительной остановки откройте приложение.',
+          'Прогресс и заметки, без медиафайлов. Android может запускать задания позже интервала.',
         ),
         value: service.backgroundSync,
         onChanged: disabled
@@ -459,12 +461,15 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
               : (value) =>
                     _run(() => service.configureBackground(wifiOnly: value)),
         ),
-      OutlinedButton.icon(
-        onPressed: disabled || !service.enabled || service.devices.isEmpty
-            ? null
-            : () => _run(service.transferInBackground),
-        icon: const Icon(Icons.sync),
-        label: const Text('Передать файлы с уведомлением'),
+      ListTile(
+        key: const ValueKey('peer-background-transfer'),
+        enabled: !disabled && service.enabled && service.devices.isNotEmpty,
+        leading: const Icon(Icons.cloud_sync_outlined),
+        title: const Text('Передать файлы сейчас'),
+        subtitle: const Text(
+          'Полный обмен, включая файлы. Продолжится при свёрнутом приложении, ход виден в уведомлении.',
+        ),
+        onTap: () => _run(service.transferInBackground),
       ),
     ],
   ];
@@ -504,7 +509,7 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
     children: [
       const SettingsHeading(
         'Синхронизация',
-        'Прямой обмен файлами и данными приложения между ПК и телефоном. Экспорт и резервные копии доступны в библиотеке.',
+        'Прямой обмен файлами и данными приложения между ПК и телефоном, без аккаунта и облака.',
       ),
       SettingsGroup(
         children: [
@@ -784,7 +789,7 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
         key: ValueKey('peer-folder:${folder.id}'),
         title: Text(folder.name),
         subtitle: Text(
-          '${folder.paused ? 'На паузе' : 'Обмен разрешён'} · ${folder.devices.length} устройств\nБиблиотека: ${_libraryLabels[folder.library]}',
+          '${folder.paused ? 'На паузе' : 'Обмен разрешён'} · ${libraryCount(folder.devices.length, 'устройство', 'устройства', 'устройств')}\nБиблиотека: ${_libraryLabels[folder.library]}',
         ),
         children: [
           Padding(
@@ -976,13 +981,15 @@ class _PeerSyncPageState extends State<PeerSyncPage> {
         key: ValueKey('peer-settings:$section'),
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
         children: [
-          if (service.error != null) SettingsNotice(service.error!),
-          child,
           if (service.busy || working)
             const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: LinearProgressIndicator(),
+              padding: EdgeInsets.only(bottom: 16),
+              child: LinearProgressIndicator(
+                key: ValueKey('peer-sync-progress'),
+              ),
             ),
+          if (service.error != null) SettingsNotice(service.error!),
+          child,
         ],
       );
       if (widget.embedded) return body;

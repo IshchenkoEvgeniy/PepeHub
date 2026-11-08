@@ -53,13 +53,12 @@ void main() {
         await tester.tap(find.byTooltip('Настроить цели'));
         await tester.pumpAndSettle();
         expect(find.byType(GoalSettingsPage), findsOneWidget);
-        await tester.tap(
-          find.byTooltip(
-            reading
-                ? 'Увеличить: Чтение в день'
-                : 'Увеличить: Прослушивание в день',
-          ),
+        final chip = find.byKey(
+          ValueKey(reading ? 'goal:reading:60' : 'goal:daily:15'),
         );
+        await tester.ensureVisible(chip);
+        await tester.pumpAndSettle();
+        await tester.tap(chip);
         await tester.pumpAndSettle();
         await tester.pageBack();
         await tester.pumpAndSettle();
@@ -67,7 +66,7 @@ void main() {
           final dynamic state = tester.state(
             find.byType(ReadingStatisticsPage),
           );
-          expect(state.goal, 35);
+          expect(state.goal, 60);
         } else {
           final dynamic state = tester.state(find.byType(AudioStatisticsPage));
           expect(state.goals.dailyMinutes, 15);

@@ -319,13 +319,18 @@ void main() {
           .writeAsBytes(bytes!.buffer.asUint8List());
     });
     expect(find.text('5 мин'), findsWidgets);
-    // The goal panel opens the goal settings; the daily goal moves by 5 min.
+    // The goal panel opens the goal settings; a custom daily goal is typed.
     await tester.tap(find.byTooltip('Настроить цели'));
     await tester.pumpAndSettle();
-    for (var i = 0; i < 3; i++) {
-      await tester.tap(find.byTooltip('Увеличить: Чтение в день'));
-      await tester.pumpAndSettle();
-    }
+    await tester.tap(find.byKey(const ValueKey('goal:reading:custom')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('goal-input:reading')),
+      '45',
+    );
+    await tester.tap(find.text('Сохранить'));
+    await tester.pumpAndSettle();
+    expect(find.text('45 мин'), findsWidgets);
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(find.text('из 45 мин'), findsOneWidget);

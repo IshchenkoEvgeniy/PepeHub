@@ -6,7 +6,6 @@ import 'book_action_menu.dart';
 import 'settings_page.dart';
 import 'activity_page.dart';
 import 'library_link_review.dart';
-import 'obsidian_notes_page.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
 import 'folder_scan_panel.dart';
@@ -1440,19 +1439,7 @@ class _LibraryPageState extends State<LibraryPage> {
   );
   void _appSettings() => Navigator.push(
     context,
-    MaterialPageRoute(
-      builder: (_) => SettingsPage(
-        library: obsidianLibrary,
-        onConnection: _obsidianSettings,
-        onJournal: _journal,
-        onNotes: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ObsidianNotesPage(library: obsidianLibrary),
-          ),
-        ),
-      ),
-    ),
+    MaterialPageRoute(builder: (_) => SettingsPage(library: obsidianLibrary)),
   );
 
   Future<void> _obsidianSettings() => Navigator.push<void>(
