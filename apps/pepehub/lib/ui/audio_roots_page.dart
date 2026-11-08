@@ -7,8 +7,10 @@ import '../audio/audio_roots.dart';
 import '../media/asset_store.dart';
 import '../media/audio_player_scope.dart';
 import '../media/folder_scan_progress.dart';
+import '../library/book_trash.dart';
 import '../media/library_folder_preference.dart';
 import 'audio_catalog_dialog.dart';
+import 'book_delete_dialog.dart' show showMovedToTrash;
 import 'folder_scan_panel.dart';
 import 'pepe_widgets.dart';
 import 'reading_roots_page.dart' show readableFolderPath;
@@ -26,13 +28,14 @@ String audiobookCount(int n) {
   return '$n $word';
 }
 
-/// «12 аудиокниг · 340 файлов · проверено вчера».
-String audioRootSummary(AudioRoot root, DateTime now) {
+/// «12 аудиокниг · 340 файлов · проверено вчера». [count] excludes books in
+/// the trash; by default every book of the folder is counted.
+String audioRootSummary(AudioRoot root, DateTime now, {int? count}) {
   final report = (root.data['lastReport'] as Map?)?.cast<String, dynamic>();
   final files = (report?['supported'] as num?)?.toInt();
   final scan = DateTime.tryParse('${root.data['lastScan']}');
   return [
-    audiobookCount(root.bookIds.length),
+    audiobookCount(count ?? root.bookIds.length),
     if (files != null && files > 0) '$files файлов',
     scan == null ? 'ещё не проверялась' : 'проверено ${shelfDay(scan, now)}',
   ].join(' · ');
@@ -51,6 +54,9 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
   late final manager = AudioRoots(widget.assets);
   List<AudioRoot> roots = [];
   String? pinnedRoot;
+
+  /// Per folder: books not found on disk, and books moved to the trash.
+  Map<String, List<String>> missing = {}, trashed = {};
   late final preference = LibraryFolderPreference(
     widget.assets.repository,
     reading: false,
@@ -86,10 +92,29 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
     try {
       final items = await manager.list();
       final pinned = await preference.load();
+      final inTrash = {
+        for (final book in await BookTrash(widget.assets.repository).list())
+          if (book.audio) book.id,
+      };
+      final notFound = await manager.missingBookIds();
       if (!mounted) return;
       setState(() {
         roots = items..sort((a, b) => a.title.compareTo(b.title));
         pinnedRoot = pinned;
+        trashed = {
+          for (final root in items)
+            root.key: [
+              for (final id in root.bookIds)
+                if (inTrash.contains(id)) id,
+            ],
+        };
+        missing = {
+          for (final root in items)
+            root.key: [
+              for (final id in root.bookIds)
+                if (notFound.contains(id) && !inTrash.contains(id)) id,
+            ],
+        };
         loading = false;
       });
     } catch (e) {
@@ -280,6 +305,111 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
     }
   }
 
+  /// Lets the user pick missing audiobooks and moves them to the trash.
+  /// Their files are gone already, so only the PepeHub cards are removed;
+  /// progress, notes and history stay restorable from the trash.
+  Future<void> _removeMissing(AudioRoot root) async {
+    if (busy || scanning) return;
+    final ids = missing[root.key] ?? const <String>[];
+    if (ids.isEmpty) return;
+    final repo = widget.assets.repository;
+    final titles = <String, String>{
+      for (final id in ids)
+        id: switch ((await repo.record(id))?.title ?? '') {
+          '' => 'Без названия',
+          final t => t,
+        },
+    };
+    final order = [...ids]..sort((a, b) => titles[a]!.compareTo(titles[b]!));
+    final days = await BookTrash(repo).retentionDays();
+    if (!mounted) return;
+    final selected = {...ids};
+    final chosen = await showDialog<Set<String>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialog) => AlertDialog(
+          title: const Text('Удалить ненайденные аудиокниги?'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Карточки уйдут в корзину${days == 0 ? '' : ' на $days дн.'}; оттуда их можно вернуть вместе с позициями и историей. Файлов на диске нет, удалять нечего.',
+                  style: const TextStyle(fontSize: 13),
+                ),
+                CheckboxListTile(
+                  key: const ValueKey('missing-select-all'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: Text('Выбрать все (${ids.length})'),
+                  value: selected.length == ids.length
+                      ? true
+                      : selected.isEmpty
+                      ? false
+                      : null,
+                  tristate: true,
+                  onChanged: (_) => setDialog(() {
+                    if (selected.length == ids.length) {
+                      selected.clear();
+                    } else {
+                      selected.addAll(ids);
+                    }
+                  }),
+                ),
+                const Divider(height: 1),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: order.length,
+                    itemBuilder: (context, i) {
+                      final id = order[i];
+                      return CheckboxListTile(
+                        key: ValueKey('missing-book:$id'),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        title: Text(titles[id]!),
+                        value: selected.contains(id),
+                        onChanged: (v) => setDialog(
+                          () => v == true
+                              ? selected.add(id)
+                              : selected.remove(id),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              key: const ValueKey('missing-remove-confirm'),
+              onPressed: selected.isEmpty
+                  ? null
+                  : () => Navigator.pop(context, {...selected}),
+              child: Text('В корзину: ${selected.length}'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || chosen.isEmpty || !mounted) return;
+    final player = AudioPlayerScope.of(context);
+    if (chosen.contains(player?.current?.bookId)) await player?.stop();
+    final moved = chosen.toList();
+    await _run(() => BookTrash(repo).move(moved));
+    if (mounted && error.isEmpty) {
+      showMovedToTrash(context, widget.assets, moved, onRestored: load);
+    }
+  }
+
   Future<void> _remove(AudioRoot root) async {
     final yes = await showDialog<bool>(
       context: context,
@@ -380,7 +510,8 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
   Widget _rootCard(AudioRoot root, ShelfPalette palette) {
     final scheme = Theme.of(context).colorScheme;
     final report = (root.data['lastReport'] as Map?)?.cast<String, dynamic>();
-    final missing = (report?['missing'] as num? ?? 0).toInt();
+    final missingIds = missing[root.key] ?? const <String>[];
+    final trashedIds = trashed[root.key] ?? const <String>[];
     final unsupported = (report?['unsupported'] as num? ?? 0).toInt();
     // Missing books are already counted above; list only the other warnings.
     final warnings = ((root.data['warnings'] as List?)?.cast<String>() ?? [])
@@ -423,7 +554,11 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          audioRootSummary(root, DateTime.now()),
+                          audioRootSummary(
+                            root,
+                            DateTime.now(),
+                            count: root.bookIds.length - trashedIds.length,
+                          ),
                           key: ValueKey('audio-root-summary:${root.key}'),
                           style: const TextStyle(fontSize: 13),
                         ),
@@ -484,11 +619,35 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
                         'Обновите папку, чтобы найти новые аудиокниги и проверить прежние.',
                         color: palette.accent,
                       ),
-                    if (missing > 0)
+                    if (trashedIds.isNotEmpty)
+                      _plaque(
+                        Icons.delete_outline,
+                        'В корзине аудиокниг этой папки: ${trashedIds.length}. На полке их нет.',
+                        color: palette.accent,
+                        action: TextButton(
+                          key: ValueKey('audio-restore-trashed:${root.key}'),
+                          onPressed: busy || scanning
+                              ? null
+                              : () => _run(
+                                  () => BookTrash(
+                                    widget.assets.repository,
+                                  ).restore(trashedIds),
+                                ),
+                          child: const Text('Вернуть'),
+                        ),
+                      ),
+                    if (missingIds.isNotEmpty)
                       _plaque(
                         Icons.help_outline,
-                        'Не найдено прежних аудиокниг: $missing. Карточки и позиции сохранены; они вернутся, когда папки появятся.',
+                        'Не найдено прежних аудиокниг: ${missingIds.length}. Карточки и позиции сохранены; они вернутся, когда папки появятся.',
                         color: Colors.amber,
+                        action: TextButton(
+                          key: ValueKey('audio-remove-missing:${root.key}'),
+                          onPressed: busy || scanning
+                              ? null
+                              : () => _removeMissing(root),
+                          child: const Text('Удалить'),
+                        ),
                       ),
                     if (warnings.isNotEmpty) ...[
                       _plaque(

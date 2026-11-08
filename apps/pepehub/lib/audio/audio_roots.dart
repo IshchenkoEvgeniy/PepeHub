@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../data/repository.dart';
+
 import '../media/asset_store.dart';
 import '../media/library_folder_preference.dart';
 import '../media/library_recovery.dart';
@@ -56,6 +58,19 @@ class AudioRoots {
         jsonDecode(row.read<String>('value')) as Map<String, dynamic>,
       ),
   ];
+
+  /// Audiobooks whose folders were not found on the last scan. Books deleted
+  /// for good are skipped. List projection only: no tracks are loaded.
+  Future<Set<String>> missingBookIds() async => {
+    for (final row
+        in await assets.repository.db.customSelect('''
+          SELECT b.id FROM metadata m
+          JOIN records b ON b.id=substr(m.key,22) AND b.type='book' AND b.deleted=0
+          WHERE m.key>='audio-source-missing:' AND m.key<'audio-source-missing;'
+            AND m.value='1'
+        ''').get())
+      row.read<String>('id'),
+  };
 
   Future<void> rename(AudioRoot root, String title) async {
     final clean = title.trim();
@@ -205,11 +220,23 @@ class AudioRoots {
           warnings.add('${draft.title}: $e');
         }
       }
+      var missing = 0;
       for (final id in root.bookIds.where((id) => !seen.contains(id))) {
-        await repo.setMeta('audio-source-missing:$id', '1');
         final book = await repo.record(id);
+        // Deleted for good from the trash: the folder forgets it.
+        if (book == null || book.deleted) {
+          ids.remove(id);
+          continue;
+        }
+        await repo.setMeta('audio-source-missing:$id', '1');
+        // Removed by the user into the trash: not reported as missing.
+        if (await repo.meta('${Repository.removedShelfBookPrefix}$id') ==
+            '1') {
+          continue;
+        }
+        missing++;
         warnings.add(
-          '${book?.title ?? id}: не найдена; карточка и прогресс сохранены.',
+          '${book.title}: не найдена; карточка и прогресс сохранены.',
         );
       }
       progress?.check();
@@ -238,7 +265,7 @@ class AudioRoots {
             'updated': updated,
             'unsupported': scan.unsupportedFiles,
             'errors': errors,
-            'missing': root.bookIds.where((id) => !seen.contains(id)).length,
+            'missing': missing,
           },
         }),
       );
