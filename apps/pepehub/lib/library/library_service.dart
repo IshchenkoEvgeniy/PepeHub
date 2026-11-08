@@ -508,6 +508,8 @@ class LibraryService extends ChangeNotifier {
     await loadCached();
     try {
       await folderStorage.synchronize();
+    } on LibraryFolderPending {
+      // Shown on the «Данные» screen; the next check retries.
     } catch (e) {
       error = 'Не удалось обновить папку библиотеки: ${describeError(e)}';
     }

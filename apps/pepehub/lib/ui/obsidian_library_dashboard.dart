@@ -704,10 +704,36 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 ),
               ],
             ),
-            IconButton(
-              tooltip: 'Экспорт и резервные копии',
-              onPressed: _exchange,
-              icon: const Icon(Icons.backup_outlined, size: 20),
+            // Background folder checks fail silently otherwise: show it here.
+            ListenableBuilder(
+              listenable: service.folderStorage,
+              builder: (context, _) {
+                final folder = service.folderStorage;
+                final failed = folder.enabled && folder.error != null;
+                final waiting = folder.enabled && folder.pending != null;
+                return IconButton(
+                  key: const ValueKey('library-data-action'),
+                  tooltip: failed
+                      ? 'Папка библиотеки не обновляется — открыть'
+                      : waiting
+                      ? 'Папка библиотеки ждёт файлы с другого устройства'
+                      : 'Экспорт и резервные копии',
+                  onPressed: _exchange,
+                  icon: Icon(
+                    failed
+                        ? Icons.sync_problem
+                        : waiting
+                        ? Icons.sync
+                        : Icons.backup_outlined,
+                    size: 20,
+                    color: failed
+                        ? Theme.of(context).colorScheme.error
+                        : waiting
+                        ? Colors.amber
+                        : null,
+                  ),
+                );
+              },
             ),
           ],
           body: LayoutBuilder(

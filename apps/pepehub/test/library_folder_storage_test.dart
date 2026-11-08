@@ -427,7 +427,13 @@ void main() {
     );
     final bytes = await object.readAsBytes();
     await object.delete();
-    await expectLater(b.folderStorage.synchronize(), throwsStateError);
+    // A missing object is still arriving through the sync tool.
+    await expectLater(
+      b.folderStorage.synchronize(),
+      throwsA(isA<LibraryFolderPending>()),
+    );
+    expect(b.folderStorage.pending, isNotNull);
+    expect(b.folderStorage.error, isNull);
     expect((await b.repository.entries())[id]!.item.title, 'Книга');
     await object.writeAsString('{}');
     await expectLater(b.folderStorage.synchronize(), throwsStateError);
@@ -941,6 +947,305 @@ void main() {
       expect(b.folderStorage.enabled, isFalse);
     });
   }
+
+  test('a write replaced by a Syncthing conflict copy is merged, not reverted', () async {
+    final a = device(), b = device();
+    final first = await add(a, title: 'Первая');
+    final second = await add(a, title: 'Вторая');
+    await a.folderStorage.connect(shared.path);
+    await b.folderStorage.connect(shared.path);
+    final catalog = File('${shared.path}/PepeHub-library/library.json');
+    final common = await catalog.readAsString();
+    // A writes while B is offline...
+    await rename(a, first, 'Первая с ПК');
+    await a.folderStorage.synchronize();
+    final fromA = await catalog.readAsString();
+    // ...and B, not having received it, writes on top of the old catalog.
+    // Syncthing keeps B's file and renames A's one to a conflict copy.
+    await catalog.writeAsString(common);
+    await rename(b, second, 'Вторая с телефона');
+    await b.folderStorage.synchronize();
+    await File(
+      '${shared.path}/PepeHub-library/library.sync-conflict-20261108-120000-AAAAAAA.json',
+    ).writeAsString(fromA);
+    expect(
+      (jsonDecode(await catalog.readAsString()) as Map)['ancestors'],
+      contains(sha256.convert(utf8.encode(common)).toString()),
+    );
+    await a.folderStorage.synchronize();
+    await b.folderStorage.synchronize();
+    for (final library in [a, b]) {
+      final cards = await library.repository.entries();
+      expect(cards[first]!.item.title, 'Первая с ПК');
+      expect(cards[second]!.item.title, 'Вторая с телефона');
+    }
+    expect(a.folderStorage.error, isNull);
+  });
+
+  test(
+    'sessions added on two devices to the same work are both kept',
+    () async {
+      final a = device(), b = device();
+      await a.local.addBook('Источник', 'Автор', 'epub');
+      final source = (await a.local.records('book')).single;
+      final id = uuid.v4();
+      await a.add(
+        personalLibraryItem(id, 'book', {
+          'title': 'Книга',
+          'status': 'finished',
+        }),
+        source.id,
+      );
+      await a.local.put('session', uuid.v4(), {
+        'bookId': source.id,
+        'kind': 'reading',
+        'startedAt': '2026-10-29T10:00:00.000Z',
+        'endedAt': '2026-10-29T10:05:00.000Z',
+        'activeSeconds': 300,
+      });
+      await a.folderStorage.connect(shared.path);
+      await b.folderStorage.connect(shared.path);
+      final existing = (await b.history!.entries()).single;
+      final manual = uuid.v4();
+      await b.history!.mutate((state) async {
+        (state['slots'] as Map)[manual] = {
+          'value': {
+            ...(existing['value'] as Map),
+            'id': manual,
+            'durationMs': 120000,
+            'origin': 'app-manual',
+          },
+          'portable': true,
+        };
+      });
+      await a.local.put('session', uuid.v4(), {
+        'bookId': source.id,
+        'kind': 'reading',
+        'startedAt': '2026-10-30T10:00:00.000Z',
+        'endedAt': '2026-10-30T10:10:00.000Z',
+        'activeSeconds': 600,
+      });
+      await a.folderStorage.synchronize();
+      // B changed the same journal: no conflict to resolve by hand.
+      await b.folderStorage.synchronize();
+      await a.folderStorage.synchronize();
+      expect(await b.history!.entries(), hasLength(3));
+      expect(await a.history!.entries(), hasLength(3));
+    },
+  );
+
+  test('journal merge keeps entries of both sides and newer note edits', () {
+    String doc(Map<String, Object?> entries) => jsonEncode(entries);
+    final merged = jsonDecode(
+      mergeLibraryJournal(
+        'notes',
+        doc({
+          'a': {
+            'id': 'a',
+            'updatedAt': '2026-11-02T00:00:00Z',
+            'text': 'здесь',
+          },
+          'b': {'id': 'b', 'updatedAt': '2026-11-01T00:00:00Z'},
+        }),
+        doc({
+          'a': {'id': 'a', 'updatedAt': '2026-11-03T00:00:00Z', 'text': 'там'},
+          'c': {'id': 'c', 'updatedAt': '2026-11-01T00:00:00Z'},
+        }),
+      ),
+    ) as Map;
+    expect(merged.keys, unorderedEquals(['a', 'b', 'c']));
+    expect(merged['a']['text'], 'там');
+    final sessions = jsonDecode(
+      mergeLibraryJournal(
+        'history',
+        doc({
+          's': {'id': 's', 'durationMs': 10, 'deleted': true},
+        }),
+        doc({
+          's': {'id': 's', 'durationMs': 50, 'deleted': false},
+        }),
+        doc({
+          's': {'id': 's', 'durationMs': 10, 'deleted': false},
+        }),
+      ),
+    ) as Map;
+    // Only "here" deleted it and only "there" extended it: a real conflict,
+    // the deletion wins.
+    expect(sessions['s']['deleted'], isTrue);
+  });
+
+  test('cleanup removes long unreferenced objects and keeps the rest', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final a = device(database: db);
+    final id = await add(a);
+    await a.folderStorage.connect(shared.path);
+    final old = DateTime.now().subtract(const Duration(days: 40));
+    final referenced = (await manifest())['documents']['cards/$id'] as String;
+    Future<File> object(String hash) async {
+      final file = File(
+        '${shared.path}/PepeHub-library/objects/${hash.substring(0, 2)}/$hash.json',
+      );
+      await file.parent.create(recursive: true);
+      return file;
+    }
+
+    final staleBytes = utf8.encode('{"stale":true}');
+    final stale = sha256.convert(staleBytes).toString();
+    await (await object(stale)).writeAsBytes(staleBytes);
+    final freshBytes = utf8.encode('{"fresh":true}');
+    final fresh = sha256.convert(freshBytes).toString();
+    await (await object(fresh)).writeAsBytes(freshBytes);
+    for (final hash in [stale, referenced]) {
+      await (await object(hash)).setLastModified(old);
+    }
+    // The stale object was first seen unreferenced long ago; the fresh one
+    // (another device's write whose catalog has not arrived) is new.
+    await a.local.setMeta(
+      'library-storage-cleanup-v1',
+      jsonEncode({
+        'o:$stale': old.toUtc().toIso8601String(),
+        'o:$fresh': old.toUtc().toIso8601String(),
+        'o:$referenced': old.toUtc().toIso8601String(),
+      }),
+    );
+    final report = await a.folderStorage.inspect();
+    expect(report!.unusedObjects, 2);
+    final restarted = device(database: db);
+    await restarted.folderStorage.synchronize(force: true);
+    expect(await (await object(stale)).exists(), isFalse);
+    expect(await (await object(fresh)).exists(), isTrue);
+    expect(await (await object(referenced)).exists(), isTrue);
+    expect(
+      (jsonDecode(
+        (await a.local.meta('library-storage-cleanup-v1'))!,
+      ) as Map).keys,
+      ['o:$fresh'],
+    );
+  });
+
+  test('Syncthing helpers: conflict copies and the ignore pattern', () async {
+    final a = device();
+    await add(a);
+    await Directory('${shared.path}/.stfolder').create();
+    await a.folderStorage.connect(shared.path);
+    final copy = File(
+      '${shared.path}/PepeHub-library/library.sync-conflict-20261108-120000-AAAAAAA.json',
+    );
+    await copy.writeAsString('{}');
+    var report = (await a.folderStorage.inspect())!;
+    expect(report.syncthingRoot, shared.path);
+    expect(report.ignoresTemporary, isFalse);
+    expect(report.conflictCopies, [
+      'library.sync-conflict-20261108-120000-AAAAAAA.json',
+    ]);
+    await a.folderStorage.ignoreTemporaryFiles(report.syncthingRoot!);
+    await a.folderStorage.ignoreTemporaryFiles(report.syncthingRoot!);
+    expect(
+      RegExp(r'^\.pepehub$', multiLine: true)
+          .allMatches(await File('${shared.path}/.stignore').readAsString())
+          .length,
+      1,
+    );
+    expect(
+      await a.folderStorage.removeConflictCopies(report.conflictCopies),
+      1,
+    );
+    report = (await a.folderStorage.inspect())!;
+    expect(report.ignoresTemporary, isTrue);
+    expect(report.conflictCopies, isEmpty);
+    expect(await copy.exists(), isFalse);
+  });
+
+  test('reading checkpoints are written at most every two minutes', () async {
+    final a = device();
+    await a.local.addBook('Источник', 'Автор', 'epub');
+    final source = (await a.local.records('book')).single;
+    await a.add(
+      personalLibraryItem(uuid.v4(), 'book', {
+        'title': 'Книга',
+        'status': 'finished',
+      }),
+      source.id,
+    );
+    await a.folderStorage.connect(shared.path);
+    // One quick poll records the stamp of the published catalog.
+    await a.folderStorage.synchronize();
+    final catalog = File('${shared.path}/PepeHub-library/library.json');
+    final before = await catalog.readAsString();
+    await a.local.put('session', uuid.v4(), {
+      'bookId': source.id,
+      'kind': 'reading',
+      'startedAt': '2026-10-29T10:00:00.000Z',
+      'endedAt': '2026-10-29T10:05:00.000Z',
+      'activeSeconds': 300,
+    });
+    expect(await a.folderStorage.synchronize(), isFalse);
+    expect(await catalog.readAsString(), before);
+    await a.folderStorage.flush();
+    expect(await catalog.readAsString(), isNot(before));
+  });
+
+  test('series in the trash keep their plain folder name', () async {
+    final a = device();
+    final kept = await add(a, title: 'Том 1');
+    final removed = await add(a, title: 'Том 2');
+    await a.deleteCards([removed]);
+    await a.folderStorage.connect(shared.path);
+    expect(kept, isNotEmpty);
+    expect(
+      await File('${shared.path}/PepeHub-library/Корзина/Серия/Том 2.json')
+          .exists(),
+      isTrue,
+    );
+  });
+
+  testWidgets('folder card shows Syncthing hints on a narrow screen', (
+    tester,
+  ) async {
+    final a = device();
+    await tester.runAsync(() async {
+      await add(a);
+      await Directory('${shared.path}/.stfolder').create();
+      await a.folderStorage.connect(shared.path);
+      await File(
+        '${shared.path}/PepeHub-library/library.sync-conflict-20261108-120000-AAAAAAA.json',
+      ).writeAsString('{}');
+    });
+    tester.view.physicalSize = const Size(360, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(MaterialApp(home: LibraryDataPage(library: a)));
+    for (
+      var i = 0;
+      i < 40 &&
+          find
+              .byKey(const ValueKey('library-folder-stignore'))
+              .evaluate()
+              .isEmpty;
+      i++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    }
+    expect(find.byKey(const ValueKey('library-folder-card')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('library-folder-summary')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('library-folder-stignore')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('library-folder-conflicts')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets(
     'folder controls fit a narrow screen and cancellation keeps the connection',

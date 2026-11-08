@@ -31,6 +31,9 @@ class LibraryBackupPreview {
 }
 
 /// A portable library archive, without tokens, cloud settings or book file paths.
+/// Trash retention travels with the library, as in the library folder.
+const _trashRetention = 'library-trash-retention-days';
+
 class LibraryBackup {
   final LibraryService library;
   LibraryBackup(this.library);
@@ -93,11 +96,17 @@ class LibraryBackup {
         'history': portable(await library.history!.state()),
         'notes': portable(await library.notes!.state()),
         'missingCovers': missingCovers,
-        'settings': await library.local.metadataPrefixes([
-          'library-series-length:',
-          'library-year-goal:personal:',
-          'obsidian-policy:personal:',
-        ]),
+        'settings':
+            await library.local.metadataPrefixes([
+                'library-series-length:',
+                'library-year-goal:personal:',
+                'obsidian-policy:personal:',
+                _trashRetention,
+              ])
+              ..removeWhere(
+                (key, _) =>
+                    key.startsWith(_trashRetention) && key != _trashRetention,
+              ),
       }),
     );
     if (json.length > 16777216) {
@@ -243,11 +252,12 @@ class LibraryBackup {
     for (final e in (data['settings'] as Map? ?? {}).entries) {
       if (e.key is! String ||
           e.value is! String ||
-          ![
-            'library-series-length:',
-            'library-year-goal:personal:',
-            'obsidian-policy:personal:',
-          ].any((prefix) => (e.key as String).startsWith(prefix)) ||
+          e.key != _trashRetention &&
+              ![
+                'library-series-length:',
+                'library-year-goal:personal:',
+                'obsidian-policy:personal:',
+              ].any((prefix) => (e.key as String).startsWith(prefix)) ||
           (e.value as String).length > 10000) {
         throw const FormatException('Недопустимые настройки в копии');
       }
@@ -266,6 +276,7 @@ class LibraryBackup {
         final value = int.tryParse(e.value as String);
         if (value == null ||
             value < 0 ||
+            e.key == _trashRetention && ![0, 7, 30, 90].contains(value) ||
             value >
                 ((e.key as String).startsWith('library-series-length:')
                     ? 500

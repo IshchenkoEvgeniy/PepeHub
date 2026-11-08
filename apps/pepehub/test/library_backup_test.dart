@@ -199,6 +199,7 @@ void main() {
       await library.notes!.mutate((state) async => state['slots'] = notes);
       await local.setMeta('library-series-length:серия', '12');
       await local.setMeta('library-year-goal:personal:2026', '40');
+      await local.setMeta('library-trash-retention-days', '90');
       final backup = LibraryBackup(library);
       final preview = backup.inspect(await backup.create());
       expect(preview.cards, hasLength(1000));
@@ -224,6 +225,7 @@ void main() {
       expect(await library.notes!.entries(), hasLength(1000));
       expect(await local.meta('library-series-length:серия'), '12');
       expect(await local.meta('library-year-goal:personal:2026'), '40');
+      expect(await local.meta('library-trash-retention-days'), '90');
       expect(await local.records('book'), isEmpty);
       final roundtrip = recovery.inspect(await recovery.create());
       expect(

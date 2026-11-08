@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:path/path.dart' as p;
 
 import '../data/repository.dart' show uuid;
@@ -23,11 +24,38 @@ import '../diagnostics/user_message.dart';
 const _folderKey = 'library-storage-folder-v1';
 const _baselineKey = 'library-storage-baseline-v1';
 const _layoutKey = 'library-storage-layout-v1';
+
+/// Base of this device's unconfirmed writes: see [LibraryFolderStorage].
+const _chainKey = 'library-storage-chain-v1';
+const _cleanupKey = 'library-storage-cleanup-v1';
 const _prefix = 'PepeHub-library/';
 const _manifestPath = '${_prefix}library.json';
 const _bookFilesPath = '${_prefix}objects/book-files.json';
 const _beforeNamedBooks = '${_prefix}objects/library-before-named-books.json';
+
+/// Digests of earlier catalogs kept in each catalog. A device whose last
+/// write is missing from this list knows that write was lost (for example
+/// renamed by Syncthing to a conflict copy) and merges against an older base.
+const _maxAncestors = 128;
+
+/// Unreferenced objects and covers are removed after this long.
+const libraryFolderCleanupAge = Duration(days: 30);
 const _folderReadme = '''# PepeHub Library
+
+Книги/ — файлы с названиями произведений, разложенные по сериям.
+Корзина/ — файлы удалённых карточек, пока они хранятся в корзине.
+library.json и objects/ — служебный каталог и версии данных для обмена.
+covers/<SHA-256>.png — сохранённые обложки.
+
+Именованные JSON-файлы содержат карточку, заметки и историю. Изменяйте данные в PepeHub.
+Синхронизируйте всю папку PepeHub-library. Исходные книги и аудио хранятся отдельно.
+Служебные версии, на которые больше не ссылается каталог, удаляются через 30 дней.
+
+Syncthing: добавьте в игнорируемые шаблоны строку .pepehub на каждом устройстве —
+там лежат временные файлы записи. Копии *.sync-conflict-* не нужны: изменения
+обоих устройств PepeHub объединяет сам, а копии можно удалить на вкладке «Данные».
+''';
+const _previousFolderReadme = '''# PepeHub Library
 
 Книги/ — файлы с названиями произведений, разложенные по сериям.
 Корзина/ — файлы удалённых карточек, пока они хранятся в корзине.
@@ -123,7 +151,8 @@ Map<String, ({String id, String raw})> _namedBooks(Map<String, dynamic> data) {
       ObsidianLibraryItem.fromJson(data[key]),
   ];
   final seriesNames = <String, String>{};
-  final usedSeries = <String>{};
+  // Names are unique per parent: «Книги/Серия» and «Корзина/Серия» coexist.
+  final usedSeries = <String, Set<String>>{};
   final usedPaths = <String>{};
   final books = <String, ({String id, String raw})>{};
   for (final item in items) {
@@ -131,12 +160,13 @@ Map<String, ({String id, String raw})> _namedBooks(Map<String, dynamic> data) {
     var directory = isLibraryDeleted(item) ? 'Корзина' : 'Книги';
     if (series.isNotEmpty) {
       final key = librarySeriesKey(item);
+      final parent = directory;
       final name = seriesNames.putIfAbsent(
-        key,
+        '$parent\u0000$key',
         () => _uniqueName(
           _fileName(series, 'Серия'),
           _digest(key).substring(0, 12),
-          usedSeries,
+          usedSeries.putIfAbsent(parent, () => <String>{}),
         ),
       );
       directory += '/$name';
@@ -186,6 +216,104 @@ Map<String, String> _documents(
   return result;
 }
 
+/// Three-way merge of one work's history or notes, entry by entry.
+///
+/// Entries have stable IDs and deletions are tombstones, so an entry present
+/// on one side only is kept. When both sides changed the same entry, a note
+/// keeps the later `updatedAt`, a session keeps a deletion or else the longer
+/// duration. Sessions and notes recorded on two devices therefore never
+/// replace each other, and no conflict has to be resolved by hand.
+String mergeLibraryJournal(
+  String kind,
+  String here,
+  String there, [
+  String? base,
+]) {
+  Map<String, dynamic> decode(String raw) =>
+      Map<String, dynamic>.from(jsonDecode(raw) as Map);
+  final mine = decode(here), theirs = decode(there);
+  final before = base == null ? const <String, dynamic>{} : decode(base);
+  bool same(Object? a, Object? b) => _encode(a) == _encode(b);
+  final result = <String, dynamic>{};
+  for (final id in {...mine.keys, ...theirs.keys}) {
+    final h = mine[id], t = theirs[id], b = before[id];
+    if (h == null || t == null || same(h, t)) {
+      result[id] = h ?? t;
+    } else if (b != null && same(h, b)) {
+      result[id] = t;
+    } else if (b != null && same(t, b)) {
+      result[id] = h;
+    } else if (kind == 'notes') {
+      result[id] = '${t['updatedAt']}'.compareTo('${h['updatedAt']}') > 0
+          ? t
+          : h;
+    } else if ((t['deleted'] == true) != (h['deleted'] == true)) {
+      result[id] = t['deleted'] == true ? t : h;
+    } else {
+      final mineMs = (h['durationMs'] as num?) ?? 0,
+          theirMs = (t['durationMs'] as num?) ?? 0;
+      result[id] = theirMs > mineMs ? t : h;
+    }
+  }
+  return _encode(result);
+}
+
+/// The folder is still receiving files from another device.
+class LibraryFolderPending implements Exception {
+  final String message;
+  const LibraryFolderPending(this.message);
+  @override
+  String toString() => message;
+}
+
+/// What the folder holds; filled after each successful update.
+class LibraryFolderStats {
+  final int cards, deleted, history, notes, covers;
+  const LibraryFolderStats({
+    required this.cards,
+    required this.deleted,
+    required this.history,
+    required this.notes,
+    required this.covers,
+  });
+}
+
+/// Files of a folder on this computer, inspected for the «Данные» screen.
+class LibraryFolderReport {
+  final int objects, unusedObjects, unusedCovers, unusedBytes;
+
+  /// `*.sync-conflict-*` copies inside PepeHub-library, relative paths.
+  final List<String> conflictCopies;
+
+  /// Directory with `.stfolder`, when the library is inside a Syncthing folder.
+  final String? syncthingRoot;
+
+  /// `.stignore` of [syncthingRoot] excludes PepeHub temporary files.
+  final bool ignoresTemporary;
+  const LibraryFolderReport({
+    required this.objects,
+    required this.unusedObjects,
+    required this.unusedCovers,
+    required this.unusedBytes,
+    required this.conflictCopies,
+    required this.syncthingRoot,
+    required this.ignoresTemporary,
+  });
+}
+
+bool _ignoresPepeHub(String stignore) => const LineSplitter()
+    .convert(stignore)
+    .map((line) => line.trim().replaceFirst(RegExp(r'^(\(\?[di]\))+'), ''))
+    .any(
+      (line) => const {
+        '.pepehub',
+        '/.pepehub',
+        '**/.pepehub',
+        '.pepehub/',
+        '/.pepehub/',
+      }.contains(line),
+    );
+
 enum LibraryFolderPreference { local, folder }
 
 class LibraryFolderConflict implements Exception {
@@ -193,21 +321,31 @@ class LibraryFolderConflict implements Exception {
   const LibraryFolderConflict(this.documents);
   @override
   String toString() =>
-      'Библиотека изменена и здесь, и в папке '
-      '(${documents.length} совпадающих записей). Выберите версию в разделе «Данные».';
+      'Одни и те же записи изменены по-разному здесь и в папке '
+      '(${documents.length}). Выберите версию в разделе «Экспорт и резервные копии».';
 }
 
 class _Manifest {
   final String id;
   final Map<String, String> documents;
   final Set<String> covers;
-  const _Manifest(this.id, this.documents, this.covers);
+
+  /// Digests of the catalogs this one was built on, newest first. Empty in
+  /// catalogs written by older versions.
+  final List<String> ancestors;
+  const _Manifest(
+    this.id,
+    this.documents,
+    this.covers, [
+    this.ancestors = const [],
+  ]);
   Map<String, dynamic> toJson() => {
     'format': 'pepehub-library-folder',
     'version': 2,
     'id': id,
     'documents': documents,
     'covers': covers.toList()..sort(),
+    if (ancestors.isNotEmpty) 'ancestors': ancestors,
   };
   factory _Manifest.read(String raw) {
     final data = jsonDecode(raw);
@@ -237,8 +375,34 @@ class _Manifest {
     if (covers.any((hash) => !_hash.hasMatch(hash))) {
       throw const FormatException('Повреждён список обложек');
     }
-    return _Manifest(data['id'], documents, covers);
+    final ancestors = data['ancestors'] ?? const [];
+    if (ancestors is! List ||
+        ancestors.length > _maxAncestors ||
+        ancestors.any((hash) => hash is! String || !_hash.hasMatch(hash))) {
+      throw const FormatException('Повреждена история каталога');
+    }
+    return _Manifest(data['id'], documents, covers, ancestors.cast<String>());
   }
+}
+
+/// This device's writes since it last read a catalog written elsewhere.
+/// [base] is that catalog. If the newest write is later lost, the catalog
+/// in the folder no longer lists it among its ancestors and [base] becomes
+/// the common version for the three-way merge.
+class _Chain {
+  final String? base;
+  final List<String> own;
+  const _Chain(this.base, this.own);
+  static _Chain read(String? raw) {
+    if (raw == null) return const _Chain(null, []);
+    final data = jsonDecode(raw) as Map;
+    return _Chain(
+      data['base'] as String?,
+      (data['own'] as List).cast<String>(),
+    );
+  }
+
+  String encode() => jsonEncode({'base': base, 'own': own});
 }
 
 class _FolderFiles {
@@ -260,6 +424,22 @@ class _FolderFiles {
       files.stage(entry.withClock(entry.clock, path: _path(entry.path)));
   Future<void> remove(String path, String expected) =>
       files.remove(_path(path), expected);
+
+  /// PepeHub-library on this computer; null for Android folders, which
+  /// cannot be listed cheaply.
+  Directory? get localLibrary => switch (files) {
+    final LocalPeerFiles local =>
+      direct
+          ? local.root
+          : Directory(p.join(local.root.path, 'PepeHub-library')),
+    _ => null,
+  };
+
+  /// The selected folder on this computer.
+  Directory? get localRoot => switch (files) {
+    final LocalPeerFiles local => local.root,
+    _ => null,
+  };
 }
 
 class _LibraryChangedDuringSave implements Exception {}
@@ -277,8 +457,21 @@ class LibraryFolderStorage extends ChangeNotifier {
   String? folder;
   String? error;
   String? warning;
-  DateTime? savedAt;
+
+  /// Another device's files are still arriving; the next check retries.
+  String? pending;
+
+  /// Last write to the folder and last successful check of it.
+  DateTime? savedAt, checkedAt;
+  LibraryFolderStats? stats;
   bool working = false, _disposed = false;
+
+  /// Journal-only changes (reading and listening sessions) are written at most
+  /// this often while the app is open, and right away when it is hidden.
+  static const journalDelay = Duration(minutes: 2);
+  AppLifecycleListener? _lifecycle;
+  DateTime? _lastCleanup;
+  static const _cleanupEvery = Duration(hours: 6);
   Future<void>? _initialized;
   Future<void> _tail = Future.value();
   Timer? _timer;
@@ -334,6 +527,28 @@ class LibraryFolderStorage extends ChangeNotifier {
         }
       });
     }
+    if (!_disposed && enabled && _lifecycle == null) {
+      try {
+        _lifecycle = AppLifecycleListener(onHide: _flushInBackground);
+      } on Object catch (e) {
+        // No widgets binding (command-line use): polling still saves.
+        debugPrint('Library folder lifecycle unavailable: $e');
+      }
+    }
+  }
+
+  void _flushInBackground() {
+    if (!enabled || _disposed) return;
+    unawaited(flush().then((_) {}, onError: (Object _) {}));
+  }
+
+  /// Writes pending journal changes now instead of after [journalDelay].
+  Future<bool> flush() async {
+    await initialize();
+    return _serial(() async {
+      if (_disposed || folder == null) return false;
+      return _synchronize(folder!, deferJournal: false);
+    });
   }
 
   Future<T> _serial<T>(Future<T> Function() action) {
@@ -432,15 +647,20 @@ class LibraryFolderStorage extends ChangeNotifier {
       // A disconnected/missing disk must not prevent keeping the working copy.
       await library.local.db.transaction(() async {
         await library.local.db.customStatement(
-          'DELETE FROM metadata WHERE key IN (?,?,?)',
-          [_folderKey, _baselineKey, _layoutKey],
+          'DELETE FROM metadata WHERE key IN (?,?,?,?,?)',
+          [_folderKey, _baselineKey, _layoutKey, _chainKey, _cleanupKey],
         );
       });
       folder = null;
       _timer?.cancel();
       _timer = null;
+      _lifecycle?.dispose();
+      _lifecycle = null;
       error = null;
       warning = null;
+      pending = null;
+      stats = null;
+      savedAt = checkedAt = null;
       _direct = false;
       _lastRevision = _lastManifest = _lastManifestStamp = null;
       _status();
@@ -475,7 +695,7 @@ class LibraryFolderStorage extends ChangeNotifier {
     }
     final result = bytes.takeBytes();
     if (sha256.convert(result).toString() != expected) {
-      throw StateError('Файл ещё синхронизируется: $path');
+      throw LibraryFolderPending('Файл ещё синхронизируется: $path');
     }
     return result;
   }
@@ -514,6 +734,7 @@ class LibraryFolderStorage extends ChangeNotifier {
     bool force = false,
     bool connecting = false,
     LibraryFolderPreference? preference,
+    bool deferJournal = true,
     int attempt = 0,
   }) async {
     if (_disposed) throw StateError('Хранилище библиотеки закрыто');
@@ -548,38 +769,72 @@ class LibraryFolderStorage extends ChangeNotifier {
       // Taken before reading: a write after this point changes the stamp.
       final stamp = quick ? await fs.stamp(_manifestPath) : null;
       final lastFull = _lastFullCheck;
-      if (quick &&
+      final now = DateTime.now();
+      final unchanged =
+          quick &&
           stamp != null &&
           stamp == _lastManifestStamp &&
           lastFull != null &&
-          DateTime.now().difference(lastFull) < _fullCheckEvery &&
-          await _revision() == _lastRevision) {
-        if (error != null) {
-          error = null;
-          _status();
+          now.difference(lastFull) < _fullCheckEvery;
+      if (unchanged) {
+        final current = await _revision();
+        // Session checkpoints arrive every 30 s while reading; writing a new
+        // catalog for each one only makes the sync tool busy.
+        final deferred =
+            deferJournal &&
+            _onlyJournal(current, _lastRevision) &&
+            savedAt != null &&
+            now.difference(savedAt!) < journalDelay;
+        if (current == _lastRevision || deferred) {
+          _clearProblems();
+          return false;
         }
-        return false;
       }
       final manifestBytes = await _read(fs, _manifestPath, 16777216);
       final raw = manifestBytes == null ? null : utf8.decode(manifestBytes);
       var revision = await _revision();
       if (quick && revision == _lastRevision && raw == _lastManifest) {
         _lastManifestStamp = stamp;
-        _lastFullCheck = DateTime.now();
-        if (error != null) {
-          error = null;
-          _status();
-        }
+        _lastFullCheck = now;
+        checkedAt = now;
+        _clearProblems();
         return false;
       }
       _lastManifestStamp = null;
       final remote = raw == null ? null : _Manifest.read(raw);
       final saved = await library.local.meta(_baselineKey);
       final previous = saved == null ? null : _Manifest.read(saved);
-      final baseline =
-          !connecting || remote != null && previous?.id == remote.id
+      final chain = connecting
+          ? const _Chain(null, [])
+          : _Chain.read(await library.local.meta(_chainKey));
+      var baseline = !connecting || remote != null && previous?.id == remote.id
           ? previous
           : null;
+      // Our newest write may have been replaced in the folder (Syncthing keeps
+      // the other device's file and renames ours to a conflict copy). Then
+      // our saved version is not an ancestor of the folder's catalog and
+      // "unchanged here" would silently revert our own edits.
+      var lostBase = false;
+      if (!connecting &&
+          remote != null &&
+          saved != null &&
+          raw != saved &&
+          chain.own.isNotEmpty &&
+          remote.ancestors.isNotEmpty &&
+          !remote.ancestors.contains(_digest(saved))) {
+        final base = chain.base;
+        final ancestor =
+            base != null &&
+            (base == raw ||
+                remote.ancestors.contains(_digest(base)) ||
+                chain.own.any(remote.ancestors.contains));
+        if (ancestor) {
+          baseline = _Manifest.read(base);
+        } else {
+          baseline = null;
+          lostBase = true;
+        }
+      }
       if (!connecting && remote == null) {
         throw StateError(
           'Файл PepeHub-library/library.json недоступен. '
@@ -637,6 +892,9 @@ class LibraryFolderStorage extends ChangeNotifier {
       final hashes = await _folderWork(_hashDocuments, local);
       final merged = <String, String>{};
       final conflicts = <String>[];
+      final journalMerges =
+          <String, ({String here, String there, String? before})>{};
+      final journalDocuments = <String, String>{};
       for (final key in {
         ...hashes.keys,
         ...?remote?.documents.keys,
@@ -645,26 +903,61 @@ class LibraryFolderStorage extends ChangeNotifier {
         final here = hashes[key],
             there = remote?.documents[key],
             before = baseline?.documents[key];
+        final journal = key.startsWith('history/') || key.startsWith('notes/');
         String? chosen;
         if (remote == null || here == there) {
           chosen = here;
-        } else if (connecting && baseline == null) {
+        } else if (baseline == null && (connecting || lostBase)) {
           chosen = here ?? there;
           if (here != null && there != null && here != there) {
-            if (preference == null) conflicts.add(key);
-            chosen = preference == LibraryFolderPreference.folder
-                ? there
-                : here;
+            if (journal) {
+              journalMerges[key] = (here: here, there: there, before: null);
+            } else {
+              if (preference == null) conflicts.add(key);
+              chosen = preference == LibraryFolderPreference.folder
+                  ? there
+                  : here;
+            }
           }
         } else if (here == before) {
           chosen = there;
         } else if (there == before) {
           chosen = here;
+        } else if (journal && here != null && there != null) {
+          chosen = here;
+          journalMerges[key] = (here: here, there: there, before: before);
         } else {
           if (preference == null) conflicts.add(key);
           chosen = preference == LibraryFolderPreference.folder ? there : here;
         }
         if (chosen != null) merged[key] = chosen;
+      }
+      // Both devices added sessions or notes to the same work: keep both.
+      for (final e in journalMerges.entries) {
+        final theirs = await _read(fs, _objectPath(e.value.there), 16777216);
+        if (theirs == null) {
+          throw LibraryFolderPending(
+            'Данные ${e.key} ещё не синхронизированы. PepeHub повторит проверку.',
+          );
+        }
+        String? base;
+        if (e.value.before case final before?) {
+          try {
+            final bytes = await _read(fs, _objectPath(before), 16777216);
+            if (bytes != null) base = utf8.decode(bytes);
+          } on Object {
+            // Old versions may be cleaned up: a union keeps every entry.
+          }
+        }
+        final raw = mergeLibraryJournal(
+          e.key.split('/').first,
+          local[e.key]!,
+          utf8.decode(theirs),
+          base,
+        );
+        final digest = _digest(raw);
+        merged[e.key] = digest;
+        journalDocuments[e.key] = raw;
       }
       // A purge on one device can race with a new note/session on another.
       // Resolve that work as a unit so a chosen journal keeps its card.
@@ -693,12 +986,18 @@ class LibraryFolderStorage extends ChangeNotifier {
       for (final e in merged.entries) {
         if (hashes[e.key] == e.value) {
           data[e.key] = local[e.key]!;
+        } else if (journalDocuments[e.key] case final raw?
+            when _digest(raw) == e.value) {
+          data[e.key] = raw;
         } else {
           final bytes = await _read(fs, _objectPath(e.value), 16777216);
-          if (bytes == null || sha256.convert(bytes).toString() != e.value) {
-            throw StateError(
-              'Данные ${e.key} ещё не синхронизированы или повреждены. Повторите обновление.',
+          if (bytes == null) {
+            throw LibraryFolderPending(
+              'Данные ${e.key} ещё не синхронизированы. PepeHub повторит проверку.',
             );
+          }
+          if (sha256.convert(bytes).toString() != e.value) {
+            throw StateError('Данные ${e.key} повреждены в папке.');
           }
           data[e.key] = utf8.decode(bytes);
         }
@@ -744,9 +1043,24 @@ class LibraryFolderStorage extends ChangeNotifier {
           await _write(fs, path, utf8.encode(data[e.key]!), null);
         }
       }
-      final next = _Manifest(remote?.id ?? uuid.v4(), merged, availableCovers);
+      final sameContent =
+          remote != null &&
+          sameMetadataValue(remote.documents, merged) &&
+          setEquals(remote.covers, availableCovers);
+      final next = _Manifest(
+        remote?.id ?? uuid.v4(),
+        merged,
+        availableCovers,
+        raw == null
+            ? const []
+            : sameContent
+            ? remote.ancestors
+            : [_digest(raw), ...remote!.ancestors].take(_maxAncestors).toList(),
+      );
       final readme = await fs.hash('${_prefix}README.md');
-      if (readme == null || readme == _digest(_legacyFolderReadme)) {
+      if (readme == null ||
+          readme == _digest(_legacyFolderReadme) ||
+          readme == _digest(_previousFolderReadme)) {
         await _write(
           fs,
           '${_prefix}README.md',
@@ -780,6 +1094,26 @@ class LibraryFolderStorage extends ChangeNotifier {
         await library.local.setMeta(_folderKey, selected);
         await library.local.setMeta(_layoutKey, direct ? 'root' : 'nested');
         await library.local.setMeta(_baselineKey, encoded);
+        // A catalog we did not write is confirmed: it becomes the base of
+        // our next writes. Our own writes stay pending until another catalog
+        // lists them among its ancestors.
+        // Without pending writes, the catalog we build on is the base too.
+        final foreign = raw != null && raw != saved;
+        final restart = connecting || foreign || chain.own.isEmpty;
+        final own = restart ? <String>[] : [...chain.own];
+        // A brand-new catalog has no parent: it is the base itself.
+        if (encoded != raw && !(restart && raw == null)) {
+          own.add(_digest(encoded));
+        }
+        await library.local.setMeta(
+          _chainKey,
+          _Chain(
+            restart ? raw ?? encoded : chain.base,
+            own.length > _maxAncestors
+                ? own.sublist(own.length - _maxAncestors)
+                : own,
+          ).encode(),
+        );
         revision = await _revision();
         // Assign only after the transaction commits below.
         publishedManifest = encoded;
@@ -789,8 +1123,10 @@ class LibraryFolderStorage extends ChangeNotifier {
       // The next poll verifies the published manifest by content once.
       _lastManifestStamp = null;
       _direct = direct;
-      savedAt = DateTime.now();
+      savedAt = checkedAt = DateTime.now();
       error = null;
+      pending = null;
+      stats = _statsOf(decoded, availableCovers.length);
       try {
         await _publishNamedBooks(
           fs,
@@ -803,8 +1139,30 @@ class LibraryFolderStorage extends ChangeNotifier {
         error =
             'Не удалось обновить именованные файлы книг: ${describeError(e)}';
       }
+      final due =
+          _lastCleanup == null ||
+          DateTime.now().difference(_lastCleanup!) >= _cleanupEvery;
+      if (due && fs.localLibrary != null) {
+        _lastCleanup = DateTime.now();
+        try {
+          await _cleanup(fs, {
+            next,
+            ?previous,
+            if (chain.base case final base?) _Manifest.read(base),
+          });
+        } catch (e) {
+          debugPrint('Library folder cleanup failed: ${describeError(e)}');
+        }
+      }
       _status();
       return imported;
+    } on LibraryFolderPending catch (e) {
+      // Another device's files are still arriving: not an error yet.
+      _lastManifest = _lastManifestStamp = null;
+      error = null;
+      pending = e.message;
+      _status();
+      rethrow;
     } catch (e) {
       if (e is _LibraryChangedDuringSave && attempt < 2 && !_disposed) {
         return await _synchronize(
@@ -1035,8 +1393,12 @@ class LibraryFolderStorage extends ChangeNotifier {
         available.add(hash);
       } else if (remote.contains(hash)) {
         final bytes = await _read(fs, _coverPath(hash), 2097152);
-        if (bytes == null ||
-            !CoverSync.validPng(bytes) ||
+        if (bytes == null) {
+          throw LibraryFolderPending(
+            'Обложка ещё не синхронизирована: ${item.title}',
+          );
+        }
+        if (!CoverSync.validPng(bytes) ||
             sha256.convert(bytes).toString() != hash) {
           throw StateError(
             'Обложка ещё не синхронизирована или повреждена: ${item.title}',
@@ -1120,6 +1482,254 @@ class LibraryFolderStorage extends ChangeNotifier {
     await library.local.setMeta('library-manual-archive-v1', '1');
   }
 
+  /// Only native journals (reading/listening sessions, notes) changed since
+  /// [last]: every native change bumps both counters by the same amount.
+  static bool _onlyJournal(String current, String? last) {
+    if (last == null) return false;
+    final now = current.split(':').map(int.parse).toList(),
+        before = last.split(':').map(int.parse).toList();
+    final native = now[1] - before[1];
+    return native > 0 && now[0] - before[0] == native;
+  }
+
+  void _clearProblems() {
+    if (error == null && pending == null) return;
+    error = null;
+    pending = null;
+    _status();
+  }
+
+  static LibraryFolderStats _statsOf(Map<String, dynamic> data, int covers) {
+    var cards = 0, deleted = 0, history = 0, notes = 0;
+    for (final e in data.entries) {
+      if (e.key.startsWith('cards/')) {
+        cards++;
+        final item = ObsidianLibraryItem.fromJson(
+          Map<String, dynamic>.from(e.value as Map),
+        );
+        if (isLibraryDeleted(item)) deleted++;
+      } else if (e.key.startsWith('history/') || e.key.startsWith('notes/')) {
+        final live = (e.value as Map).values
+            .where((v) => (v as Map)['deleted'] != true)
+            .length;
+        if (e.key.startsWith('history/')) {
+          history += live;
+        } else {
+          notes += live;
+        }
+      }
+    }
+    return LibraryFolderStats(
+      cards: cards,
+      deleted: deleted,
+      history: history,
+      notes: notes,
+      covers: covers,
+    );
+  }
+
+  /// Objects and covers in the folder on this computer, with their hashes.
+  static Future<List<({String path, String hash, File file, bool cover})>>
+  _stored(Directory library) async {
+    final result = <({String path, String hash, File file, bool cover})>[];
+    final objects = Directory(p.join(library.path, 'objects'));
+    if (await objects.exists()) {
+      await for (final dir in objects.list(followLinks: false)) {
+        final shard = p.basename(dir.path);
+        if (dir is! Directory || !RegExp(r'^[a-f0-9]{2}$').hasMatch(shard)) {
+          continue;
+        }
+        await for (final file in dir.list(followLinks: false)) {
+          final name = p.basename(file.path);
+          if (file is! File || !name.endsWith('.json')) continue;
+          final hash = name.substring(0, name.length - 5);
+          if (!_hash.hasMatch(hash) || !hash.startsWith(shard)) continue;
+          result.add((
+            path: '${_prefix}objects/$shard/$name',
+            hash: hash,
+            file: file,
+            cover: false,
+          ));
+        }
+      }
+    }
+    final covers = Directory(p.join(library.path, 'covers'));
+    if (await covers.exists()) {
+      await for (final file in covers.list(followLinks: false)) {
+        final name = p.basename(file.path);
+        if (file is! File || !name.endsWith('.png')) continue;
+        final hash = name.substring(0, name.length - 4);
+        if (!_hash.hasMatch(hash)) continue;
+        result.add((
+          path: '${_prefix}covers/$name',
+          hash: hash,
+          file: file,
+          cover: true,
+        ));
+      }
+    }
+    return result;
+  }
+
+  /// Removes objects and covers that no kept catalog references, once they
+  /// have been unreferenced for [libraryFolderCleanupAge] as seen by this
+  /// device and the file itself is at least that old. New files written by
+  /// another device whose catalog has not arrived yet are therefore never
+  /// touched. Runs only on computers, where listing the folder is cheap; the
+  /// sync tool carries the deletions to other devices.
+  Future<int> _cleanup(_FolderFiles fs, Set<_Manifest> keep) async {
+    final library = fs.localLibrary;
+    if (library == null) return 0;
+    final documents = {for (final m in keep) ...m.documents.values};
+    final covers = {for (final m in keep) ...m.covers};
+    final raw = await this.library.local.meta(_cleanupKey);
+    final seen = raw == null
+        ? <String, dynamic>{}
+        : Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    final now = DateTime.now();
+    final next = <String, String>{};
+    var removed = 0;
+    for (final file in await _stored(library)) {
+      if (_disposed) return removed;
+      if ((file.cover ? covers : documents).contains(file.hash)) continue;
+      final key = '${file.cover ? 'c' : 'o'}:${file.hash}';
+      final first = DateTime.tryParse('${seen[key]}') ?? now;
+      final modified = (await file.file.stat()).modified;
+      if (now.difference(first) >= libraryFolderCleanupAge &&
+          now.difference(modified) >= libraryFolderCleanupAge) {
+        try {
+          await fs.remove(file.path, file.hash);
+          removed++;
+          continue;
+        } on Object catch (e) {
+          debugPrint('Library folder cleanup kept ${file.path}: $e');
+        }
+      }
+      next[key] = first.toUtc().toIso8601String();
+    }
+    if (removed > 0) {
+      final objects = Directory(p.join(library.path, 'objects'));
+      await for (final dir in objects.list(followLinks: false)) {
+        if (dir is Directory &&
+            RegExp(r'^[a-f0-9]{2}$').hasMatch(p.basename(dir.path)) &&
+            await dir.list().isEmpty) {
+          try {
+            await dir.delete();
+          } on FileSystemException {
+            // Something arrived meanwhile.
+          }
+        }
+      }
+    }
+    await this.library.local.setMeta(_cleanupKey, jsonEncode(next));
+    return removed;
+  }
+
+  _FolderFiles? _current() => folder == null
+      ? null
+      : _FolderFiles(_fileSystem(folder!), direct: _direct);
+
+  /// Directory with `.stfolder` at or above the selected folder.
+  static Future<Directory?> _syncthingRoot(Directory start) async {
+    Directory? dir = start;
+    for (var i = 0; i < 3 && dir != null; i++) {
+      if (await Directory(p.join(dir.path, '.stfolder')).exists()) return dir;
+      final parent = dir.parent;
+      dir = parent.path == dir.path ? null : parent;
+    }
+    return null;
+  }
+
+  /// Folder details for the «Данные» screen; null on Android folders.
+  Future<LibraryFolderReport?> inspect() async {
+    await initialize();
+    final fs = _current();
+    final library = fs?.localLibrary, root = fs?.localRoot;
+    if (fs == null || library == null || root == null) return null;
+    final keep = <_Manifest>{};
+    for (final raw in [
+      await this.library.local.meta(_baselineKey),
+      _Chain.read(await this.library.local.meta(_chainKey)).base,
+    ]) {
+      if (raw != null) keep.add(_Manifest.read(raw));
+    }
+    final documents = {for (final m in keep) ...m.documents.values};
+    final covers = {for (final m in keep) ...m.covers};
+    var objects = 0, unusedObjects = 0, unusedCovers = 0, unusedBytes = 0;
+    for (final file in await _stored(library)) {
+      if (!file.cover) objects++;
+      if ((file.cover ? covers : documents).contains(file.hash)) continue;
+      file.cover ? unusedCovers++ : unusedObjects++;
+      unusedBytes += await file.file.length();
+    }
+    final conflicts = <String>[];
+    var visited = 0;
+    Future<void> walk(Directory dir, String prefix) async {
+      await for (final entry in dir.list(followLinks: false)) {
+        if (++visited > 20000) return;
+        final name = p.basename(entry.path);
+        if (name.toLowerCase() == '.pepehub') continue;
+        if (entry is Directory) {
+          await walk(entry, '$prefix$name/');
+        } else if (entry is File && name.contains('.sync-conflict-')) {
+          conflicts.add('$prefix$name');
+        }
+      }
+    }
+
+    if (await library.exists()) await walk(library, '');
+    conflicts.sort();
+    final syncthing = await _syncthingRoot(root);
+    var ignores = false;
+    if (syncthing != null) {
+      final file = File(p.join(syncthing.path, '.stignore'));
+      ignores =
+          await file.exists() && _ignoresPepeHub(await file.readAsString());
+    }
+    return LibraryFolderReport(
+      objects: objects,
+      unusedObjects: unusedObjects,
+      unusedCovers: unusedCovers,
+      unusedBytes: unusedBytes,
+      conflictCopies: conflicts,
+      syncthingRoot: syncthing?.path,
+      ignoresTemporary: ignores,
+    );
+  }
+
+  /// Deletes Syncthing conflict copies inside PepeHub-library. Catalog
+  /// copies are not needed: the device whose catalog was replaced merges its
+  /// changes again from its own database. Returns the number removed.
+  Future<int> removeConflictCopies(List<String> paths) async {
+    await initialize();
+    return _serial(() async {
+      final fs = _current();
+      if (fs == null) return 0;
+      var removed = 0;
+      for (final path in paths) {
+        if (!p.posix.basename(path).contains('.sync-conflict-')) continue;
+        final full = '$_prefix${peerPath(path)}';
+        final hash = await fs.hash(full);
+        if (hash == null) continue;
+        await fs.remove(full, hash);
+        removed++;
+      }
+      return removed;
+    });
+  }
+
+  /// Adds `.pepehub` (temporary files of writes) to Syncthing's ignore list.
+  Future<void> ignoreTemporaryFiles(String syncthingRoot) async {
+    final file = File(p.join(syncthingRoot, '.stignore'));
+    final old = await file.exists() ? await file.readAsString() : '';
+    if (_ignoresPepeHub(old)) return;
+    final separator = old.isEmpty || old.endsWith('\n') ? '' : '\n';
+    await file.writeAsString(
+      '$old$separator// PepeHub: временные файлы записи библиотеки\n.pepehub\n',
+      flush: true,
+    );
+  }
+
   void _status() {
     if (!_disposed) notifyListeners();
   }
@@ -1128,6 +1738,7 @@ class LibraryFolderStorage extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    _lifecycle?.dispose();
     super.dispose();
   }
 }
