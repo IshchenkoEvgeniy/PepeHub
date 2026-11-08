@@ -179,9 +179,9 @@ void main() {
     await ready(tester, () => !state.loading && !library.loading);
     await tester.tap(find.byTooltip('Действия с книгой').first);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Удалить файлы аудиокниги…'));
-    expect(find.text('Убрать из списка'), findsOneWidget);
-    expect(find.text('Удалить файлы аудиокниги…'), findsOneWidget);
+    await tester.ensureVisible(find.text('Удалить…'));
+    expect(find.text('Скрыть с полки'), findsOneWidget);
+    expect(find.text('Удалить…'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(() async {

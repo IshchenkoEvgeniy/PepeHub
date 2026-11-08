@@ -52,13 +52,13 @@ const bookMenuActions = [
     BookActionGroup.files,
   ),
   BookMenuAction('reconnect', 'Указать папку заново', BookActionGroup.files),
-  BookMenuAction('hide-book', 'Убрать из списка', BookActionGroup.removal),
+  BookMenuAction('hide-book', 'Скрыть с полки', BookActionGroup.removal),
   BookMenuAction(
     'delete-library-card',
     'Удалить карточку библиотеки…',
     BookActionGroup.removal,
   ),
-  BookMenuAction('delete-book', 'Удалить файл книги…', BookActionGroup.removal),
+  BookMenuAction('delete-book', 'Удалить…', BookActionGroup.removal),
 ];
 
 const bookMenuHiddenKey = 'book-menu-hidden-actions';

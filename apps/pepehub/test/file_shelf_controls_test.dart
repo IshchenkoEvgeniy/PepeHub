@@ -341,7 +341,7 @@ void main() {
         await tapVisible(tester, find.byTooltip('Добавить'));
         expect(find.text('Новая карточка без файла'), findsOneWidget);
         expect(find.text('Открыть файл…'), findsOneWidget);
-        expect(find.text('Скрытое и отсутствующее'), findsOneWidget);
+        expect(find.text('Скрытые и недоступные'), findsOneWidget);
         await tester.tapAt(const Offset(5, 60));
         await tester.pumpAndSettle();
         await tester.tap(find.byTooltip('Аудиокниги'));

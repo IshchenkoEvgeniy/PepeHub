@@ -548,9 +548,9 @@ class _SettingsPageState extends State<SettingsPage> {
                   : () => _open(AudioRootsPage(assets: assets)),
             ),
             SettingsLink(
-              title: 'Скрытое и отсутствующее',
+              title: 'Скрытые и недоступные',
               enabled: true,
-              subtitle: 'Убранные книги, пропавшие файлы и корзина',
+              subtitle: 'Скрытые книги, ненайденные файлы и корзина',
               icon: Icons.visibility_off_outlined,
               onTap: () => _open(HiddenDeletedPage(library: widget.library)),
             ),

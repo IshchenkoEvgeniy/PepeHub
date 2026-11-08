@@ -6,7 +6,9 @@ import '../audio/audio_folder.dart';
 import '../media/asset_store.dart';
 import '../media/library_folder_preference.dart';
 import '../reader/book_formats.dart';
+import '../library/book_trash.dart';
 import '../reader/reading_roots.dart';
+import 'folder_scan_panel.dart';
 import 'import_folder_page.dart';
 import 'pepe_widgets.dart';
 import 'shelf_book_details.dart';
@@ -47,9 +49,10 @@ String readableFolderPath(String path) {
 String readingRootSummary(
   ReadingRoot root,
   Map<String, int> formats,
-  DateTime now,
-) {
-  final parts = <String>[bookCount(root.availableIds.length)];
+  DateTime now, {
+  int trashed = 0,
+}) {
+  final parts = <String>[bookCount(root.availableIds.length - trashed)];
   final byCount = formats.entries.toList()
     ..sort((a, b) => b.value.compareTo(a.value));
   if (byCount.isNotEmpty) {
@@ -78,6 +81,9 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
   List<ReadingRoot> roots = [];
   Map<String, Map<String, int>> formats = {};
   String? pinnedRoot;
+
+  /// Books of each folder that are in the trash.
+  Map<String, List<String>> trashed = {};
   late final preference = LibraryFolderPreference(
     widget.assets.repository,
     reading: true,
@@ -120,10 +126,20 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
         for (final row in rows)
           row.read<String>('book_id'): bookFormat(row.read<String>('filename')),
       };
+      final inTrash = {
+        for (final book in await BookTrash(widget.assets.repository).list())
+          book.id,
+      };
       final counts = <String, Map<String, int>>{};
+      final trashedByRoot = <String, List<String>>{};
       for (final root in values) {
+        trashedByRoot[root.key] = [
+          for (final id in root.availableIds)
+            if (inTrash.contains(id)) id,
+        ];
         final byFormat = counts[root.key] = <String, int>{};
         for (final id in root.availableIds) {
+          if (inTrash.contains(id)) continue;
           final format = formatOf[id];
           if (format != null) byFormat[format] = (byFormat[format] ?? 0) + 1;
         }
@@ -133,6 +149,7 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
         roots = values..sort((a, b) => a.title.compareTo(b.title));
         pinnedRoot = pinned;
         formats = counts;
+        trashed = trashedByRoot;
         loading = false;
       });
     } catch (e) {
@@ -168,29 +185,42 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
   /// Runs a scan with live progress. It keeps running if the user leaves.
   Future<void> _scan(
     String title,
-    Future<void> Function(ReadingScanProgress progress) work,
+    Future<Object?> Function(ReadingScanProgress progress) work,
   ) async {
     if (scanning || busy) return;
     final progress = ReadingScanProgress(title);
     activeReadingScan.value = progress;
     if (mounted) setState(() => error = '');
+    FolderScanOutcome? outcome;
     try {
-      await work(progress);
+      final result = await work(progress);
       retry = null;
+      outcome = FolderScanOutcome(
+        result is ReadingRoot
+            ? '«${result.title}»: ${bookCount(result.availableIds.length)}'
+                  '${(result.report?['added'] as num? ?? 0) > 0 ? ', новых: ${result.report!['added']}' : ''}'
+            : 'Папки обновлены',
+      );
     } on ReadingScanCancelled {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Сканирование отменено. Библиотека не изменилась.'),
-          ),
-        );
-      }
+      outcome = const FolderScanOutcome(
+        'Проверка отменена. Библиотека не изменилась.',
+      );
     } catch (e) {
       error = 'Не удалось проверить папку: $e';
       retry = () => _scan(title, work);
+      outcome = FolderScanOutcome(error, failed: true);
     } finally {
       activeReadingScan.value = null;
-      await _reload();
+      if (mounted) {
+        if (outcome != null && !outcome.failed) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(outcome.message)));
+        }
+        await _reload();
+      } else if (outcome != null) {
+        // The user went back to the shelf: show the result there.
+        folderScanOutcome.value = outcome;
+      }
     }
   }
 
@@ -209,8 +239,12 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
     if (folder == null || !mounted) return;
     await _scan(
       'Подключение «${folder.title}»',
-      (progress) =>
-          store.connect(folder!, skipUnreadable: true, progress: progress),
+      (progress) => store.connect(
+        folder!,
+        skipUnreadable: true,
+        progress: progress,
+        restoreRemoved: true,
+      ),
     );
   }
 
@@ -224,6 +258,7 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
       );
       await store.refresh(root, progress: progress);
     }
+    return null;
   });
 
   Future<void> _select(ReadingRoot root, String action) async {
@@ -298,61 +333,6 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
       ),
     );
   }
-
-  Widget _scanPanel(ReadingScanProgress progress) => ListenableBuilder(
-    listenable: progress,
-    builder: (context, _) {
-      final palette = ShelfPalette.of(context);
-      final known = progress.total > 0 && progress.phase == 'Проверка файлов';
-      return PepePanel(
-        key: const ValueKey('reading-roots-scan'),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              progress.title,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              known
-                  ? 'Проверено ${progress.done} из ${progress.total} файлов'
-                  : progress.cancelled
-                  ? 'Отменяю…'
-                  : '${progress.phase}…',
-              style: TextStyle(fontSize: 13, color: palette.muted),
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: LinearProgressIndicator(
-                value: known ? progress.done / progress.total : null,
-                minHeight: 4,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Можно вернуться к полке: проверка продолжится.',
-                    style: TextStyle(fontSize: 12, color: palette.muted),
-                  ),
-                ),
-                TextButton(
-                  key: const ValueKey('reading-roots-cancel'),
-                  onPressed: progress.cancellable && !progress.cancelled
-                      ? progress.cancel
-                      : null,
-                  child: const Text('Отменить'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-    },
-  );
 
   Widget _errorPanel() {
     final scheme = Theme.of(context).colorScheme;
@@ -474,6 +454,7 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
                             root,
                             formats[root.key] ?? const {},
                             DateTime.now(),
+                            trashed: trashed[root.key]?.length ?? 0,
                           ),
                           key: ValueKey('reading-root-summary:${root.key}'),
                           style: const TextStyle(fontSize: 13),
@@ -531,10 +512,27 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
                         'Обновите папку, чтобы найти книги и проверить прежние.',
                         color: palette.accent,
                       ),
+                    if (trashed[root.key]?.isNotEmpty ?? false)
+                      _plaque(
+                        Icons.delete_outline,
+                        'В корзине книг этой папки: ${trashed[root.key]!.length}. На полке их нет.',
+                        color: palette.accent,
+                        action: TextButton(
+                          key: ValueKey('restore-trashed:${root.key}'),
+                          onPressed: busy || scanning
+                              ? null
+                              : () => _run(
+                                  () =>
+                                      BookTrash(widget.assets.repository)
+                                          .restore(trashed[root.key]!),
+                                ),
+                          child: const Text('Вернуть'),
+                        ),
+                      ),
                     if (missing > 0)
                       _plaque(
                         Icons.help_outline,
-                        'Не найдено прежних книг: $missing. Они в разделе «Удалённые» и вернутся, когда файлы появятся.',
+                        'Не найдено прежних книг: $missing. Они в разделе «Файл не найден» и вернутся, когда файлы появятся.',
                         color: Colors.amber,
                       ),
                     if (root.warnings.isNotEmpty) ...[
@@ -611,7 +609,10 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
             padding: EdgeInsets.only(bottom: 12),
             child: LinearProgressIndicator(),
           ),
-        if (scan != null) ...[_scanPanel(scan), const SizedBox(height: 16)],
+        if (scan != null) ...[
+          FolderScanPanel(progress: scan),
+          const SizedBox(height: 16),
+        ],
         if (error.isNotEmpty) ...[_errorPanel(), const SizedBox(height: 16)],
         if (!loading && roots.isEmpty)
           _empty(palette)

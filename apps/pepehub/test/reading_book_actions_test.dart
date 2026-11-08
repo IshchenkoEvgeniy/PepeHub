@@ -242,10 +242,10 @@ void main() {
       await tester.ensureVisible(find.byTooltip('Действия с книгой').first);
       await tester.tap(find.byTooltip('Действия с книгой').first);
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Удалить файл книги…'));
-      await tester.tap(find.text('Удалить файл книги…'));
+      await tester.ensureVisible(find.text('Удалить…'));
+      await tester.tap(find.text('Удалить…'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Удалить файл'));
+      await tester.tap(find.text('Вместе с файлом'));
       await tester.pumpAndSettle();
       // Database/file preflights use the real event loop, even in a widget test.
       for (
@@ -295,6 +295,11 @@ void main() {
         await f.store.repository.meta('reading-user-hidden:${book.bookId}'),
         outcome == 'granted' ? '0' : isNull,
       );
+      // Only a book whose file went is moved to the trash.
+      expect(
+        await f.store.repository.meta('book-shelf-removed:${book.bookId}'),
+        outcome == 'granted' ? '1' : isNull,
+      );
       if (outcome == 'changed') {
         expect(find.textContaining('PlatformException'), findsNothing);
       }
@@ -332,17 +337,19 @@ void main() {
       expect(find.text('Показать в проводнике'), findsOneWidget);
       await tester.tap(find.text('Файлы и обмен'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Удалить файл книги…'));
-      await tester.tap(find.text('Удалить файл книги…'));
+      await tester.ensureVisible(find.text('Удалить…'));
+      await tester.tap(find.text('Удалить…'));
       await tester.pumpAndSettle();
-      expect(find.text('Удалить файл книги?'), findsOneWidget);
+      expect(find.text('Удалить «story»?'), findsOneWidget);
+      expect(find.text('Только из PepeHub'), findsOneWidget);
+      expect(find.text('Вместе с файлом'), findsOneWidget);
       await tester.tap(find.text('Отмена'));
       await tester.pumpAndSettle();
       expect(await tester.runAsync(file.exists), true);
       await tester.tap(find.byTooltip('Действия с книгой').first);
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Убрать из списка'));
-      await tester.tap(find.text('Убрать из списка'));
+      await tester.ensureVisible(find.text('Скрыть с полки'));
+      await tester.tap(find.text('Скрыть с полки'));
       await tester.pumpAndSettle();
       expect(
         await repo.meta(
@@ -355,9 +362,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('story'), findsOneWidget);
-      await tester.tap(find.byTooltip('Вернуть в список'));
+      await tester.tap(find.byTooltip('Вернуть на полку'));
       await tester.pumpAndSettle();
-      expect(find.text('Убранных книг нет'), findsOneWidget);
+      expect(find.text('Скрытых книг нет'), findsOneWidget);
       expect(await tester.runAsync(file.exists), true);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());

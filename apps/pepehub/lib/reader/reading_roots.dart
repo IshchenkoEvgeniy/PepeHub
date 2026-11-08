@@ -7,59 +7,20 @@ import 'package:path/path.dart' as p;
 
 import '../audio/audio_folder.dart';
 import '../media/asset_store.dart';
+import '../media/folder_scan_progress.dart';
+export '../media/folder_scan_progress.dart';
 import '../media/verified_stream_copy.dart';
 import '../media/library_folder_preference.dart';
 import '../media/library_recovery.dart';
 import '../data/repository.dart';
+import '../library/book_trash.dart';
 import 'book_formats.dart';
 import 'reading_book_visibility.dart';
 
-/// Thrown when the user cancels a scan. Nothing has been written yet.
-class ReadingScanCancelled implements Exception {
-  @override
-  String toString() => 'Сканирование отменено';
-}
-
-/// Live state of a folder scan for the UI: phase, checked files and whether
-/// it can still be cancelled (only before the library is changed).
-class ReadingScanProgress extends ChangeNotifier {
-  ReadingScanProgress(this.title);
-  String title;
-  String phase = 'Поиск файлов';
-  int done = 0, total = 0;
-  bool cancellable = true;
-  bool _cancelled = false;
-  bool get cancelled => _cancelled;
-
-  void cancel() {
-    if (!cancellable || _cancelled) return;
-    _cancelled = true;
-    notifyListeners();
-  }
-
-  void check() {
-    if (_cancelled) throw ReadingScanCancelled();
-  }
-
-  void update({
-    String? title,
-    String? phase,
-    int? done,
-    int? total,
-    bool? cancellable,
-  }) {
-    this.title = title ?? this.title;
-    this.phase = phase ?? this.phase;
-    this.done = done ?? this.done;
-    this.total = total ?? this.total;
-    this.cancellable = cancellable ?? this.cancellable;
-    notifyListeners();
-  }
-}
-
-/// The scan in progress, shared so a reopened folders screen shows it and a
-/// second scan cannot start in parallel. Leaving the screen does not stop it.
-final activeReadingScan = ValueNotifier<ReadingScanProgress?>(null);
+// Folder scans share one progress model with audiobook folders.
+typedef ReadingScanCancelled = FolderScanCancelled;
+typedef ReadingScanProgress = FolderScanProgress;
+ValueNotifier<FolderScanProgress?> get activeReadingScan => activeFolderScan;
 
 class ReadingRoot {
   final String key, path, title;
@@ -196,6 +157,9 @@ class ReadingRoots {
     Map<String, ({String hash, int bytes})> verified = const {},
     bool skipUnreadable = false,
     ReadingScanProgress? progress,
+    // Choosing a folder is an explicit add: its books leave the trash.
+    // A plain refresh keeps the user's removals.
+    bool restoreRemoved = false,
   }) async {
     final path = folder.root!;
     final key = 'reading-library-root:${sha256.convert(utf8.encode(path))}';
@@ -372,6 +336,16 @@ class ReadingRoots {
         }),
       );
     });
+    if (restoreRemoved && present.isNotEmpty) {
+      final trashed = await assets.repository.metadataPrefixes([
+        Repository.removedShelfBookPrefix,
+      ]);
+      await BookTrash(assets.repository).restore(
+        present.where(
+          (id) => trashed['${Repository.removedShelfBookPrefix}$id'] == '1',
+        ),
+      );
+    }
     try {
       await recoverReadingRoot(assets, path, ids);
     } finally {

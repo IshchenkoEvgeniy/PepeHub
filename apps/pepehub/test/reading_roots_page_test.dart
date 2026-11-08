@@ -8,6 +8,8 @@ import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/reader/reading_roots.dart';
+import 'package:pepehub/library/book_trash.dart';
+import 'package:pepehub/ui/library_page.dart';
 import 'package:pepehub/ui/reading_roots_page.dart';
 
 void main() {
@@ -169,6 +171,114 @@ void main() {
     await tester.pumpAndSettle();
     expect(picked, root.key);
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(() async {
+      await db.close();
+      await dir.delete(recursive: true);
+    });
+  });
+
+  testWidgets('a scan left running shows on the shelf and reports its end', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final db = AppDatabase(NativeDatabase.memory());
+    final repo = Repository(db);
+    await tester.runAsync(() => repo.setMeta('library-section', 'reading'));
+    await tester.pumpWidget(MaterialApp(home: LibraryPage(repository: repo)));
+    await tester.pumpAndSettle();
+    final progress = ReadingScanProgress('Подключение «Книги»')
+      ..update(phase: 'Проверка файлов', done: 3, total: 10);
+    activeReadingScan.value = progress;
+    await tester.pump();
+    expect(find.text('Проверено 3 из 10 файлов'), findsOneWidget);
+    activeReadingScan.value = null;
+    folderScanOutcome.value = const FolderScanOutcome('«Книги»: 10 книг');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Проверено 3 из 10 файлов'), findsNothing);
+    expect(find.text('«Книги»: 10 книг'), findsOneWidget);
+    expect(folderScanOutcome.value, isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 5));
+    await tester.runAsync(db.close);
+  });
+
+  test('choosing a folder again returns its removed books', () async {
+    final dir = await Directory.systemTemp.createTemp('reading-restore-');
+    final db = AppDatabase(NativeDatabase.memory());
+    final repo = Repository(db);
+    final assets = AssetStore(repo, Directory('${dir.path}/m'));
+    try {
+      final books = await Directory('${dir.path}/books').create();
+      for (var i = 0; i < 3; i++) {
+        await File('${books.path}/b$i.txt').writeAsString('book $i');
+      }
+      final roots = ReadingRoots(assets);
+      final root = await roots.connect(
+        await scanAudioFolder(books.path, books: true),
+      );
+      // «Удалить только запись» from 0.30.19–0.30.22.
+      await repo.removeShelfBooks(root.bookIds);
+      // A refresh keeps the removal...
+      await roots.refresh(root);
+      expect(await BookTrash(repo).list(), hasLength(3));
+      // ...choosing the folder is an explicit add and brings them back.
+      await roots.connect(
+        await scanAudioFolder(books.path, books: true),
+        restoreRemoved: true,
+      );
+      expect(await BookTrash(repo).list(), isEmpty);
+    } finally {
+      await db.close();
+      await dir.delete(recursive: true);
+    }
+  });
+
+  testWidgets('folder card shows books in the trash and returns them', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final dir = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('reading-trash-card-'),
+    ))!;
+    final db = AppDatabase(NativeDatabase.memory());
+    final repo = Repository(db);
+    final assets = AssetStore(repo, Directory('${dir.path}/m'));
+    final root = (await tester.runAsync(() async {
+      final books = await Directory('${dir.path}/books').create();
+      await File('${books.path}/one.txt').writeAsString('one');
+      await File('${books.path}/two.txt').writeAsString('two');
+      final root = await ReadingRoots(assets)
+          .connect(await scanAudioFolder(books.path, books: true));
+      await repo.removeShelfBooks(root.bookIds);
+      return root;
+    }))!;
+    await tester.pumpWidget(
+      MaterialApp(home: ReadingRootsPage(assets: assets)),
+    );
+    for (var i = 0; i < 5; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    expect(find.textContaining('В корзине книг этой папки: 2'), findsOneWidget);
+    expect(find.textContaining('0 книг · '), findsOneWidget);
+    await tester.tap(find.byKey(ValueKey('restore-trashed:${root.key}')));
+    for (var i = 0; i < 5; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    expect(find.textContaining('В корзине книг этой папки'), findsNothing);
+    expect(find.textContaining('2 книги · TXT 2'), findsOneWidget);
+    expect(await tester.runAsync(() => BookTrash(repo).list()), isEmpty);
     await tester.pumpWidget(const SizedBox());
     await tester.runAsync(() async {
       await db.close();

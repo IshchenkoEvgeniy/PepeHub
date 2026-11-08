@@ -9,6 +9,7 @@ import 'library_link_review.dart';
 import 'obsidian_notes_page.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
+import 'folder_scan_panel.dart';
 import 'shelf_book_details.dart';
 import 'recommendations_page.dart';
 import 'statistics_hub_page.dart';
@@ -69,6 +70,9 @@ import '../reader/reading_book_visibility.dart';
 import '../sync/peer/peer_service.dart';
 import 'reading_roots_page.dart';
 import 'hidden_deleted_page.dart';
+import 'book_delete_dialog.dart';
+import '../library/book_trash.dart';
+import '../library/hidden_files.dart';
 import 'reading_statistics_page.dart';
 import 'reading_book_page.dart';
 import 'reading_plan_page.dart';
@@ -139,6 +143,11 @@ class _LibraryPageState extends State<LibraryPage> {
   );
   String statusFilter = 'all';
   Set<String> deletedReadingBooks = {};
+
+  /// Books of this section in «Скрытые и недоступные» (hidden, missing file,
+  /// no file) plus the trash.
+  int unavailableCount = 0;
+  static bool _trashPurged = false;
   String query = '',
       filter = 'all',
       message = 'Изменения сохраняются на этом устройстве';
@@ -174,6 +183,8 @@ class _LibraryPageState extends State<LibraryPage> {
   void initState() {
     super.initState();
     widget.repository.externalChanges.addListener(_remoteChanged);
+    activeFolderScan.addListener(_folderScanChanged);
+    folderScanOutcome.addListener(_folderScanFinished);
     obsidianLibrary.addListener(_libraryChanged);
     _initialize();
   }
@@ -270,6 +281,8 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   void dispose() {
     widget.repository.externalChanges.removeListener(_remoteChanged);
+    activeFolderScan.removeListener(_folderScanChanged);
+    folderScanOutcome.removeListener(_folderScanFinished);
     _searchDebounce?.cancel();
     readingSearch.dispose();
     audioSearch.dispose();
@@ -279,6 +292,28 @@ class _LibraryPageState extends State<LibraryPage> {
     obsidianLibrary.dispose();
     httpClient.close();
     super.dispose();
+  }
+
+  void _folderScanChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// A folder scan the user left running has ended: report it here.
+  void _folderScanFinished() {
+    final outcome = folderScanOutcome.value;
+    if (outcome == null || !mounted) return;
+    folderScanOutcome.value = null;
+    final scheme = Theme.of(context).colorScheme;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(outcome.message),
+        backgroundColor: outcome.failed ? scheme.error : null,
+        action: outcome.failed && widget.assets != null
+            ? SnackBarAction(label: 'Папки', onPressed: _manageRoots)
+            : null,
+      ),
+    );
+    unawaited(_reload());
   }
 
   Future<void>? _remoteRefresh;
@@ -376,6 +411,18 @@ class _LibraryPageState extends State<LibraryPage> {
     final readingSection = reading;
 
     try {
+      if (!_trashPurged) {
+        _trashPurged = true;
+        await BookTrash(widget.repository).purgeExpired();
+      }
+      // File-less cards are counted on the shelf (see _statusCounts).
+      final unavailable =
+          (await hiddenFiles(widget.repository))
+              .where((f) => f.audio != readingSection && f.tab != 2)
+              .length +
+          (await BookTrash(
+            widget.repository,
+          ).list()).where((f) => f.audio != readingSection).length;
       final coverMetadata = await widget.repository.metadataPrefixes([
         'audio-cover:',
         'audio-cover-hidden:',
@@ -529,6 +576,7 @@ class _LibraryPageState extends State<LibraryPage> {
           };
           books = b;
           deletedReadingBooks = deleted;
+          unavailableCount = unavailable;
           statusOverrides = overrides;
           roots = rootList;
           pinnedRoot = defaultRoot;
@@ -803,11 +851,30 @@ class _LibraryPageState extends State<LibraryPage> {
       });
       return;
     }
+    if (action == 'delete') {
+      await _deleteBooks(chosen);
+      return;
+    }
     await _action(() async {
-      if (action == 'hide' && reading) {
-        await ReadingBookActions(widget.assets!)
-            .hideMany(chosen.map((book) => book.id));
-        if (mounted) setState(selectedBooks.clear);
+      if (action == 'hide') {
+        final ids = chosen.map((book) => book.id).toList();
+        final actions = reading
+            ? ReadingBookActions(widget.assets!)
+            : AudioBookActions(widget.assets!);
+        await actions.hideMany(ids);
+        if (mounted) {
+          setState(selectedBooks.clear);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Скрыто с полки: ${ids.length}'),
+              action: SnackBarAction(
+                label: 'Вернуть',
+                onPressed: () =>
+                    _action(() => actions.hideMany(ids, hidden: false)),
+              ),
+            ),
+          );
+        }
         return;
       }
       for (final book in chosen) {
@@ -841,6 +908,42 @@ class _LibraryPageState extends State<LibraryPage> {
     });
   }
 
+  Future<void> _deleteBooks(List<LibraryRecord> chosen) async {
+    final assets = widget.assets;
+    if (assets == null || chosen.isEmpty) return;
+    List<String> moved = const [];
+    await _action(() async {
+      moved = await deleteBooksToTrash(context, assets, [
+        for (final book in chosen)
+          (
+            id: book.id,
+            title: _title(book),
+            audio: book.payload?['format'] == 'audio',
+            hasFile:
+                shelfSources.first(book.id) != null ||
+                (book.payload?['format'] == 'audio' &&
+                    audioSourcePaths.containsKey(book.id)),
+          ),
+      ], beforeDelete: _checkBookClosed);
+      if (mounted && moved.isNotEmpty) setState(selectedBooks.clear);
+    });
+    if (mounted) showMovedToTrash(context, assets, moved, onRestored: _reload);
+  }
+
+  Future<void> _openUnavailable() async {
+    if (widget.assets == null) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HiddenDeletedPage(
+          library: obsidianLibrary,
+          initialMedia: reading ? 'book' : 'audio',
+        ),
+      ),
+    );
+    if (mounted) await _reload();
+  }
+
   Future<void> _addBook() async {
     final result = await showDialog<Map<String, String>>(
       context: context,
@@ -869,7 +972,7 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     );
     // A folder tapped on the folders screen opens the shelf filtered by it.
-    if (picked != null && reading) {
+    if (picked != null) {
       await _reload();
       if (mounted && roots.any((r) => r.key == picked)) {
         setState(() => selectedRoot = picked);
@@ -1951,16 +2054,10 @@ class _LibraryPageState extends State<LibraryPage> {
         .where(
           (b) =>
               (rootIds == null || rootIds.contains(b.id)) &&
+              // Missing and file-less books live in «Скрытые и недоступные».
               (!reading ||
-                  (statusFilter == 'deleted') ==
-                      deletedReadingBooks.contains(b.id)) &&
-              (!reading ||
-                  statusFilter == 'deleted' ||
-                  (statusFilter == 'remote') == _remoteOnly(b)) &&
-              (statusFilter == 'all' ||
-                  statusFilter == 'remote' ||
-                  statusFilter == 'deleted' ||
-                  _status(b) == statusFilter) &&
+                  !deletedReadingBooks.contains(b.id) && !_remoteOnly(b)) &&
+              (statusFilter == 'all' || _status(b) == statusFilter) &&
               (filter == 'all' ||
                   (filter == 'books'
                       ? b.payload!['format'] != 'audio'
@@ -2152,11 +2249,10 @@ class _LibraryPageState extends State<LibraryPage> {
                     value: 'favorite',
                     child: Text('Добавить в избранное'),
                   ),
-                  if (reading && widget.assets != null)
-                    const PopupMenuItem(
-                      value: 'hide',
-                      child: Text('Убрать из списка без удаления файлов'),
-                    ),
+                  if (widget.assets != null) ...const [
+                    PopupMenuItem(value: 'hide', child: Text('Скрыть с полки')),
+                    PopupMenuItem(value: 'delete', child: Text('Удалить…')),
+                  ],
                   const PopupMenuItem(
                     value: 'planned',
                     child: Text('Отметить новыми'),
@@ -2231,15 +2327,7 @@ class _LibraryPageState extends State<LibraryPage> {
                   if (value == 'audio') _importAudio();
                   if (value == 'book') _importBook();
                   if (value == 'export') _export();
-                  if (value == 'hidden') {
-                    Navigator.push<void>(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            HiddenDeletedPage(library: obsidianLibrary),
-                      ),
-                    ).then((_) => _reload());
-                  }
+                  if (value == 'hidden') _openUnavailable();
                 },
                 itemBuilder: (_) => [
                   PopupMenuItem(
@@ -2261,7 +2349,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     ),
                   const PopupMenuItem(
                     value: 'hidden',
-                    child: Text('Скрытое и отсутствующее'),
+                    child: Text('Скрытые и недоступные'),
                   ),
                   if (!reading)
                     const PopupMenuItem(
@@ -2296,12 +2384,32 @@ class _LibraryPageState extends State<LibraryPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _statusTabs(),
-                        if (reading && statusFilter == 'deleted') ...[
+                        // A folder scan continues after its screen closes.
+                        if (activeFolderScan.value case final scan?) ...[
                           const SizedBox(height: 12),
-                          const Text(
-                            'Файлы удалены с этого устройства. Прогресс, заметки и статистика сохранены. Книга вернётся после импорта того же файла или обновления папки, в которой он появился.',
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 820),
+                            child: FolderScanPanel(progress: scan),
                           ),
                         ],
+                        if (unavailableCount +
+                                    (_statusCounts()['remote'] ?? 0) >
+                                0 &&
+                            widget.assets != null)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              key: const ValueKey('open-unavailable'),
+                              onPressed: _openUnavailable,
+                              icon: const Icon(
+                                Icons.visibility_off_outlined,
+                                size: 18,
+                              ),
+                              label: Text(
+                                'Скрытые, недоступные и корзина: ${unavailableCount + (_statusCounts()['remote'] ?? 0)}',
+                              ),
+                            ),
+                          ),
                         if (hero != null) ...[
                           const SizedBox(height: 16),
                           ConstrainedBox(
@@ -2392,11 +2500,7 @@ class _LibraryPageState extends State<LibraryPage> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            reading && statusFilter == 'deleted'
-                                ? 'Удалённых книг нет'
-                                : reading && statusFilter == 'remote'
-                                ? 'Карточек без файла нет'
-                                : liveCount == 0
+                            liveCount == 0
                                 ? 'Начните с первой книги'
                                 : 'Ничего не найдено',
                             style: const TextStyle(
@@ -2413,11 +2517,7 @@ class _LibraryPageState extends State<LibraryPage> {
                             ),
                           const SizedBox(height: 8),
                           Text(
-                            reading && statusFilter == 'deleted'
-                                ? 'Сюда попадают книги после удаления файла или обновления подключённой папки.'
-                                : reading && statusFilter == 'remote'
-                                ? 'Здесь показываются карточки синхронизации, для которых ещё не подключён файл.'
-                                : liveCount == 0
+                            liveCount == 0
                                 ? 'Подключите папку или добавьте книгу.'
                                 : 'Попробуйте изменить поиск или фильтр.',
                           ),
@@ -2597,7 +2697,7 @@ class _LibraryPageState extends State<LibraryPage> {
           width: 600,
           child: SingleChildScrollView(
             child: SelectableText(
-              '${_title(book)}\n\n${lines.join('\n\n')}${canHide ? '\n\n«Убрать из списка» скрывает карточку только на этом устройстве. Файлы, заметки и история сохраняются.' : ''}',
+              '${_title(book)}\n\n${lines.join('\n\n')}${canHide ? '\n\n«Скрыть с полки» скрывает карточку только на этом устройстве. Файлы, заметки и история сохраняются.' : ''}',
             ),
           ),
         ),
@@ -2634,7 +2734,7 @@ class _LibraryPageState extends State<LibraryPage> {
           if (canHide)
             TextButton(
               onPressed: () => Navigator.pop(context, 'hide-book'),
-              child: const Text('Убрать из списка'),
+              child: const Text('Скрыть с полки'),
             ),
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -2680,54 +2780,21 @@ class _LibraryPageState extends State<LibraryPage> {
         return;
       }
       if (value == 'delete-book') {
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(
-              audio ? 'Удалить файлы аудиокниги?' : 'Удалить файл книги?',
-            ),
-            content: SingleChildScrollView(
-              child: Text(
-                '«${book.title}»\n\n'
-                '${audio ? 'Аудиофайлы этой книги будут удалены с устройства.' : 'Локальный файл в подключённой папке, импортированная копия и кеш чтения будут удалены.'} '
-                'Карточка библиотеки, обложка, прогресс, заметки и история сохранятся.\n\n'
-                'Если папку синхронизирует стороннее приложение, удаление может распространиться на другие устройства.',
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Отмена'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Удалить файл'),
-              ),
-            ],
-          ),
-        );
-        if (confirmed != true || !mounted) return;
+        await _deleteBooks([book]);
+        return;
       }
-      final peer = PeerSyncScope.of(context);
       await _action(() async {
         if (audio && widget.audio?.current?.bookId == book.id) {
           await widget.audio!.stop();
         }
         _checkBookClosed(book.id);
-        if (value == 'delete-book') {
-          if (mounted &&
-              await deleteBookFilesWithAccess(context, actions, book.id)) {
-            peer?.localFilesChanged();
-          }
-        } else {
-          await actions.hide(book.id);
-        }
+        await actions.hide(book.id);
       });
       if (value == 'hide-book' && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text(
-              'Книга убрана из списка. Файл и история сохранены.',
+              'Книга скрыта с полки. Файл и история сохранены.',
             ),
             action: SnackBarAction(
               label: 'Вернуть',
@@ -3130,9 +3197,9 @@ class _LibraryPageState extends State<LibraryPage> {
               'reading-plan': 'План чтения',
               if (!deleted && asset != null)
                 'metadata': 'Обновить сведения из файла',
-              if (!deleted && widget.assets != null) ...{
-                'hide-book': 'Убрать из списка',
-                if (asset != null) 'delete-book': 'Удалить файл книги…',
+              if (widget.assets != null) ...{
+                if (!deleted) 'hide-book': 'Скрыть с полки',
+                'delete-book': 'Удалить…',
               },
             },
             'planned': 'Отметить новой',
@@ -3143,8 +3210,8 @@ class _LibraryPageState extends State<LibraryPage> {
             'session': 'Записать сессию',
             if (audio) ...{
               if (widget.assets != null) ...{
-                'hide-book': 'Убрать из списка',
-                if (asset != null) 'delete-book': 'Удалить файлы аудиокниги…',
+                'hide-book': 'Скрыть с полки',
+                'delete-book': 'Удалить…',
               },
               'folder': 'Переименовать / переместить папку',
               'reconnect': 'Указать папку заново',
@@ -3346,8 +3413,6 @@ class _LibraryPageState extends State<LibraryPage> {
       'paused': 'Отложены',
       'abandoned': 'Брошены',
       'finished': reading ? 'Прочитано' : 'Прослушано',
-      if (reading) 'remote': 'Без файла',
-      if (reading) 'deleted': 'Удалённые',
     };
     return Container(
       decoration: BoxDecoration(

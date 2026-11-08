@@ -152,6 +152,43 @@ class VideoRepository {
     });
   }
 
+  /// Removes a video, course or playlist from the media library. Files are
+  /// never touched. Returns the lessons removed with it, for [restoreItem].
+  Future<List<String>> removeItem(String itemId) =>
+      repository.db.transaction(() async {
+        final ids = [
+          for (final lesson in await lessons(itemId: itemId)) lesson.id,
+        ];
+        await repository.db.customStatement(
+          "UPDATE records SET deleted=1,revision=revision+1 "
+          "WHERE id=? AND type='video_item' AND deleted=0",
+          [itemId],
+        );
+        for (final id in ids) {
+          await repository.db.customStatement(
+            "UPDATE records SET deleted=1,revision=revision+1 "
+            "WHERE id=? AND type='video_lesson' AND deleted=0",
+            [id],
+          );
+        }
+        return ids;
+      });
+
+  /// Undoes [removeItem]; progress and notes were kept all along.
+  Future<void> restoreItem(String itemId, List<String> lessonIds) =>
+      repository.db.transaction(() async {
+        for (final (id, type) in [
+          (itemId, 'video_item'),
+          for (final lesson in lessonIds) (lesson, 'video_lesson'),
+        ]) {
+          await repository.db.customStatement(
+            "UPDATE records SET deleted=0,revision=revision+1 "
+            "WHERE id=? AND type=? AND deleted=1",
+            [id, type],
+          );
+        }
+      });
+
   Future<void> setFavorite(VideoItem item, bool favorite) =>
       repository.db.transaction(() async {
         final row = await repository.record(item.id);

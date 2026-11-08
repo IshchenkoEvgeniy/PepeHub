@@ -2,6 +2,7 @@ import 'goal_settings_page.dart';
 import 'book_picker.dart';
 import '../audio/statistics_export.dart';
 import 'audio_mini_player.dart';
+import 'audio_cover.dart';
 import 'statistics_range.dart';
 import '../audio/listening_analytics.dart';
 import '../audio/listening_worker.dart';
@@ -346,7 +347,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
     Widget figure(String value, String label) => Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(value, style: AppFonts.title(ink, size: 24)),
+        Text(value, style: AppFonts.title(ink, size: 20)),
         const SizedBox(height: 2),
         Text(label, style: TextStyle(fontSize: 12, color: soft)),
       ],
@@ -356,14 +357,14 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
       color: palette.accent,
       borderRadius: BorderRadius.circular(22),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'ВРЕМЯ ДЛЯ ИСТОРИЙ · ${_periodLabel.toUpperCase()}',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: FontWeight.w800,
                 letterSpacing: .8,
                 color: soft,
@@ -375,24 +376,13 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
               alignment: Alignment.centerLeft,
               child: Text(
                 s == null ? 'Собираем историю…' : statTime(s.wallMs),
-                style: AppFonts.title(ink, size: s == null ? 34 : 58),
+                style: AppFonts.title(ink, size: s == null ? 24 : 34),
               ),
             ),
-            Text(
-              s != null && s.estimatedMs > 0
-                  ? 'Включая ${statTime(s.estimatedMs)} по полю «Прослушано»: оценка при 1×.'
-                  : 'Реальное время звучания · без пауз и перемоток',
-              style: TextStyle(fontSize: 13, color: soft),
-            ),
-            if (s != null && s.undatedMs > 0)
-              Text(
-                '${statTime(s.undatedMs)} без даты: только в итогах за всё время.',
-                style: TextStyle(fontSize: 13, color: soft),
-              ),
             if (s != null && data != null) ...[
-              const SizedBox(height: 18),
+              const SizedBox(height: 12),
               Wrap(
-                spacing: 28,
+                spacing: 24,
                 runSpacing: 12,
                 children: [
                   figure('${data.sessions.length}', 'Сессий'),
@@ -765,7 +755,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            PepeSpine(title, width: 36, height: 36),
+            _cover(id, title, 36),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -1018,6 +1008,160 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
     ),
   );
 
+  Widget _cover(String id, String title, double size) {
+    final assets = widget.controller?.assets;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: assets == null
+            ? PepeSpine(title, width: size, height: size)
+            : AudioCover(assets: assets, bookId: id),
+      ),
+    );
+  }
+
+  /// Service details kept off the main page.
+  Future<void> _info() {
+    final s = stats;
+    final notes = <String>[
+      'Учитывается реальное время звучания: без пауз и перемоток. Скорость 1.5× за час звучания проходит полтора часа книги — это «Пройдено материала».',
+      'День серии — от 5 минут прослушивания; серия не прерывается, пока сегодня ещё не прослушано, если было вчера.',
+      if (s != null && s.estimatedMs > 0)
+        'В итог включено ${statTime(s.estimatedMs)} по полю «Прослушано» из карточек: это оценка при скорости 1×.',
+      if (s != null && s.undatedMs > 0)
+        '${statTime(s.undatedMs)} без даты учитываются только в итогах за всё время.',
+      if (legacyMs > 0)
+        'Старый журнал сессий: ${pepeTime(legacyMs)} за всё время. Он пересекается с новым журналом и не прибавляется к нему. Подробные интервалы собираются с версии 0.7.0.',
+    ];
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      constraints: const BoxConstraints(maxWidth: 640),
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'О статистике',
+                style: Theme.of(sheetContext).textTheme.titleLarge,
+              ),
+              for (final note in notes)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Text(
+                    note,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: ShelfPalette.of(sheetContext).muted,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Progress, remaining time and expected finish of the chosen audiobook.
+  Widget _bookPanel(ShelfPalette palette, AudioStats s) {
+    final id = selectedBook!;
+    final title = titles[id] ?? 'Аудиокнига';
+    final summary = summaries[id];
+    final total = summary?.total, position = summary?.position;
+    final known = total != null && total > 0 && position != null;
+    final progress = known ? (position / total).clamp(0.0, 1.0) : null;
+    final speed = summary == null || summary.speed <= 0 ? 1.0 : summary.speed;
+    final remainingMs = known
+        ? ((total - position).clamp(0, total) / speed).round()
+        : null;
+    // Own pace over the chosen period, or the daily goal without history.
+    final activeDays = s.activityDays.length;
+    final perDayMs = activeDays > 0 && s.wallMs > 0
+        ? s.wallMs ~/ activeDays
+        : goals.dailyMinutes * 60000;
+    final lines = <String>[];
+    String headline;
+    if (!known) {
+      headline = 'Длительность неизвестна';
+      lines.add('Откройте аудиокнигу в плеере: появятся прогресс и прогноз.');
+    } else if (remainingMs == 0) {
+      headline = 'Прослушано полностью';
+    } else {
+      headline = 'Осталось ≈ ${statTime(remainingMs!)}';
+      if (speed != 1) {
+        lines.add(
+          'При скорости ${speed.toStringAsFixed(speed == speed.roundToDouble() ? 0 : 2)}×',
+        );
+      }
+      if (perDayMs > 0) {
+        final days = (remainingMs / perDayMs).ceil();
+        final now = DateTime.now();
+        final d = DateTime(now.year, now.month, now.day + days - 1);
+        lines.add(
+          'Закончите ≈ ${d.day} ${pepeMonthGenitive[d.month - 1]}${d.year == now.year ? '' : ' ${d.year}'} '
+          '${activeDays > 0 ? 'в вашем темпе: ${pepeTime(perDayMs)} в день' : 'при цели ${goals.dailyMinutes} мин в день'}',
+        );
+      }
+    }
+    return PepePanel(
+      key: const ValueKey('audio-book-panel'),
+      title: title,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _cover(id, title, 72),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (progress != null)
+                  Text(
+                    '${(progress * 100).round()}% прослушано',
+                    style: AppFonts.title(palette.text, size: 22),
+                  ),
+                const SizedBox(height: 2),
+                Text(
+                  headline,
+                  key: const ValueKey('audio-book-forecast'),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                for (final line in lines)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      line,
+                      style: TextStyle(fontSize: 12.5, color: palette.muted),
+                    ),
+                  ),
+                if (progress != null) ...[
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 4,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = ShelfPalette.of(context);
@@ -1104,8 +1248,32 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
               'Самая длинная сессия',
             ),
             ('${s.books.length}', 'Книг в прослушивании'),
-            ('${data.lifetime.longestStreak}', 'Лучшая серия дней'),
           ]);
+    final Widget barsPanel = s == null
+        ? const SizedBox()
+        : PepePanel(
+            title: chart.limited
+                ? 'По дням · последние ${barDays.length} дней периода'
+                : 'По дням',
+            trailing: goals.dailyMinutes > 0
+                ? Text(
+                    '- - цель ${goals.dailyMinutes} мин',
+                    style: TextStyle(fontSize: 12, color: palette.muted),
+                  )
+                : null,
+            child: PepeBars(
+              values: [for (final d in barDays) selectedDays[dayKey(d)] ?? 0],
+              tooltips: [
+                for (final d in barDays)
+                  '${pepeDate(d)} · ${pepeTime(selectedDays[dayKey(d)] ?? 0)}',
+              ],
+              goalMinutes: goals.dailyMinutes,
+              startLabel: pepeDate(barDays.first),
+              endLabel: barDays.last == today
+                  ? 'сегодня'
+                  : pepeDate(barDays.last),
+            ),
+          );
     return PepeSubpage(
       title: 'Прослушивание',
       back: 'Статистика',
@@ -1116,6 +1284,11 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
         onOpen: widget.returnToPlayer ? () => Navigator.pop(context) : null,
       ),
       actions: [
+        IconButton(
+          tooltip: 'О статистике',
+          onPressed: _info,
+          icon: const Icon(Icons.info_outline),
+        ),
         IconButton(
           tooltip: 'Управление статистикой',
           onPressed: _manage,
@@ -1164,89 +1337,77 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
           const LinearProgressIndicator(),
         ] else ...[
           if (stacked) ...[
-            _hero(palette, s),
-            const SizedBox(height: 18),
-            figures,
-            const SizedBox(height: 18),
+            if (selectedBook != null) ...[
+              _bookPanel(palette, s),
+              const SizedBox(height: 16),
+            ],
             if (goalStats != null) ...[
               _goalPanel(palette),
               const SizedBox(height: 16),
             ],
             _streakPanel(palette),
+            const SizedBox(height: 16),
+            _hero(palette, s),
+            const SizedBox(height: 16),
+            barsPanel,
+            const SizedBox(height: 16),
+            _booksPanel(palette, s),
+            const SizedBox(height: 16),
+            _calendarPanel(),
+            const SizedBox(height: 16),
+            _comparisons(palette),
+            const SizedBox(height: 16),
+            figures,
+            const SizedBox(height: 16),
+            _rhythm(palette, s),
+            const SizedBox(height: 16),
+            _sessionsPanel(palette),
+            const SizedBox(height: 16),
+            _playerPanel(palette, s),
           ] else ...[
+            if (selectedBook != null) ...[
+              _bookPanel(palette, s),
+              const SizedBox(height: 16),
+            ],
             PepeRow(
               breakpoint: 0,
               children: [
-                (6, _hero(palette, s)),
                 (4, goalStats == null ? const SizedBox() : _goalPanel(palette)),
                 (4, _streakPanel(palette)),
+                (6, _hero(palette, s)),
+              ],
+            ),
+            const SizedBox(height: 18),
+            PepeRow(children: [(7, barsPanel), (4, _calendarPanel())]),
+            const SizedBox(height: 16),
+            PepeRow(
+              children: [
+                (7, _booksPanel(palette, s)),
+                (4, _comparisons(palette)),
               ],
             ),
             const SizedBox(height: 18),
             figures,
-          ],
-          const SizedBox(height: 18),
-          PepeRow(
-            children: [
-              (
-                7,
-                PepePanel(
-                  title: chart.limited
-                      ? 'По дням · последние ${barDays.length} дней периода'
-                      : 'По дням',
-                  trailing: goals.dailyMinutes > 0
-                      ? Text(
-                          '- - цель ${goals.dailyMinutes} мин',
-                          style: TextStyle(fontSize: 12, color: palette.muted),
-                        )
-                      : null,
-                  child: PepeBars(
-                    values: [
-                      for (final d in barDays) selectedDays[dayKey(d)] ?? 0,
+            const SizedBox(height: 16),
+            PepeRow(
+              children: [
+                (7, _sessionsPanel(palette)),
+                (
+                  4,
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _rhythm(palette, s),
+                      const SizedBox(height: 16),
+                      _playerPanel(palette, s),
                     ],
-                    tooltips: [
-                      for (final d in barDays)
-                        '${pepeDate(d)} · ${pepeTime(selectedDays[dayKey(d)] ?? 0)}',
-                    ],
-                    goalMinutes: goals.dailyMinutes,
-                    startLabel: pepeDate(barDays.first),
-                    endLabel: barDays.last == today
-                        ? 'сегодня'
-                        : pepeDate(barDays.last),
                   ),
                 ),
-              ),
-              (4, _rhythm(palette, s)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          PepeRow(
-            children: [(4, _calendarPanel()), (7, _booksPanel(palette, s))],
-          ),
-          const SizedBox(height: 16),
-          PepeRow(
-            children: [
-              (7, _sessionsPanel(palette)),
-              (
-                4,
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _comparisons(palette),
-                    const SizedBox(height: 16),
-                    _playerPanel(palette, s),
-                  ],
-                ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
           const SizedBox(height: 16),
           _eventsPanel(palette),
-          const SizedBox(height: 14),
-          Text(
-            'Старый журнал сессий: ${pepeTime(legacyMs)} за всё время. Он пересекается с новым журналом и не прибавляется к нему. Подробные интервалы собираются с версии 0.7.0.',
-            style: TextStyle(color: palette.muted, fontSize: 12),
-          ),
         ],
       ],
     );
