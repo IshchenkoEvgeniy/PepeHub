@@ -11,7 +11,6 @@ import '../library/book_calendar_data.dart';
 import '../media/audio_controller.dart';
 import '../reader/reading_statistics_data.dart';
 import '../reader/reading_statistics_history.dart';
-import '../statistics/activity_streak.dart';
 import 'app_theme.dart';
 import 'audio_statistics_page.dart';
 import 'reading_statistics_page.dart';
@@ -20,6 +19,7 @@ import 'book_calendar.dart';
 import 'annual_book_statistics.dart';
 import '../statistics/annual_summary.dart';
 import 'year_review_page.dart';
+import 'library_card_link.dart';
 import 'statistics_exchange_page.dart';
 import '../statistics/portable_history.dart';
 import '../library/models.dart';
@@ -51,7 +51,6 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
   String scope = 'all';
   late int year;
   DateTime get _now => widget.clock?.call() ?? DateTime.now();
-  bool annual = false;
   BookCalendarData calendar = BookCalendarData();
   Map<String, int> readingDays = {}, audioDays = {};
   Map<String, int> readingAllDays = {}, audioAllDays = {};
@@ -70,12 +69,12 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
   AudioStatisticsHistory? _audioHistory;
   ListeningAnalytics? _listening;
   AudioDailyTotals? _nativeAudio;
-  int firstYear = DateTime.now().year;
+  late int firstYear;
 
   @override
   void initState() {
     super.initState();
-    year = _now.year;
+    year = firstYear = _now.year;
     widget.repository.externalChanges.addListener(_load);
     widget.library?.addListener(_libraryChanged);
     _load();
@@ -250,21 +249,6 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
     for (final e in b.entries) e.key: (a[e.key] ?? 0) + e.value,
   };
 
-  Map<String, int> get _days => switch (scope) {
-    'reading' => readingDays,
-    'audio' => audioDays,
-    _ => _merge(readingDays, audioDays),
-  };
-  Map<String, int> get _activityDays => switch (scope) {
-    'reading' => readingDays,
-    'audio' => audioActivityDays,
-    _ => _merge(readingDays, audioActivityDays),
-  };
-  Map<String, int> get _allActivityDays => switch (scope) {
-    'reading' => readingAllDays,
-    'audio' => audioActivityAllDays,
-    _ => _merge(readingAllDays, audioActivityAllDays),
-  };
   Map<String, int> get _books {
     final result = <String, int>{};
     for (final day in calendar.days.values) {
@@ -280,22 +264,11 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
     return result;
   }
 
-  static String hours(int ms) {
-    final minutes = ms ~/ 60000;
-    if (minutes < 60) return '$minutes мин';
-    final h = minutes ~/ 60, m = minutes % 60;
-    return m == 0 || h >= 10 ? '$h ч' : '$h ч $m мин';
-  }
+  static String hours(int ms) => statisticsHours(ms);
 
   @override
   Widget build(BuildContext context) {
     final palette = ShelfPalette.of(context);
-    final days = _days;
-    final total = days.values.fold(0, (sum, ms) => sum + ms);
-    final activeDays = _activityDays.values.where((ms) => ms > 0).length;
-    final now = _now;
-    final currentStreak = activityStreak(_allActivityDays, now).current;
-    final yearBest = activityStreak(_activityDays, now, year: year).best;
     final top = _books.entries.where((e) => e.value > 0).toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     final topMax = top.isEmpty ? 1 : top.first.value;
@@ -305,20 +278,6 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
       bottomNavigationBar: null,
       actions: [
         IconButton(
-          tooltip: 'Экспорт и импорт всей статистики',
-          icon: const Icon(Icons.import_export),
-          onPressed: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    StatisticsExchangePage(repository: widget.repository),
-              ),
-            );
-            if (mounted) await _load();
-          },
-        ),
-        IconButton(
           tooltip: 'Итоги года',
           onPressed: loading
               ? null
@@ -326,6 +285,7 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
                   context,
                   MaterialPageRoute(
                     builder: (_) => YearReviewPage(
+                      library: widget.library,
                       summary: AnnualSummary(
                         year: year,
                         scope: scope,
@@ -342,323 +302,173 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
           icon: const Icon(Icons.auto_awesome_outlined),
         ),
         IconButton(
+          tooltip: 'Экспорт и импорт всей статистики',
+          icon: const Icon(Icons.import_export),
+          onPressed: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    StatisticsExchangePage(repository: widget.repository),
+              ),
+            );
+            if (mounted) await _load();
+          },
+        ),
+        IconButton(
           tooltip: 'Обновить статистику',
           onPressed: loading ? null : _load,
           icon: const Icon(Icons.refresh),
         ),
       ],
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ChoiceChip(
-                  label: const Text('Обзор'),
-                  selected: !annual,
-                  onSelected: (_) => setState(() => annual = false),
-                ),
-                ChoiceChip(
-                  label: const Text('Годовая статистика'),
-                  selected: annual,
-                  onSelected: (_) => setState(() => annual = true),
-                ),
-              ],
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: AnnualBookStatistics(
+          completedEntries: _completedEntries,
+          repository: widget.repository,
+          library: widget.library,
+          year: year,
+          scope: scope,
+          readingDays: readingDays,
+          audioDays: audioDays,
+          audioActivityDays: audioActivityDays,
+          readingAllDays: readingAllDays,
+          audioAllDays: audioAllDays,
+          audioActivityAllDays: audioActivityAllDays,
+          audioEstimateMs: audioEstimateMs,
+          audioUndatedMs: audioUndatedMs,
+          loading: loading,
+          error: error,
+          clock: () => _now,
+          firstYear: firstYear,
+          onScope: (value) => setState(() => scope = value),
+          onYear: (value) {
+            if (loading) return;
+            setState(() => year = value);
+            _load(refreshHistory: false);
+          },
+          overview: [
+            () => statisticsHeading(context, 'Книжный календарь'),
+            () => BookCalendar(
+              year: year,
+              scope: scope,
+              data: calendar,
+              library: widget.library,
             ),
-          ),
-          if (annual && loading) const LinearProgressIndicator(),
-          if (annual && error != null) Text(error!),
-          Expanded(
-            child: annual
-                ? AnnualBookStatistics(
-                    completedEntries: _completedEntries,
-                    repository: widget.repository,
-                    library: widget.library,
-                    year: year,
-                    scope: scope,
-                    readingDays: readingDays,
-                    audioDays: audioDays,
-                    audioActivityDays: audioActivityDays,
-                    audioEstimateMs: audioEstimateMs,
-                    audioUndatedMs: audioUndatedMs,
-                    onScope: (value) => setState(() => scope = value),
-                    onYear: (value) {
-                      if (loading) return;
-                      setState(() => year = value);
-                      _load(refreshHistory: false);
-                    },
-                    firstYear: firstYear,
-                  )
-                : RefreshIndicator(
-                    onRefresh: _load,
-                    child: ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 6, 20, 32),
-                      children: [
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final (key, label) in const [
-                              ('all', 'Всё'),
-                              ('reading', 'Книги'),
-                              ('audio', 'Аудио'),
-                            ])
-                              ShelfPill(
-                                key: ValueKey('statistics-scope:$key'),
-                                label: label,
-                                selected: scope == key,
-                                onTap: () => setState(() => scope = key),
-                              ),
-                          ],
+            () => statisticsHeading(context, 'Больше всего времени'),
+            if (top.isEmpty)
+              () => Text(
+                'В этом году пока нет записей.',
+                style: TextStyle(color: palette.muted),
+              ),
+            for (final entry in top.take(5))
+              () => _topBook(
+                entry.key,
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: Text(
+                        titles[entry.key]?.isNotEmpty == true
+                            ? titles[entry.key]!
+                            : 'Книга удалена',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppFonts.book(palette.text, size: 16),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 4,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: (entry.value / topMax).clamp(.03, 1.0),
+                          child: Container(height: 5, color: palette.accent),
                         ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Летопись $year года',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontFamily: AppFonts.serif,
-                                  fontStyle: FontStyle.italic,
-                                  fontSize: 18,
-                                  color: palette.muted,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Предыдущий год',
-                              onPressed: loading || year <= firstYear
-                                  ? null
-                                  : () {
-                                      setState(() => year--);
-                                      _load(refreshHistory: false);
-                                    },
-                              icon: const Icon(Icons.chevron_left),
-                            ),
-                            IconButton(
-                              tooltip: 'Следующий год',
-                              onPressed: loading || year >= now.year
-                                  ? null
-                                  : () {
-                                      setState(() => year++);
-                                      _load(refreshHistory: false);
-                                    },
-                              icon: const Icon(Icons.chevron_right),
-                            ),
-                          ],
-                        ),
-                        if (loading) const LinearProgressIndicator(),
-                        if (error != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              error!,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                            ),
-                          ),
-                        const SizedBox(height: 12),
-                        Container(
-                          decoration: BoxDecoration(
-                            border: Border(
-                              top: BorderSide(color: palette.accent),
-                              bottom: BorderSide(color: palette.line),
-                            ),
-                          ),
-                          child: IntrinsicHeight(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                _figure(palette, hours(total), 'всего за год'),
-                                VerticalDivider(color: palette.line, width: 1),
-                                _figure(
-                                  palette,
-                                  '$activeDays',
-                                  'дней с книгой',
-                                ),
-                                VerticalDivider(color: palette.line, width: 1),
-                                KeyedSubtree(
-                                  key: const ValueKey('statistics-streak'),
-                                  child: _figure(
-                                    palette,
-                                    '${year == now.year ? currentStreak : yearBest}',
-                                    year == now.year
-                                        ? 'дней подряд, рекорд года $yearBest · от 5 мин'
-                                        : 'рекорд дней подряд за $year · от 5 мин',
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        if (scope != 'reading' && audioEstimateMs > 0)
-                          Text(
-                            'Включая ${hours(audioEstimateMs)} по полю «Прослушано»: оценка при 1×, отнесена к дате в карточке.',
-                          ),
-                        if (scope != 'reading' && audioUndatedMs > 0)
-                          Text(
-                            'Ещё ${hours(audioUndatedMs)} указано без даты и не отнесено к году. Укажите дату начала или завершения в карточке.',
-                          ),
-                        _heading('Книжный календарь', null, palette),
-                        const SizedBox(height: 10),
-                        BookCalendar(
-                          year: year,
-                          scope: scope,
-                          data: calendar,
-                          library: widget.library,
-                        ),
-                        const SizedBox(height: 26),
-                        _heading('Больше всего времени', null, palette),
-                        const SizedBox(height: 8),
-                        if (top.isEmpty)
-                          Text(
-                            'В этом году пока нет записей.',
-                            style: TextStyle(color: palette.muted),
-                          ),
-                        for (final entry in top.take(5))
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  flex: 5,
-                                  child: Text(
-                                    titles[entry.key]?.isNotEmpty == true
-                                        ? titles[entry.key]!
-                                        : 'Книга удалена',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppFonts.book(
-                                      palette.text,
-                                      size: 16,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  flex: 4,
-                                  child: Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: FractionallySizedBox(
-                                      widthFactor: (entry.value / topMax).clamp(
-                                        .03,
-                                        1.0,
-                                      ),
-                                      child: Container(
-                                        height: 5,
-                                        color: palette.accent,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                SizedBox(
-                                  width: 70,
-                                  child: Text(
-                                    hours(entry.value),
-                                    textAlign: TextAlign.right,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: palette.muted,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        const SizedBox(height: 24),
-                        _heading('Подробнее', null, palette),
-                        const SizedBox(height: 4),
-                        if (scope != 'audio')
-                          _link(
-                            palette,
-                            Icons.menu_book_outlined,
-                            'Статистика чтения',
-                            () => Navigator.push<void>(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ReadingStatisticsPage(
-                                  repository: widget.repository,
-                                ),
-                              ),
-                            ),
-                          ),
-                        if (scope != 'reading')
-                          _link(
-                            palette,
-                            Icons.headphones_outlined,
-                            'Статистика прослушивания',
-                            () => Navigator.push<void>(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => AudioStatisticsPage(
-                                  repository: widget.repository,
-                                  controller: widget.audio,
-                                ),
-                              ),
-                            ),
-                          ),
-                        if (widget.onJournal != null)
-                          _link(
-                            palette,
-                            Icons.history,
-                            'Журнал занятий',
-                            widget.onJournal!,
-                          ),
-                      ],
+                      ),
+                    ),
+                    SizedBox(
+                      width: 70,
+                      child: Text(
+                        hours(entry.value),
+                        textAlign: TextAlign.right,
+                        style: TextStyle(fontSize: 13, color: palette.muted),
+                      ),
+                    ),
+                    if (_topBookOpener(entry.key) != null)
+                      Icon(Icons.chevron_right, size: 18, color: palette.muted),
+                  ],
+                ),
+              ),
+          ],
+          links: [
+            if (scope != 'audio')
+              () => _link(
+                palette,
+                Icons.menu_book_outlined,
+                'Статистика чтения',
+                () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ReadingStatisticsPage(
+                      repository: widget.repository,
+                      library: widget.library,
                     ),
                   ),
-          ),
-        ],
+                ),
+              ),
+            if (scope != 'reading')
+              () => _link(
+                palette,
+                Icons.headphones_outlined,
+                'Статистика прослушивания',
+                () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AudioStatisticsPage(
+                      repository: widget.repository,
+                      controller: widget.audio,
+                      library: widget.library,
+                    ),
+                  ),
+                ),
+              ),
+            if (widget.onJournal != null)
+              () => _link(
+                palette,
+                Icons.history,
+                'Журнал занятий',
+                widget.onJournal!,
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _figure(ShelfPalette palette, String value, String label) => Expanded(
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(10, 12, 6, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              style: AppFonts.book(
-                palette.text,
-                size: 30,
-              ).copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(label, style: TextStyle(fontSize: 12, color: palette.muted)),
-        ],
-      ),
-    ),
+  /// Calendar ids are local file ids or `card:<id>`; both lead to a card.
+  VoidCallback? _topBookOpener(String key) => libraryCardOpener(
+    context,
+    widget.library,
+    calendar.books[key]?.entry?.item.id ??
+        libraryItemIdForBook(widget.library, key),
   );
 
-  Widget _heading(String title, String? note, ShelfPalette palette) => Row(
-    crossAxisAlignment: CrossAxisAlignment.end,
-    children: [
-      Expanded(
-        child: Text(
-          title,
-          style: AppFonts.book(
-            palette.text,
-            size: 22,
-          ).copyWith(fontStyle: FontStyle.italic),
-        ),
-      ),
-      if (note != null)
-        Text(note, style: TextStyle(fontSize: 12, color: palette.muted)),
-    ],
-  );
+  Widget _topBook(String key, Widget row) {
+    final open = _topBookOpener(key);
+    final padded = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: row,
+    );
+    return open == null
+        ? KeyedSubtree(key: ValueKey('statistics-top-book:$key'), child: padded)
+        : InkWell(
+            key: ValueKey('statistics-top-book:$key'),
+            onTap: open,
+            child: padded,
+          );
+  }
 
   Widget _link(
     ShelfPalette palette,

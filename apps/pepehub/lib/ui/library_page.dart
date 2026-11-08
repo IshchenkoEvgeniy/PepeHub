@@ -2370,10 +2370,14 @@ class _LibraryPageState extends State<LibraryPage> {
                   context,
                   MaterialPageRoute(
                     builder: (_) => reading
-                        ? ReadingStatisticsPage(repository: widget.repository)
+                        ? ReadingStatisticsPage(
+                            repository: widget.repository,
+                            library: obsidianLibrary,
+                          )
                         : AudioStatisticsPage(
                             repository: widget.repository,
                             controller: widget.audio,
+                            library: obsidianLibrary,
                           ),
                   ),
                 ),

@@ -19,6 +19,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../library/library_service.dart';
+import 'library_card_link.dart';
+
 import '../audio/audio_journal.dart';
 import '../media/audio_controller.dart';
 import '../data/repository.dart';
@@ -41,12 +44,16 @@ class AudioStatisticsPage extends StatefulWidget {
   final AudioController? controller;
   final bool returnToPlayer;
   final String? initialBookId;
+
+  /// Lets the selected book open its library card.
+  final LibraryService? library;
   const AudioStatisticsPage({
     super.key,
     required this.repository,
     this.controller,
     this.returnToPlayer = false,
     this.initialBookId,
+    this.library,
   });
   @override
   State<AudioStatisticsPage> createState() => _AudioStatisticsPageState();
@@ -1287,6 +1294,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
         onOpen: widget.returnToPlayer ? () => Navigator.pop(context) : null,
       ),
       actions: [
+        ?libraryCardAction(context, widget.library, selectedBook),
         IconButton(
           tooltip: 'О статистике',
           onPressed: _info,

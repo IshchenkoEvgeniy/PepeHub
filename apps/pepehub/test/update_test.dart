@@ -149,6 +149,27 @@ class UpdateFixture {
 }
 
 void main() {
+  test(
+    'Windows helper starts as a plain script file, not an encoded command',
+    () {
+      final args = UpdateService.helperArguments(
+        File(
+          r'C:\Users\Пользователь\AppData\Local\Temp\pepehub-updates\windows-1\transaction.json',
+        ),
+        File(
+          r'C:\Users\Пользователь\AppData\Local\Temp\pepehub-updates\windows-1\install.ps1',
+        ),
+      );
+      expect(args, isNot(contains('-EncodedCommand')));
+      expect(args.indexOf('-File'), args.length - 4);
+      expect(args.sublist(args.length - 3), [
+        r'C:\Users\Пользователь\AppData\Local\Temp\pepehub-updates\windows-1\install.ps1',
+        '-ConfigPath',
+        r'C:\Users\Пользователь\AppData\Local\Temp\pepehub-updates\windows-1\transaction.json',
+      ]);
+      expect(args, containsAllInOrder(['-ExecutionPolicy', 'Bypass']));
+    },
+  );
   TestWidgetsFlutterBinding.ensureInitialized();
   late UpdateFixture f;
   setUp(() async {

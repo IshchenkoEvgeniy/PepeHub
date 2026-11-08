@@ -4,7 +4,7 @@ import '../library/book_calendar_data.dart';
 import '../library/library_service.dart';
 import '../library/reading_insights.dart';
 import 'audio_cover.dart';
-import 'library_work_page.dart';
+import 'library_card_link.dart';
 import 'obsidian_library_dashboard.dart' show ShelfBookCover;
 
 class BookCalendar extends StatefulWidget {
@@ -282,22 +282,7 @@ class _BookCalendarState extends State<BookCalendar> {
       subtitle: Text(
         '${e.value > 0 ? bookActivityTime(e.value) : 'Время не записано'} · ${book?.mediaType == 'audiobook' ? 'Аудиокнига' : 'Книга'}${widget.data.completedDays[selected]?.contains(e.key) == true ? ' · завершено' : ''}',
       ),
-      onTap:
-          book?.entry == null ||
-              widget.library == null ||
-              !widget.library!.entries.any(
-                (e) => e.item.id == book!.entry!.item.id,
-              )
-          ? null
-          : () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => LibraryWorkPage(
-                  library: widget.library!,
-                  itemId: book!.entry!.item.id,
-                ),
-              ),
-            ),
+      onTap: libraryCardOpener(context, widget.library, book?.entry?.item.id),
     );
   }
 }

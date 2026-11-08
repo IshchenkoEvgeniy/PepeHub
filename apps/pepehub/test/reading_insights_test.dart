@@ -18,6 +18,9 @@ import 'package:pepehub/library/reading_insights.dart';
 import 'package:pepehub/ui/annual_book_statistics.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/book_calendar.dart';
+import 'package:pepehub/ui/library_card_link.dart';
+import 'package:pepehub/ui/reading_statistics_page.dart';
+import 'package:pepehub/ui/audio_statistics_page.dart';
 import 'package:pepehub/ui/activity_page.dart';
 import 'package:pepehub/ui/library_work_page.dart';
 import 'package:pepehub/ui/statistics_hub_page.dart';
@@ -315,7 +318,7 @@ void main() {
     );
   }
 
-  testWidgets('hub opens annual tab and journal groups one book by day', (
+  testWidgets('hub shows annual sections and journal groups one book by day', (
     tester,
   ) async {
     final db = AppDatabase(NativeDatabase.memory());
@@ -353,8 +356,18 @@ void main() {
       tester,
       () => find.byType(LinearProgressIndicator).evaluate().isEmpty,
     );
-    await tester.tap(find.text('Годовая статистика'));
-    await tester.pumpAndSettle();
+    // One feed: the annual sections follow the overview without a tab.
+    expect(find.text('Годовая статистика'), findsNothing);
+    await tester.scrollUntilVisible(
+      find.text('Завершения по месяцам'),
+      300,
+      scrollable: find
+          .descendant(
+            of: find.byType(AnnualBookStatistics),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
     expect(find.text('Завершения по месяцам'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(
@@ -384,6 +397,132 @@ void main() {
           .first,
     );
     expect(find.textContaining('T17:56'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('statistics books open their library card', (tester) async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final repo = Repository(db);
+    final client = MockClient((_) => throw StateError('No network'));
+    final library = LibraryService(repo, client);
+    addTearDown(() async {
+      library.dispose();
+      client.close();
+      await db.close();
+    });
+    await library.repository.mutate((entries) async {
+      entries['card-2'] = card(2);
+    });
+    await library.loadCached();
+    await library.history!.mutate((state) async {
+      state['slots'] = {
+        for (var i = 0; i < 3; i++)
+          '$i': {
+            'value': {
+              ...(slot(i, item: 'card-2')['value'] as Map),
+              'mediaType': 'book',
+              'unit': 'pages',
+              'durationMs': 600000,
+            },
+          },
+      };
+    });
+    expect(libraryItemIdForBook(library, 'card:card-2'), 'card-2');
+    expect(libraryItemIdForBook(library, 'unknown-file'), isNull);
+    expect(libraryItemIdForBook(null, 'card:card-2'), isNull);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatisticsHubPage(
+          repository: repo,
+          library: library,
+          clock: () => DateTime(2026, 11, 8, 12),
+          navigation: ShelfNavigation(
+            current: PepeSection.statistics,
+            onSelect: (_) {},
+            onSettings: () {},
+          ),
+        ),
+      ),
+    );
+    final dynamic hub = tester.state(find.byType(StatisticsHubPage));
+    await ready(tester, () => !hub.loading);
+    final feed = find
+        .descendant(
+          of: find.byType(AnnualBookStatistics),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    Future<void> openAndBack(Finder target) async {
+      await tester.scrollUntilVisible(target, 300, scrollable: feed);
+      await tester.tap(target);
+      await ready(
+        tester,
+        () => find.text('Карточка произведения').evaluate().isNotEmpty,
+      );
+      expect(find.byType(LibraryWorkPage), findsOneWidget);
+      Navigator.of(tester.element(find.byType(LibraryWorkPage))).pop();
+      await tester.pumpAndSettle();
+    }
+
+    await openAndBack(
+      find.byKey(const ValueKey('statistics-top-book:card:card-2')),
+    );
+    await openAndBack(
+      find.byKey(const ValueKey('statistics-pages-book:card-2')),
+    );
+    await openAndBack(find.byKey(const ValueKey('annual-book:card-2')));
+    await tester.tap(find.byTooltip('Итоги года'));
+    await tester.pumpAndSettle();
+    for (final key in ['card:card-2']) {
+      final line = find.byKey(ValueKey('year-review-book:$key')).first;
+      await tester.scrollUntilVisible(
+        line,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(line);
+      await ready(
+        tester,
+        () => find.text('Карточка произведения').evaluate().isNotEmpty,
+      );
+      expect(find.byType(LibraryWorkPage), findsOneWidget);
+    }
+    for (final page in <Widget>[
+      ReadingStatisticsPage(
+        repository: repo,
+        bookId: 'card:card-2',
+        library: library,
+      ),
+      AudioStatisticsPage(
+        repository: repo,
+        initialBookId: 'card:card-2',
+        library: library,
+      ),
+    ]) {
+      await tester.pumpWidget(MaterialApp(key: UniqueKey(), home: page));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('statistics-open-card')));
+      await ready(
+        tester,
+        () => find.text('Карточка произведения').evaluate().isNotEmpty,
+      );
+    }
+    await tester.pumpWidget(
+      MaterialApp(
+        key: UniqueKey(),
+        home: ReadingStatisticsPage(
+          repository: repo,
+          bookId: 'file-without-card',
+          library: library,
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.byKey(const ValueKey('statistics-open-card')), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

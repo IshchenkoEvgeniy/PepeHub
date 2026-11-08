@@ -7,6 +7,8 @@ import '../statistics/annual_summary.dart';
 import '../library/reading_insights.dart';
 import '../video/video_frame_export.dart';
 import 'pepe_widgets.dart';
+import 'library_card_link.dart';
+import '../library/library_service.dart';
 import '../diagnostics/user_message.dart';
 
 class AnnualCategoryPanel extends StatelessWidget {
@@ -74,10 +76,21 @@ class AnnualCategoryPanel extends StatelessWidget {
   }
 }
 
-List<String> _reviewLines(AnnualSummary data, DateTime now) {
+List<String> _reviewLines(AnnualSummary data, DateTime now) => [
+  for (final row in _reviewRows(data, now)) row.text,
+];
+
+/// Lines of the summary; book lines carry the statistics id of their book
+/// (a library card id for rated books, a calendar id for time).
+List<({String text, String? book})> _reviewRows(
+  AnnualSummary data,
+  DateTime now,
+) {
+  ({String text, String? book}) line(String text, [String? book]) =>
+      (text: text, book: book);
   final longest = data.longestDay;
   final genre = data.favoriteGenre;
-  return [
+  return <Object>[
     'PEPEHUB · ${data.year}',
     switch (data.scope) {
       'reading' => 'Мой год с книгами',
@@ -95,7 +108,10 @@ List<String> _reviewLines(AnnualSummary data, DateTime now) {
     'ЛУЧШИЕ КНИГИ · ПО МОИМ ОЦЕНКАМ',
     if (data.bestBooks.isEmpty) 'Оценки ещё не указаны',
     for (final b in data.bestBooks.take(5))
-      'Оценка ${bookAmount(b.rating!)} · ${b.entry.item.title}',
+      line(
+        'Оценка ${bookAmount(b.rating!)} · ${b.entry.item.title}',
+        'card:${b.entry.item.id}',
+      ),
     '',
     'БОЛЬШЕ ВСЕГО ВРЕМЕНИ',
     if (data.bookTimes.values.every((v) => v <= 0)) 'Нет записей времени',
@@ -103,12 +119,14 @@ List<String> _reviewLines(AnnualSummary data, DateTime now) {
           ..sort((a, b) => b.value.compareTo(a.value)))
         .take(5)
         .map(
-          (e) =>
-              '${bookActivityTime(e.value)} · ${data.titles[e.key] ?? 'Произведение без названия'}',
+          (e) => line(
+            '${bookActivityTime(e.value)} · ${data.titles[e.key] ?? 'Произведение без названия'}',
+            e.key,
+          ),
         )),
     '',
     'Время может включать подписанные в статистике оценки. Рекорды дней учитывают только записи занятий.',
-  ];
+  ].map((e) => e is String ? line(e) : e as ({String text, String? book})).toList();
 }
 
 Future<Uint8List> renderAnnualSummaryPng(
@@ -167,7 +185,10 @@ Future<Uint8List> renderAnnualSummaryPng(
 
 class YearReviewPage extends StatefulWidget {
   final AnnualSummary summary;
-  const YearReviewPage({super.key, required this.summary});
+
+  /// Lets book lines open their library card.
+  final LibraryService? library;
+  const YearReviewPage({super.key, required this.summary, this.library});
   @override
   State<YearReviewPage> createState() => _YearReviewPageState();
 }
@@ -205,6 +226,39 @@ class _YearReviewPageState extends State<YearReviewPage> {
     }
   }
 
+  Widget _row(({String text, String? book}) row) {
+    final text = Text(
+      row.text,
+      style: row.text == row.text.toUpperCase()
+          ? Theme.of(context).textTheme.titleLarge
+          : Theme.of(context).textTheme.bodyLarge,
+    );
+    final open = libraryCardOpener(
+      context,
+      widget.library,
+      libraryItemIdForBook(widget.library, row.book),
+    );
+    if (open == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: text,
+      );
+    }
+    return InkWell(
+      key: ValueKey('year-review-book:${row.book}'),
+      onTap: open,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Expanded(child: text),
+            const Icon(Icons.chevron_right, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.summary;
@@ -221,16 +275,7 @@ class _YearReviewPageState extends State<YearReviewPage> {
       children: [
         if (exporting) const LinearProgressIndicator(),
         if (error != null) Text(error!),
-        for (final line in _reviewLines(data, DateTime.now()))
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(
-              line,
-              style: line == line.toUpperCase()
-                  ? Theme.of(context).textTheme.titleLarge
-                  : Theme.of(context).textTheme.bodyLarge,
-            ),
-          ),
+        for (final row in _reviewRows(data, DateTime.now())) _row(row),
         AnnualCategoryPanel(title: 'Жанры', field: 'genre', books: data.books),
         AnnualCategoryPanel(
           title: 'Авторы',

@@ -5,6 +5,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../library/library_service.dart';
+import 'library_card_link.dart';
+
 import '../data/repository.dart';
 import '../reader/reading_activity.dart';
 import '../reader/reading_statistics_data.dart';
@@ -26,10 +29,14 @@ import '../diagnostics/user_message.dart';
 class ReadingStatisticsPage extends StatefulWidget {
   final Repository repository;
   final String? bookId;
+
+  /// Lets a book's page open its library card.
+  final LibraryService? library;
   const ReadingStatisticsPage({
     super.key,
     required this.repository,
     this.bookId,
+    this.library,
   });
   @override
   State<ReadingStatisticsPage> createState() => _ReadingStatisticsPageState();
@@ -541,6 +548,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
                         builder: (_) => ReadingStatisticsPage(
                           repository: widget.repository,
                           bookId: id,
+                          library: widget.library,
                         ),
                       ),
                     ),
@@ -567,6 +575,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
       section: PepeSection.statistics,
       onRefresh: _load,
       actions: [
+        ?libraryCardAction(context, widget.library, widget.bookId),
         IconButton(
           tooltip: 'О статистике и экспорт журнала',
           onPressed: _info,

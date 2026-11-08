@@ -851,25 +851,26 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
     _notify();
   }
 
+  /// Plain `-File` arguments: antivirus heuristics often kill a hidden
+  /// PowerShell started with `-EncodedCommand` before the script runs.
+  static List<String> helperArguments(File config, File helper) => [
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-WindowStyle',
+    'Hidden',
+    '-File',
+    helper.path,
+    '-ConfigPath',
+    config.path,
+  ];
+
   static Future<void> _launchHelper(File config, File helper) async {
-    final script =
-        "& '${helper.path.replaceAll("'", "''")}' -ConfigPath '${config.path.replaceAll("'", "''")}'";
-    final encoded = <int>[
-      for (final unit in script.codeUnits) ...[unit & 255, unit >> 8],
-    ];
     final system = Platform.environment['SystemRoot'] ?? r'C:\Windows';
     await Process.start(
       p.join(system, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-WindowStyle',
-        'Hidden',
-        '-EncodedCommand',
-        base64Encode(encoded),
-      ],
+      helperArguments(config, helper),
       mode: ProcessStartMode.detached,
     );
   }
