@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/repository.dart';
 import 'reading_library.dart';
+import '../diagnostics/user_message.dart';
 
 Future<void> showReadingCollections(
   BuildContext context,
@@ -71,7 +72,7 @@ class _CollectionsState extends State<_Collections> {
       await f();
       await _load();
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => busy = false);
     }

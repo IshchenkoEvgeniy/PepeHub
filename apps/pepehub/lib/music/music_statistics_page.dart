@@ -4,6 +4,7 @@ import '../video/models.dart';
 import '../video/video_repository.dart';
 import '../ui/pepe_widgets.dart';
 import '../ui/audio_mini_player.dart';
+import '../diagnostics/user_message.dart';
 
 class MusicStatisticsPage extends StatefulWidget {
   final VideoRepository repository;
@@ -73,7 +74,7 @@ class _MusicStatisticsPageState extends State<MusicStatisticsPage> {
     } catch (e) {
       if (mounted && request == _request) {
         setState(() {
-          error = 'Не удалось загрузить музыку: $e';
+          error = 'Не удалось загрузить музыку: ${describeError(e)}';
           loading = false;
         });
       }

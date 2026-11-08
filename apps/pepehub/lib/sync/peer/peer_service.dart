@@ -27,6 +27,8 @@ import 'peer_relay.dart';
 
 import 'package:flutter/services.dart';
 
+import '../../diagnostics/error_log.dart';
+
 final _uuidPattern = RegExp(
   r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$',
 );
@@ -397,7 +399,9 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
         await _networkChannel.invokeMethod<void>('multicast', {
           'enabled': false,
         });
-      } catch (_) {}
+      } catch (error, stack) {
+        ErrorLog.record(error, stack, context: 'peer: disable multicast');
+      }
     }
   }
 
@@ -700,7 +704,15 @@ class PeerSyncService extends ChangeNotifier with WidgetsBindingObserver {
               );
             }
           }
-        } catch (_) {}
+        } catch (error, stack) {
+          // The folder list stays usable without the remote index.
+          ErrorLog.record(
+            error,
+            stack,
+            context: 'peer: remote index ${folder.id}',
+            once: 'peer-remote-index:${peer.id}:${folder.id}',
+          );
+        }
       }
       for (final entry in entries.where((e) => !e.deleted)) {
         if (result[entry.path]?.deleted != false ||

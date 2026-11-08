@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'video_folder_sync.dart';
+import '../diagnostics/user_message.dart';
 
 class VideoFolderRefreshDialog extends StatefulWidget {
   final VideoFolderPreview preview;
@@ -26,7 +27,7 @@ class _VideoFolderRefreshDialogState extends State<VideoFolderRefreshDialog> {
       if (mounted) {
         setState(() {
           saving = false;
-          error = '$e';
+          error = describeError(e);
         });
       }
     }

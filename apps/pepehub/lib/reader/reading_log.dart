@@ -10,6 +10,7 @@ import '../audio/audio_folder.dart';
 import '../data/repository.dart';
 import 'reading_activity.dart';
 import 'reading_library.dart';
+import '../diagnostics/user_message.dart';
 
 // Recovery logs retain original events and index fields. Only the selected
 // root/day crosses to this worker; parsing and encoding stay off the UI.
@@ -74,7 +75,10 @@ class ReadingLog {
       await _export(session);
       await repository.setMeta('reading-log-error:${session['bookId']}', '');
     } catch (e) {
-      await repository.setMeta('reading-log-error:${session['bookId']}', '$e');
+      await repository.setMeta(
+        'reading-log-error:${session['bookId']}',
+        describeError(e),
+      );
       rethrow;
     }
   }

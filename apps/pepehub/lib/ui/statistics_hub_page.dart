@@ -23,6 +23,7 @@ import 'year_review_page.dart';
 import 'statistics_exchange_page.dart';
 import '../statistics/portable_history.dart';
 import '../library/models.dart';
+import '../diagnostics/user_message.dart';
 
 /// Reading and listening for one calendar year, with links to the detailed
 /// statistics pages.
@@ -237,7 +238,7 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
       _historyDirty = true;
       if (mounted && request == _request) {
         setState(() {
-          error = 'Не удалось посчитать статистику: $e';
+          error = 'Не удалось посчитать статистику: ${describeError(e)}';
           loading = false;
         });
       }

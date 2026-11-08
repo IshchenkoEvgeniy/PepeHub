@@ -10,6 +10,7 @@ import '../media/library_recovery.dart';
 import 'audio_catalog.dart';
 import 'audio_folder.dart';
 import '../media/folder_scan_progress.dart';
+import '../diagnostics/user_message.dart';
 
 String audioRootKey(String root) =>
     'audio-library-root:${sha256.convert(utf8.encode(root))}';
@@ -62,8 +63,7 @@ class AudioRoots {
   /// Audiobooks whose folders were not found on the last scan. Books deleted
   /// for good are skipped. List projection only: no tracks are loaded.
   Future<Set<String>> missingBookIds() async => {
-    for (final row
-        in await assets.repository.db.customSelect('''
+    for (final row in await assets.repository.db.customSelect('''
           SELECT b.id FROM metadata m
           JOIN records b ON b.id=substr(m.key,22) AND b.type='book' AND b.deleted=0
           WHERE m.key>='audio-source-missing:' AND m.key<'audio-source-missing;'
@@ -217,7 +217,7 @@ class AudioRoots {
         } catch (e) {
           errors++;
           if (oldId != null) seen.add(oldId);
-          warnings.add('${draft.title}: $e');
+          warnings.add('${draft.title}: ${describeError(e)}');
         }
       }
       var missing = 0;
@@ -230,8 +230,7 @@ class AudioRoots {
         }
         await repo.setMeta('audio-source-missing:$id', '1');
         // Removed by the user into the trash: not reported as missing.
-        if (await repo.meta('${Repository.removedShelfBookPrefix}$id') ==
-            '1') {
+        if (await repo.meta('${Repository.removedShelfBookPrefix}$id') == '1') {
           continue;
         }
         missing++;

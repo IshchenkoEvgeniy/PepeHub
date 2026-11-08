@@ -27,6 +27,7 @@ import 'activity_page.dart';
 import 'app_theme.dart';
 import 'obsidian_library_page.dart' show LibraryMetadataEditor, libraryState;
 import 'shelf_components.dart';
+import '../diagnostics/user_message.dart';
 
 num? _number(dynamic value) {
   final result = value is num ? value : num.tryParse('$value');
@@ -1767,7 +1768,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       } catch (error) {
         if (mounted) {
           ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('$error')));
+              .showSnackBar(SnackBar(content: Text(describeError(error))));
         }
       }
     },

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../audio/audio_roots.dart';
 import '../audio/audio_folder.dart';
 import '../media/asset_store.dart';
+import '../diagnostics/user_message.dart';
 
 class AudioRecoveryPage extends StatefulWidget {
   final AssetStore assets;
@@ -35,7 +36,7 @@ class _AudioRecoveryPageState extends State<AudioRecoveryPage> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => message = '$e');
+      if (mounted) setState(() => message = describeError(e));
     }
   }
 
@@ -50,7 +51,7 @@ class _AudioRecoveryPageState extends State<AudioRecoveryPage> {
       widget.assets.repository.notifyExternalChange();
       if (mounted) setState(() => message = result);
     } catch (e) {
-      if (mounted) setState(() => message = '$e');
+      if (mounted) setState(() => message = describeError(e));
     } finally {
       await load();
       if (mounted) setState(() => busy = false);

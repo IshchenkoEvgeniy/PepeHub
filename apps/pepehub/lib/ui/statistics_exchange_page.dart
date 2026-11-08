@@ -9,6 +9,7 @@ import '../audio/statistics_export.dart';
 import '../data/repository.dart';
 import '../statistics/statistics_exchange.dart';
 import 'pepe_widgets.dart';
+import '../diagnostics/user_message.dart';
 
 class StatisticsExchangePage extends StatefulWidget {
   final Repository repository;
@@ -31,7 +32,11 @@ class _StatisticsExchangePageState extends State<StatisticsExchangePage> {
     try {
       await action();
     } catch (e) {
-      if (mounted) setState(() => message = 'Не удалось выполнить перенос: $e');
+      if (mounted) {
+        setState(
+          () => message = 'Не удалось выполнить перенос: ${describeError(e)}',
+        );
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }

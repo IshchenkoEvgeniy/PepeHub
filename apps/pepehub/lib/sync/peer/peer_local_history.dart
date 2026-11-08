@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import 'peer_history.dart';
+import '../../diagnostics/user_message.dart';
 
 class PeerLocalHistory implements PeerHistoryStorage {
   final Future<String> Function() checkedBase;
@@ -111,7 +112,7 @@ class PeerLocalHistory implements PeerHistoryStorage {
                 outside = false;
                 moved++;
               } catch (e) {
-                warnings.add('Не перенесена копия $leaf: $e');
+                warnings.add('Не перенесена копия $leaf: ${describeError(e)}');
               }
             }
             records.add((
@@ -157,7 +158,9 @@ class PeerLocalHistory implements PeerHistoryStorage {
           reclaimed += entry.bytes;
           continue;
         } catch (e) {
-          warnings.add('Не удалена копия ${p.basename(entry.file.path)}: $e');
+          warnings.add(
+            'Не удалена копия ${p.basename(entry.file.path)}: ${describeError(e)}',
+          );
         }
       }
       remaining.add(entry);

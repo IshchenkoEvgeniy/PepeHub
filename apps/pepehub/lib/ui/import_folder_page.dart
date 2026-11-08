@@ -4,6 +4,7 @@ import '../media/asset_store.dart';
 import '../media/import_folder.dart';
 import '../media/audio_player_scope.dart';
 import 'audio_mini_player.dart';
+import '../diagnostics/user_message.dart';
 
 class ImportFolderPage extends StatefulWidget {
   final AssetStore assets;
@@ -41,7 +42,7 @@ class _ImportFolderPageState extends State<ImportFolderPage> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) {
         setState(() {

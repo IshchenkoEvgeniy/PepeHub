@@ -5,6 +5,7 @@ import '../audio/book_folder_operations.dart';
 import '../audio/audio_roots.dart';
 import '../media/asset_store.dart';
 import '../media/audio_controller.dart';
+import '../diagnostics/user_message.dart';
 
 Future<void> showBookFolderDialog(
   BuildContext context,
@@ -155,7 +156,7 @@ Future<void> showBookFolderDialog(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Операция с папкой'),
-          content: SingleChildScrollView(child: Text('$e')),
+          content: SingleChildScrollView(child: Text(describeError(e))),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),

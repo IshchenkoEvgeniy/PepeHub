@@ -5,6 +5,7 @@ import 'models.dart';
 import 'video_annotations.dart';
 import 'video_repository.dart';
 import 'video_tools.dart';
+import '../diagnostics/user_message.dart';
 
 /// Captured when the note action is pressed, independent of later player ticks.
 class VideoAnnotationDraft {
@@ -217,7 +218,7 @@ class VideoAnnotationEditorState extends State<VideoAnnotationEditor> {
       if (mounted) {
         setState(() {
           saving = false;
-          _error = '$error';
+          _error = describeError(error);
         });
       }
     }

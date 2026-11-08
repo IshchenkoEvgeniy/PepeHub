@@ -3,6 +3,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 import 'video_session.dart';
 import 'video_transcript_panel.dart';
+import '../diagnostics/user_message.dart';
 
 class VideoMiniPlayer extends StatefulWidget {
   final VideoPlaybackSession session;
@@ -24,7 +25,11 @@ class _VideoMiniPlayerState extends State<VideoMiniPlayer> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(content: Text('Не удалось выполнить действие: $error')),
+          SnackBar(
+            content: Text(
+              'Не удалось выполнить действие: ${describeError(error)}',
+            ),
+          ),
         );
       }
     }

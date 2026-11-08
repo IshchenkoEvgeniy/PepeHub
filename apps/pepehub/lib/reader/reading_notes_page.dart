@@ -6,6 +6,7 @@ import 'reading_library.dart';
 import 'reading_notes_export.dart';
 import '../ui/pepe_widgets.dart';
 import '../ui/shelf_components.dart';
+import '../diagnostics/user_message.dart';
 
 const noteColors = <String, Color>{
   'yellow': Color(0xffffdf80),
@@ -194,7 +195,7 @@ class _ReadingNotesPageState extends State<ReadingNotesPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           loading = false;
         });
       }
@@ -207,8 +208,9 @@ class _ReadingNotesPageState extends State<ReadingNotesPage> {
       await _reload();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Не удалось сохранить: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось сохранить: ${describeError(e)}')),
+        );
       }
     }
   }
@@ -227,8 +229,9 @@ class _ReadingNotesPageState extends State<ReadingNotesPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Экспорт не выполнен: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Экспорт не выполнен: ${describeError(e)}')),
+        );
       }
     } finally {
       if (mounted) setState(() => exporting = false);

@@ -16,6 +16,7 @@ import '../data/repository.dart';
 import '../library/book_trash.dart';
 import 'book_formats.dart';
 import 'reading_book_visibility.dart';
+import '../diagnostics/user_message.dart';
 
 // Folder scans share one progress model with audiobook folders.
 typedef ReadingScanCancelled = FolderScanCancelled;
@@ -230,7 +231,7 @@ class ReadingRoots {
         ));
       } catch (e) {
         if (!skipUnreadable) rethrow;
-        warnings.add('${file.name}: $e');
+        warnings.add('${file.name}: ${describeError(e)}');
       }
     }
     progress?.check();

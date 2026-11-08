@@ -17,6 +17,7 @@ import '../reader/reading_library.dart';
 import '../reader/statistics_history.dart';
 import '../reader/reading_log.dart';
 import '../statistics/statistics_period.dart';
+import '../diagnostics/user_message.dart';
 
 /// CRUD for the source records behind both statistics screens.
 class StatisticsManagementPage extends StatefulWidget {
@@ -206,7 +207,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     } catch (e) {
       if (mounted && request == _loadRequest) {
         setState(() {
-          loadError = '$e';
+          loadError = describeError(e);
           loading = false;
         });
       }
@@ -277,8 +278,8 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
       } catch (e) {
         await _report(
           saved
-              ? 'Сессия добавлена, но журнал папки не обновлён: $e'
-              : 'Не удалось добавить сессию: $e',
+              ? 'Сессия добавлена, но журнал папки не обновлён: ${describeError(e)}'
+              : 'Не удалось добавить сессию: ${describeError(e)}',
         );
       }
       return;
@@ -321,7 +322,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
       await _refreshAudioSidecar(value['bookId'] as String);
       await _report('Событие прослушивания добавлено.');
     } catch (e) {
-      await _report('Запись не добавлена: $e');
+      await _report('Запись не добавлена: ${describeError(e)}');
     }
   }
 
@@ -362,7 +363,9 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
       }
       await _report('Сессия чтения сохранена.');
     } catch (e) {
-      await _report('Сессия сохранена в базе, но журнал не обновлён: $e');
+      await _report(
+        'Сессия сохранена в базе, но журнал не обновлён: ${describeError(e)}',
+      );
     }
   }
 
@@ -410,8 +413,8 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     } catch (e) {
       await _report(
         saved
-            ? 'Сессия сохранена, но журнал папки не обновлён: $e'
-            : 'Не удалось сохранить сессию: $e',
+            ? 'Сессия сохранена, но журнал папки не обновлён: ${describeError(e)}'
+            : 'Не удалось сохранить сессию: ${describeError(e)}',
       );
     }
   }
@@ -486,7 +489,9 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
       }
       await _report('Запись прослушивания сохранена.');
     } catch (e) {
-      await _report('Запись сохранена в базе, но журнал не обновлён: $e');
+      await _report(
+        'Запись сохранена в базе, но журнал не обновлён: ${describeError(e)}',
+      );
     }
   }
 
@@ -511,7 +516,9 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
       }
       await _report('Полная запись прослушивания сохранена.');
     } catch (e) {
-      await _report('Запись сохранена в базе, но журнал не обновлён: $e');
+      await _report(
+        'Запись сохранена в базе, но журнал не обновлён: ${describeError(e)}',
+      );
     }
   }
 
@@ -564,7 +571,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
       }
       await _report('Старая сессия обновлена.');
     } catch (e) {
-      await _report('Не удалось сохранить сессию: $e');
+      await _report('Не удалось сохранить сессию: ${describeError(e)}');
     }
   }
 
@@ -604,8 +611,8 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     } catch (e) {
       await _report(
         removed
-            ? 'Запись удалена, но журнал не обновлён: $e'
-            : 'Не удалось удалить запись: $e',
+            ? 'Запись удалена, но журнал не обновлён: ${describeError(e)}'
+            : 'Не удалось удалить запись: ${describeError(e)}',
       );
     } finally {
       if (mounted) setState(() => mutating = false);
@@ -731,7 +738,7 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     } catch (e) {
       if (mounted) setState(selectedEntries.clear);
       await _report(
-        'Удалено $deleted из ${keys.length}; проверьте оставшиеся записи: $e',
+        'Удалено $deleted из ${keys.length}; проверьте оставшиеся записи: ${describeError(e)}',
       );
     } finally {
       if (mounted) setState(() => mutating = false);
@@ -1585,7 +1592,9 @@ Future<Map<String, dynamic>?> _jsonEditor(
                   }
                   Navigator.pop(context, data);
                 } catch (e) {
-                  setState(() => error = 'Некорректный JSON: $e');
+                  setState(
+                    () => error = 'Некорректный JSON: ${describeError(e)}',
+                  );
                 }
               },
               child: const Text('Сохранить'),

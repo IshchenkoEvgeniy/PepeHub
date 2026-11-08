@@ -4,6 +4,7 @@ import '../audio/audio_catalog.dart';
 import '../audio/audio_folder.dart';
 import '../audio/audio_sidecar.dart';
 import '../media/asset_store.dart';
+import '../diagnostics/user_message.dart';
 
 class AudioCatalogDialog extends StatefulWidget {
   final AudioFolder folder;
@@ -78,7 +79,7 @@ class _AudioCatalogDialogState extends State<AudioCatalogDialog> {
             setState(() {
               busy = false;
               error =
-                  'Книги подключены. Не удалось сохранить снимок в .pepehub: $e. Можно закрыть это окно.';
+                  'Книги подключены. Не удалось сохранить снимок в .pepehub: ${describeError(e)}. Можно закрыть это окно.';
             });
           }
           return;
@@ -91,7 +92,7 @@ class _AudioCatalogDialogState extends State<AudioCatalogDialog> {
       if (mounted) {
         setState(() {
           busy = false;
-          error = '$e';
+          error = describeError(e);
         });
       }
     }

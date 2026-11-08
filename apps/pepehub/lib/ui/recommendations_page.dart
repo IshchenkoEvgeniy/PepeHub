@@ -9,6 +9,7 @@ import '../recommendations/book_catalog.dart';
 import '../recommendations/recommendation_store.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
+import '../diagnostics/user_message.dart';
 
 class RecommendationsPage extends StatefulWidget {
   final RecommendationStore store;
@@ -82,7 +83,7 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = 'Не удалось прочитать подборки: $e';
+          error = 'Не удалось прочитать подборки: ${describeError(e)}';
           loading = false;
         });
       }
@@ -96,7 +97,7 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
       await action();
       if (mounted) await _load();
     } catch (e) {
-      if (mounted) _message('$e');
+      if (mounted) _message(describeError(e));
     } finally {
       if (mounted) setState(() => changing = false);
     }
@@ -179,7 +180,9 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
                           Navigator.pop(dialogContext);
                         }
                       } catch (e) {
-                        if (dialogContext.mounted) update(() => error = '$e');
+                        if (dialogContext.mounted) {
+                          update(() => error = describeError(e));
+                        }
                       } finally {
                         if (dialogContext.mounted) update(() => saving = false);
                       }
@@ -273,7 +276,9 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
                   Navigator.pop(context);
                   if (mounted) setState(() => category = id);
                 } catch (e) {
-                  if (context.mounted) update(() => validation = '$e');
+                  if (context.mounted) {
+                    update(() => validation = describeError(e));
+                  }
                 }
               },
               child: const Text('Сохранить'),
@@ -1149,7 +1154,7 @@ class _RecommendationDetailPageState extends State<RecommendationDetailPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+            .showSnackBar(SnackBar(content: Text(describeError(e))));
       }
     } finally {
       if (mounted) setState(() => opening = false);
@@ -1240,7 +1245,7 @@ class _RecommendationSourcesPageState extends State<RecommendationSourcesPage> {
       final next = await widget.store.enabledSources();
       if (mounted) setState(() => sources = next);
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     }
   }
 
@@ -1282,7 +1287,7 @@ class _RecommendationSourcesPageState extends State<RecommendationSourcesPage> {
                       });
                     }
                   } catch (e) {
-                    if (mounted) setState(() => error = '$e');
+                    if (mounted) setState(() => error = describeError(e));
                   } finally {
                     if (mounted) setState(() => saving = false);
                   }
@@ -1404,7 +1409,7 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
     } catch (e) {
       if (mounted && generation == searchGeneration) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           searchedSources = {};
           pendingSources.clear();
         });
@@ -1448,7 +1453,7 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
       );
     } catch (e) {
       if (mounted && generation == searchGeneration) {
-        setState(() => error = '$e');
+        setState(() => error = describeError(e));
       }
     } finally {
       if (mounted && generation == searchGeneration) {
@@ -1475,7 +1480,7 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = 'Не удалось получить полную карточку: $e';
+          error = 'Не удалось получить полную карточку: ${describeError(e)}';
           incomplete = book;
         });
       }
@@ -1502,7 +1507,10 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => error = 'Не удалось прочитать настройки поиска: $e');
+        setState(
+          () => error =
+              'Не удалось прочитать настройки поиска: ${describeError(e)}',
+        );
       }
     }
   }
@@ -1565,7 +1573,7 @@ class _RecommendationSearchPageState extends State<RecommendationSearchPage> {
       if (mounted) {
         setState(() {
           sources = current;
-          error = '$e';
+          error = describeError(e);
         });
       }
     }
@@ -1911,7 +1919,11 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
         'fetchWarnings': full.data['fetchWarnings'] ?? [],
       });
     } catch (e) {
-      if (mounted) setState(() => error = 'Не удалось дополнить карточку: $e');
+      if (mounted) {
+        setState(
+          () => error = 'Не удалось дополнить карточку: ${describeError(e)}',
+        );
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -1985,7 +1997,7 @@ class _RecommendationEditorState extends State<RecommendationEditor> {
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => busy = false);
     }

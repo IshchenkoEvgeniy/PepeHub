@@ -14,6 +14,7 @@ import 'reader_ranges.dart';
 import 'reader_shortcuts.dart';
 import 'reader_selectable_paragraph.dart';
 import 'reader_selection_toolbar.dart';
+import '../diagnostics/user_message.dart';
 export 'reader_selection_toolbar.dart' show readerSelectionToolbar;
 
 /// Appended (transparent) after a justified slice that ends mid-paragraph.
@@ -786,7 +787,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
       layoutComplete = true;
       _publishLayout(result);
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     }
   }
 

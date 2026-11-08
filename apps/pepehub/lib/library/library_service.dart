@@ -25,6 +25,7 @@ import 'metadata_values.dart';
 import 'library_features.dart';
 import 'series_draft.dart';
 import 'library_folder_storage.dart';
+import '../diagnostics/user_message.dart';
 
 class LibraryService extends ChangeNotifier {
   final Repository local;
@@ -508,7 +509,7 @@ class LibraryService extends ChangeNotifier {
     try {
       await folderStorage.synchronize();
     } catch (e) {
-      error = 'Не удалось обновить папку библиотеки: $e';
+      error = 'Не удалось обновить папку библиотеки: ${describeError(e)}';
     }
     // Show imported cards before inspecting any connected book files.
     await loadCached();
@@ -547,7 +548,8 @@ class LibraryService extends ChangeNotifier {
         );
       }
     } catch (e) {
-      error = 'Не удалось обновить сведения о некоторых файлах: $e';
+      error =
+          'Не удалось обновить сведения о некоторых файлах: ${describeError(e)}';
     } finally {
       loading = false;
       if (generation == _generation && !_disposed) await loadCached();
@@ -661,7 +663,7 @@ class LibraryService extends ChangeNotifier {
         await adapter.journals();
       } while (_syncAgain && generation == _generation && !_disposed);
     } catch (e) {
-      if (generation == _generation) error = '$e';
+      if (generation == _generation) error = describeError(e);
     } finally {
       syncing = false;
       await reload();

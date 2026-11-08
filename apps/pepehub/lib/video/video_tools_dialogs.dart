@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'video_tools.dart';
+import '../diagnostics/user_message.dart';
 
 Future<int?> showVideoSeekDialog(
   BuildContext context,
@@ -157,7 +158,7 @@ class _LoopDialogState extends State<_LoopDialog> {
       settings.validate(durationMs: widget.durationMs);
       Navigator.pop(context, settings);
     } catch (e) {
-      setState(() => error = '$e');
+      setState(() => error = describeError(e));
     }
   }
 

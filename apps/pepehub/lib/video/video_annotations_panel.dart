@@ -4,6 +4,7 @@ import 'models.dart';
 import 'video_annotations.dart';
 import 'video_repository.dart';
 import 'video_tools.dart';
+import '../diagnostics/user_message.dart';
 
 class VideoAnnotationsPanel extends StatefulWidget {
   final VideoRepository repository;
@@ -66,7 +67,7 @@ class _VideoAnnotationsPanelState extends State<VideoAnnotationsPanel> {
     } catch (e) {
       if (mounted && request == _request) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           loading = false;
         });
       }
@@ -94,14 +95,14 @@ class _VideoAnnotationsPanelState extends State<VideoAnnotationsPanel> {
                 await widget.repository.restoreAnnotation(lesson, deletion);
                 await _load();
               } catch (e) {
-                if (mounted) setState(() => error = '$e');
+                if (mounted) setState(() => error = describeError(e));
               }
             },
           ),
         ),
       );
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => busy.remove(annotation.id));
     }

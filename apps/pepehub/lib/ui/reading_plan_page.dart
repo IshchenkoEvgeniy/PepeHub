@@ -5,6 +5,7 @@ import '../reader/reading_plan.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
 import 'goal_settings_page.dart';
+import '../diagnostics/user_message.dart';
 
 class ReadingPlanPage extends StatefulWidget {
   final Repository repository;
@@ -57,7 +58,7 @@ class _ReadingPlanPageState extends State<ReadingPlanPage> {
       if (mounted) {
         setState(() {
           loading = false;
-          error = '$e';
+          error = describeError(e);
         });
       }
     }
@@ -95,7 +96,9 @@ class _ReadingPlanPageState extends State<ReadingPlanPage> {
         ).showSnackBar(const SnackBar(content: Text('План чтения сохранён')));
       }
     } catch (e) {
-      if (mounted) setState(() => error = 'План не сохранён: $e');
+      if (mounted) {
+        setState(() => error = 'План не сохранён: ${describeError(e)}');
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -124,7 +127,10 @@ class _ReadingPlanPageState extends State<ReadingPlanPage> {
                     await _load();
                   } catch (e) {
                     if (mounted) {
-                      setState(() => error = 'Не удалось вернуть план: $e');
+                      setState(
+                        () => error =
+                            'Не удалось вернуть план: ${describeError(e)}',
+                      );
                     }
                   }
                 },
@@ -133,7 +139,9 @@ class _ReadingPlanPageState extends State<ReadingPlanPage> {
           );
       }
     } catch (e) {
-      if (mounted) setState(() => error = 'Не удалось удалить план: $e');
+      if (mounted) {
+        setState(() => error = 'Не удалось удалить план: ${describeError(e)}');
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }

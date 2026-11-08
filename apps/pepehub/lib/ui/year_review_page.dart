@@ -7,6 +7,7 @@ import '../statistics/annual_summary.dart';
 import '../library/reading_insights.dart';
 import '../video/video_frame_export.dart';
 import 'pepe_widgets.dart';
+import '../diagnostics/user_message.dart';
 
 class AnnualCategoryPanel extends StatelessWidget {
   final String title, field;
@@ -194,7 +195,11 @@ class _YearReviewPageState extends State<YearReviewPage> {
         );
       }
     } catch (e) {
-      if (mounted) setState(() => error = 'Не удалось сохранить итоги: $e');
+      if (mounted) {
+        setState(
+          () => error = 'Не удалось сохранить итоги: ${describeError(e)}',
+        );
+      }
     } finally {
       if (mounted) setState(() => exporting = false);
     }

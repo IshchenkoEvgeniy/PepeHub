@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 
 import '../audio/audio_import.dart';
 import '../media/asset_store.dart';
+import '../diagnostics/user_message.dart';
 
 class AudioImportDialog extends StatefulWidget {
   final List<XFile> files;
@@ -75,7 +76,7 @@ class _AudioImportDialogState extends State<AudioImportDialog> {
       if (mounted) {
         setState(() {
           busy = false;
-          error = '$e';
+          error = describeError(e);
         });
       }
     }

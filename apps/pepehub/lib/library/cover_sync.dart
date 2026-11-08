@@ -17,6 +17,7 @@ import '../reader/reading_library.dart';
 import 'library_repository.dart';
 import 'models.dart';
 import 'obsidian_sync_service.dart';
+import '../diagnostics/user_message.dart';
 
 class CoverSync {
   static Future<String> _fileHash(String path) => Isolate.run(
@@ -384,7 +385,7 @@ class CoverSync {
         }
         await local.setMeta(stateKey, jsonEncode(state));
       } catch (e) {
-        errors.add('Обложка ${entry.item.title}: $e');
+        errors.add('Обложка ${entry.item.title}: ${describeError(e)}');
       }
     }
     await local.setMeta(

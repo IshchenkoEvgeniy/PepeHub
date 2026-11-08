@@ -39,6 +39,7 @@ import 'reader_progress_panel.dart';
 import '../ui/app_theme.dart';
 import '../vocabulary/vocabulary_editor.dart';
 import '../vocabulary/vocabulary_repository.dart';
+import '../diagnostics/user_message.dart';
 
 typedef _PdfStoredState = ({
   Map<String, dynamic> position,
@@ -221,7 +222,9 @@ class _PdfReaderPageState extends State<PdfReaderPage>
           )
           .catchError((Object error) {
             if (mounted) {
-              setState(() => saveError = 'Индекс не сохранён: $error');
+              setState(
+                () => saveError = 'Индекс не сохранён: ${describeError(error)}',
+              );
             }
           });
     }
@@ -311,7 +314,9 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     } catch (error) {
       await tracker.close();
       if (mounted) {
-        setState(() => saveError = 'Статистика не сохранена: $error');
+        setState(
+          () => saveError = 'Статистика не сохранена: ${describeError(error)}',
+        );
       }
     }
   }
@@ -362,7 +367,11 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     length: (textIndex['length'] as num?)?.toInt() ?? 0,
     export: ReadingLog(widget.repository).export,
     onError: (e) {
-      if (mounted) setState(() => saveError = 'Статистика не сохранена: $e');
+      if (mounted) {
+        setState(
+          () => saveError = 'Статистика не сохранена: ${describeError(e)}',
+        );
+      }
     },
   );
   int get _lastLength =>
@@ -474,7 +483,11 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         )
         .catchError((Object e) {
           _lastQueuedPosition = null;
-          if (mounted) setState(() => saveError = 'Позиция не сохранена: $e');
+          if (mounted) {
+            setState(
+              () => saveError = 'Позиция не сохранена: ${describeError(e)}',
+            );
+          }
         });
     return writes;
   }
@@ -819,7 +832,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
             : 'Заметка сохранена',
       );
     } catch (e) {
-      _message('Не удалось сохранить заметку: $e');
+      _message('Не удалось сохранить заметку: ${describeError(e)}');
     }
   }
 
@@ -857,7 +870,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         ),
       );
     } catch (e) {
-      _message('Не удалось создать карточку: $e');
+      _message('Не удалось создать карточку: ${describeError(e)}');
     }
   }
 
@@ -1077,7 +1090,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
               controller.invalidate();
             })
             .catchError((Object e) {
-              _message('Не удалось показать выделение: $e');
+              _message('Не удалось показать выделение: ${describeError(e)}');
             })
             .whenComplete(() => loadingGlyphs.remove(pdfPage.pageNumber));
       }
@@ -1299,7 +1312,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         );
       });
     } catch (e) {
-      _message('Настройки не сохранены: $e');
+      _message('Настройки не сохранены: ${describeError(e)}');
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && ready && modeChanged) {
@@ -1382,7 +1395,10 @@ class _PdfReaderPageState extends State<PdfReaderPage>
       } catch (e) {
         // The original PDF and page-based progress remain usable without text.
         if (mounted) {
-          setState(() => saveError = 'Текстовая статистика PDF недоступна: $e');
+          setState(
+            () => saveError =
+                'Текстовая статистика PDF недоступна: ${describeError(e)}',
+          );
         }
       } finally {
         indexing = false;
@@ -1564,7 +1580,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         'zoom': lockedZoom,
       });
     } catch (e) {
-      _message('Настройка не сохранена: $e');
+      _message('Настройка не сохранена: ${describeError(e)}');
     }
   }
 

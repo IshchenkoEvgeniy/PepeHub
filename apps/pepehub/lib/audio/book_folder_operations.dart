@@ -9,6 +9,7 @@ import 'audio_roots.dart';
 import 'audio_folder.dart';
 import 'audio_catalog.dart';
 import 'audio_sidecar.dart';
+import '../diagnostics/user_message.dart';
 
 String binding(String root, String relative) =>
     'audio-folder:${sha256.convert(utf8.encode('$root#pepehub-book=${Uri.encodeComponent(relative)}'))}';
@@ -172,7 +173,7 @@ class BookFolderOperations {
       return await recover(bookId);
     } catch (e) {
       throw StateError(
-        '$e. Операция записана: откройте меню папки и нажмите «Проверить незавершённую операцию».',
+        '${describeError(e)}. Операция записана: откройте меню папки и нажмите «Проверить незавершённую операцию».',
       );
     }
   }
@@ -251,7 +252,7 @@ class BookFolderOperations {
         AudioFolder(target.title, [], root: target.path),
       );
     } catch (e) {
-      return 'Папка перемещена, база обновлена. Не удалось записать новый снимок: $e';
+      return 'Папка перемещена, база обновлена. Не удалось записать новый снимок: ${describeError(e)}';
     }
     return 'Папка перемещена. Главы, прогресс и закладки сохранены.';
   }

@@ -28,6 +28,7 @@ import 'video_annotation_editor.dart';
 import '../vocabulary/vocabulary_editor.dart';
 import '../vocabulary/vocabulary_repository.dart';
 import '../vocabulary/vocabulary_page.dart';
+import '../diagnostics/user_message.dart';
 
 class VideoPlayerPage extends StatefulWidget {
   final VideoRepository repository;
@@ -124,13 +125,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             );
           } catch (e) {
             if (mounted) {
-              setState(() => startupError = 'Видеоплеер не запустился: $e');
+              setState(
+                () => startupError =
+                    'Видеоплеер не запустился: ${describeError(e)}',
+              );
             }
           }
         }),
       );
     } catch (e) {
-      startupError = 'Видеоплеер не запустился: $e';
+      startupError = 'Видеоплеер не запустился: ${describeError(e)}';
     }
   }
 
@@ -162,7 +166,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось выполнить действие: $e')),
+          SnackBar(
+            content: Text('Не удалось выполнить действие: ${describeError(e)}'),
+          ),
         );
       }
     }
@@ -259,7 +265,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         setState(() => _leaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Не удалось сохранить просмотр. Повторите выход: $e'),
+            content: Text(
+              'Не удалось сохранить просмотр. Повторите выход: ${describeError(e)}',
+            ),
           ),
         );
       }

@@ -51,6 +51,18 @@ class LegacyArchiveCertificateShadow : ShadowApplicationPackageManager() {
 /** Exercises the native bridge, manifest and activity lifecycle on a host JVM. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [26, 35])
+class SignerRotationTest {
+    @Test fun acceptsTheSameSignerOrARotationThatVouchesForTheInstalledKey() {
+        val old = setOf("old"); val next = setOf("new")
+        assertTrue(sameOrRotatedSigner(old, old, emptySet()))
+        assertTrue(sameOrRotatedSigner(old, next, setOf("old", "new")))
+        assertFalse(sameOrRotatedSigner(old, next, emptySet()))
+        assertFalse(sameOrRotatedSigner(old, next, setOf("other", "new")))
+        // An APK still signed with the old key after the device rotated is rejected.
+        assertFalse(sameOrRotatedSigner(next, old, setOf("old")))
+    }
+}
+
 class UpdateChannelTest {
     private lateinit var activity: Activity
     private lateinit var channel: UpdateChannel

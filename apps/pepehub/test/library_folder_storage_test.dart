@@ -36,6 +36,22 @@ class _SlowFolderFiles extends LocalPeerFiles {
   }
 }
 
+class _CountingFolderFiles extends LocalPeerFiles {
+  int reads = 0;
+  _CountingFolderFiles(super.root);
+  @override
+  Future<String?> hash(String path) {
+    reads++;
+    return super.hash(path);
+  }
+
+  @override
+  Future<List<int>> read(String path, int offset, int count) {
+    reads++;
+    return super.read(path, offset, count);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory root, shared;
@@ -253,6 +269,32 @@ void main() {
       final after = await manifest();
       final old = before['documents'] as Map, next = after['documents'] as Map;
       expect(next.keys.where((key) => next[key] != old[key]), ['cards/$id']);
+    },
+  );
+
+  test(
+    'polling an unchanged folder reads no files; a new manifest is imported',
+    () async {
+      final a = device(), b = device();
+      await add(a, title: 'Первая');
+      final disk = _CountingFolderFiles(shared);
+      final storage = LibraryFolderStorage(a, fileSystem: (_) => disk);
+      addTearDown(storage.dispose);
+      await storage.connect(shared.path);
+      // The first poll confirms the manifest by content and remembers it.
+      expect(await storage.synchronize(), isFalse);
+      disk.reads = 0;
+      expect(await storage.synchronize(), isFalse);
+      expect(await storage.synchronize(), isFalse);
+      expect(disk.reads, 0);
+      expect(storage.error, isNull);
+
+      await b.folderStorage.connect(shared.path);
+      final added = await add(b, title: 'С другого устройства');
+      await b.folderStorage.synchronize();
+      expect(await storage.synchronize(), isTrue);
+      expect(disk.reads, greaterThan(0));
+      expect((await a.repository.entries()).keys, contains(added));
     },
   );
 
@@ -582,6 +624,9 @@ void main() {
             return null;
           case 'hash':
             return disk.hash(path!);
+          case 'stat':
+            final stamp = await disk.stamp(path!);
+            return stamp == 'missing' ? null : stamp;
           case 'read':
             return Uint8List.fromList(
               await disk.read(

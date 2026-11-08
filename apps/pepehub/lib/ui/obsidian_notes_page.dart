@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../library/library_service.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
+import '../diagnostics/user_message.dart';
 
 class ObsidianNotesPage extends StatefulWidget {
   final LibraryService library;
@@ -47,7 +48,7 @@ class _ObsidianNotesPageState extends State<ObsidianNotesPage> {
       await _load();
       await widget.library.reload();
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     }
   }
 

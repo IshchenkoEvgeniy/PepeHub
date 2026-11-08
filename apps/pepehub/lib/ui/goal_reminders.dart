@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../data/repository.dart';
 import '../notifications/reminder_scheduler.dart';
 import 'settings_components.dart';
+import '../diagnostics/user_message.dart';
 
 class GoalReminderPreferences {
   final bool enabled;
@@ -120,7 +121,7 @@ class _GoalReminderSettingsState extends State<GoalReminderSettings> {
       final saved = await GoalReminderPreferences.load(widget.repository);
       if (mounted) setState(() => value = saved);
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     }
   }
 
@@ -138,7 +139,9 @@ class _GoalReminderSettingsState extends State<GoalReminderSettings> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = 'Напоминание не сохранено: $e');
+      if (mounted) {
+        setState(() => error = 'Напоминание не сохранено: ${describeError(e)}');
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }

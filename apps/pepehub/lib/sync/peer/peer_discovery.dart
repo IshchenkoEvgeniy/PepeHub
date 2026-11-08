@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 import 'peer_wire.dart';
+import '../../diagnostics/error_log.dart';
 
 const peerDiscoveryPort = 42590;
 final peerDiscoveryGroup = InternetAddress('239.255.42.89');
@@ -174,7 +175,15 @@ class PeerDiscovery {
             try {
               socket.joinMulticast(peerDiscoveryGroup, network);
               _interfaces[key] = network;
-            } catch (_) {}
+            } catch (error, stack) {
+              // Broadcast still works; multicast on this interface does not.
+              ErrorLog.record(
+                error,
+                stack,
+                context: 'peer discovery: join ${network.name}',
+                once: 'peer-join:$key',
+              );
+            }
           }
         }
       }
@@ -191,7 +200,14 @@ class PeerDiscovery {
                 ),
               );
               socket.send(packet, peerDiscoveryGroup, listenPort);
-            } catch (_) {}
+            } catch (error, stack) {
+              ErrorLog.record(
+                error,
+                stack,
+                context: 'peer discovery: send via ${network.name}',
+                once: 'peer-send:${network.name}',
+              );
+            }
           }
         }
       }

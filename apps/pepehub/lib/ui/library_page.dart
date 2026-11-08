@@ -86,6 +86,7 @@ import 'library_data_page.dart';
 import 'library_card_actions.dart';
 import 'library_work_page.dart';
 import 'obsidian_library_page.dart';
+import '../diagnostics/user_message.dart';
 
 class LibraryPage extends StatefulWidget {
   final Repository repository;
@@ -211,7 +212,8 @@ class _LibraryPageState extends State<LibraryPage> {
     } catch (e) {
       if (mounted) {
         setState(
-          () => obsidianLibrary.error = 'Не удалось загрузить библиотеку: $e',
+          () => obsidianLibrary.error =
+              'Не удалось загрузить библиотеку: ${describeError(e)}',
         );
       }
     }
@@ -234,7 +236,9 @@ class _LibraryPageState extends State<LibraryPage> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Не удалось открыть полученную книгу: $error'),
+                content: Text(
+                  'Не удалось открыть полученную книгу: ${describeError(error)}',
+                ),
               ),
             );
           }
@@ -336,7 +340,8 @@ class _LibraryPageState extends State<LibraryPage> {
     } catch (e) {
       if (mounted) {
         setState(
-          () => obsidianLibrary.error = 'Не удалось обновить библиотеку: $e',
+          () => obsidianLibrary.error =
+              'Не удалось обновить библиотеку: ${describeError(e)}',
         );
       }
     } finally {
@@ -415,27 +420,21 @@ class _LibraryPageState extends State<LibraryPage> {
         _trashPurged = true;
         await BookTrash(widget.repository).purgeExpired();
       }
-      // File-less cards are counted on the shelf (see _statusCounts).
-      final unavailable =
-          (await hiddenFiles(widget.repository))
-              .where((f) => f.audio != readingSection && f.tab != 2)
-              .length +
-          (await BookTrash(
-            widget.repository,
-          ).list()).where((f) => f.audio != readingSection).length;
-      final coverMetadata = await widget.repository.metadataPrefixes([
+      final repo = widget.repository;
+      final assets = widget.assets;
+      // Independent reads start together: the database isolate runs them
+      // back to back instead of idling between sequential round trips.
+      final hiddenFuture = hiddenFiles(repo);
+      final trashFuture = BookTrash(repo).list();
+      final coverFuture = repo.metadataPrefixes([
         'audio-cover:',
         'audio-cover-hidden:',
       ]);
-      final allBooks = await widget.repository.shelfBooks(
-        audio: !readingSection,
-      );
-      final b = <LibraryRecord>[];
-      final deleted = readingSection
-          ? await ReadingBookVisibility(widget.repository).deletedIds()
-          : <String>{};
-      final overrides = <String, String>{};
-      final flags = await widget.repository.metadataPrefixes(
+      final booksFuture = repo.shelfBooks(audio: !readingSection);
+      final deletedFuture = readingSection
+          ? ReadingBookVisibility(repo).deletedIds()
+          : Future.value(<String>{});
+      final flagsFuture = repo.metadataPrefixes(
         readingSection
             ? [Repository.removedShelfBookPrefix, 'reading-library-hidden:']
             : [
@@ -446,6 +445,62 @@ class _LibraryPageState extends State<LibraryPage> {
                 'audio-user-hidden:',
               ],
       );
+      final conflictsFuture = showSync
+          ? repo.conflicts().then((rows) => rows.map((r) => r.data).toList())
+          : Future.value(<Map<String, dynamic>>[]);
+      final filesFuture =
+          assets?.shelfAssets(audio: !readingSection) ??
+          Future.value(<LocalAsset>[]);
+      final rootsFuture = assets == null
+          ? Future.value(<AudioRoot>[])
+          : readingSection
+          ? ReadingRoots(assets).list().then(
+              (list) => list
+                  .map(
+                    (r) => AudioRoot(r.key, {
+                      'root': r.path,
+                      'title': r.title,
+                      'bookIds': r.bookIds,
+                    }),
+                  )
+                  .toList(),
+            )
+          : AudioRoots(assets).list();
+      final defaultRootFuture = LibraryFolderPreference(
+        repo,
+        reading: readingSection,
+      ).load();
+      final summaryFuture = readingSection
+          ? Future.value(
+              <String, ({int? total, int? position, double speed})>{},
+            )
+          : AudioLibraryRepository(repo.db).bookSummaries();
+      // Attaches handlers to every read at once and rethrows the first error.
+      await Future.wait<Object?>([
+        hiddenFuture,
+        trashFuture,
+        coverFuture,
+        booksFuture,
+        deletedFuture,
+        flagsFuture,
+        conflictsFuture,
+        filesFuture,
+        rootsFuture,
+        defaultRootFuture,
+        summaryFuture,
+      ]);
+      // File-less cards are counted on the shelf (see _statusCounts).
+      final unavailable =
+          (await hiddenFuture)
+              .where((f) => f.audio != readingSection && f.tab != 2)
+              .length +
+          (await trashFuture).where((f) => f.audio != readingSection).length;
+      final coverMetadata = await coverFuture;
+      final allBooks = await booksFuture;
+      final b = <LibraryRecord>[];
+      final deleted = await deletedFuture;
+      final overrides = <String, String>{};
+      final flags = await flagsFuture;
       for (final book in allBooks) {
         if (flags['${Repository.removedShelfBookPrefix}${book.id}'] == '1') {
           continue;
@@ -466,57 +521,60 @@ class _LibraryPageState extends State<LibraryPage> {
           b.add(book);
         }
       }
-      final c = showSync
-          ? (await widget.repository.conflicts()).map((r) => r.data).toList()
-          : <Map<String, dynamic>>[];
-      final files =
-          await widget.assets?.shelfAssets(audio: !readingSection) ??
-          <LocalAsset>[];
+      final c = await conflictsFuture;
+      final files = await filesFuture;
       final sources = ReadingShelfSources(files);
-      if (readingSection) await sources.load(widget.repository);
-      final rootList = widget.assets == null
-          ? <AudioRoot>[]
-          : readingSection
-          ? (await ReadingRoots(widget.assets!).list())
-                .map(
-                  (r) => AudioRoot(r.key, {
-                    'root': r.path,
-                    'title': r.title,
-                    'bookIds': r.bookIds,
-                  }),
-                )
-                .toList()
-          : await AudioRoots(widget.assets!).list();
-      final defaultRoot = await LibraryFolderPreference(
-        widget.repository,
-        reading: readingSection,
-      ).load();
-      final summary = readingSection
-          ? <String, ({int? total, int? position, double speed})>{}
-          : await AudioLibraryRepository(widget.repository.db).bookSummaries();
+      final rootList = await rootsFuture;
+      final defaultRoot = await defaultRootFuture;
+      final summary = await summaryFuture;
       if (readingSection) {
         try {
-          await (_pdfModeMigration ??= migrateLegacyPdfMode(widget.repository));
+          await (_pdfModeMigration ??= migrateLegacyPdfMode(repo));
         } catch (_) {
           /* The listing below tolerates the legacy value anyway. */
         }
-        final positions = await readingLibrary.entries('reader:');
-        final index = await readingLibrary.shelfIndex(positions);
-        final prefs = await readingLibrary.entries('reading-book:');
-        final sourcePaths = await readingLibrary.entries(
+        final sourcesLoad = sources.load(repo);
+        final positionsFuture = readingLibrary.entries('reader:');
+        final indexFuture = positionsFuture.then(readingLibrary.shelfIndex);
+        final prefsFuture = readingLibrary.entries('reading-book:');
+        final sourcePathsFuture = readingLibrary.entries(
           'reading-source-path:',
         );
-        final groups = await readingLibrary.entries('reading-collection:');
-        final dates = await readingLibrary.entries('reading-dates:');
-        final order = await widget.repository.meta('reading-sort') ?? 'title';
-        final reverse = await widget.repository.meta('reading-sort-reverse');
-        final view = await widget.repository.meta('reading-shelf-view');
-        var speeds = <String, ({int ms, int chars})>{};
-        try {
-          speeds = await readingLibrary.speedSamples();
-        } catch (_) {
-          /* Time estimates are optional; the shelf still lists books. */
-        }
+        final groupsFuture = readingLibrary.entries('reading-collection:');
+        final datesFuture = readingLibrary.entries('reading-dates:');
+        final orderFuture = repo.meta('reading-sort');
+        final reverseFuture = repo.meta('reading-sort-reverse');
+        final viewFuture = repo.meta('reading-shelf-view');
+        // Time estimates are optional; the shelf still lists books.
+        final speedsFuture = readingLibrary
+            .speedSamples()
+            .then<Map<String, ({int ms, int chars})>>(
+              (value) => value,
+              onError: (Object _) => <String, ({int ms, int chars})>{},
+            );
+        await Future.wait<Object?>([
+          sourcesLoad,
+          positionsFuture,
+          indexFuture,
+          prefsFuture,
+          sourcePathsFuture,
+          groupsFuture,
+          datesFuture,
+          orderFuture,
+          reverseFuture,
+          viewFuture,
+          speedsFuture,
+        ]);
+        final positions = await positionsFuture;
+        final index = await indexFuture;
+        final prefs = await prefsFuture;
+        final sourcePaths = await sourcePathsFuture;
+        final groups = await groupsFuture;
+        final dates = await datesFuture;
+        final order = await orderFuture ?? 'title';
+        final reverse = await reverseFuture;
+        final view = await viewFuture;
+        final speeds = await speedsFuture;
         if (mounted && reading == readingSection) {
           effectiveReadingInfo = {
             for (final book in b)
@@ -548,14 +606,29 @@ class _LibraryPageState extends State<LibraryPage> {
           if (!groups.containsKey(collectionFilter)) collectionFilter = null;
         }
       } else {
-        final prefs = await readingLibrary.entries('audio-book:');
-        final groups = await readingLibrary.entries('audio-collection:');
-        final sourcePaths = await readingLibrary.entries('audio-source-path:');
-        final order = await widget.repository.meta('audio-sort') ?? 'title';
-        final reverse = await widget.repository.meta('audio-sort-reverse');
-        final view = await widget.repository.meta('audio-shelf-view');
-        final recent = await AudioLibraryRepository(widget.repository.db)
-            .lastPlayed();
+        final prefsFuture = readingLibrary.entries('audio-book:');
+        final groupsFuture = readingLibrary.entries('audio-collection:');
+        final sourcePathsFuture = readingLibrary.entries('audio-source-path:');
+        final orderFuture = repo.meta('audio-sort');
+        final reverseFuture = repo.meta('audio-sort-reverse');
+        final viewFuture = repo.meta('audio-shelf-view');
+        final recentFuture = AudioLibraryRepository(repo.db).lastPlayed();
+        await Future.wait<Object?>([
+          prefsFuture,
+          groupsFuture,
+          sourcePathsFuture,
+          orderFuture,
+          reverseFuture,
+          viewFuture,
+          recentFuture,
+        ]);
+        final prefs = await prefsFuture;
+        final groups = await groupsFuture;
+        final sourcePaths = await sourcePathsFuture;
+        final order = await orderFuture ?? 'title';
+        final reverse = await reverseFuture;
+        final view = await viewFuture;
+        final recent = await recentFuture;
         if (mounted && reading == readingSection) {
           audioPrefs = prefs;
           audioCollections = groups;
@@ -622,7 +695,7 @@ class _LibraryPageState extends State<LibraryPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          message = 'Ошибка чтения: $e';
+          message = 'Ошибка чтения: ${describeError(e)}';
           loading = false;
         });
       }
@@ -638,7 +711,9 @@ class _LibraryPageState extends State<LibraryPage> {
       }
       if (mounted) await _reload();
     } catch (e) {
-      if (mounted) setState(() => message = 'Ошибка индексирования: $e');
+      if (mounted) {
+        setState(() => message = 'Ошибка индексирования: ${describeError(e)}');
+      }
     } finally {
       if (mounted) setState(() => indexing = false);
     }
@@ -1621,7 +1696,11 @@ class _LibraryPageState extends State<LibraryPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось сохранить вид полки: $e')),
+          SnackBar(
+            content: Text(
+              'Не удалось сохранить вид полки: ${describeError(e)}',
+            ),
+          ),
         );
       }
     } finally {
@@ -2724,7 +2803,9 @@ class _LibraryPageState extends State<LibraryPage> {
                   if (!mounted) return;
                   messenger.showSnackBar(
                     SnackBar(
-                      content: Text('Не удалось скопировать путь: $error'),
+                      content: Text(
+                        'Не удалось скопировать путь: ${describeError(error)}',
+                      ),
                     ),
                   );
                 }
@@ -2812,7 +2893,11 @@ class _LibraryPageState extends State<LibraryPage> {
       } catch (error) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Не удалось добавить в библиотеку: $error')),
+            SnackBar(
+              content: Text(
+                'Не удалось добавить в библиотеку: ${describeError(error)}',
+              ),
+            ),
           );
         }
       }

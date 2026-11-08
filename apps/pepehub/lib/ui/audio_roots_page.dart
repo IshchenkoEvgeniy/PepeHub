@@ -16,6 +16,7 @@ import 'pepe_widgets.dart';
 import 'reading_roots_page.dart' show readableFolderPath;
 import 'shelf_book_details.dart';
 import 'shelf_components.dart';
+import '../diagnostics/user_message.dart';
 
 /// «1 аудиокнига», «3 аудиокниги», «12 аудиокниг».
 String audiobookCount(int n) {
@@ -121,7 +122,7 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
       if (mounted) {
         setState(() {
           loading = false;
-          error = 'Не удалось загрузить папки: $e';
+          error = 'Не удалось загрузить папки: ${describeError(e)}';
           retry = load;
         });
       }
@@ -138,7 +139,7 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
       await action();
       retry = null;
     } catch (e) {
-      error = '$e';
+      error = describeError(e);
       retry = () => _run(action);
     } finally {
       await load();
@@ -170,7 +171,7 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
         'Обновление отменено. Библиотека не изменилась.',
       );
     } catch (e) {
-      error = 'Не удалось обновить папку: $e';
+      error = 'Не удалось обновить папку: ${describeError(e)}';
       retry = () => _scan(title, work);
       outcome = FolderScanOutcome(error, failed: true);
     } finally {
@@ -195,7 +196,7 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
       folder = await pickAudioFolder();
     } catch (e) {
       setState(() {
-        error = 'Не удалось открыть папку: $e';
+        error = 'Не удалось открыть папку: ${describeError(e)}';
         retry = _connect;
       });
       return;
@@ -258,7 +259,9 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
         try {
           folder = await pickAudioFolder();
         } catch (e) {
-          setState(() => error = 'Не удалось открыть папку: $e');
+          setState(
+            () => error = 'Не удалось открыть папку: ${describeError(e)}',
+          );
           return;
         }
         if (folder == null || !mounted) return;
@@ -629,9 +632,9 @@ class _AudioRootsPageState extends State<AudioRootsPage> {
                           onPressed: busy || scanning
                               ? null
                               : () => _run(
-                                  () => BookTrash(
-                                    widget.assets.repository,
-                                  ).restore(trashedIds),
+                                  () =>
+                                      BookTrash(widget.assets.repository)
+                                          .restore(trashedIds),
                                 ),
                           child: const Text('Вернуть'),
                         ),

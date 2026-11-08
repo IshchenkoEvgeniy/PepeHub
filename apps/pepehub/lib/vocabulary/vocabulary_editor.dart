@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../ui/pepe_widgets.dart';
 import 'vocabulary_repository.dart';
+import '../diagnostics/user_message.dart';
 
 class VocabularyEditor extends StatefulWidget {
   final VocabularyRepository repository;
@@ -135,7 +136,7 @@ class VocabularyEditorState extends State<VocabularyEditor> {
       if (mounted) {
         setState(() {
           saving = false;
-          _error = '$error';
+          _error = describeError(error);
         });
       }
     }

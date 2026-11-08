@@ -7,6 +7,7 @@ import '../../data/repository.dart' show uuid;
 import 'peer_files.dart';
 import 'peer_models.dart';
 import 'peer_service.dart';
+import '../../diagnostics/user_message.dart';
 
 class PeerFolderPreview {
   final int files, bytes;
@@ -130,7 +131,11 @@ class _PeerFolderSetupPageState extends State<PeerFolderSetupPage> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = 'Не удалось проверить папку: $e');
+      if (mounted) {
+        setState(
+          () => error = 'Не удалось проверить папку: ${describeError(e)}',
+        );
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -177,7 +182,7 @@ class _PeerFolderSetupPageState extends State<PeerFolderSetupPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           busy = false;
         });
       }

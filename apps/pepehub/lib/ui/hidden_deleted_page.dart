@@ -12,6 +12,7 @@ import 'audio_roots_page.dart';
 import 'book_delete_dialog.dart';
 import 'library_card_actions.dart';
 import 'reading_roots_page.dart';
+import '../diagnostics/user_message.dart';
 
 /// One row of the trash: a removed book/audiobook or a library card.
 class _TrashRow {
@@ -108,7 +109,7 @@ class _HiddenDeletedPageState extends State<HiddenDeletedPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           loading = false;
         });
       }

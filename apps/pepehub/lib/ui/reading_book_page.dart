@@ -17,6 +17,8 @@ import 'pepe_widgets.dart';
 import 'reading_plan_page.dart';
 import 'reading_statistics_page.dart';
 import 'shelf_components.dart';
+import '../diagnostics/error_log.dart';
+import '../diagnostics/user_message.dart';
 
 class ReadingBookPage extends StatefulWidget {
   final Repository repository;
@@ -99,7 +101,7 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           loading = false;
         });
       }
@@ -139,7 +141,9 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
         codec.dispose();
       }
     } catch (e) {
-      if (mounted) setState(() => error = 'Обложка не выбрана: $e');
+      if (mounted) {
+        setState(() => error = 'Обложка не выбрана: ${describeError(e)}');
+      }
     }
   }
 
@@ -204,7 +208,7 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
         });
       }
     } finally {
@@ -242,7 +246,10 @@ class _ReadingBookPageState extends State<ReadingBookPage> {
           _totals = analysis.totals;
         });
       }
-    } catch (_) {}
+    } catch (error, stack) {
+      // The plan forecast is optional on the book page.
+      ErrorLog.record(error, stack, context: 'reading plan forecast');
+    }
   }
 
   void _openStatistics() => Navigator.push(

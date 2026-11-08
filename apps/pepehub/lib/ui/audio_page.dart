@@ -14,6 +14,7 @@ import 'pepe_widgets.dart';
 import 'shelf_components.dart';
 import '../vocabulary/vocabulary_editor.dart';
 import '../vocabulary/vocabulary_repository.dart';
+import '../diagnostics/user_message.dart';
 
 String audioTime(Duration duration) {
   final seconds = duration.inSeconds;
@@ -132,7 +133,7 @@ class _AudioPageState extends State<AudioPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+            .showSnackBar(SnackBar(content: Text(describeError(e))));
       }
     }
   }
@@ -167,7 +168,7 @@ class _AudioPageState extends State<AudioPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+            .showSnackBar(SnackBar(content: Text(describeError(e))));
       }
     }
   }
@@ -208,8 +209,9 @@ class _AudioPageState extends State<AudioPage> {
                           await controller.sidecar.update(book, force: true);
                         } catch (e) {
                           if (mounted) {
-                            ScaffoldMessenger.of(this.context)
-                                .showSnackBar(SnackBar(content: Text('$e')));
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              SnackBar(content: Text(describeError(e))),
+                            );
                           }
                         }
                       },
@@ -314,7 +316,11 @@ class _AudioPageState extends State<AudioPage> {
                                                 ScaffoldMessenger.of(
                                                   this.context,
                                                 ).showSnackBar(
-                                                  SnackBar(content: Text('$e')),
+                                                  SnackBar(
+                                                    content: Text(
+                                                      describeError(e),
+                                                    ),
+                                                  ),
                                                 );
                                               }
                                             }
@@ -337,7 +343,7 @@ class _AudioPageState extends State<AudioPage> {
                                       ).showSnackBar(
                                         SnackBar(
                                           content: Text(
-                                            'Закладка удалена локально, снимок не обновлён: $e',
+                                            'Закладка удалена локально, снимок не обновлён: ${describeError(e)}',
                                           ),
                                         ),
                                       );

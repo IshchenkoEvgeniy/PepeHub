@@ -25,6 +25,7 @@ import '../data/repository.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
 import 'statistics_management_page.dart';
+import '../diagnostics/user_message.dart';
 
 String statTime(int ms) {
   final minutes = ms ~/ 60000;
@@ -88,7 +89,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
     try {
       await widget.controller?.flushJournal();
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     }
     if (mounted) await load();
   }
@@ -249,7 +250,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
       }
     } catch (e) {
       _historyDirty = _replaceHistory = true;
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       busy = false;
       if (mounted &&
@@ -273,7 +274,9 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
       final saved = await ListeningGoals.load(widget.repository);
       if (mounted) setState(() => goals = saved);
     } catch (e) {
-      if (mounted) setState(() => error = 'Не удалось обновить цели: $e');
+      if (mounted) {
+        setState(() => error = 'Не удалось обновить цели: ${describeError(e)}');
+      }
     }
   }
 
@@ -305,7 +308,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+            .showSnackBar(SnackBar(content: Text(describeError(e))));
       }
     }
   }

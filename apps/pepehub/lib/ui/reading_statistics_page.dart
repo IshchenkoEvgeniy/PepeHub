@@ -21,6 +21,7 @@ import 'pepe_widgets.dart';
 import 'shelf_components.dart';
 import 'statistics_range.dart';
 import 'statistics_management_page.dart';
+import '../diagnostics/user_message.dart';
 
 class ReadingStatisticsPage extends StatefulWidget {
   final Repository repository;
@@ -101,7 +102,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
     } catch (e) {
       if (mounted && request == _calculation) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           loading = false;
         });
       }
@@ -213,7 +214,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           loading = false;
         });
       }
@@ -233,7 +234,11 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
         await _load();
       }
     } catch (e) {
-      if (mounted) setState(() => error = 'Не удалось записать журнал: $e');
+      if (mounted) {
+        setState(
+          () => error = 'Не удалось записать журнал: ${describeError(e)}',
+        );
+      }
     } finally {
       if (mounted) setState(() => savingJournal = false);
     }
@@ -252,7 +257,9 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
         setState(() => goal = (int.tryParse(saved ?? '') ?? 30).clamp(0, 1440));
       }
     } catch (e) {
-      if (mounted) setState(() => error = 'Не удалось обновить цель: $e');
+      if (mounted) {
+        setState(() => error = 'Не удалось обновить цель: ${describeError(e)}');
+      }
     }
   }
 

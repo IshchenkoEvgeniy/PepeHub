@@ -10,6 +10,7 @@ import 'book_activity_summary.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
 import 'statistics_management_page.dart';
+import '../diagnostics/user_message.dart';
 
 String activityTime(num ms) {
   final seconds = (ms / 1000).round(), minutes = seconds ~/ 60;
@@ -117,7 +118,7 @@ class _ActivityPageState extends State<ActivityPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           loading = false;
         });
       }
@@ -147,7 +148,7 @@ class _ActivityPageState extends State<ActivityPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+            .showSnackBar(SnackBar(content: Text(describeError(e))));
       }
       return false;
     }
