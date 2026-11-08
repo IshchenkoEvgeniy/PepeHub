@@ -163,4 +163,33 @@ void main() {
       }
     },
   );
+
+  test(
+    'removing from the media library keeps files and can be undone',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final videos = VideoRepository(Repository(db));
+      final course = await videos.addSources(
+        title: 'Course',
+        root: 'course-root',
+        sources: [
+          const VideoSourceDraft('a.mp4', 'A'),
+          const VideoSourceDraft('b.mp4', 'B'),
+        ],
+      );
+      final other = await videos.addSources(
+        title: 'Single',
+        sources: [const VideoSourceDraft('c.mp4', 'C')],
+      );
+      final removed = await videos.removeItem(course.id);
+      expect(removed, hasLength(2));
+      expect((await videos.items()).map((i) => i.id), [other.id]);
+      expect(await videos.lessons(itemId: course.id), isEmpty);
+      expect(await videos.lessons(itemId: other.id), hasLength(1));
+      await videos.restoreItem(course.id, removed);
+      expect((await videos.items()).map((i) => i.id), contains(course.id));
+      expect(await videos.lessons(itemId: course.id), hasLength(2));
+    },
+  );
 }

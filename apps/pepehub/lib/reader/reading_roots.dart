@@ -2,16 +2,25 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../audio/audio_folder.dart';
 import '../media/asset_store.dart';
+import '../media/folder_scan_progress.dart';
+export '../media/folder_scan_progress.dart';
 import '../media/verified_stream_copy.dart';
 import '../media/library_folder_preference.dart';
 import '../media/library_recovery.dart';
 import '../data/repository.dart';
+import '../library/book_trash.dart';
 import 'book_formats.dart';
 import 'reading_book_visibility.dart';
+
+// Folder scans share one progress model with audiobook folders.
+typedef ReadingScanCancelled = FolderScanCancelled;
+typedef ReadingScanProgress = FolderScanProgress;
+ValueNotifier<FolderScanProgress?> get activeReadingScan => activeFolderScan;
 
 class ReadingRoot {
   final String key, path, title;
@@ -81,9 +90,25 @@ class ReadingRoots {
     assets.repository.notifyExternalChange();
   }
 
-  Future<ReadingRoot> refresh(ReadingRoot root) => connectFromScan(root.path);
-  Future<ReadingRoot> connectFromScan(String path) async =>
-      connect(await rescanAudioFolder(path, books: true), skipUnreadable: true);
+  Future<ReadingRoot> refresh(
+    ReadingRoot root, {
+    ReadingScanProgress? progress,
+  }) => connectFromScan(root.path, progress: progress);
+  Future<ReadingRoot> connectFromScan(
+    String path, {
+    ReadingScanProgress? progress,
+  }) async {
+    progress?.update(
+      phase: 'Поиск файлов',
+      done: 0,
+      total: 0,
+      cancellable: true,
+    );
+    final folder = await rescanAudioFolder(path, books: true);
+    progress?.check();
+    return connect(folder, skipUnreadable: true, progress: progress);
+  }
+
   Future<void> disconnect(ReadingRoot root) async {
     await assets.repository.db.transaction(() async {
       await LibraryFolderPreference(
@@ -131,6 +156,10 @@ class ReadingRoots {
     AudioFolder folder, {
     Map<String, ({String hash, int bytes})> verified = const {},
     bool skipUnreadable = false,
+    ReadingScanProgress? progress,
+    // Choosing a folder is an explicit add: its books leave the trash.
+    // A plain refresh keeps the user's removals.
+    bool restoreRemoved = false,
   }) async {
     final path = folder.root!;
     final key = 'reading-library-root:${sha256.convert(utf8.encode(path))}';
@@ -141,7 +170,19 @@ class ReadingRoots {
     final scannedHashes = <String>{};
     final candidates =
         <({String name, String path, String format, String hash, int size})>[];
-    for (final file in folder.files) {
+    final total = folder.files.length;
+    progress?.update(
+      phase: 'Проверка файлов',
+      done: 0,
+      total: total,
+      cancellable: true,
+    );
+    for (final (index, file) in folder.files.indexed) {
+      // Hashing is the slow part; cancelling here leaves the library untouched.
+      progress?.check();
+      if (progress != null && (index % 10 == 0 || index == total - 1)) {
+        progress.update(done: index);
+      }
       try {
         final format = bookFormat(file.name);
         final declaredSize = await file.length();
@@ -192,6 +233,8 @@ class ReadingRoots {
         warnings.add('${file.name}: $e');
       }
     }
+    progress?.check();
+    progress?.update(phase: 'Сохранение', done: total, cancellable: false);
     await assets.repository.db.transaction(() async {
       final previous = await assets.repository.meta(key);
       if (previous != null) {
@@ -293,6 +336,16 @@ class ReadingRoots {
         }),
       );
     });
+    if (restoreRemoved && present.isNotEmpty) {
+      final trashed = await assets.repository.metadataPrefixes([
+        Repository.removedShelfBookPrefix,
+      ]);
+      await BookTrash(assets.repository).restore(
+        present.where(
+          (id) => trashed['${Repository.removedShelfBookPrefix}$id'] == '1',
+        ),
+      );
+    }
     try {
       await recoverReadingRoot(assets, path, ids);
     } finally {

@@ -68,33 +68,39 @@ void main() {
         ),
         findsOneWidget,
       );
-      await tester.ensureVisible(
-        find.byKey(const ValueKey('status-tab:remote')),
+      expect(find.byKey(const ValueKey('status-tab:remote')), findsNothing);
+      final link = find.byKey(const ValueKey('open-unavailable'));
+      expect(
+        find.descendant(of: link, matching: find.textContaining(': 1')),
+        findsOneWidget,
       );
-      await tester.tap(find.byKey(const ValueKey('status-tab:remote')));
+      await tester.ensureVisible(link);
+      await tester.tap(link);
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('book-card:remote-card')),
-        200,
-        scrollable: find.byType(Scrollable).first,
+      await tester.ensureVisible(find.byKey(const ValueKey('hidden-tab:2')));
+      await tester.tap(find.byKey(const ValueKey('hidden-tab:2')));
+      await tester.pumpAndSettle();
+      final row = find.byKey(const ValueKey('hidden-row:remote-card'));
+      expect(row, findsOneWidget);
+      await tester.tap(
+        find.descendant(of: row, matching: find.byTooltip('Удалить…')),
       );
-      await tester.tap(find.byKey(const ValueKey('book-card:remote-card')));
       await tester.pumpAndSettle();
-      expect(find.text('Источник и файл'), findsOneWidget);
-      expect(find.textContaining('Books/Remote.epub'), findsOneWidget);
-      expect(find.textContaining('My phone'), findsOneWidget);
-      await tester.tap(find.text('Закрыть'));
+      // No file here, so the only choice is the trash.
+      expect(find.text('Вместе с файлом'), findsNothing);
+      await tester.tap(find.text('В корзину'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Выбрать видимые книги'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Действия с выбранными'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Убрать из списка без удаления файлов'));
-      await tester.pumpAndSettle();
-      expect(await repo.meta('reading-library-hidden:remote-card'), '1');
+      expect(await repo.meta('book-shelf-removed:remote-card'), '1');
       expect((await repo.record('remote-card'))!.deleted, false);
       expect(await repo.meta('reading-note:keep'), contains('Keep this note'));
       expect(await repo.records('book'), hasLength(2));
+      await tester.ensureVisible(find.byKey(const ValueKey('hidden-tab:3')));
+      await tester.tap(find.byKey(const ValueKey('hidden-tab:3')));
+      await tester.pumpAndSettle();
+      expect(find.text('Remote book'), findsOneWidget);
+      await tester.tap(find.byTooltip('Вернуть'));
+      await tester.pumpAndSettle();
+      expect(await repo.meta('book-shelf-removed:remote-card'), isNull);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();

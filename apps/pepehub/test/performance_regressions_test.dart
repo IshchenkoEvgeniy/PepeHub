@@ -312,7 +312,7 @@ void main() {
             );
             await ready(
               tester,
-              () => find.text('Пройдено материала').evaluate().isNotEmpty,
+              () => find.text('Текущая серия').evaluate().isNotEmpty,
             );
             final initialReads = reads();
             expect(initialReads, 1);

@@ -7,6 +7,7 @@ import '../media/library_folder_preference.dart';
 import '../media/library_recovery.dart';
 import 'audio_catalog.dart';
 import 'audio_folder.dart';
+import '../media/folder_scan_progress.dart';
 
 String audioRootKey(String root) =>
     'audio-library-root:${sha256.convert(utf8.encode(root))}';
@@ -94,8 +95,16 @@ class AudioRoots {
   Future<RootRefreshResult> refresh(
     AudioRoot root, {
     AudioFolder? replacement,
+    FolderScanProgress? progress,
   }) async {
+    progress?.update(
+      phase: 'Поиск файлов',
+      done: 0,
+      total: 0,
+      cancellable: true,
+    );
     final scan = replacement ?? await rescanAudioFolder(root.path);
+    progress?.check();
     final newKey = audioRootKey(scan.root!);
     if (newKey != root.key && (await list()).any((r) => r.key == newKey)) {
       throw StateError('Эта папка уже подключена');
@@ -136,8 +145,18 @@ class AudioRoots {
     var added = 0, updated = 0, errors = 0;
     final ids = {...root.bookIds}, seen = <String>{}, warnings = <String>[];
     final repo = assets.repository;
+    progress?.update(
+      phase: 'Обработка книг',
+      done: 0,
+      total: drafts.length,
+      doneLabel: 'Обработано',
+      unit: 'книг',
+    );
     await repo.db.transaction(() async {
-      for (final draft in drafts) {
+      for (final (index, draft) in drafts.indexed) {
+        // Cancelling rolls the whole transaction back: nothing is changed.
+        progress?.check();
+        progress?.update(done: index);
         String source(String base) =>
             draft.relativeFolder.isEmpty && drafts.length == 1
             ? base
@@ -193,6 +212,12 @@ class AudioRoots {
           '${book?.title ?? id}: не найдена; карточка и прогресс сохранены.',
         );
       }
+      progress?.check();
+      progress?.update(
+        phase: 'Сохранение',
+        done: drafts.length,
+        cancellable: false,
+      );
       // Keep the old root intact if relocation would strand known books.
       if (newKey != root.key && warnings.isNotEmpty) {
         throw StateError('Замена пути отменена: ${warnings.join('\n')}');

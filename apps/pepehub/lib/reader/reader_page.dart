@@ -518,16 +518,9 @@ class _ReaderPageState extends State<ReaderPage>
 
   void _position(int value) {
     if (value == offset) return;
-    final atPin =
-        pinnedChapter?.chapter == chapter && pinnedChapter?.offset == offset;
     settledMoves.add(document!.starts[chapter] + value);
     offset = value;
     _notifyPosition();
-    if (atPin !=
-        (pinnedChapter?.chapter == chapter &&
-            pinnedChapter?.offset == offset)) {
-      setState(() {});
-    }
     debounce?.cancel();
     debounce = Timer(const Duration(milliseconds: 300), _save);
   }
@@ -536,17 +529,13 @@ class _ReaderPageState extends State<ReaderPage>
     final place = flow.locate(absolute);
     final local = place.offset.clamp(0, document!.texts[place.chapter].length);
     if (place.chapter == chapter && local == offset) return;
-    final atPin =
-        pinnedChapter?.chapter == chapter && pinnedChapter?.offset == offset;
+    // The pinned-chapter chip depends on the chapter, not the exact offset.
+    final chapterChanged = place.chapter != chapter;
     settledMoves.add(document!.starts[place.chapter] + local);
     chapter = place.chapter;
     offset = local;
     _notifyPosition();
-    if (atPin !=
-        (pinnedChapter?.chapter == chapter &&
-            pinnedChapter?.offset == offset)) {
-      setState(() {});
-    }
+    if (chapterChanged && pinnedChapter != null) setState(() {});
     debounce?.cancel();
     debounce = Timer(const Duration(milliseconds: 300), _save);
   }
@@ -1313,9 +1302,10 @@ class _ReaderPageState extends State<ReaderPage>
       'compact',
     ].contains(preferences.mode);
     final flow = wholeBookFlow ? _flowFor(d) : null;
+    // Offer the way back only from another chapter: reading on inside the
+    // pinned chapter must not raise a chip over the text.
     final pinnedAway =
-        pinnedChapter != null &&
-        (pinnedChapter!.chapter != chapter || pinnedChapter!.offset != offset);
+        pinnedChapter != null && pinnedChapter!.chapter != chapter;
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
@@ -1701,7 +1691,10 @@ class _ReaderPageState extends State<ReaderPage>
                                                     onPressed: _returnFromLink,
                                                   ),
                                                 if (pinnedAway)
-                                                  ActionChip(
+                                                  InputChip(
+                                                    key: const ValueKey(
+                                                      'pinned-chapter-chip',
+                                                    ),
                                                     avatar: const Icon(
                                                       Icons.push_pin,
                                                       size: 18,
@@ -1711,6 +1704,10 @@ class _ReaderPageState extends State<ReaderPage>
                                                     ),
                                                     onPressed:
                                                         _returnToPinnedChapter,
+                                                    onDeleted:
+                                                        _toggleChapterPin,
+                                                    deleteButtonTooltipMessage:
+                                                        'Открепить главу',
                                                   ),
                                               ],
                                             ),

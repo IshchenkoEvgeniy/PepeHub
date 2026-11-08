@@ -10,10 +10,8 @@ import 'package:pepehub/reader/reading_book_actions.dart';
 import 'package:pepehub/reader/reading_book_visibility.dart';
 import 'package:pepehub/reader/reading_library.dart';
 import 'package:pepehub/reader/reading_roots.dart';
-import 'package:pepehub/ui/reading_hidden_books_page.dart';
 
 import 'peer_sync_test.dart' show ReplicaFixture, deviceA;
-import 'video_player_tools_widget_test.dart' show ready;
 
 Future<(ReplicaFixture, AssetStore, LocalAsset, File)> prepare() async {
   final fixture = ReplicaFixture(deviceA);
@@ -160,47 +158,24 @@ void main() {
           findsOneWidget,
         );
         expect(find.byKey(ValueKey('book-card:${book.bookId}')), findsNothing);
-        final deleted = find.byKey(const ValueKey('status-tab:deleted'));
-        await tester.ensureVisible(deleted);
-        await tester.tap(deleted);
-        await tester.pumpAndSettle();
-        final card = find.byKey(ValueKey('book-card:${book.bookId}'));
-        await tester.scrollUntilVisible(
-          card,
-          180,
-          scrollable: find.byType(Scrollable).first,
+        // A missing file leaves the shelf for «Скрытые и недоступные».
+        expect(find.byKey(const ValueKey('status-tab:deleted')), findsNothing);
+        final link = find.byKey(const ValueKey('open-unavailable'));
+        expect(
+          find.descendant(of: link, matching: find.textContaining(': 1')),
+          findsOneWidget,
         );
-        expect(find.text('Файл удалён'), findsOneWidget);
-        expect(tester.takeException(), isNull);
-        await Scrollable.ensureVisible(tester.element(card), alignment: .5);
+        await tester.ensureVisible(link);
+        await tester.tap(link);
         await tester.pumpAndSettle();
-        await tester.tap(card);
-        await tester.pumpAndSettle();
-        expect(find.text('Файл книги удалён'), findsOneWidget);
-        expect(find.text('Добавить файл'), findsOneWidget);
-        await tester.tap(find.text('Закрыть'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byTooltip('Действия с книгой').first);
-        await tester.pumpAndSettle();
-        expect(find.text('Добавить файл заново'), findsOneWidget);
-        expect(find.text('Удалить файл книги…'), findsNothing);
-        if (find.text('Карточка книги').evaluate().isEmpty) {
-          await tester.tap(find.text('Книга и коллекции'));
-          await tester.pumpAndSettle();
-        }
-        await tester.ensureVisible(find.text('Карточка книги'));
-        await tester.tap(find.text('Карточка книги'));
-        await tester.pump();
-        await ready(
-          tester,
-          () => find.text('Сохранить карточку').evaluate().isNotEmpty,
+        expect(find.text('Скрытые и недоступные'), findsOneWidget);
+        // Opens on the first section that has something.
+        expect(find.text('Файл не найден 1'), findsOneWidget);
+        expect(
+          find.byKey(ValueKey('hidden-row:${book.bookId}')),
+          findsOneWidget,
         );
         expect(tester.takeException(), isNull);
-        await tester.pumpWidget(
-          MaterialApp(home: ReadingHiddenBooksPage(assets: assets)),
-        );
-        await tester.pumpAndSettle();
-        expect(find.text('Убранных книг нет'), findsOneWidget);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
       },

@@ -11,6 +11,7 @@ import 'package:pepehub/audio/audio_folder.dart';
 import 'package:pepehub/audio/audio_roots.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
+import 'package:pepehub/library/book_trash.dart';
 import 'package:pepehub/library/hidden_files.dart';
 import 'package:pepehub/library/library_exchange.dart';
 import 'package:pepehub/library/library_service.dart';
@@ -369,30 +370,26 @@ void main() {
       expect(find.byType(ListTile).evaluate().length, lessThan(25));
       await tester.enterText(find.byType(TextField), 'Pair');
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Корзина'));
-      await tester.tap(find.text('Корзина'));
+      await tester.ensureVisible(find.byKey(const ValueKey('hidden-tab:3')));
+      await tester.tap(find.byKey(const ValueKey('hidden-tab:3')));
       await tester.pumpAndSettle();
       expect(
         tester.widget<TextField>(find.byType(TextField)).controller!.text,
         'Pair',
       );
-      await tester.ensureVisible(find.text('Убранные'));
-      await tester.tap(find.text('Убранные'));
+      await tester.ensureVisible(find.byKey(const ValueKey('hidden-tab:0')));
+      await tester.tap(find.byKey(const ValueKey('hidden-tab:0')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Выбрать найденные (2)'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Вернуть выбранные (2)'));
+      await tester.tap(find.text('Вернуть все'));
       await ready(tester, () => !state.busy);
       expect(await repo.meta('reading-library-hidden:book-0'), '0');
       expect(await repo.meta('audio-library-hidden:book-1'), '0');
       expect(await repo.meta('reading-library-hidden:book-2'), '1');
       await tester.enterText(find.byType(TextField), 'Remove');
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Выбрать найденные (2)'));
+      await tester.tap(find.text('Удалить все…'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Удалить выбранные (2)…'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Удалить только запись'));
+      await tester.tap(find.text('В корзину'));
       await ready(tester, () => !state.busy);
       final remaining = await hiddenFiles(repo);
       expect(remaining.map((file) => file.id), isNot(contains('book-2')));
@@ -439,7 +436,7 @@ void main() {
         final row = find.byKey(ValueKey('hidden-row:$id'));
         final button = find.descendant(
           of: row,
-          matching: find.byTooltip('Удалить запись'),
+          matching: find.byTooltip('Удалить…'),
         );
         await tester.ensureVisible(button);
         await tester.tap(button);
@@ -447,8 +444,9 @@ void main() {
       }
 
       await open(book.bookId);
-      await tester.tap(find.text('Удалить только запись'));
+      await tester.tap(find.text('Только из PepeHub'));
       await ready(tester, () => !state.busy);
+      expect((await BookTrash(repo).list()).map((b) => b.id), [book.bookId]);
       expect(await tester.runAsync(text.exists), true);
       expect(await repo.meta('reader:${book.hash}'), '{"chapter":2}');
       expect(library.visibleEntries.single.item.id, 'archive');
@@ -466,7 +464,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(await tester.runAsync(track.exists), true);
       await open(audiobook.bookId);
-      await tester.tap(find.text('Удалить вместе с файлами'));
+      await tester.tap(find.text('Вместе с файлом'));
       await ready(tester, () => !state.busy);
       expect(await tester.runAsync(track.exists), false);
       expect(await tester.runAsync(other.exists), true);
@@ -512,15 +510,15 @@ void main() {
           MaterialApp(home: HiddenDeletedPage(library: library, initialTab: 3)),
         );
         await tester.pumpAndSettle();
-        expect(find.textContaining('Удалено:'), findsWidgets);
+        expect(find.textContaining('удалена'), findsWidgets);
         await tester.enterText(find.byType(TextField), 'Selected');
         await tester.pumpAndSettle();
-        await tester.tap(find.byTooltip('Удалить окончательно'));
+        await tester.tap(find.byTooltip('Удалить навсегда'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Отмена'));
         await tester.pumpAndSettle();
         expect(library.trash, hasLength(2));
-        await tester.tap(find.byTooltip('Удалить окончательно'));
+        await tester.tap(find.byTooltip('Удалить навсегда'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Удалить только карточку'));
         await ready(

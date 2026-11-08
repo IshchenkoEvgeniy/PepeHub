@@ -699,9 +699,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 ),
                 PopupMenuItem(
                   value: 'trash',
-                  child: Text(
-                    'Скрытое и отсутствующее · корзина: ${service.trash.length}',
-                  ),
+                  child: Text('Скрытые и недоступные · корзина'),
                 ),
               ],
             ),

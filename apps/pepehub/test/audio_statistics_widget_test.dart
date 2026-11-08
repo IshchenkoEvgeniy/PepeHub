@@ -79,7 +79,7 @@ void main() {
       );
       for (
         var i = 0;
-        i < 40 && find.text('Пройдено материала').evaluate().isEmpty;
+        i < 40 && find.text('Текущая серия').evaluate().isEmpty;
         i++
       ) {
         await tester.runAsync(
@@ -88,14 +88,29 @@ void main() {
         await tester.pump();
       }
       expect(
-        find.text('Пройдено материала'),
+        find.text('Текущая серия'),
         findsOneWidget,
         reason: tester
             .widgetList<Text>(find.byType(Text))
             .map((t) => t.data)
             .join(' | '),
       );
+      // Goals and the streak come first, then the period total.
+      await tester.scrollUntilVisible(
+        find.text('Сессий'),
+        250,
+        maxScrolls: 40,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('4 ч 0 мин'), findsOneWidget);
+      // The detailed figures sit further down.
+      await tester.scrollUntilVisible(
+        find.text('Пройдено материала'),
+        350,
+        maxScrolls: 40,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Пройдено материала'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.runAsync(() async {
         final image =
@@ -108,6 +123,13 @@ void main() {
         await File('build/statistics-phone.png')
             .writeAsBytes(bytes!.buffer.asUint8List());
       });
+      await tester.scrollUntilVisible(
+        find.text('1 день'),
+        -350,
+        maxScrolls: 40,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.text('1 день'));
       await tester.pump();
       await tester.runAsync(

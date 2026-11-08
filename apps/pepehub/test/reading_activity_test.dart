@@ -319,25 +319,23 @@ void main() {
           .writeAsBytes(bytes!.buffer.asUint8List());
     });
     expect(find.text('5 мин'), findsWidgets);
-    expect(find.text('Повторное чтение'), findsOneWidget);
-    for (
-      var i = 0;
-      i < 15 &&
-          find
-              .byTooltip('Изменить цель чтения')
-              .hitTestable()
-              .evaluate()
-              .isEmpty;
-      i++
-    ) {
-      await tester.drag(find.byType(ListView).first, const Offset(0, -250));
+    // The goal panel opens the goal settings; the daily goal moves by 5 min.
+    await tester.tap(find.byTooltip('Настроить цели'));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(find.byTooltip('Увеличить: Чтение в день'));
       await tester.pumpAndSettle();
     }
-    await tester.tap(find.byTooltip('Изменить цель чтения'));
+    await tester.pageBack();
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '45');
-    await tester.tap(find.text('Сохранить'));
-    await tester.pumpAndSettle();
+    expect(find.text('из 45 мин'), findsOneWidget);
+    // The niche new/repeat split now sits below the everyday panels.
+    await tester.scrollUntilVisible(
+      find.text('Повторное чтение'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Повторное чтение'), findsOneWidget);
     expect(await repo.meta('reading-daily-goal'), '45');
     await tester.pump(const Duration(seconds: 1));
     await tester.pumpWidget(

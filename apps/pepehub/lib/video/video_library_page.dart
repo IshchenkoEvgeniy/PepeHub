@@ -181,6 +181,54 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
         lesson.itemId == item.id && lesson.isAudio == (mediaFilter == 'music'),
   );
 
+  Future<void> _remove(VideoItem item) async {
+    final what = item.kind == VideoItemKind.course
+        ? (mediaFilter == 'music' ? 'плейлист' : 'курс')
+        : (mediaFilter == 'music' ? 'трек' : 'видео');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        scrollable: true,
+        title: Text('Удалить «${item.title}» из медиатеки?'),
+        content: Text(
+          'Файлы на диске останутся на месте — PepeHub просто перестанет '
+          'показывать этот $what. Чтобы вернуть его позже, добавьте файлы '
+          'или папку снова.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Удалить из медиатеки'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    List<String>? lessonIds;
+    await _run(() async {
+      lessonIds = await widget.repository.removeItem(item.id);
+      await _load();
+    });
+    final removed = lessonIds;
+    if (removed == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('«${item.title}» удалён из медиатеки'),
+        action: SnackBarAction(
+          label: 'Вернуть',
+          onPressed: () => _run(() async {
+            await widget.repository.restoreItem(item.id, removed);
+            await _load();
+          }),
+        ),
+      ),
+    );
+  }
+
   Future<void> _open(VideoItem item) => _run(() async {
     final own = lessons
         .where(
@@ -486,22 +534,39 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                             'Последняя позиция: ${pepeTime(_recent(item)!.positionMs)}',
                         ].join('\n'),
                       ),
-                      trailing: IconButton(
-                        tooltip: item.favorite
-                            ? 'Убрать из избранного'
-                            : 'В избранное',
-                        onPressed: busy
-                            ? null
-                            : () => _run(() async {
-                                await widget.repository.setFavorite(
-                                  item,
-                                  !item.favorite,
-                                );
-                                await _load();
-                              }),
-                        icon: Icon(
-                          item.favorite ? Icons.star : Icons.star_border,
-                        ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: item.favorite
+                                ? 'Убрать из избранного'
+                                : 'В избранное',
+                            onPressed: busy
+                                ? null
+                                : () => _run(() async {
+                                    await widget.repository.setFavorite(
+                                      item,
+                                      !item.favorite,
+                                    );
+                                    await _load();
+                                  }),
+                            icon: Icon(
+                              item.favorite ? Icons.star : Icons.star_border,
+                            ),
+                          ),
+                          PopupMenuButton<String>(
+                            key: ValueKey('media-item-menu:${item.id}'),
+                            tooltip: 'Действия',
+                            enabled: !busy,
+                            onSelected: (_) => _remove(item),
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(
+                                value: 'remove',
+                                child: Text('Удалить из медиатеки…'),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                       onTap: busy ? null : () => _open(item),
                     ),

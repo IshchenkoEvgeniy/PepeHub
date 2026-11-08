@@ -72,6 +72,22 @@ String pepeClock(DateTime d) =>
     '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 
 /// «12 400 зн.» / «1,2 млн зн.»
+/// Average characters on a printed book page (also used for PDF estimates).
+const pepeCharsPerPage = 1800;
+
+/// Text volume in pages, which readers grasp better than characters.
+String pepePages(int chars) {
+  if (chars <= 0) return '0 стр.';
+  final pages = (chars / pepeCharsPerPage).round();
+  if (pages == 0) return '< 1 стр.';
+  final digits = '$pages', out = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) out.write('\u202f');
+    out.write(digits[i]);
+  }
+  return '≈ $out стр.';
+}
+
 String pepeChars(int n) {
   if (n >= 1000000) {
     return '${(n / 1000000).toStringAsFixed(1).replaceAll('.', ',')} млн зн.';

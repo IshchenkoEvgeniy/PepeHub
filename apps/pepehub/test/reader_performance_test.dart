@@ -73,15 +73,11 @@ void main() {
     () {
       final painter = ReaderBookTicksPainter([0, .2, .7], Colors.blue);
       expect(
-        painter.shouldRepaint(
-          ReaderBookTicksPainter([0, .2, .7], Colors.blue),
-        ),
+        painter.shouldRepaint(ReaderBookTicksPainter([0, .2, .7], Colors.blue)),
         isFalse,
       );
       expect(
-        painter.shouldRepaint(
-          ReaderBookTicksPainter([0, .3, .7], Colors.blue),
-        ),
+        painter.shouldRepaint(ReaderBookTicksPainter([0, .3, .7], Colors.blue)),
         isTrue,
       );
     },

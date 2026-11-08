@@ -133,6 +133,30 @@ class ReadingLibrary {
         : jsonDecode(row.read<String>('value')) as Map<String, dynamic>;
   }
 
+  /// Cover image path of every text book that has one: a cover chosen by the
+  /// user wins over the one extracted from the book file. One query each.
+  Future<Map<String, String>> coverPaths() async {
+    final rows = await repository.db
+        .customSelect(
+          "SELECT a.book_id AS book, json_extract(s.value,'\$.cover') AS cover"
+          ' FROM local_assets a JOIN reading_shelf_v1 s'
+          " ON s.key='reading-index:'||a.sha256"
+          " WHERE a.book_id IS NOT NULL AND json_extract(s.value,'\$.cover') IS NOT NULL",
+        )
+        .get();
+    final result = <String, String>{
+      for (final row in rows)
+        row.read<String>('book'): row.read<String>('cover'),
+    };
+    for (final MapEntry(:key, :value) in (await entries(
+      'reading-book:',
+    )).entries) {
+      final cover = (value['overrides'] as Map?)?['cover'];
+      if (cover is String && cover.isNotEmpty) result[key] = cover;
+    }
+    return result;
+  }
+
   /// Measured reading speed samples (active milliseconds and characters) per
   /// book, aggregated in SQL so a large shelf never decodes every session.
   Future<Map<String, ({int ms, int chars})>> speedSamples() async {

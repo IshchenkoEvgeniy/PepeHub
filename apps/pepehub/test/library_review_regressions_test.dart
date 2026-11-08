@@ -70,7 +70,7 @@ void main() {
       expect(tester.takeException(), isNull);
       if (populated) {
         expect(find.text('Deleted'), findsOneWidget);
-        await tester.tap(find.byTooltip('Восстановить'));
+        await tester.tap(find.byTooltip('Вернуть'));
         await ready(tester, () => library.trash.isEmpty);
         expect(library.visibleEntries.single.item.id, deletedId);
       }

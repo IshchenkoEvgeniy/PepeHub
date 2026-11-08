@@ -32,12 +32,16 @@ void main() {
       await tester.tap(find.byTooltip('Папки библиотеки'));
       await tester.pumpAndSettle();
       expect(find.text('Books'), findsOneWidget);
+      await tester.tap(find.byTooltip('Действия с папкой'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Переименовать'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextFormField), 'Моя полка');
       await tester.tap(find.text('Сохранить'));
       await tester.pumpAndSettle();
       expect(find.text('Моя полка'), findsOneWidget);
+      await tester.tap(find.byTooltip('Действия с папкой'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Отключить папку'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Отключить'));

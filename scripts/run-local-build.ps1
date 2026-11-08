@@ -2,7 +2,9 @@ param(
     [Parameter(Mandatory = $true)][ValidateSet('Windows', 'Android')][string]$Target,
     [string]$LogPath,
     [switch]$NoOpen,
-    [switch]$CheckOnly
+    [switch]$CheckOnly,
+    # Skip the Flutter test suite (analysis still runs). Used by release.ps1.
+    [switch]$SkipTests
 )
 
 # Shared by the double-click launchers; compatible with Windows PowerShell 5.1.
@@ -130,9 +132,32 @@ try {
         $pepeBuildPushed = $true
         Initialize-PepeBuildPackages
         Invoke-PepeBuildCommand 'Analyze application' $pepeBuildFlutter @('analyze', '--no-pub')
-        Invoke-PepeBuildCommand 'Run application tests' $pepeBuildFlutter @('test', '--no-pub')
+        if ($SkipTests) {
+            Write-PepeBuildLine "`n== Run application tests ==`nSkipped (-SkipTests)." Yellow
+        } else {
+            Invoke-PepeBuildCommand 'Run application tests' $pepeBuildFlutter @('test', '--no-pub')
+        }
         if ($Target -eq 'Windows') {
-            Invoke-PepeBuildCommand 'Build Windows release' $pepeBuildFlutter @('build', 'windows', '--release', '--no-pub')
+            $pepeWindowsBuild = Invoke-PepeBuildCommand 'Build Windows release' $pepeBuildFlutter @('build', 'windows', '--release', '--no-pub') -AllowFailure
+            if ($pepeWindowsBuild.ExitCode -ne 0) {
+                # Flutter may pick a different Visual Studio than the one that created
+                # the CMake cache (for example 2022 without ATL vs. 2026). It writes the
+                # versioned ephemeral config first, so finish with the cached generator.
+                $pepeCmakeDir = Join-Path $pepeBuildApp 'build\windows\x64'
+                $pepeCmakeCache = Join-Path $pepeCmakeDir 'CMakeCache.txt'
+                if ($pepeWindowsBuild.Output -notmatch 'Does not match the generator used previously' -or
+                    -not (Test-Path -LiteralPath $pepeCmakeCache -PathType Leaf)) {
+                    throw "Build Windows release failed (exit code $($pepeWindowsBuild.ExitCode))."
+                }
+                $pepeCmakeLine = Select-String -LiteralPath $pepeCmakeCache -Pattern '^CMAKE_COMMAND:INTERNAL=(.+)$' | Select-Object -First 1
+                $pepeCmake = if ($pepeCmakeLine) { $pepeCmakeLine.Matches[0].Groups[1].Value.Trim() } else { $null }
+                if (-not $pepeCmake -or -not (Test-Path -LiteralPath $pepeCmake -PathType Leaf)) {
+                    throw 'Build Windows release failed: the cached CMake is unavailable. See docs/BUILD_AND_RELEASE.md (generator mismatch).'
+                }
+                Write-PepeBuildLine 'Visual Studio differs from the CMake cache; building with the cached generator.' Yellow
+                Invoke-PepeBuildCommand 'Configure Windows build (cached generator)' $pepeCmake @($pepeCmakeDir)
+                Invoke-PepeBuildCommand 'Build Windows release (cached generator)' $pepeCmake @('--build', $pepeCmakeDir, '--config', 'Release', '--target', 'INSTALL')
+            }
             $script:pepeBuildStep = 'Verify Windows result'
             if (-not (Test-Path -LiteralPath $pepeBuildExe -PathType Leaf)) { throw 'Windows build finished without pepehub.exe.' }
             $pepeExeVersion = (Get-Item -LiteralPath $pepeBuildExe).VersionInfo.FileVersion
