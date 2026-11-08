@@ -22,6 +22,16 @@ import java.security.MessageDigest
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
+/**
+ * Same signer, or a key rotation: the new APK is signed by a successor key whose
+ * lineage includes the installed signer (APK Signature Scheme v3, Android 9+).
+ * Android enforces the same rule; checking here gives a clear message first.
+ */
+internal fun sameOrRotatedSigner(oldSigners: Set<String>, newSigners: Set<String>, newLineage: Set<String>): Boolean =
+    newSigners == oldSigners ||
+        oldSigners.size == 1 && newSigners.size == 1 &&
+        newLineage.containsAll(oldSigners) && newLineage.containsAll(newSigners)
+
 class UpdateChannel(
     context: Context,
     messenger: BinaryMessenger,
@@ -106,11 +116,20 @@ class UpdateChannel(
         signatureFlags())
     @Suppress("DEPRECATION")
     private fun code(info: PackageInfo): Long = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+    private fun certificateDigest(signature: android.content.pm.Signature): String =
+        MessageDigest.getInstance("SHA-256").digest(signature.toByteArray()).joinToString("") { b -> "%02x".format(b) }
     @Suppress("DEPRECATION")
     private fun signers(info: PackageInfo): Set<String> {
         val modern = if (Build.VERSION.SDK_INT >= 28) info.signingInfo?.apkContentsSigners else null
         val signatures = modern?.takeIf { it.isNotEmpty() } ?: info.signatures
-        return signatures?.map { MessageDigest.getInstance("SHA-256").digest(it.toByteArray()).joinToString("") { b -> "%02x".format(b) } }?.toSet() ?: emptySet()
+        return signatures?.map { certificateDigest(it) }?.toSet() ?: emptySet()
+    }
+    /** Every certificate in the APK's v3 signing lineage, oldest first; empty below Android 9. */
+    private fun lineage(info: PackageInfo): Set<String> {
+        if (Build.VERSION.SDK_INT < 28) return emptySet()
+        val signing = info.signingInfo ?: return emptySet()
+        if (signing.hasMultipleSigners()) return emptySet()
+        return signing.signingCertificateHistory?.map { certificateDigest(it) }?.toSet() ?: emptySet()
     }
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         try {
@@ -183,7 +202,9 @@ class UpdateChannel(
                             val newSigners = signers(candidate)
                             require(oldSigners.isNotEmpty()) { "Не удалось прочитать подпись установленного PepeHub. Откройте APK через браузер" }
                             require(newSigners.isNotEmpty()) { "Не удалось прочитать подпись APK. Откройте APK через браузер" }
-                            require(newSigners == oldSigners) { "Подпись APK отличается от установленного приложения" }
+                            require(sameOrRotatedSigner(oldSigners, newSigners, lineage(candidate))) {
+                                "Подпись APK отличается от установленного приложения"
+                            }
                             main.post {
                                 if (!finished.compareAndSet(false, true)) return@post
                                 main.removeCallbacks(timeout)

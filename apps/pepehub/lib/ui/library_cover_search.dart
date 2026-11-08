@@ -8,6 +8,7 @@ import '../library/library_service.dart';
 import '../library/models.dart';
 import '../recommendations/book_catalog.dart';
 import '../recommendations/recommendation_store.dart';
+import '../diagnostics/user_message.dart';
 
 class LibraryCoverSearch extends StatefulWidget {
   final LibraryService library;
@@ -61,7 +62,9 @@ class _LibraryCoverSearchState extends State<LibraryCoverSearch> {
         if (results.isEmpty && error == null) error = 'Обложки не найдены. Попробуйте название без имени автора или другое написание.';
       });
     } catch (e) {
-      if (mounted && current == generation) setState(() => error = '$e');
+      if (mounted && current == generation) {
+        setState(() => error = describeError(e));
+      }
     } finally {
       if (mounted && current == generation) setState(() => busy = false);
     }
@@ -105,7 +108,7 @@ class _LibraryCoverSearchState extends State<LibraryCoverSearch> {
       final hash = await store.upload(data.takeBytes());
       if (mounted) Navigator.pop(context, 'pepehub-cover:$hash');
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => busy = false);
     }

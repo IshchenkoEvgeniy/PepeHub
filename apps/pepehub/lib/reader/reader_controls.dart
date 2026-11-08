@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'reader_layout.dart';
 import 'reader_search.dart';
 import 'reader_appearance.dart';
+import '../diagnostics/user_message.dart';
 
 Future<ReaderPreferences?> showReaderSettings(
   BuildContext context,
@@ -94,7 +95,9 @@ class _ReaderSearchState extends State<ReaderSearch> {
       });
     } catch (e) {
       if (mounted && generation == token) {
-        setState(() => error = 'Не удалось выполнить поиск: $e');
+        setState(
+          () => error = 'Не удалось выполнить поиск: ${describeError(e)}',
+        );
       }
     } finally {
       if (mounted && generation == token) setState(() => busy = false);

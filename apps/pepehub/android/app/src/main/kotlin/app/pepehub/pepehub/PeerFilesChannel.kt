@@ -330,6 +330,8 @@ class PeerFilesChannel(contextSource: android.content.Context, messenger: Binary
         when (call.method) {
             "locate" -> return existing?.toString()
             "hash" -> return existing?.let { digest(it).first }
+            // Cheap change marker for polling: size and modification time, no read.
+            "stat" -> return existing?.let { val item = node(tree, it); "${item.bytes}:${item.modified}" }
             "read" -> {
                 val offset = call.argument<Number>("offset")!!.toLong(); val count = call.argument<Int>("count")!!
                 check(offset >= 0 && count in 1..256*1024 && existing != null)

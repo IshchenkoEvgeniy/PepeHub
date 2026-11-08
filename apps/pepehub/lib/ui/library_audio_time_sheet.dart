@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../library/library_service.dart';
 import '../library/models.dart';
 import 'library_duration_input.dart';
+import '../diagnostics/user_message.dart';
 
 Future<void> editLibraryAudioTime(
   BuildContext context,
@@ -132,7 +133,7 @@ Future<void> editLibraryAudioTime(
                             if (context.mounted) {
                               update(() {
                                 saving = false;
-                                error = '$failure';
+                                error = describeError(failure);
                               });
                             }
                           }

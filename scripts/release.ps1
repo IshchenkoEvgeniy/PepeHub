@@ -307,19 +307,29 @@ try {
         Write-Note 'Проверяю публичные файлы (скачивание, размер, SHA-256)...'
         $checkDir = Join-Path $releaseRoot ".local\release-check-$newBuild"
         New-Item -ItemType Directory -Path $checkDir -Force | Out-Null
+        # The release is already public and immutable: a GitHub outage (502/504)
+        # must not stop the source commit. Only a content mismatch is fatal.
+        $delays = @(10, 20, 40, 60, 90)
+        $unverified = @()
         foreach ($asset in $assets) {
             $url = "https://github.com/$releaseOwner/$releaseRepo/releases/download/$tag/$($asset.file)"
             $file = Join-Path $checkDir $asset.file
             $downloaded = $false
-            for ($attempt = 1; $attempt -le 3 -and -not $downloaded; $attempt++) {
+            for ($attempt = 0; $attempt -le $delays.Count -and -not $downloaded; $attempt++) {
                 try {
-                    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $file
+                    Invoke-WebRequest -UseBasicParsing -TimeoutSec 300 -Uri $url -OutFile $file
                     $downloaded = $true
                 } catch {
-                    if ($attempt -eq 3) { throw "Не удалось скачать $($asset.file): $($_.Exception.Message)" }
-                    Start-Sleep -Seconds (5 * $attempt)
+                    if ($attempt -eq $delays.Count) {
+                        Write-Note "НЕ ПРОВЕРЕН  $($asset.file): $($_.Exception.Message)" Yellow
+                        $unverified += $asset.file
+                    } else {
+                        Write-Note "    $($asset.file): $($_.Exception.Message); повтор через $($delays[$attempt]) с" DarkGray
+                        Start-Sleep -Seconds $delays[$attempt]
+                    }
                 }
             }
+            if (-not $downloaded) { continue }
             $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
             if ((Get-Item -LiteralPath $file).Length -ne [long]$asset.bytes -or $hash -ne $asset.sha256) {
                 throw "Опубликованный файл не совпал с подготовленным: $($asset.file)"
@@ -327,10 +337,18 @@ try {
             Write-Note "OK  $($asset.file)" Green
         }
         Remove-Item -LiteralPath $checkDir -Recurse -Force
-        $feed = Invoke-RestMethod -UseBasicParsing -Uri "https://github.com/$releaseOwner/$releaseRepo/releases/latest/download/update.json"
-        $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($feed.payload)) | ConvertFrom-Json
-        if ([int]$payload.build -ne $newBuild) { throw "latest/update.json указывает на сборку $($payload.build), ожидалась $newBuild." }
-        Write-Note "latest/update.json указывает на сборку $newBuild." Green
+        try {
+            $feed = Invoke-RestMethod -UseBasicParsing -TimeoutSec 60 -Uri "https://github.com/$releaseOwner/$releaseRepo/releases/latest/download/update.json"
+            $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($feed.payload)) | ConvertFrom-Json
+            if ([int]$payload.build -ne $newBuild) { throw "latest/update.json указывает на сборку $($payload.build), ожидалась $newBuild." }
+            Write-Note "latest/update.json указывает на сборку $newBuild." Green
+        } catch [System.Net.WebException] {
+            Write-Note "НЕ ПРОВЕРЕН  latest/update.json: $($_.Exception.Message)" Yellow
+            $unverified += 'update.json'
+        }
+        if ($unverified.Count -gt 0) {
+            Write-Note "GitHub не отдал файлы: $($unverified -join ', '). Выпуск опубликован; проверьте их позже на странице выпуска." Yellow
+        }
     }
 
     # ------------------------------------------------------------------

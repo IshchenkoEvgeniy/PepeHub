@@ -7,6 +7,7 @@ import '../audio/audio_sidecar.dart';
 import '../reader/reading_library.dart';
 import 'asset_store.dart';
 import 'support_files.dart';
+import '../diagnostics/user_message.dart';
 
 Future<void> recoverAudioRoot(AssetStore assets, AudioRoot root) async {
   final failures = <String>[];
@@ -71,7 +72,7 @@ Future<void> recoverAudioRoot(AssetStore assets, AudioRoot root) async {
         preserveEventIds: protectedEvents,
       );
     } catch (e) {
-      failures.add('${file.name}: $e');
+      failures.add('${file.name}: ${describeError(e)}');
     }
   }
   await assets.repository.setMeta(
@@ -189,7 +190,7 @@ Future<void> recoverReadingRoot(
         }
       });
     } catch (e) {
-      failures.add('${file.name}: $e');
+      failures.add('${file.name}: ${describeError(e)}');
     }
   }
   await repo.setMeta('reading-recovery-error:$path', failures.join('\n'));

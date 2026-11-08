@@ -11,6 +11,7 @@ import 'video_engine.dart';
 import 'video_repository.dart';
 import 'video_tools.dart';
 import '../music/music_metadata.dart';
+import '../diagnostics/user_message.dart';
 
 class VideoPlaybackController extends ChangeNotifier {
   final VideoRepository repository;
@@ -360,7 +361,7 @@ class VideoPlaybackController extends ChangeNotifier {
       (_) {},
       onError: (Object error, StackTrace stack) {
         storageError =
-            'Не удалось выполнить действие или сохранить медиа: $error';
+            'Не удалось выполнить действие или сохранить медиа: ${describeError(error)}';
         _notify();
       },
     );

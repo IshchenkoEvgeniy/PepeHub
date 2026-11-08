@@ -4,6 +4,7 @@ import '../ui/pepe_widgets.dart';
 import 'anki_export.dart';
 import 'vocabulary_editor.dart';
 import 'vocabulary_repository.dart';
+import '../diagnostics/user_message.dart';
 
 typedef AnkiExporter = Future<bool> Function(List<VocabularyCard> cards);
 
@@ -53,7 +54,7 @@ class _VocabularyPageState extends State<VocabularyPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           loading = false;
         });
       }
@@ -95,7 +96,7 @@ class _VocabularyPageState extends State<VocabularyPage> {
       await widget.repository.delete(card);
       await _load();
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -169,7 +170,9 @@ class _VocabularyPageState extends State<VocabularyPage> {
         );
       }
     } catch (e) {
-      if (mounted) setState(() => error = 'Экспорт не завершён: $e');
+      if (mounted) {
+        setState(() => error = 'Экспорт не завершён: ${describeError(e)}');
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }

@@ -19,12 +19,9 @@ try {
     New-Item -ItemType Directory -Path $pepeDist -Force | Out-Null
     $pepeApk = Join-Path $pepeDist "PepeHub-$pepeVersion-android-$Architecture-test.apk"
     $pepeSource = if ($Architecture -eq 'arm64') { 'build\app\outputs\flutter-apk\app-arm64-v8a-release.apk' } else { 'build\app\outputs\flutter-apk\app-release.apk' }
-    $pepeSignature = (& (Join-Path $env:ANDROID_HOME 'build-tools\36.0.0\apksigner.bat') verify --print-certs $pepeSource) -join "`n"
-    if ($LASTEXITCODE -ne 0) { throw 'APK signature verification failed' }
-    # Existing installations use the project-local test key, not the user's global debug key.
-    if ($pepeSignature -notmatch 'certificate SHA-256 digest: efeaed93980f9275749f27ec3b663b2f477984375ad3014e44d07c7a0048a620') {
-        throw 'APK signer differs from the previously distributed PepeHub builds'
-    }
+    . (Join-Path $PSScriptRoot 'android-signing.ps1')
+    if (Test-PepeKeyRotation $pepeRoot) { Invoke-PepeKeyRotationSigning $pepeRoot $pepeSource }
+    Assert-PepeApkSigner $pepeRoot $pepeSource
     $pepeBadging = (& (Join-Path $env:ANDROID_HOME 'build-tools\36.0.0\aapt.exe') dump badging $pepeSource) -join "`n"
     if ($LASTEXITCODE -ne 0) { throw 'APK manifest inspection failed' }
     if ($pepeBadging -notmatch "versionName='$([regex]::Escape($pepeVersion))'" -or $pepeBadging -notmatch "versionCode='$pepeExpectedCode'") {

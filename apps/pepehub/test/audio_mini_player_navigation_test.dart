@@ -229,7 +229,8 @@ void main() {
               find.byType(CircularProgressIndicator).evaluate().isEmpty,
         );
         expect(find.byKey(const ValueKey('audio-mini-player')), findsOneWidget);
-        await tester.pageBack();
+        // The app runs in Russian, so the back button tooltip is «Назад».
+        await tester.tap(find.byTooltip('Назад'));
         await tester.pumpAndSettle();
         expect(find.text('Аккаунт'), findsNothing);
         // Desktop sections replace the settings route instead of stacking it.
@@ -249,7 +250,8 @@ void main() {
         await openSetting('sync');
         expect(find.text('Прямая синхронизация'), findsOneWidget);
         expect(find.byKey(const ValueKey('audio-mini-player')), findsOneWidget);
-        await tester.pageBack();
+        // The app runs in Russian, so the back button tooltip is «Назад».
+        await tester.tap(find.byTooltip('Назад'));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('mini-play-pause')));
         await tester.pump();

@@ -13,6 +13,7 @@ import 'import_folder_page.dart';
 import 'pepe_widgets.dart';
 import 'shelf_book_details.dart';
 import 'shelf_components.dart';
+import '../diagnostics/user_message.dart';
 
 /// «1 книга», «3 книги», «12 книг».
 String bookCount(int n) {
@@ -156,7 +157,7 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
       if (mounted) {
         setState(() {
           loading = false;
-          error = 'Не удалось загрузить папки: $e';
+          error = 'Не удалось загрузить папки: ${describeError(e)}';
           retry = _reload;
         });
       }
@@ -174,7 +175,7 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
       await action();
       retry = null;
     } catch (e) {
-      error = '$e';
+      error = describeError(e);
       retry = () => _run(action);
     } finally {
       await _reload();
@@ -206,7 +207,7 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
         'Проверка отменена. Библиотека не изменилась.',
       );
     } catch (e) {
-      error = 'Не удалось проверить папку: $e';
+      error = 'Не удалось проверить папку: ${describeError(e)}';
       retry = () => _scan(title, work);
       outcome = FolderScanOutcome(error, failed: true);
     } finally {
@@ -231,7 +232,7 @@ class _ReadingRootsPageState extends State<ReadingRootsPage> {
       folder = await pickAudioFolder(books: true);
     } catch (e) {
       setState(() {
-        error = 'Не удалось открыть папку: $e';
+        error = 'Не удалось открыть папку: ${describeError(e)}';
         retry = _connect;
       });
       return;

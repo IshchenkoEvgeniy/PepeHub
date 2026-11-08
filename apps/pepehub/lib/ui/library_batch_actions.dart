@@ -4,6 +4,7 @@ import '../library/library_features.dart';
 import '../library/library_service.dart';
 import '../library/metadata_values.dart';
 import 'library_card_actions.dart';
+import '../diagnostics/user_message.dart';
 
 Future<void> libraryBatchAction(
   BuildContext context,
@@ -130,7 +131,8 @@ Future<void> libraryBatchAction(
     }
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(describeError(e))));
     }
   }
 }

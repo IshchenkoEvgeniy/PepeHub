@@ -12,6 +12,7 @@ import '../library/library_backup.dart';
 import '../library/library_service.dart';
 import '../library/library_folder_storage.dart';
 import '../sync/peer/peer_files.dart';
+import '../diagnostics/user_message.dart';
 
 Future<bool> saveLibraryFile(Uint8List bytes, String name, String mime) async {
   if (Platform.isAndroid) {
@@ -67,7 +68,8 @@ class _LibraryDataPageState extends State<LibraryDataPage> {
         .catchError((Object e) {
           if (mounted) {
             setState(
-              () => message = 'Не удалось загрузить настройки папки: $e',
+              () => message =
+                  'Не удалось загрузить настройки папки: ${describeError(e)}',
             );
           }
         });
@@ -194,7 +196,10 @@ class _LibraryDataPageState extends State<LibraryDataPage> {
       if (mounted) setState(() => backups = files);
     } catch (e) {
       if (mounted) {
-        setState(() => message = 'Не удалось открыть локальные копии: $e');
+        setState(
+          () => message =
+              'Не удалось открыть локальные копии: ${describeError(e)}',
+        );
       }
     }
   }
@@ -210,7 +215,7 @@ class _LibraryDataPageState extends State<LibraryDataPage> {
       await _load();
       if (mounted) setState(() => message = text);
     } catch (e) {
-      if (mounted) setState(() => message = '$e');
+      if (mounted) setState(() => message = describeError(e));
     } finally {
       if (mounted) setState(() => busy = false);
     }

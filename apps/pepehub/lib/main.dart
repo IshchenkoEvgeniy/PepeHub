@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 import 'sync/peer/peer_service.dart';
@@ -13,6 +15,8 @@ import 'ui/goal_settings_page.dart';
 import 'updates/update_service.dart';
 import 'updates/update_page.dart';
 
+import 'diagnostics/error_log.dart';
+import 'diagnostics/user_message.dart';
 import 'data/database.dart';
 import 'data/repository.dart';
 import 'media/asset_store.dart';
@@ -28,26 +32,40 @@ import 'video/video_mini_player.dart';
 Future<void> main() => startPepeHub();
 
 @pragma('vm:entry-point')
-Future<void> peerBackgroundMain() => runPeerBackground();
+Future<void> peerBackgroundMain() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  ErrorLog.install();
+  await _attachErrorLog(name: 'errors-background.log');
+  await runPeerBackground();
+}
+
+const _russian = Locale('ru');
+const _localizations = <LocalizationsDelegate<Object>>[
+  GlobalMaterialLocalizations.delegate,
+  GlobalWidgetsLocalizations.delegate,
+  GlobalCupertinoLocalizations.delegate,
+];
 
 Future<void> startPepeHub({
   Future<AppDatabase> Function()? openDatabase,
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
+  ErrorLog.install();
+  unawaited(_attachErrorLog());
+  // Paint immediately; the library opens behind a lightweight screen.
+  runApp(const _StartupScreen());
   try {
     await claimPeerForeground();
     final db = await (openDatabase ?? AppDatabase.open)();
     await db.customSelect('SELECT 1').get();
     final repository = Repository(db);
-    await repository.initializeTransports();
+    // Independent steps run together: audio services and the asset folder do
+    // not wait for the transport bookkeeping transaction.
+    final transports = repository.initializeTransports();
     final assets = await AssetStore.open(repository);
-    AudioController? audio;
-    String? audioError;
-    try {
-      audio = await AudioController.create(assets);
-    } catch (e) {
-      audioError = 'Аудиоплеер не запустился: $e';
-    }
+    final audioStart = _startAudio(assets);
+    await transports;
+    final (audio, audioError) = await audioStart;
     runApp(
       PepeHubApp(
         repository: repository,
@@ -56,15 +74,22 @@ Future<void> startPepeHub({
         audioError: audioError,
       ),
     );
-  } catch (error) {
+  } catch (error, stack) {
+    ErrorLog.record(error, stack, context: 'startup');
     runApp(
       MaterialApp(
+        debugShowCheckedModeBanner: false,
+        locale: _russian,
+        supportedLocales: const [_russian],
+        localizationsDelegates: _localizations,
+        theme: AppTheme.data(Brightness.dark),
         home: Scaffold(
           body: Center(
             child: Padding(
               padding: const EdgeInsets.all(32),
-              child: Text(
-                'Не удалось открыть библиотеку. Данные не сброшены.\n$error',
+              child: SelectableText(
+                'Не удалось открыть библиотеку. Данные не сброшены.\n'
+                '${describeError(error)}',
               ),
             ),
           ),
@@ -72,6 +97,41 @@ Future<void> startPepeHub({
       ),
     );
   }
+}
+
+Future<void> _attachErrorLog({String name = 'errors.log'}) async {
+  try {
+    final support = await getApplicationSupportDirectory();
+    ErrorLog.attach(Directory(p.join(support.path, 'logs')), name: name);
+  } catch (_) {
+    // Without a support folder errors stay in memory and debug output.
+  }
+}
+
+Future<(AudioController?, String?)> _startAudio(AssetStore assets) async {
+  try {
+    return (await AudioController.create(assets), null);
+  } catch (error, stack) {
+    ErrorLog.record(error, stack, context: 'audio startup');
+    return (null, 'Аудиоплеер не запустился: ${describeError(error)}');
+  }
+}
+
+class _StartupScreen extends StatelessWidget {
+  const _StartupScreen();
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    debugShowCheckedModeBanner: false,
+    theme: AppTheme.data(Brightness.dark),
+    home: const Scaffold(
+      body: Center(
+        child: SizedBox.square(
+          dimension: 28,
+          child: CircularProgressIndicator(strokeWidth: 2.5),
+        ),
+      ),
+    ),
+  );
 }
 
 class PepeHubApp extends StatefulWidget {
@@ -215,6 +275,9 @@ class _PepeHubAppState extends State<PepeHubApp> {
       controller: theme,
       child: MaterialApp(
         title: 'PepeHub',
+        locale: _russian,
+        supportedLocales: const [_russian],
+        localizationsDelegates: _localizations,
         navigatorKey: navigator,
         scaffoldMessengerKey: messenger,
         navigatorObservers: [readerRoutes],

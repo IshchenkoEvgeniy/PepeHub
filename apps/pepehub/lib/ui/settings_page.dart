@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../diagnostics/error_log_page.dart';
 import '../reader/reader_appearance.dart';
 import '../reader/reader_layout.dart';
 import '../sync/peer/peer_history_page.dart';
@@ -30,6 +31,7 @@ import 'recommendations_page.dart';
 import 'settings_components.dart';
 import 'library_data_page.dart';
 import 'shelf_components.dart';
+import '../diagnostics/user_message.dart';
 
 const _catalog = [
   (
@@ -177,7 +179,7 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = 'Не удалось прочитать настройки: $e';
+          error = 'Не удалось прочитать настройки: ${describeError(e)}';
           loaded = true;
         });
       }
@@ -191,9 +193,11 @@ class _SettingsPageState extends State<SettingsPage> {
       await action();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Изменение не сохранено: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Изменение не сохранено: ${describeError(e)}'),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => saving = false);
@@ -664,6 +668,12 @@ class _SettingsPageState extends State<SettingsPage> {
                   : () => _open(
                       AudioRecoveryPage(assets: widget.library.assets!),
                     ),
+            ),
+            SettingsLink(
+              title: 'Журнал ошибок',
+              subtitle: 'Сбои приложения с подробностями для диагностики',
+              icon: Icons.bug_report_outlined,
+              onTap: () => _open(const ErrorLogPage()),
             ),
             SettingsLink(
               title: 'Обновление приложения',

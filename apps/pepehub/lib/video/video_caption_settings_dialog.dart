@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'video_captions_controller.dart';
 import 'video_subtitle_import.dart';
 import 'video_subtitles.dart';
+import '../diagnostics/user_message.dart';
 
 class VideoCaptionSettingsDialog extends StatefulWidget {
   final VideoCaptionsController captions;
@@ -82,7 +83,7 @@ class _VideoCaptionSettingsDialogState
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -119,7 +120,7 @@ class _VideoCaptionSettingsDialogState
       if (mounted) {
         setState(() {
           saving = false;
-          error = '$e';
+          error = describeError(e);
         });
       }
     }
@@ -372,7 +373,7 @@ class _SubtitleImportDialogState extends State<_SubtitleImportDialog> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           busy = false;
         });
       }
@@ -386,7 +387,7 @@ class _SubtitleImportDialogState extends State<_SubtitleImportDialog> {
       final text = decodeVideoSubtitles(widget.file.bytes, encoding: encoding);
       preview = text.substring(0, text.length.clamp(0, 600));
     } catch (e) {
-      preview = '$e';
+      preview = describeError(e);
     }
     return PopScope(
       canPop: !busy,

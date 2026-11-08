@@ -8,6 +8,7 @@ import 'package:pepehub/audio/audio_folder.dart';
 import 'package:pepehub/audio/audio_roots.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
+import 'package:pepehub/library/book_trash.dart';
 import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/media/folder_scan_progress.dart';
 import 'package:pepehub/ui/audio_roots_page.dart';
@@ -27,6 +28,10 @@ void main() {
     expect(
       audioRootSummary(root, DateTime(2026, 11, 7, 18)),
       '2 аудиокниги · 34 файлов · проверено сегодня',
+    );
+    expect(
+      audioRootSummary(root, DateTime(2026, 11, 7, 18), count: 1),
+      '1 аудиокнига · 34 файлов · проверено сегодня',
     );
   });
 
@@ -70,6 +75,54 @@ void main() {
       expect(await repo.records('book'), hasLength(2));
       expect(progress.total, 5);
       expect(progress.unit, 'книг');
+    } finally {
+      await db.close();
+      await temp.delete(recursive: true);
+    }
+  });
+
+  test('missing audiobooks removed to the trash stop counting as missing; '
+      'purged ones leave the folder', () async {
+    final temp = await Directory.systemTemp.createTemp('audio-missing-');
+    final db = AppDatabase(NativeDatabase.memory());
+    final repo = Repository(db);
+    final assets = AssetStore(repo, Directory('${temp.path}/managed'));
+    final roots = AudioRoots(assets);
+    try {
+      for (final name in ['One', 'Two']) {
+        final file = File('${temp.path}/$name/01.mp3');
+        await file.parent.create(recursive: true);
+        await file.writeAsBytes(List.filled(16, name.length));
+      }
+      final folder = await scanAudioFolder(temp.path);
+      await connectAudioCatalog(
+        assets,
+        folder,
+        groupAudioCatalog(folder, mode: 'folders'),
+        mode: 'folders',
+      );
+      await Directory('${temp.path}/Two').delete(recursive: true);
+      await roots.refresh((await roots.list()).single);
+      var root = (await roots.list()).single;
+      expect((root.data['lastReport'] as Map)['missing'], 1);
+      final missing = await roots.missingBookIds();
+      expect(missing, hasLength(1));
+      final gone = missing.single;
+      expect(root.bookIds, contains(gone));
+
+      final trash = BookTrash(repo);
+      await trash.move([gone]);
+      await roots.refresh(root);
+      root = (await roots.list()).single;
+      expect((root.data['lastReport'] as Map)['missing'], 0);
+      expect(root.bookIds, contains(gone), reason: 'restorable from trash');
+
+      await trash.purge([gone]);
+      expect(await roots.missingBookIds(), isEmpty);
+      await roots.refresh(root);
+      root = (await roots.list()).single;
+      expect(root.bookIds, isNot(contains(gone)));
+      expect(root.bookIds, hasLength(1));
     } finally {
       await db.close();
       await temp.delete(recursive: true);

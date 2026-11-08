@@ -5,6 +5,7 @@ import '../sync/peer/app_sync_usage.dart';
 import '../media/audio_controller.dart';
 import 'audio_mini_player.dart';
 import 'audio_page.dart';
+import '../diagnostics/user_message.dart';
 
 const audioNoteLabels = {
   'thought': 'Мысль',
@@ -61,7 +62,7 @@ class _AudioNotesPageState extends State<AudioNotesPage> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     }
   }
 
@@ -73,7 +74,7 @@ class _AudioNotesPageState extends State<AudioNotesPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Заметка сохранена в приложении. Не удалось обновить .pepehub: $e',
+              'Заметка сохранена в приложении. Не удалось обновить .pepehub: ${describeError(e)}',
             ),
           ),
         );
@@ -185,7 +186,7 @@ class _AudioNotesPageState extends State<AudioNotesPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+            .showSnackBar(SnackBar(content: Text(describeError(e))));
       }
     } finally {
       if (mounted) setState(() => busy = false);

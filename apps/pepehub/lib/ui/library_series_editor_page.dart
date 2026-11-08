@@ -13,6 +13,7 @@ import 'app_theme.dart';
 import 'library_cover_search.dart';
 import 'metadata_input.dart';
 import 'obsidian_library_page.dart' show LibraryMetadataEditor;
+import '../diagnostics/user_message.dart';
 
 class _Volume {
   final String source;
@@ -330,7 +331,7 @@ class _LibrarySeriesEditorPageState extends State<LibrarySeriesEditorPage> {
     } catch (failure) {
       if (mounted) {
         setState(() {
-          error = '$failure';
+          error = describeError(failure);
           _checkConflicts();
           saving = false;
         });

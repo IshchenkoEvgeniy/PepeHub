@@ -19,6 +19,7 @@ import 'video_session.dart';
 import '../vocabulary/vocabulary_page.dart';
 import '../vocabulary/vocabulary_repository.dart';
 import '../music/music_statistics_page.dart';
+import '../diagnostics/user_message.dart';
 
 class VideoLibraryPage extends StatefulWidget {
   final VideoRepository repository;
@@ -83,7 +84,7 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
       if (mounted && request == _request) {
         setState(() {
           loading = false;
-          error = 'Не удалось открыть медиатеку: $e';
+          error = 'Не удалось открыть медиатеку: ${describeError(e)}';
         });
       }
     }
@@ -97,7 +98,7 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+            .showSnackBar(SnackBar(content: Text(describeError(e))));
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -646,7 +647,7 @@ class _VideoCoursePageState extends State<_VideoCoursePage> {
     } catch (e) {
       if (mounted && request == _request) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           loading = false;
         });
       }
@@ -746,7 +747,7 @@ class _VideoCoursePageState extends State<_VideoCoursePage> {
       }
       if (mounted) await _load();
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => opening = false);
     }

@@ -12,6 +12,7 @@ import 'metadata_input.dart';
 import '../library/library_features.dart';
 import 'library_duration_input.dart';
 import 'shelf_components.dart';
+import '../diagnostics/user_message.dart';
 
 export 'obsidian_library_dashboard.dart' show ObsidianLibraryPage;
 
@@ -431,7 +432,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -1033,7 +1034,7 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
                           setState(() => controllers[key]!.text = selected);
                         }
                       } catch (e) {
-                        if (mounted) setState(() => error = '$e');
+                        if (mounted) setState(() => error = describeError(e));
                       }
                     },
             )

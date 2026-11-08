@@ -7,6 +7,7 @@ import '../library/personal_library.dart';
 import '../media/audio_player_scope.dart';
 import '../reader/reading_book_actions.dart';
 import '../sync/peer/peer_service.dart';
+import '../diagnostics/user_message.dart';
 
 enum _Removal { trash, card, files }
 
@@ -32,7 +33,11 @@ Future<bool> deleteLibraryCards(
   } catch (error) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось завершить удаление. $error')),
+        SnackBar(
+          content: Text(
+            'Не удалось завершить удаление. ${describeError(error)}',
+          ),
+        ),
       );
     }
     return false;

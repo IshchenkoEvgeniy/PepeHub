@@ -4,6 +4,7 @@ import '../data/repository.dart';
 import '../media/asset_store.dart';
 import '../updates/update_service.dart';
 import 'settings_components.dart';
+import '../diagnostics/user_message.dart';
 
 const startupSections = {
   'last': 'Последняя открытая вкладка',
@@ -49,7 +50,7 @@ class _StartupSettingsState extends State<StartupSettings> {
         );
       }
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     }
   }
 
@@ -64,7 +65,9 @@ class _StartupSettingsState extends State<StartupSettings> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = 'Изменение не сохранено: $e');
+      if (mounted) {
+        setState(() => error = 'Изменение не сохранено: ${describeError(e)}');
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -130,7 +133,11 @@ class _AboutAppSettingsState extends State<AboutAppSettings> {
         setState(() => databasePath = path.isEmpty ? 'База в памяти' : path);
       }
     } catch (e) {
-      if (mounted) setState(() => error = 'Не удалось прочитать путь базы: $e');
+      if (mounted) {
+        setState(
+          () => error = 'Не удалось прочитать путь базы: ${describeError(e)}',
+        );
+      }
     }
   }
 

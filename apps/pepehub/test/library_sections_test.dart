@@ -80,7 +80,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Reading folder'), findsOneWidget);
       expect(find.text('Audio folder'), findsNothing);
-      await tester.pageBack();
+      // The app runs in Russian, so the back button tooltip is «Назад».
+      await tester.tap(find.byTooltip('Назад'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Статистика чтения'));
       await tester.pump(const Duration(milliseconds: 400));

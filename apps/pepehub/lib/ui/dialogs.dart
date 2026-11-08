@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../sync/sync_client.dart';
 import '../reader/book_formats.dart';
+import '../diagnostics/user_message.dart';
 
 class AddBookDialog extends StatefulWidget {
   final bool? audioOnly;
@@ -228,7 +229,7 @@ class _SyncDialogState extends State<SyncDialog> {
             config.validate();
             Navigator.pop(context, config);
           } catch (e) {
-            setState(() => error = '$e');
+            setState(() => error = describeError(e));
           }
         },
         child: const Text('Сохранить'),

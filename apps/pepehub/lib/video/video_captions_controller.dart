@@ -5,6 +5,7 @@ import 'video_controller.dart';
 import 'video_repository.dart';
 import 'video_subtitle_import.dart';
 import 'video_subtitles.dart';
+import '../diagnostics/user_message.dart';
 
 class VideoCaptionsController extends ChangeNotifier {
   final VideoRepository repository;
@@ -93,7 +94,7 @@ class VideoCaptionsController extends ChangeNotifier {
           VideoSubtitleParseRequest(source.text, source.format),
         );
       } catch (e) {
-        error = 'Не удалось прочитать ${source.name}: $e';
+        error = 'Не удалось прочитать ${source.name}: ${describeError(e)}';
       }
       if (_disposed || generation != _generation) return;
     }

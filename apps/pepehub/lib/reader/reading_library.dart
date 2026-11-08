@@ -19,6 +19,7 @@ import 'reader_layout.dart';
 import 'reader_rebase.dart';
 import 'text_book.dart';
 import 'pdf_support.dart';
+import '../diagnostics/user_message.dart';
 
 Future<String> _hashReadingFile(String path) => Isolate.run(
   () async => (await sha256.bind(File(path).openRead()).first).toString(),
@@ -399,7 +400,7 @@ class ReadingLibrary {
       });
     } catch (e) {
       // Retain a usable index when a disconnected folder makes a retry fail.
-      await update(key, {'error': '$e'});
+      await update(key, {'error': describeError(e)});
       if (retry) rethrow;
     } finally {
       if (temporaryPdf != null && await temporaryPdf.exists()) {

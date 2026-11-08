@@ -38,6 +38,8 @@ import 'reading_daily_totals.dart';
 import 'reader_shortcuts.dart';
 import 'reader_progress_panel.dart';
 import 'reader_keep_awake.dart';
+import '../diagnostics/error_log.dart';
+import '../diagnostics/user_message.dart';
 
 class _SeamlessBook {
   final String text;
@@ -451,7 +453,8 @@ class _ReaderPageState extends State<ReaderPage>
         onError: (e) {
           if (mounted) {
             setState(
-              () => activityError = 'Статистика или журнал не сохранены: $e',
+              () => activityError =
+                  'Статистика или журнал не сохранены: ${describeError(e)}',
             );
           }
         },
@@ -467,7 +470,7 @@ class _ReaderPageState extends State<ReaderPage>
         await tracker.pause('loading');
       }
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     }
   }
 
@@ -511,7 +514,11 @@ class _ReaderPageState extends State<ReaderPage>
           if (mounted && saveError != null) setState(() => saveError = null);
         })
         .catchError((Object e) {
-          if (mounted) setState(() => saveError = 'Позиция не сохранена: $e');
+          if (mounted) {
+            setState(
+              () => saveError = 'Позиция не сохранена: ${describeError(e)}',
+            );
+          }
         });
     return writes;
   }
@@ -720,7 +727,9 @@ class _ReaderPageState extends State<ReaderPage>
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось сохранить заметку: $e')),
+          SnackBar(
+            content: Text('Не удалось сохранить заметку: ${describeError(e)}'),
+          ),
         );
       }
     }
@@ -1031,7 +1040,9 @@ class _ReaderPageState extends State<ReaderPage>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось сохранить закладку: $e')),
+          SnackBar(
+            content: Text('Не удалось сохранить закладку: ${describeError(e)}'),
+          ),
         );
       }
     } finally {
@@ -1207,7 +1218,9 @@ class _ReaderPageState extends State<ReaderPage>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось продолжить поиск: $e')),
+          SnackBar(
+            content: Text('Не удалось продолжить поиск: ${describeError(e)}'),
+          ),
         );
       }
     } finally {
@@ -1832,7 +1845,14 @@ class _ReaderPageState extends State<ReaderPage>
       final total = await ReadingDailyTotals(widget.repository)
           .day(DateTime.now());
       if (mounted) todayReading.value = total;
-    } catch (_) {}
+    } catch (error, stack) {
+      ErrorLog.record(
+        error,
+        stack,
+        context: 'reader: today total',
+        once: 'reader-today',
+      );
+    }
   }
 
   void _undoJump() {

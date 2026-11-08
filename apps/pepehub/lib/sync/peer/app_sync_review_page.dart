@@ -8,6 +8,7 @@ import 'app_sync_presentation.dart';
 import '../../reader/reading_library.dart';
 import '../../reader/reading_roots.dart';
 import '../../reader/text_book.dart';
+import '../../diagnostics/user_message.dart';
 
 class AppSyncReviewPage extends StatefulWidget {
   final PeerSyncService service;
@@ -57,7 +58,7 @@ class _AppSyncReviewPageState extends State<AppSyncReviewPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           loading = false;
         });
       }
@@ -263,7 +264,7 @@ class _AppSyncReviewPageState extends State<AppSyncReviewPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           loading = false;
         });
       }

@@ -27,6 +27,7 @@ import 'listening_clock.dart';
 import 'shared_media_handler.dart';
 import 'audio_focus.dart';
 import 'audio_source.dart';
+import '../diagnostics/user_message.dart';
 
 class AudioController extends BaseAudioHandler with ChangeNotifier {
   final AssetStore assets;
@@ -157,7 +158,8 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         .catchError((Object e) {
           if (!_closed && generation == _durationGeneration) {
             scanningDurations = false;
-            durationError = 'Не удалось проверить длительности: $e';
+            durationError =
+                'Не удалось проверить длительности: ${describeError(e)}';
             _notify();
           }
         });
@@ -582,7 +584,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         _notify();
       }
     } catch (e) {
-      error = 'Обложка: $e';
+      error = 'Обложка: ${describeError(e)}';
       _notify();
     }
   }
@@ -623,7 +625,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     _durations[trackId] = value;
     unawaited(
       audioLibrary.saveDuration(trackId, value).catchError((Object e) {
-        error = 'Не удалось сохранить длительность: $e';
+        error = 'Не удалось сохранить длительность: ${describeError(e)}';
         _notify();
       }),
     );
@@ -1060,7 +1062,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       await _native('pause', () => player.pause());
       await _persist(finish: true, resumeReason: wasPlaying ? 'pause' : null);
     } catch (e) {
-      error = 'Не удалось поставить на паузу: $e';
+      error = 'Не удалось поставить на паузу: ${describeError(e)}';
       _notify();
     }
   }
@@ -1370,7 +1372,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
       await _persist();
       _stateChanged(player.playerState);
     } catch (e) {
-      error = 'Не удалось изменить скорость: $e';
+      error = 'Не удалось изменить скорость: ${describeError(e)}';
       _notify();
     }
   }
@@ -1435,7 +1437,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
           }
         })
         .catchError((Object e) {
-          error = 'Не удалось записать подробный журнал: $e';
+          error = 'Не удалось записать подробный журнал: ${describeError(e)}';
           _notify();
         });
     return _journalWrites;
@@ -1490,7 +1492,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
     try {
       await sidecar.update(asset.bookId, force: true);
     } catch (e) {
-      sidecarError = '$e';
+      sidecarError = describeError(e);
     }
     _notify();
   }
@@ -1543,7 +1545,7 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
         }),
       );
     } catch (e) {
-      error = 'Настройки таймера: $e';
+      error = 'Настройки таймера: ${describeError(e)}';
     }
     _notify();
   }
@@ -1572,7 +1574,8 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
           await owner.setVolume(value).timeout(backendTimeout);
         } catch (e) {
           if (identical(owner, player) && !_closed && !_backendUnresponsive) {
-            error = 'Не удалось изменить громкость таймера: $e';
+            error =
+                'Не удалось изменить громкость таймера: ${describeError(e)}';
             if (e is TimeoutException) {
               _retireBackend(saved, 'backend_timeout', {'operation': 'volume'});
             } else {
@@ -1837,13 +1840,14 @@ class AudioController extends BaseAudioHandler with ChangeNotifier {
                 })
                 .catchError((Object e) {
                   sidecarError =
-                      '.pepehub: $e. Позиция сохранена в приложении.';
+                      '.pepehub: ${describeError(e)}. Позиция сохранена в приложении.';
                   if (!_closed) _notify();
                 }),
           );
         })
         .catchError((Object e) {
-          error = 'Не удалось сохранить позицию или сессию: $e';
+          error =
+              'Не удалось сохранить позицию или сессию: ${describeError(e)}';
           _notify();
         });
     return _writes;

@@ -5,6 +5,7 @@ import 'package:pdfrx/pdfrx.dart';
 
 import 'pdf_support.dart';
 import 'reader_layout.dart';
+import '../diagnostics/user_message.dart';
 
 /// Retains bounded plain text, never native glyph arrays, across query edits.
 class PdfSearchTextCache {
@@ -115,7 +116,9 @@ class _PdfSearchPageState extends State<PdfSearchPage> {
       }
     } catch (e) {
       if (!cancelled()) {
-        setState(() => error = 'Не удалось прочитать текст: $e');
+        setState(
+          () => error = 'Не удалось прочитать текст: ${describeError(e)}',
+        );
       }
     } finally {
       if (!cancelled()) setState(() => busy = false);

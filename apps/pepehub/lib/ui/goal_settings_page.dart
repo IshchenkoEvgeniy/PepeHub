@@ -5,6 +5,7 @@ import '../data/repository.dart';
 import '../notifications/reminder_scheduler.dart';
 import 'goal_reminders.dart';
 import 'settings_components.dart';
+import '../diagnostics/user_message.dart';
 
 /// All entry points edit the same goals through this screen.
 class GoalSettingsPage extends StatefulWidget {
@@ -48,7 +49,7 @@ class _GoalSettingsPageState extends State<GoalSettingsPage> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          error = '$e';
+          error = describeError(e);
           loading = false;
         });
       }
@@ -73,7 +74,9 @@ class _GoalSettingsPageState extends State<GoalSettingsPage> {
       if (mounted) setState(() => error = null);
       await ReminderScheduler.restore(widget.repository);
     } catch (e) {
-      if (mounted) setState(() => error = 'Изменение не сохранено: $e');
+      if (mounted) {
+        setState(() => error = 'Изменение не сохранено: ${describeError(e)}');
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }

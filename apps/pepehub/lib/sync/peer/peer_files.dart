@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import 'peer_models.dart';
 import 'peer_history.dart';
 import 'peer_local_history.dart';
+import '../../diagnostics/user_message.dart';
 
 const peerFilesChannel = MethodChannel('app.pepehub/peer_files');
 
@@ -107,7 +108,9 @@ class LocalPeerFiles implements PeerFileSystem, PeerHistoryStorage {
         onHistoryWarning?.call(warning);
       }
     } catch (e) {
-      onHistoryWarning?.call('Не удалось применить ограничения истории: $e');
+      onHistoryWarning?.call(
+        'Не удалось применить ограничения истории: ${describeError(e)}',
+      );
     }
   }
 
@@ -228,6 +231,15 @@ class LocalPeerFiles implements PeerFileSystem, PeerHistoryStorage {
   Future<String?> hash(String path) async {
     final file = await _file(path);
     return await file.exists() ? hashPeerFile(file) : null;
+  }
+
+  /// Cheap change marker: size and modification times, no file read.
+  /// `missing` when the file does not exist.
+  Future<String> stamp(String path) async {
+    final stat = await (await _file(path)).stat();
+    if (stat.type == FileSystemEntityType.notFound) return 'missing';
+    return '${stat.size}:${stat.modified.microsecondsSinceEpoch}:'
+        '${stat.changed.microsecondsSinceEpoch}';
   }
 
   @override
@@ -397,7 +409,7 @@ class _LocalPeerStage implements PeerStagingFile {
         }
       } catch (e) {
         files.onHistoryWarning?.call(
-          'Предыдущая версия осталась во временной папке: ${previous.path}: $e',
+          'Предыдущая версия осталась во временной папке: ${previous.path}: ${describeError(e)}',
         );
       }
     }
@@ -466,6 +478,24 @@ class SafPeerFiles implements PeerFileSystem, PeerHistoryStorage {
     'hash',
     {'root': root, 'path': peerPath(path)},
   );
+
+  /// Size and modification time from the document provider, no file read.
+  /// `missing` when absent; null when the native side predates `stat`.
+  Future<String?> stamp(String path) async {
+    try {
+      return await peerFilesChannel.invokeMethod<String>('stat', {
+            'root': root,
+            'path': peerPath(path),
+          }) ??
+          'missing';
+    } on MissingPluginException {
+      return null;
+    } on PlatformException catch (error) {
+      if (error.message == 'Неизвестная операция') return null;
+      rethrow;
+    }
+  }
+
   @override
   Future<List<int>> read(String path, int offset, int count) async =>
       await peerFilesChannel.invokeMethod<Uint8List>('read', {

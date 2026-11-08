@@ -10,6 +10,7 @@ import 'video_activity.dart';
 import 'video_repository.dart';
 import 'video_progress_widgets.dart';
 import 'video_activity_calendar.dart';
+import '../diagnostics/user_message.dart';
 
 class VideoStatisticsPage extends StatefulWidget {
   final VideoRepository repository;
@@ -104,7 +105,9 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
       });
     } catch (e) {
       if (mounted && request == _request) {
-        setState(() => error = 'Не удалось загрузить статистику: $e');
+        setState(
+          () => error = 'Не удалось загрузить статистику: ${describeError(e)}',
+        );
       }
     }
   }
@@ -128,7 +131,9 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
       });
     } catch (e) {
       if (mounted && request == _request) {
-        setState(() => error = 'Не удалось загрузить историю: $e');
+        setState(
+          () => error = 'Не удалось загрузить историю: ${describeError(e)}',
+        );
       }
     } finally {
       if (mounted && request == _request) {
@@ -157,7 +162,11 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
       await widget.repository.savePreferences(picked);
       await _load();
     } catch (e) {
-      if (mounted) setState(() => error = 'Не удалось сохранить цели: $e');
+      if (mounted) {
+        setState(
+          () => error = 'Не удалось сохранить цели: ${describeError(e)}',
+        );
+      }
     }
   }
 
@@ -176,7 +185,11 @@ class _VideoStatisticsPageState extends State<VideoStatisticsPage> {
       );
       await _load();
     } catch (e) {
-      if (mounted) setState(() => error = 'Не удалось сохранить отметку: $e');
+      if (mounted) {
+        setState(
+          () => error = 'Не удалось сохранить отметку: ${describeError(e)}',
+        );
+      }
     } finally {
       saving.remove(lesson.id);
       if (mounted) setState(() {});

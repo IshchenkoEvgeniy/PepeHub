@@ -14,6 +14,7 @@ import 'update_manifest.dart';
 import 'update_package.dart';
 import 'update_delta.dart';
 import 'update_trust.dart';
+import '../diagnostics/error_log.dart';
 
 class UpdateAppInfo {
   final String version, platform;
@@ -753,7 +754,9 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
         try {
           await File(p.join(_pendingTransaction!.path, 'cancel'))
               .writeAsString('cancel');
-        } catch (_) {}
+        } catch (error, stack) {
+          ErrorLog.record(error, stack, context: 'update: cancel marker');
+        }
       }
       phase = package == null ? UpdatePhase.idle : UpdatePhase.ready;
       error = e is UpdateException

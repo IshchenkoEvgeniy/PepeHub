@@ -1,7 +1,7 @@
 name: pepehub
 description: "Offline personal library, reader and activity journal."
 publish_to: 'none'
-version: 0.30.22+102
+version: 0.30.25+105
 
 environment:
   sdk: ^3.13.3
@@ -17,6 +17,8 @@ dependencies:
   drift: ^2.35.0
   file_selector: ^1.1.0
   flutter:
+    sdk: flutter
+  flutter_localizations:
     sdk: flutter
   flutter_secure_storage: ^11.1.0
   http: ^1.6.0

@@ -18,6 +18,7 @@ import 'library_service.dart';
 import 'models.dart';
 import 'note_store.dart';
 import 'personal_library.dart';
+import '../diagnostics/user_message.dart';
 
 const _folderKey = 'library-storage-folder-v1';
 const _baselineKey = 'library-storage-baseline-v1';
@@ -246,6 +247,13 @@ class _FolderFiles {
   const _FolderFiles(this.files, {required this.direct});
   String _path(String path) => direct ? path.substring(_prefix.length) : path;
   Future<String?> hash(String path) => files.hash(_path(path));
+
+  /// Size and modification time without reading; null when unsupported.
+  Future<String?> stamp(String path) async => switch (files) {
+    final LocalPeerFiles local => local.stamp(_path(path)),
+    final SafPeerFiles saf => saf.stamp(_path(path)),
+    _ => null,
+  };
   Future<List<int>> read(String path, int offset, int count) =>
       files.read(_path(path), offset, count);
   Future<PeerStagingFile> stage(PeerFileEntry entry) =>
@@ -275,6 +283,14 @@ class LibraryFolderStorage extends ChangeNotifier {
   Future<void> _tail = Future.value();
   Timer? _timer;
   String? _lastRevision, _lastManifest;
+
+  /// Manifest stamp observed right before a read that matched [_lastManifest].
+  String? _lastManifestStamp;
+  DateTime? _lastFullCheck;
+
+  /// Even with an unchanged stamp the manifest is reread this often, in case
+  /// a sync tool preserved size and modification time of a changed file.
+  static const _fullCheckEvery = Duration(minutes: 2);
   bool _direct = false;
   bool get enabled => folder != null;
   String? get displayPath => folder == null
@@ -305,7 +321,8 @@ class LibraryFolderStorage extends ChangeNotifier {
 
   void _startTimer() {
     if (!_disposed && enabled && _timer == null) {
-      _timer = Timer.periodic(const Duration(seconds: 3), (_) {
+      // Polls are cheap (a stat call) unless the manifest changed.
+      _timer = Timer.periodic(const Duration(seconds: 5), (_) {
         if (enabled && !working) {
           unawaited(
             synchronize()
@@ -425,7 +442,7 @@ class LibraryFolderStorage extends ChangeNotifier {
       error = null;
       warning = null;
       _direct = false;
-      _lastRevision = _lastManifest = null;
+      _lastRevision = _lastManifest = _lastManifestStamp = null;
       _status();
       return saved;
     });
@@ -527,19 +544,35 @@ class LibraryFolderStorage extends ChangeNotifier {
             nestedManifest == null && name.toLowerCase() == 'pepehub-library';
       }
       final fs = _FolderFiles(files, direct: direct);
-      final manifestBytes = await _read(fs, _manifestPath, 16777216);
-      final raw = manifestBytes == null ? null : utf8.decode(manifestBytes);
-      var revision = await _revision();
-      if (!connecting &&
-          !force &&
-          revision == _lastRevision &&
-          raw == _lastManifest) {
+      final quick = !connecting && !force;
+      // Taken before reading: a write after this point changes the stamp.
+      final stamp = quick ? await fs.stamp(_manifestPath) : null;
+      final lastFull = _lastFullCheck;
+      if (quick &&
+          stamp != null &&
+          stamp == _lastManifestStamp &&
+          lastFull != null &&
+          DateTime.now().difference(lastFull) < _fullCheckEvery &&
+          await _revision() == _lastRevision) {
         if (error != null) {
           error = null;
           _status();
         }
         return false;
       }
+      final manifestBytes = await _read(fs, _manifestPath, 16777216);
+      final raw = manifestBytes == null ? null : utf8.decode(manifestBytes);
+      var revision = await _revision();
+      if (quick && revision == _lastRevision && raw == _lastManifest) {
+        _lastManifestStamp = stamp;
+        _lastFullCheck = DateTime.now();
+        if (error != null) {
+          error = null;
+          _status();
+        }
+        return false;
+      }
+      _lastManifestStamp = null;
       final remote = raw == null ? null : _Manifest.read(raw);
       final saved = await library.local.meta(_baselineKey);
       final previous = saved == null ? null : _Manifest.read(saved);
@@ -753,6 +786,8 @@ class LibraryFolderStorage extends ChangeNotifier {
       });
       _lastRevision = revision;
       _lastManifest = publishedManifest;
+      // The next poll verifies the published manifest by content once.
+      _lastManifestStamp = null;
       _direct = direct;
       savedAt = DateTime.now();
       error = null;
@@ -764,8 +799,9 @@ class LibraryFolderStorage extends ChangeNotifier {
           force: force || connecting,
         );
       } catch (e) {
-        _lastManifest = null;
-        error = 'Не удалось обновить именованные файлы книг: $e';
+        _lastManifest = _lastManifestStamp = null;
+        error =
+            'Не удалось обновить именованные файлы книг: ${describeError(e)}';
       }
       _status();
       return imported;
@@ -783,7 +819,7 @@ class LibraryFolderStorage extends ChangeNotifier {
         error = 'Библиотека менялась во время сохранения. Повторите обновление папки.';
         throw StateError(error!);
       }
-      error = '$e';
+      error = describeError(e);
       _status();
       rethrow;
     } finally {

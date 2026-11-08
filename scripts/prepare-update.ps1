@@ -15,8 +15,9 @@ if (-not [IO.File]::Exists($pepeApk)) { throw 'Build the current Android ARM64 r
 . (Join-Path $PSScriptRoot 'android-env.ps1')
 $pepeBadging = (& (Join-Path $env:ANDROID_HOME 'build-tools\36.0.0\aapt.exe') dump badging $pepeApk) -join "`n"
 if ($LASTEXITCODE -ne 0 -or $pepeBadging -notmatch "(?m)^package: name='app\.pepehub\.pepehub'" -or $pepeBadging -notmatch "versionName='$([regex]::Escape($pepeVersion))'" -or $pepeBadging -notmatch "versionCode='$($pepeBuild+2000)'" -or $pepeBadging -notmatch "(?m)^native-code: 'arm64-v8a'\s*$") { throw 'Android package identity/version/architecture does not match pubspec.' }
-$pepeSigner = (& (Join-Path $env:ANDROID_HOME 'build-tools\36.0.0\apksigner.bat') verify --print-certs $pepeApk) -join "`n"
-if ($LASTEXITCODE -ne 0 -or $pepeSigner -notmatch 'certificate SHA-256 digest: efeaed93980f9275749f27ec3b663b2f477984375ad3014e44d07c7a0048a620') { throw 'Android signing key changed; refusing to publish incompatible updates.' }
+. (Join-Path $PSScriptRoot 'android-signing.ps1')
+# Refuses an APK whose signature does not match the current rotation state.
+Assert-PepeApkSigner $pepeUpdateRoot $pepeApk
 $pepeOutput = Join-Path $pepeUpdateRoot "dist\online\$pepeVersion-$pepeBuild"
 [IO.Directory]::CreateDirectory($pepeOutput) | Out-Null
 $pepeZip = Join-Path $pepeOutput 'PepeHub-windows-x64.zip'

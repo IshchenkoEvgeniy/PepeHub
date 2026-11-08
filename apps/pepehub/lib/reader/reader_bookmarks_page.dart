@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'reader_bookmarks.dart';
 import 'reader_layout.dart';
+import '../diagnostics/user_message.dart';
 
 class ReaderBookmarksPage extends StatefulWidget {
   final ReaderBookmarkStore store;
@@ -45,7 +46,9 @@ class _ReaderBookmarksPageState extends State<ReaderBookmarksPage> {
       }
     } catch (e) {
       if (mounted && generation == loadGeneration) {
-        setState(() => error = 'Не удалось загрузить закладки: $e');
+        setState(
+          () => error = 'Не удалось загрузить закладки: ${describeError(e)}',
+        );
       }
     }
   }
@@ -59,7 +62,9 @@ class _ReaderBookmarksPageState extends State<ReaderBookmarksPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось сохранить закладки: $e')),
+          SnackBar(
+            content: Text('Не удалось сохранить закладки: ${describeError(e)}'),
+          ),
         );
       }
     } finally {
@@ -108,7 +113,11 @@ class _ReaderBookmarksPageState extends State<ReaderBookmarksPage> {
               } catch (e) {
                 if (messenger.mounted) {
                   messenger.showSnackBar(
-                    SnackBar(content: Text('Не удалось вернуть закладку: $e')),
+                    SnackBar(
+                      content: Text(
+                        'Не удалось вернуть закладку: ${describeError(e)}',
+                      ),
+                    ),
                   );
                 }
               }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../media/asset_store.dart';
 import '../media/storage_usage.dart';
 import 'settings_components.dart';
+import '../diagnostics/user_message.dart';
 
 String storageBytes(int bytes) => bytes < 1024
     ? '$bytes Б'
@@ -52,7 +53,11 @@ class _StorageSettingsPageState extends State<StorageSettingsPage> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = 'Не удалось измерить хранилище: $e');
+      if (mounted) {
+        setState(
+          () => error = 'Не удалось измерить хранилище: ${describeError(e)}',
+        );
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -96,7 +101,10 @@ class _StorageSettingsPageState extends State<StorageSettingsPage> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => error = 'Не удалось полностью очистить кэш: $e');
+        setState(
+          () =>
+              error = 'Не удалось полностью очистить кэш: ${describeError(e)}',
+        );
       }
     } finally {
       if (mounted) setState(() => busy = false);

@@ -136,7 +136,8 @@ void main() {
             manual.evaluate().isNotEmpty &&
             tester.widget<CheckboxListTile>(manual).value == true,
       );
-      await tester.pageBack();
+      // The app runs in Russian, so the back button tooltip is «Назад».
+      await tester.tap(find.byTooltip('Назад'));
       await ready(
         tester,
         () => find.text('Завершено уроков: 2 из 2').evaluate().isNotEmpty,

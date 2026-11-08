@@ -15,6 +15,7 @@ import 'library_groups_page.dart';
 import 'obsidian_library_dashboard.dart'
     show ShelfBookCover, metadataProgressLabel;
 import 'obsidian_library_page.dart' show LibraryMetadataEditor;
+import '../diagnostics/user_message.dart';
 
 Future<void> editLibraryEntry(
   BuildContext context,
@@ -98,7 +99,9 @@ class _LibraryWorkPageState extends State<LibraryWorkPage> {
         });
       }
     } catch (e) {
-      if (mounted && current == generation) setState(() => error = '$e');
+      if (mounted && current == generation) {
+        setState(() => error = describeError(e));
+      }
     }
   }
 
@@ -112,7 +115,7 @@ class _LibraryWorkPageState extends State<LibraryWorkPage> {
       await action();
       await _changed();
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = describeError(e));
     } finally {
       if (mounted) setState(() => busy = false);
     }

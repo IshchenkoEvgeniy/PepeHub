@@ -5,6 +5,7 @@ import '../ui/audio_mini_player.dart';
 import 'models.dart';
 import 'video_repository.dart';
 import 'video_session.dart';
+import '../diagnostics/user_message.dart';
 
 class VideoCourseEditor extends StatefulWidget {
   final VideoRepository repository;
@@ -118,7 +119,7 @@ class _VideoCourseEditorState extends State<VideoCourseEditor> {
       if (mounted) {
         setState(() {
           saving = false;
-          error = '$e';
+          error = describeError(e);
         });
       }
     }
