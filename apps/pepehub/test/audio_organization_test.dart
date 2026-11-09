@@ -133,8 +133,14 @@ void main() {
         await closeFilters();
       }
 
+      // Alpha is the book every menu step works on.
       Future<void> bookMenu(String label) async {
-        await tapVisible(find.byTooltip('Действия с книгой').first);
+        await tapVisible(
+          find.descendant(
+            of: find.byKey(const ValueKey('book-card:a')),
+            matching: find.byTooltip('Действия с книгой'),
+          ),
+        );
         await settle();
         await tester.tap(find.text(label));
         await settle();
@@ -224,7 +230,7 @@ void main() {
       await settle();
       expect(await repo.meta('audio-sort'), 'author');
       expect(await repo.meta('reading-sort'), 'series');
-      expect(find.text('Сейчас слушаю'), findsOneWidget);
+      expect(find.text('Сейчас слушаю'), findsNothing);
       await tester.scrollUntilVisible(
         find.text('Aardvark audio'),
         180,
@@ -246,7 +252,7 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       expect(find.text('★ Alpha audio'), findsOneWidget);
-      expect(find.text('Сейчас слушаю'), findsOneWidget);
+      expect(find.text('Сейчас слушаю'), findsNothing);
       await tester.scrollUntilVisible(
         find.text('Aardvark audio'),
         180,

@@ -20,6 +20,7 @@ import 'package:pepehub/vocabulary/vocabulary_repository.dart';
 
 import 'app_sync_service_test.dart' show ServiceFixture;
 import 'peer_sync_test.dart' show ReplicaFixture, deviceA, deviceB;
+import 'support/flutter_fonts.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -306,9 +307,7 @@ void main() {
             family,
           )..addFont(rootBundle.load('assets/fonts/$family.ttf'))).load();
         }
-        final icons = File(
-          '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-        );
+        final icons = File(materialIconsFont);
         if (await icons.exists()) {
           await (FontLoader('MaterialIcons')..addFont(
                 icons.readAsBytes().then((bytes) => bytes.buffer.asByteData()),

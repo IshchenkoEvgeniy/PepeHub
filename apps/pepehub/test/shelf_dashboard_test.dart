@@ -16,6 +16,8 @@ import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/obsidian_library_dashboard.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
+import 'support/flutter_fonts.dart';
+
 const fields = [
   LibraryField('Title', 'title', 'text'),
   LibraryField('Author', 'author', 'text'),
@@ -129,9 +131,9 @@ void main() {
               ))
               .load();
           await (FontLoader('MaterialIcons')..addFont(
-                File(
-                  '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-                ).readAsBytes().then(ByteData.sublistView),
+                File(materialIconsFont)
+                    .readAsBytes()
+                    .then(ByteData.sublistView),
               ))
               .load();
         });

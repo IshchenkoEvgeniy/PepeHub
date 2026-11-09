@@ -14,6 +14,8 @@ import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/reader/reader_page.dart';
 
+import 'support/flutter_fonts.dart';
+
 void main() {
   testWidgets(
     'reader paginates, searches and returns, scrolls and restores exact anchor',
@@ -66,15 +68,26 @@ void main() {
             )..addFont(uiFont.readAsBytes().then(ByteData.sublistView))).load();
           }
         }
-        final icons = File(
-          '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-        );
+        final icons = File(materialIconsFont);
         if (await icons.exists()) {
           await (FontLoader(
             'MaterialIcons',
           )..addFont(icons.readAsBytes().then(ByteData.sublistView))).load();
         }
       });
+      // The settings list scrolls above the Cancel/Done row; on a phone a
+      // chip can sit below its visible part, depending on font metrics.
+      Future<void> tapSetting(String label) async {
+        final chip = find.text(label);
+        await tester.dragUntilVisible(
+          chip.hitTestable(),
+          find.ancestor(of: chip, matching: find.byType(Scrollable)).first,
+          const Offset(0, -80),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(chip);
+      }
+
       Future<void> settle() async {
         for (var i = 0; i < 12; i++) {
           await tester.runAsync(
@@ -126,7 +139,7 @@ void main() {
           find.byKey(const ValueKey('reader-appearance-tab:Страница')),
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Без пустых мест'));
+        await tapSetting('Без пустых мест');
         await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('Готово'));
         await tester.tap(find.text('Готово'));
@@ -139,7 +152,7 @@ void main() {
           find.byKey(const ValueKey('reader-appearance-tab:Страница')),
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Перелистывание'));
+        await tapSetting('Перелистывание');
         await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('Готово'));
         await tester.tap(find.text('Готово'));
@@ -159,7 +172,7 @@ void main() {
           find.byKey(const ValueKey('reader-appearance-tab:Страница')),
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('По главам'));
+        await tapSetting('По главам');
         await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('Готово'));
         await tester.tap(find.text('Готово'));

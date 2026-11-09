@@ -23,6 +23,7 @@ import 'package:pepehub/ui/app_theme.dart';
 
 import 'support/pdf_fixture.dart';
 import 'reader_window_theme_test.dart' show expectReaderWindowTheme;
+import 'support/flutter_fonts.dart';
 
 // Reuse an existing native runtime. This suite never builds an application.
 final pdfium = Platform.environment['PEPEHUB_PDFIUM'];
@@ -469,7 +470,7 @@ void main() {
         for (final font in {
           'Onest': 'assets/fonts/Onest.ttf',
           'Roboto': 'C:/Windows/Fonts/segoeui.ttf',
-          'MaterialIcons': '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+          'MaterialIcons': materialIconsFont,
         }.entries) {
           final file = File(font.value);
           if (await file.exists()) {

@@ -513,7 +513,11 @@ class ShelfPill extends StatelessWidget {
 
 class ShelfStatus extends StatelessWidget {
   final String status;
-  const ShelfStatus(this.status, {super.key});
+
+  /// Label for `active`, e.g. «Слушаю» on the audiobook shelf so the badge
+  /// matches its tab; «В процессе» where the media type is mixed.
+  final String? activeLabel;
+  const ShelfStatus(this.status, {super.key, this.activeLabel});
   @override
   Widget build(BuildContext context) {
     final palette = ShelfPalette.of(context);
@@ -530,13 +534,16 @@ class ShelfStatus extends StatelessWidget {
       ),
       child: Text(
         switch (status) {
-          'active' => 'В процессе',
+          'active' => activeLabel ?? 'В процессе',
           'finished' => 'Завершено',
           'deleted' => 'Файл удалён',
           'paused' => 'Отложена',
           'abandoned' => 'Брошена',
           _ => 'В планах',
         },
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,

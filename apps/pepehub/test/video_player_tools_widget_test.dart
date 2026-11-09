@@ -15,6 +15,7 @@ import 'package:pepehub/video/video_player_page.dart';
 import 'package:pepehub/video/video_repository.dart';
 
 import 'support/video_engine.dart';
+import 'support/flutter_fonts.dart';
 
 class _Window extends VideoFullscreenHost {
   final List<bool> changes = [];
@@ -315,7 +316,7 @@ void main() {
         for (final font in {
           'Onest': 'assets/fonts/Onest.ttf',
           'Oswald': 'assets/fonts/Oswald.ttf',
-          'MaterialIcons': '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+          'MaterialIcons': materialIconsFont,
         }.entries) {
           final loader = FontLoader(font.key)
             ..addFont(

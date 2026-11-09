@@ -12,6 +12,8 @@ import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/ui/audio_statistics_page.dart';
 
+import 'support/flutter_fonts.dart';
+
 void main() {
   testWidgets(
     'statistics screen fits phone, filters and renders actual aggregates',
@@ -30,9 +32,7 @@ void main() {
             ..addFont(font.readAsBytes().then(ByteData.sublistView));
           await loader.load();
         }
-        final icons = File(
-          '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-        );
+        final icons = File(materialIconsFont);
         if (await icons.exists()) {
           final loader = FontLoader('MaterialIcons')
             ..addFont(icons.readAsBytes().then(ByteData.sublistView));

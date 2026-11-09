@@ -26,6 +26,7 @@ import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/import_folder_page.dart';
 
 import 'video_player_tools_widget_test.dart' show ready;
+import 'support/flutter_fonts.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -404,9 +405,9 @@ void main() {
                 .load();
           }
           await (FontLoader('MaterialIcons')..addFont(
-                File(
-                  '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-                ).readAsBytes().then(ByteData.sublistView),
+                File(materialIconsFont)
+                    .readAsBytes()
+                    .then(ByteData.sublistView),
               ))
               .load();
         });

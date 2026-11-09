@@ -14,6 +14,8 @@ import 'package:pepehub/video/models.dart';
 import 'package:pepehub/video/video_repository.dart';
 import 'package:pepehub/video/video_statistics_page.dart';
 
+import 'support/flutter_fonts.dart';
+
 final now = DateTime(2026, 10, 14, 12);
 Future<void> ready(WidgetTester tester, bool Function() predicate) async {
   for (var attempt = 0; attempt < 80 && !predicate(); attempt++) {
@@ -227,7 +229,7 @@ void main() {
         for (final entry in {
           'Onest': 'assets/fonts/Onest.ttf',
           'Oswald': 'assets/fonts/Oswald.ttf',
-          'MaterialIcons': '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+          'MaterialIcons': materialIconsFont,
         }.entries) {
           await (FontLoader(entry.key)..addFont(
                 File(entry.value).readAsBytes().then(ByteData.sublistView),

@@ -12,6 +12,8 @@ import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/book_action_menu.dart';
 
+import 'support/flutter_fonts.dart';
+
 void main() {
   for (final width in [360.0, 1280.0]) {
     testWidgets(
@@ -28,7 +30,7 @@ void main() {
         await tester.runAsync(() async {
           for (final entry in {
             'Onest': 'assets/fonts/Onest.ttf',
-            'MaterialIcons': '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+            'MaterialIcons': materialIconsFont,
           }.entries) {
             await (FontLoader(entry.key)..addFont(
                   File(entry.value).readAsBytes().then(ByteData.sublistView),

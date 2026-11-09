@@ -23,6 +23,8 @@ import 'package:pepehub/reader/reader_viewport.dart';
 import 'package:pepehub/reader/reader_resources.dart';
 import 'package:pepehub/ui/app_theme.dart';
 
+import 'support/flutter_fonts.dart';
+
 const pixel =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
 ReadingNote note({String id = 'n', String book = 'b', String color = 'blue'}) =>
@@ -270,9 +272,7 @@ void main() {
             'Roboto',
           )..addFont(font.readAsBytes().then(ByteData.sublistView))).load();
         }
-        final icons = File(
-          '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-        );
+        final icons = File(materialIconsFont);
         if (await icons.exists()) {
           await (FontLoader(
             'MaterialIcons',

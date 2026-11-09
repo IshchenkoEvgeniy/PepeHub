@@ -18,6 +18,8 @@ import 'package:pepehub/video/video_subtitle_import.dart';
 import 'package:pepehub/video/video_subtitles.dart';
 import 'package:pepehub/video/video_transcript_panel.dart';
 
+import 'support/flutter_fonts.dart';
+
 import 'video_subtitles_test.dart'
     show CaptionTestEngine, CaptionHarness, englishSrt, russianVtt;
 
@@ -401,7 +403,7 @@ void main() {
         for (final entry in {
           'Onest': 'assets/fonts/Onest.ttf',
           'Oswald': 'assets/fonts/Oswald.ttf',
-          'MaterialIcons': '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+          'MaterialIcons': materialIconsFont,
         }.entries) {
           await (FontLoader(entry.key)..addFont(
                 File(entry.value).readAsBytes().then(ByteData.sublistView),

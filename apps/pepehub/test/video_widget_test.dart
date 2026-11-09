@@ -18,6 +18,7 @@ import 'package:pepehub/video/video_statistics_page.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 import 'support/video_engine.dart';
+import 'support/flutter_fonts.dart';
 
 void main() {
   testWidgets('statistics shows actual accelerated coverage on a phone', (
@@ -164,7 +165,7 @@ void main() {
         'Onest': 'assets/fonts/Onest.ttf',
         'Oswald': 'assets/fonts/Oswald.ttf',
         'CormorantGaramond': 'assets/fonts/CormorantGaramond.ttf',
-        'MaterialIcons': '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+        'MaterialIcons': materialIconsFont,
       }.entries) {
         await (FontLoader(entry.key)..addFont(
               File(entry.value).readAsBytes().then(ByteData.sublistView),

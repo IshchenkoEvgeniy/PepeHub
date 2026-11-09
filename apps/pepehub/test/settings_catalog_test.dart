@@ -21,6 +21,7 @@ import 'video_player_tools_widget_test.dart' show ready;
 import 'package:pepehub/ui/storage_settings_page.dart';
 
 import 'update_test.dart' show UpdateFixture;
+import 'support/flutter_fonts.dart';
 
 void main() {
   for (final size in [
@@ -87,9 +88,7 @@ void main() {
                   ))
                   .load();
             }
-            final icons = File(
-              '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-            );
+            final icons = File(materialIconsFont);
             await (FontLoader(
               'MaterialIcons',
             )..addFont(icons.readAsBytes().then(ByteData.sublistView))).load();

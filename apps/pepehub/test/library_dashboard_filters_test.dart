@@ -20,6 +20,7 @@ import 'package:pepehub/ui/obsidian_library_dashboard.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 import 'video_player_tools_widget_test.dart' show ready;
+import 'support/flutter_fonts.dart';
 
 int dateReads = 0;
 
@@ -544,9 +545,7 @@ void main() {
               .load();
         }
         await (FontLoader('MaterialIcons')..addFont(
-              File(
-                '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-              ).readAsBytes().then(ByteData.sublistView),
+              File(materialIconsFont).readAsBytes().then(ByteData.sublistView),
             ))
             .load();
       });

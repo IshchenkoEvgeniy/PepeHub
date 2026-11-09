@@ -2258,31 +2258,10 @@ class _LibraryPageState extends State<LibraryPage> {
         .where((b) => !deletedReadingBooks.contains(b.id) && !_remoteOnly(b))
         .length;
     final visible = _visibleBooks();
-    final heroCandidates =
-        statusFilter == 'all' &&
-            filter == 'all' &&
-            query.isEmpty &&
-            selectedRoot == null &&
-            collectionFilter == null &&
-            !favoritesOnly &&
-            selectedBooks.isEmpty &&
-            !loading
-        ? _heroBooks()
-        : const <LibraryRecord>[];
-    final visibleIds = heroCandidates.isEmpty
-        ? const <String>{}
-        : {for (final book in visible) book.id};
-    // The most recent book is the hero; other started books form a ribbon.
-    final current = heroCandidates
-        .where((b) => visibleIds.contains(b.id))
-        .take(8)
-        .toList();
-    final hero = current.firstOrNull;
-    final alsoCurrent = current.skip(1).toList();
-    final shown = {for (final book in current) book.id};
-    final listed = shown.isEmpty
-        ? visible
-        : visible.where((b) => !shown.contains(b.id)).toList();
+    // Every match is listed in the same order with or without filters: a
+    // "now reading" card above would pull started books out of the list only
+    // while no filter is set, so the shelf looked different per folder.
+    final listed = visible;
     return ShelfShell(
       title: selectedBooks.isNotEmpty
           ? 'Выбрано: ${selectedBooks.length}'
@@ -2480,17 +2459,6 @@ class _LibraryPageState extends State<LibraryPage> {
                               ),
                             ),
                           ),
-                        if (hero != null) ...[
-                          const SizedBox(height: 16),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 820),
-                            child: _hero(hero),
-                          ),
-                        ],
-                        if (alsoCurrent.isNotEmpty) ...[
-                          const SizedBox(height: 14),
-                          _continueRibbon(alsoCurrent),
-                        ],
                       ],
                     ),
                   ),
@@ -3144,7 +3112,10 @@ class _LibraryPageState extends State<LibraryPage> {
                       runSpacing: 6,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        ShelfStatus(deleted ? 'deleted' : status),
+                        ShelfStatus(
+                          deleted ? 'deleted' : status,
+                          activeLabel: reading ? 'Читаю' : 'Слушаю',
+                        ),
                         Text(
                           !audio
                               ? '${formatLabel(book.payload!['format'] as String?)} · ${((fraction ?? 0) * 100).toStringAsFixed(1)}%'
@@ -3299,157 +3270,6 @@ class _LibraryPageState extends State<LibraryPage> {
     );
   }
 
-  /// Started books, most recently read or played first.
-  List<LibraryRecord> _heroBooks() {
-    final active = books
-        .where(
-          (b) =>
-              !deletedReadingBooks.contains(b.id) &&
-              !_remoteOnly(b) &&
-              _status(b) == 'active',
-        )
-        .toList();
-    String recency(LibraryRecord b) => reading
-        ? '${_textPosition(b)['updatedAt'] ?? ''}'
-        : audioRecent[b.id]?.toIso8601String() ?? '';
-    final keys = {for (final book in active) book.id: recency(book)};
-    return active..sort((a, b) => keys[b.id]!.compareTo(keys[a.id]!));
-  }
-
-  double _shelfFraction(LibraryRecord book) {
-    if (book.payload!['format'] != 'audio') {
-      return _fraction(book).clamp(0.0, 1.0);
-    }
-    final summary = audioSummaries[book.id];
-    final total = summary?.total, position = summary?.position;
-    return total == null || position == null || total <= 0
-        ? 0.0
-        : (position / total).clamp(0.0, 1.0);
-  }
-
-  Widget _continueRibbon(List<LibraryRecord> items) {
-    final colors = PepeColors.of(context);
-    final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          reading ? 'ТАКЖЕ ЧИТАЮ' : 'ТАКЖЕ СЛУШАЮ',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: .6,
-            color: colors.muted,
-          ),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 100 + 44 * (scale - 1).clamp(0.0, 2.0),
-          child: ListView.separated(
-            key: const ValueKey('continue-ribbon'),
-            scrollDirection: Axis.horizontal,
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 10),
-            itemBuilder: (_, i) => _continueCard(items[i]),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _continueCard(LibraryRecord book) {
-    final colors = PepeColors.of(context);
-    final audio = book.payload!['format'] == 'audio';
-    final asset = shelfSources.first(book.id);
-    final fraction = _shelfFraction(book);
-    final remaining = audio
-        ? audioRemainingLabel(audioSummaries[book.id])
-        : _textRemaining(book);
-    final cover = _textInfo(book)['cover'];
-    return SizedBox(
-      width: 250,
-      child: Material(
-        key: ValueKey('continue:${book.id}'),
-        color: colors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: busy
-              ? null
-              : asset == null
-              ? () => _bookSource(book)
-              : () => audio ? _openAudio(asset) : _openReader(asset),
-          onLongPress: busy ? null : () => _toggleBook(book.id),
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: audio ? 64 : 52,
-                  height: audio ? 64 : 78,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: audio && widget.assets != null
-                        ? AudioCover(
-                            key: ValueKey(
-                              'continue:${book.id}:${_coverVersions[book.id]}',
-                            ),
-                            assets: widget.assets!,
-                            bookId: book.id,
-                          )
-                        : !audio && cover != null
-                        ? Image.file(
-                            File(cover as String),
-                            fit: BoxFit.cover,
-                            cacheWidth: 160,
-                            errorBuilder: (_, _, _) =>
-                                _coverPlaceholder(audio, colors),
-                          )
-                        : _coverPlaceholder(audio, colors),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _title(book),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppFonts.book(colors.text, size: 14),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        [
-                          '${(fraction * 100).round()}%',
-                          ?remaining,
-                        ].join(' · '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11, color: colors.muted),
-                      ),
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: LinearProgressIndicator(
-                          value: fraction,
-                          minHeight: 3,
-                          color: colors.accent,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   List<Object?>? _countInputs;
   Map<String, int> _counts = {};
   Map<String, int> _statusCounts() {
@@ -3552,165 +3372,6 @@ class _LibraryPageState extends State<LibraryPage> {
                 ),
               ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _heroCover(LibraryRecord book) {
-    final audio = book.payload!['format'] == 'audio';
-    final colors = PepeColors.of(context);
-    final cover = _textInfo(book)['cover'];
-    return SizedBox(
-      width: audio ? 72 : 60,
-      height: audio ? 72 : 90,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: audio && widget.assets != null
-            ? AudioCover(
-                key: ValueKey('hero:${book.id}:${_coverVersions[book.id]}'),
-                assets: widget.assets!,
-                bookId: book.id,
-              )
-            : !audio && cover != null
-            ? Image.file(
-                File(cover as String),
-                fit: BoxFit.cover,
-                cacheWidth: 280,
-                errorBuilder: (_, _, _) =>
-                    Icon(Icons.menu_book, size: 32, color: colors.onAccent),
-              )
-            : ColoredBox(
-                color: colors.onAccent.withValues(alpha: .14),
-                child: Icon(
-                  audio
-                      ? Icons.headphones_outlined
-                      : Icons.auto_stories_outlined,
-                  size: 32,
-                  color: colors.onAccent,
-                ),
-              ),
-      ),
-    );
-  }
-
-  Widget _hero(LibraryRecord book) {
-    final colors = PepeColors.of(context);
-    final audio = book.payload!['format'] == 'audio';
-    final asset = shelfSources.first(book.id);
-    final summary = audioSummaries[book.id];
-    final total = summary?.total, position = summary?.position;
-    final double fraction = !audio
-        ? _fraction(book).clamp(0.0, 1.0)
-        : total == null || position == null || total <= 0
-        ? 0.0
-        : (position / total).clamp(0.0, 1.0);
-    final open = busy || asset == null
-        ? null
-        : () => audio ? _openAudio(asset) : _openReader(asset);
-    return Material(
-      color: colors.accent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: open,
-        onLongPress: busy ? null : () => _toggleBook(book.id),
-        child: Padding(
-          // Compact: the shelf below must stay visible on a phone.
-          padding: const EdgeInsets.fromLTRB(14, 12, 0, 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _heroCover(book),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      audio ? 'Сейчас слушаю' : 'Сейчас читаю',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: .4,
-                        color: colors.onAccent,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${bookPrefs[book.id]?['favorite'] == true ? '★ ' : ''}${_title(book)}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppFonts.book(colors.onAccent, size: 17),
-                    ),
-                    if (_authors(book).isNotEmpty)
-                      Text(
-                        _authors(book),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: colors.onAccent),
-                      ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Text(
-                          '${(fraction * 100).round()}%',
-                          style: AppFonts.title(colors.onAccent, size: 22),
-                        ),
-                        const Spacer(),
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: colors.onAccent,
-                            foregroundColor: colors.accent,
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                          ),
-                          onPressed: open,
-                          child: Text(audio ? 'Слушать' : 'Читать'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(3),
-                      child: LinearProgressIndicator(
-                        value: fraction,
-                        minHeight: 3,
-                        color: colors.onAccent,
-                        backgroundColor: colors.onAccent.withValues(alpha: .2),
-                      ),
-                    ),
-                    if ((audio
-                            ? audioRemainingLabel(summary)
-                            : _textRemaining(book)) !=
-                        null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          audio
-                              ? audioRemainingLabel(summary)!
-                              : _textRemaining(book)!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: colors.onAccent,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              Theme(
-                data: Theme.of(context).copyWith(
-                  iconTheme: IconThemeData(color: colors.onAccent),
-                  popupMenuTheme: Theme.of(context).popupMenuTheme
-                      .copyWith(iconColor: colors.onAccent),
-                ),
-                child: _bookMenuButton(book),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -3858,12 +3519,15 @@ class _LibraryPageState extends State<LibraryPage> {
                     Row(
                       children: [
                         Expanded(
-                          child: Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            crossAxisAlignment: WrapCrossAlignment.center,
+                          child: Row(
                             children: [
-                              ShelfStatus(deleted ? 'deleted' : status),
+                              Flexible(
+                                child: ShelfStatus(
+                                  deleted ? 'deleted' : status,
+                                  activeLabel: reading ? 'Читаю' : 'Слушаю',
+                                ),
+                              ),
+                              const SizedBox(width: 6),
                               Text(
                                 fraction == null
                                     ? (audio

@@ -25,6 +25,7 @@ import 'package:pepehub/ui/obsidian_library_page.dart'
 import 'package:pepehub/ui/shelf_components.dart';
 
 import 'library_series_add_test.dart' show volume;
+import 'support/flutter_fonts.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -38,9 +39,7 @@ void main() {
           .load();
     }
     await (FontLoader('MaterialIcons')..addFont(
-          File(
-            '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-          ).readAsBytes().then(ByteData.sublistView),
+          File(materialIconsFont).readAsBytes().then(ByteData.sublistView),
         ))
         .load();
   });

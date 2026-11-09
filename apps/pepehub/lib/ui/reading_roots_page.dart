@@ -54,8 +54,14 @@ String readingRootSummary(
   int trashed = 0,
 }) {
   final parts = <String>[bookCount(root.availableIds.length - trashed)];
+  // Ties go alphabetically: the folder listing order differs between file
+  // systems, and the card must read the same on every device.
   final byCount = formats.entries.toList()
-    ..sort((a, b) => b.value.compareTo(a.value));
+    ..sort(
+      (a, b) => b.value != a.value
+          ? b.value.compareTo(a.value)
+          : formatLabel(a.key).compareTo(formatLabel(b.key)),
+    );
   if (byCount.isNotEmpty) {
     parts.add(
       byCount.take(4).map((e) => '${formatLabel(e.key)} ${e.value}').join(', '),

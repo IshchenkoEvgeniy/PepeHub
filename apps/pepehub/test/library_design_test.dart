@@ -13,6 +13,8 @@ import 'package:pepehub/main.dart';
 import 'package:pepehub/ui/library_page.dart';
 import 'package:pepehub/library/library_service.dart';
 
+import 'support/flutter_fonts.dart';
+
 Future<void> cover(
   WidgetTester tester,
   File file,
@@ -109,9 +111,7 @@ void main() {
             'TestUi',
           )..addFont(font.readAsBytes().then(ByteData.sublistView))).load();
         }
-        final icon = File(
-          '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-        );
+        final icon = File(materialIconsFont);
         if (await icon.exists()) {
           await (FontLoader(
             'MaterialIcons',

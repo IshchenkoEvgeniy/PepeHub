@@ -12,6 +12,7 @@ import 'package:pepehub/reader/pdf_page_tools.dart';
 import 'package:pepehub/ui/app_theme.dart';
 
 import 'reader_improvements_test.dart' show size;
+import 'support/flutter_fonts.dart';
 
 void main() {
   for (final screen in [
@@ -233,9 +234,7 @@ void main() {
     final key = GlobalKey();
     await tester.runAsync(() async {
       await (FontLoader('MaterialIcons')..addFont(
-            File(
-              '../../.tools/flutter/bin/cache/artifacts/material_fonts/materialicons-regular.otf',
-            ).readAsBytes().then(ByteData.sublistView),
+            File(materialIconsFont).readAsBytes().then(ByteData.sublistView),
           ))
           .load();
       for (final font in {'Onest': 'Onest', 'ReaderLora': 'Lora'}.entries) {

@@ -17,6 +17,8 @@ import 'package:pepehub/reader/reading_plan.dart';
 import 'package:pepehub/ui/reading_plan_page.dart';
 import 'package:pepehub/ui/app_theme.dart';
 
+import 'support/flutter_fonts.dart';
+
 Map<String, dynamic> sample({String book = 'b', String hash = 'h'}) => {
   'bookId': book,
   'hash': hash,
@@ -218,9 +220,7 @@ void main() {
             'Roboto',
           )..addFont(font.readAsBytes().then(ByteData.sublistView))).load();
         }
-        final icons = File(
-          '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-        );
+        final icons = File(materialIconsFont);
         if (await icons.exists()) {
           await (FontLoader(
             'MaterialIcons',

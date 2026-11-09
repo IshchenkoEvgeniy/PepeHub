@@ -160,8 +160,14 @@ Future<AudioFolder> rescanAudioFolder(String root, {bool books = false}) async {
   );
 }
 
-Uri audioSourceUri(String path) =>
-    path.startsWith('content://') ? Uri.parse(path) : Uri.file(path);
+/// A Windows path (`C:\…`, `C:/…`, `\\server\…`) is read as one on every
+/// platform, so a URI does not depend on where the code happens to run.
+Uri audioSourceUri(String path) => path.startsWith('content://')
+    ? Uri.parse(path)
+    : Uri.file(
+        path,
+        windows: RegExp(r'^([A-Za-z]:[\\/]|\\\\)').hasMatch(path) ? true : null,
+      );
 
 Future<bool> audioSourceExists(String path) async {
   if (!path.startsWith('content://')) {

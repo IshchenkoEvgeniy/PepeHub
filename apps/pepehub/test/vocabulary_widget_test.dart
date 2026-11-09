@@ -26,6 +26,7 @@ import 'reader_improvements_test.dart' show settle;
 import 'readme_screenshots_test.dart' show DocumentationPlayer;
 import 'support/video_engine.dart';
 import 'video_player_tools_widget_test.dart' show ready;
+import 'support/flutter_fonts.dart';
 
 class StudyAudio extends DocumentationPlayer {
   StudyAudio(AssetStore assets, List<LocalAsset> tracks)
@@ -55,7 +56,7 @@ Future<void> loadFonts(WidgetTester tester) => tester.runAsync(() async {
     'Onest': 'assets/fonts/Onest.ttf',
     'Oswald': 'assets/fonts/Oswald.ttf',
     'CormorantGaramond': 'assets/fonts/CormorantGaramond.ttf',
-    'MaterialIcons': '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+    'MaterialIcons': materialIconsFont,
   }.entries) {
     await (FontLoader(entry.key)
           ..addFont(File(entry.value).readAsBytes().then(ByteData.sublistView)))

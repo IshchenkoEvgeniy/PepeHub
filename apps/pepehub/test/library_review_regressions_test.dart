@@ -386,7 +386,13 @@ void main() {
       final LibraryService live = state.obsidianLibrary;
       await ready(
         tester,
-        () => !state.loading && !live.loading && live.entries.isNotEmpty,
+        // Background work keeps a progress bar animating; settle only once
+        // it is done, or pumpAndSettle spins while real I/O cannot advance.
+        () =>
+            !state.loading &&
+            !live.loading &&
+            live.entries.isNotEmpty &&
+            !tester.binding.hasScheduledFrame,
       );
       await tester.runAsync(() => live.idle);
       final beforeBooks = state.books;
@@ -400,7 +406,12 @@ void main() {
           local.notifyExternalChange();
         }
       });
-      await ready(tester, () => !identical(state.books, beforeBooks));
+      await ready(
+        tester,
+        () =>
+            !identical(state.books, beforeBooks) &&
+            !tester.binding.hasScheduledFrame,
+      );
       await tester.runAsync(() => live.idle);
       await tester.pumpAndSettle();
       final shown = live.entries.single.item.title;

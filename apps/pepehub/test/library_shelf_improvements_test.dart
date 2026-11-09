@@ -160,7 +160,7 @@ void main() {
   );
 
   testWidgets(
-    'several started books: the latest is the hero, the rest form a ribbon',
+    'started books stay in the list in the same order with and without filters',
     (tester) async {
       final db = AppDatabase(NativeDatabase.memory());
       final repo = Repository(db);
@@ -192,30 +192,27 @@ void main() {
       addTearDown(tester.view.reset);
       await tester.pumpWidget(MaterialApp(home: LibraryPage(repository: repo)));
       await tester.pumpAndSettle();
-      expect(find.text('Сейчас читаю'), findsOneWidget);
-      expect(find.byKey(const ValueKey('continue-ribbon')), findsOneWidget);
-      final ribbon = find.byWidgetPredicate(
-        (w) =>
-            w.key is ValueKey<String> &&
-            (w.key! as ValueKey<String>).value.startsWith('continue:'),
-      );
-      expect(ribbon, findsNWidgets(2));
-      // Started books are shown above, not repeated in the list.
-      expect(cardTitles(tester), ['Новая']);
+      // No "now reading" block: it pulled started books out of the list
+      // only while no filter was set, so the shelf changed per folder.
+      expect(find.text('Сейчас читаю'), findsNothing);
+      expect(find.byKey(const ValueKey('continue-ribbon')), findsNothing);
+      final all = cardTitles(tester);
+      expect(all.toSet(), {'Первая', 'Вторая', 'Третья', 'Новая'});
       // 1000 characters a minute: 120 000 characters take two hours.
       expect(find.textContaining('≈ 2 ч чтения'), findsWidgets);
-      // A filter hides the ribbon: the list then shows every match.
+      expect(find.text('Читаю'), findsWidgets);
+      expect(find.text('В процессе'), findsNothing);
+      // A filter narrows the same list; resetting it restores the same order.
       await tester.tap(find.byKey(const ValueKey('shelf-filters')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('filter-favorites')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Готово'));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('continue-ribbon')), findsNothing);
       expect(find.text('Ничего не найдено'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('shelf-reset-filters')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('continue-ribbon')), findsOneWidget);
+      expect(cardTitles(tester), all);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     },

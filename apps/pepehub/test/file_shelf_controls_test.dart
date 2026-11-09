@@ -15,6 +15,8 @@ import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/ui/catalog_search.dart';
 import 'package:pepehub/ui/library_page.dart';
 
+import 'support/flutter_fonts.dart';
+
 class _Repository extends Repository {
   _Repository(super.db);
   int shelfReads = 0;
@@ -242,9 +244,9 @@ void main() {
                   .load();
             }
             await (FontLoader('MaterialIcons')..addFont(
-                  File(
-                    '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-                  ).readAsBytes().then(ByteData.sublistView),
+                  File(materialIconsFont)
+                      .readAsBytes()
+                      .then(ByteData.sublistView),
                 ))
                 .load();
           });

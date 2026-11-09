@@ -25,6 +25,8 @@ import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 import 'package:pepehub/ui/obsidian_library_page.dart';
 
+import 'support/flutter_fonts.dart';
+
 class _NoProbeLibrary extends LibraryService {
   _NoProbeLibrary(super.local, super.client);
   @override
@@ -277,9 +279,7 @@ void main() {
               .load();
         }
         await (FontLoader('MaterialIcons')..addFont(
-              File(
-                '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-              ).readAsBytes().then(ByteData.sublistView),
+              File(materialIconsFont).readAsBytes().then(ByteData.sublistView),
             ))
             .load();
       });

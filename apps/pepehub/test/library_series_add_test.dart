@@ -24,6 +24,7 @@ import 'package:pepehub/ui/obsidian_library_page.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 import 'video_player_tools_widget_test.dart' show ready;
+import 'support/flutter_fonts.dart';
 
 ObsidianLibraryItem volume(
   String id, {
@@ -359,9 +360,7 @@ void main() {
               .load();
         }
         await (FontLoader('MaterialIcons')..addFont(
-              File(
-                '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-              ).readAsBytes().then(ByteData.sublistView),
+              File(materialIconsFont).readAsBytes().then(ByteData.sublistView),
             ))
             .load();
       });
@@ -530,9 +529,7 @@ void main() {
               .load();
         }
         await (FontLoader('MaterialIcons')..addFont(
-              File(
-                '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-              ).readAsBytes().then(ByteData.sublistView),
+              File(materialIconsFont).readAsBytes().then(ByteData.sublistView),
             ))
             .load();
       });

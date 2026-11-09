@@ -17,6 +17,7 @@ import 'package:pepehub/video/video_repository.dart';
 
 import 'support/video_engine.dart';
 import 'video_player_tools_widget_test.dart' show ready;
+import 'support/flutter_fonts.dart';
 
 class _Engine extends TestVideoEngine {
   int opens = 0;
@@ -353,7 +354,7 @@ void main() {
       await tester.runAsync(() async {
         for (final entry in {
           'Onest': 'assets/fonts/Onest.ttf',
-          'MaterialIcons': '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
+          'MaterialIcons': materialIconsFont,
         }.entries) {
           await (FontLoader(entry.key)..addFont(
                 File(entry.value).readAsBytes().then(ByteData.sublistView),

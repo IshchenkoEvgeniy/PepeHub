@@ -18,6 +18,8 @@ import 'package:pepehub/ui/metadata_input.dart';
 import 'package:pepehub/ui/obsidian_library_page.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
+import 'support/flutter_fonts.dart';
+
 LibraryEntry card(
   String id, {
   String type = 'book',
@@ -330,9 +332,9 @@ void main() {
                 .load();
           }
           await (FontLoader('MaterialIcons')..addFont(
-                File(
-                  '../../.tools/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-                ).readAsBytes().then(ByteData.sublistView),
+                File(materialIconsFont)
+                    .readAsBytes()
+                    .then(ByteData.sublistView),
               ))
               .load();
         });
