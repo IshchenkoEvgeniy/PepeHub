@@ -472,22 +472,6 @@ void main() {
       find.byKey(const ValueKey('statistics-pages-book:card-2')),
     );
     await openAndBack(find.byKey(const ValueKey('annual-book:card-2')));
-    await tester.tap(find.byTooltip('Итоги года'));
-    await tester.pumpAndSettle();
-    for (final key in ['card:card-2']) {
-      final line = find.byKey(ValueKey('year-review-book:$key')).first;
-      await tester.scrollUntilVisible(
-        line,
-        300,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(line);
-      await ready(
-        tester,
-        () => find.text('Карточка произведения').evaluate().isNotEmpty,
-      );
-      expect(find.byType(LibraryWorkPage), findsOneWidget);
-    }
     for (final page in <Widget>[
       ReadingStatisticsPage(
         repository: repo,

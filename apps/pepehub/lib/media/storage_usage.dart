@@ -17,9 +17,15 @@ class StorageUsage {
         FileSystemEntityType.directory) {
       throw StateError('Хранилище недоступно или заменено ссылкой');
     }
+    // The folder itself must not be a link (checked above without following
+    // links). Links above it belong to the system: on Android the app's data
+    // folder /data/user/0/<package> is a link to /data/data/<package>, and on
+    // macOS /var points to /private/var. Compare against the resolved parent
+    // so only a swapped final component is rejected.
+    final parent = Directory(p.dirname(p.absolute(root.path)));
     if (!p.equals(
       await root.resolveSymbolicLinks(),
-      p.normalize(p.absolute(root.path)),
+      p.join(await parent.resolveSymbolicLinks(), p.basename(root.path)),
     )) {
       throw StateError('Путь хранилища содержит ссылку');
     }

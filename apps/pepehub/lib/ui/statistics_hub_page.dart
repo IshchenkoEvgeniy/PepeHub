@@ -17,8 +17,6 @@ import 'reading_statistics_page.dart';
 import 'shelf_components.dart';
 import 'book_calendar.dart';
 import 'annual_book_statistics.dart';
-import '../statistics/annual_summary.dart';
-import 'year_review_page.dart';
 import 'library_card_link.dart';
 import 'statistics_exchange_page.dart';
 import '../statistics/portable_history.dart';
@@ -277,30 +275,6 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
       navigation: widget.navigation,
       bottomNavigationBar: null,
       actions: [
-        IconButton(
-          tooltip: 'Итоги года',
-          onPressed: loading
-              ? null
-              : () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => YearReviewPage(
-                      library: widget.library,
-                      summary: AnnualSummary(
-                        year: year,
-                        scope: scope,
-                        entries: _completedEntries,
-                        readingDays: readingDays,
-                        audioDays: audioDays,
-                        audioActivityDays: audioActivityDays,
-                        bookTimes: _books,
-                        titles: titles,
-                      ),
-                    ),
-                  ),
-                ),
-          icon: const Icon(Icons.auto_awesome_outlined),
-        ),
         IconButton(
           tooltip: 'Экспорт и импорт всей статистики',
           icon: const Icon(Icons.import_export),

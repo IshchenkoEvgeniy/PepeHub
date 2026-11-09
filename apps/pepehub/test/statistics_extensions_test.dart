@@ -1,10 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
@@ -21,7 +18,7 @@ import 'package:pepehub/audio/audio_statistics_history.dart';
 import 'package:pepehub/statistics/annual_summary.dart';
 import 'package:pepehub/statistics/statistics_exchange.dart';
 import 'package:pepehub/statistics/portable_history.dart';
-import 'package:pepehub/ui/year_review_page.dart';
+import 'package:pepehub/ui/annual_book_statistics.dart';
 
 import 'statistics_consistency_test.dart'
     show card, cardId, session, audio, slot;
@@ -69,7 +66,7 @@ void main() {
     },
   );
 
-  AnnualSummary summary() {
+  List<YearBook> annualBooks() {
     final a = card(1)
       ..item.values.addAll({
         'genre': ['Фантастика', 'фантастика'],
@@ -87,67 +84,22 @@ void main() {
         'author': ['Автор'],
         'rating': 5,
       });
-    return AnnualSummary(
-      year: 2026,
-      scope: 'all',
-      entries: [a, b],
-      readingDays: {'2026-01-01': 300000, '2026-01-02': 1000},
-      audioDays: {'2026-01-02': 1500000},
-      audioActivityDays: {'2026-01-02': 600000},
-      bookTimes: {'a': 300000},
-      titles: {'a': 'Книга'},
-    );
+    return booksCompletedInYear([a, b], 2026);
   }
 
-  test('annual groups deduplicate labels; rereads, best books and real-day records stay distinct', () {
-    final data = summary();
-    expect(data.books.length, 2);
-    expect(data.completions, 3);
-    expect(data.favoriteGenre!.books, 2);
-    expect(data.favoriteGenre!.completions, 3);
-    expect(annualCategories(data.books, 'author').first.books, 2);
+  test('annual groups deduplicate labels and count rereads separately', () {
+    final books = annualBooks();
+    expect(books.length, 2);
+    expect(books.fold<int>(0, (sum, b) => sum + b.completions), 3);
+    final genre = annualCategories(books, 'genre').first;
+    expect(genre.label, 'Фантастика');
+    expect(genre.books, 2);
+    expect(genre.completions, 3);
+    expect(annualCategories(books, 'author').first.books, 2);
     expect(
-      annualCategories(data.books, 'series').map((c) => c.label),
+      annualCategories(books, 'series').map((c) => c.label),
       contains('Без серии'),
     );
-    expect(data.bestBooks.first.rating, 5);
-    expect(
-      data.longestDay!.value,
-      601000,
-    ); // The manual estimate is not a record.
-    expect(data.bestStreak(DateTime(2026, 1, 3)), 2);
-  });
-  testWidgets('year review exports a full-size PNG independent of viewport', (
-    tester,
-  ) async {
-    final data = summary();
-    final bytes = await tester.runAsync(() async {
-      await (FontLoader('Onest')..addFont(
-            File('assets/fonts/Onest.ttf')
-                .readAsBytes()
-                .then(ByteData.sublistView),
-          ))
-          .load();
-      final bytes = await renderAnnualSummaryPng(data, DateTime(2026, 12, 31));
-      final file = File('build/ui-review/year-review.png');
-      await file.parent.create(recursive: true);
-      await file.writeAsBytes(bytes);
-      return bytes;
-    });
-    expect(bytes!.take(8), [137, 80, 78, 71, 13, 10, 26, 10]);
-    await tester.runAsync(() async {
-      final codec = await ui.instantiateImageCodec(bytes);
-      final frame = await codec.getNextFrame();
-      expect(frame.image.width, 1080);
-      expect(frame.image.height, greaterThan(1000));
-      frame.image.dispose();
-      codec.dispose();
-    });
-    await tester.pumpWidget(MaterialApp(home: YearReviewPage(summary: data)));
-    await tester.pump();
-    expect(find.byKey(const ValueKey('year-review-export')), findsOneWidget);
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets(
@@ -157,11 +109,13 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-      final books = booksCompletedInYear([
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final entries = [
         for (var i = 0; i < 2000; i++)
           card(i, type: i < 1000 ? 'book' : 'audiobook')
             ..item.values['genre'] = 'Жанр $i',
-      ], 2026);
+      ];
       await tester.pumpWidget(
         MaterialApp(
           builder: (context, child) => MediaQuery(
@@ -170,19 +124,38 @@ void main() {
             child: child!,
           ),
           home: Scaffold(
-            body: SingleChildScrollView(
-              child: AnnualCategoryPanel(
-                title: 'Жанры',
-                field: 'genre',
-                books: books,
-              ),
+            body: AnnualBookStatistics(
+              repository: Repository(db),
+              completedEntries: entries,
+              year: 2026,
+              scope: 'all',
+              readingDays: const {},
+              audioDays: const {},
+              clock: () => DateTime(2026, 12, 31),
+              onScope: (_) {},
+              onYear: (_) {},
             ),
           ),
         ),
       );
-      await tester.tap(find.text('Все 2000'));
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pump();
+      final all = find.text('Все 2000');
+      await tester.scrollUntilVisible(
+        all,
+        400,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(all);
       await tester.pumpAndSettle();
-      expect(find.byType(ListTile).evaluate().length, lessThan(40));
+      await tester.tap(all);
+      await tester.pumpAndSettle();
+      expect(find.text('Жанры · 2000'), findsOneWidget);
+      // Five rows in the feed plus only the visible rows of the full list.
+      expect(
+        find.textContaining('Жанр ').evaluate().length,
+        inInclusiveRange(6, 45),
+      );
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     },

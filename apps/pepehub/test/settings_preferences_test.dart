@@ -162,4 +162,32 @@ void main() {
     expect((await usage.measure()).total, before.total - 9);
     expect(await usage.clearTemporaryCopies(), 0);
   });
+
+  test(
+    'storage under a linked system folder is measured; a linked store is not',
+    () async {
+      final base = await Directory.systemTemp.createTemp(
+        'pepehub-storage-link-',
+      );
+      addTearDown(() => base.delete(recursive: true));
+      // Like Android: /data/user/0/<package> is a link to /data/data/<package>.
+      final real = await Directory(p.join(base.path, 'data', 'package'))
+          .create(recursive: true);
+      final linkedParent = p.join(base.path, 'user0');
+      await Link(linkedParent).create(real.path);
+      final store = await Directory(p.join(linkedParent, 'files')).create();
+      await File(p.join(store.path, 'book.epub')).writeAsString('12345');
+      expect((await StorageUsage(store).measure()).total, 5);
+
+      // The store folder itself replaced by a link is still rejected.
+      final elsewhere = await Directory(p.join(base.path, 'elsewhere'))
+          .create();
+      final swapped = p.join(real.path, 'swapped');
+      await Link(swapped).create(elsewhere.path);
+      expect(
+        () => StorageUsage(Directory(swapped)).measure(),
+        throwsA(isA<StateError>()),
+      );
+    },
+  );
 }

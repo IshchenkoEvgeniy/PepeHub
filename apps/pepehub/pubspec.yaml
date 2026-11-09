@@ -1,7 +1,7 @@
 name: pepehub
 description: "Offline personal library, reader and activity journal."
 publish_to: 'none'
-version: 0.30.31+111
+version: 0.30.32+112
 
 environment:
   sdk: ^3.13.3

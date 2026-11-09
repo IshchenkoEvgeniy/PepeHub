@@ -1,7 +1,5 @@
-import '../library/models.dart';
 import '../library/metadata_values.dart';
 import '../library/reading_insights.dart';
-import 'activity_streak.dart';
 
 class AnnualCategory {
   final String label;
@@ -39,69 +37,4 @@ List<AnnualCategory> annualCategories(List<YearBook> books, String field) {
     final count = b.books.compareTo(a.books);
     return count != 0 ? count : a.label.compareTo(b.label);
   });
-}
-
-class AnnualSummary {
-  final int year;
-  final String scope;
-  final List<YearBook> books;
-  final Map<String, int> days, activityDays, bookTimes;
-  final Map<String, String> titles;
-  AnnualSummary({
-    required this.year,
-    required this.scope,
-    required Iterable<LibraryEntry> entries,
-    required Map<String, int> readingDays,
-    required Map<String, int> audioDays,
-    required Map<String, int> audioActivityDays,
-    this.bookTimes = const {},
-    this.titles = const {},
-  }) : books = booksCompletedInYear(entries, year, scope: scope),
-       days = _merge(year, scope, readingDays, audioDays),
-       activityDays = _merge(year, scope, readingDays, audioActivityDays);
-  static Map<String, int> _merge(
-    int year,
-    String scope,
-    Map<String, int> reading,
-    Map<String, int> audio,
-  ) {
-    final result = <String, int>{};
-    for (final source in [
-      if (scope != 'audio') reading,
-      if (scope != 'reading') audio,
-    ]) {
-      for (final e in source.entries) {
-        if (e.key.startsWith('$year-')) {
-          result[e.key] = (result[e.key] ?? 0) + e.value;
-        }
-      }
-    }
-    return Map.unmodifiable(result);
-  }
-
-  int get completions => books.fold(0, (sum, b) => sum + b.completions);
-  int get milliseconds => days.values.fold(0, (a, b) => a + b);
-  int get activeDays => activityDays.values.where((v) => v > 0).length;
-  MapEntry<String, int>? get longestDay {
-    final values = activityDays.entries.where((e) => e.value > 0).toList()
-      ..sort((a, b) {
-        final time = b.value.compareTo(a.value);
-        return time == 0 ? a.key.compareTo(b.key) : time;
-      });
-    return values.firstOrNull;
-  }
-
-  int bestStreak(DateTime now) =>
-      activityStreak(activityDays, now, year: year).best;
-  List<YearBook> get bestBooks =>
-      books.where((b) => b.rating != null).toList()..sort((a, b) {
-        final score = b.rating!.compareTo(a.rating!);
-        return score == 0
-            ? a.entry.item.title.compareTo(b.entry.item.title)
-            : score;
-      });
-  AnnualCategory? get favoriteGenre => annualCategories(
-    books,
-    'genre',
-  ).where((c) => c.label != 'Не указано').firstOrNull;
 }
