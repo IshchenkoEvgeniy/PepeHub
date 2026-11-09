@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart' show Variable;
 
 import '../data/repository.dart';
+import 'purged_books.dart';
 
 /// A book or audiobook removed from PepeHub and kept in the trash.
 class TrashedBook {
@@ -114,8 +115,10 @@ class BookTrash {
     return books;
   }
 
-  /// Deletes books for good: the record, its file registrations and folder
-  /// bindings. Reconnecting the folder later adds the files as new books.
+  /// Deletes books for good: the record, its file registrations, folder
+  /// bindings, shelf settings and the personal library's service record for
+  /// the file. Cards the user added to the library, statistics and notes stay.
+  /// Reconnecting the folder later adds the files as new books.
   Future<void> purge(Iterable<String> ids) async {
     final selected = ids.toSet();
     if (selected.isEmpty) return;
@@ -130,11 +133,18 @@ class BookTrash {
           "DELETE FROM metadata WHERE key>='audio-folder:' AND key<'audio-folder;' AND value=?",
           [id],
         );
+        final keys = [
+          '$removedAtPrefix$id',
+          '${Repository.removedShelfBookPrefix}$id',
+          ...purgedBookMetaKeys(id),
+        ];
         await repository.db.customStatement(
-          'DELETE FROM metadata WHERE key IN (?,?)',
-          ['$removedAtPrefix$id', '${Repository.removedShelfBookPrefix}$id'],
+          'DELETE FROM metadata WHERE key IN '
+          '(${List.filled(keys.length, '?').join(',')})',
+          keys,
         );
       }
+      await discardPurgedBookDrafts(repository, sourceIds: selected);
     });
     repository.notifyExternalChange();
   }

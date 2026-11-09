@@ -48,9 +48,7 @@ class LegacyArchiveCertificateShadow : ShadowApplicationPackageManager() {
     }
 }
 
-/** Exercises the native bridge, manifest and activity lifecycle on a host JVM. */
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [26, 35])
+/** Pure signer-rotation rule; needs no Android runtime. */
 class SignerRotationTest {
     @Test fun acceptsTheSameSignerOrARotationThatVouchesForTheInstalledKey() {
         val old = setOf("old"); val next = setOf("new")
@@ -63,6 +61,9 @@ class SignerRotationTest {
     }
 }
 
+/** Exercises the native bridge, manifest and activity lifecycle on a host JVM. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [26, 35])
 class UpdateChannelTest {
     private lateinit var activity: Activity
     private lateinit var channel: UpdateChannel

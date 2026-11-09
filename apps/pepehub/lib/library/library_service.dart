@@ -24,6 +24,7 @@ import 'metadata_values.dart';
 import 'library_features.dart';
 import 'series_draft.dart';
 import 'library_folder_storage.dart';
+import 'purged_books.dart';
 import '../diagnostics/user_message.dart';
 
 class LibraryService extends ChangeNotifier {
@@ -545,6 +546,14 @@ class LibraryService extends ChangeNotifier {
       final removed = await _purgeCards(expired);
       await _discardUnusedCovers(removed.covers);
       values = await repository.entries();
+    }
+    // Older versions kept the service records of books the trash had already
+    // deleted for good; drop them once, the trash does it from now on.
+    if (await local.meta('library-purged-book-drafts-v1') != '1') {
+      if (await discardPurgedBookDrafts(local) > 0) {
+        values = await repository.entries();
+      }
+      await local.setMeta('library-purged-book-drafts-v1', '1');
     }
     if (await local.meta('library-manual-archive-v1') != '1') {
       if (values.values.any(
