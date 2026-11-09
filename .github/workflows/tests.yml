@@ -1,0 +1,58 @@
+name: Tests
+
+# Every push to main and every pull request: the same checks release.ps1 runs
+# locally, so a release built with -SkipTests is still covered. Linux runners
+# are the cheapest; the suite also passes on Windows (release script).
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'design/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node runs the relay/server tests and is also started by the Flutter
+      # sync tests (peer_relay_test, sync_e2e_test).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Server and bridge
+        run: |
+          npm ci
+          npm test
+          npm run typecheck
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.3
+          channel: stable
+          cache: true
+
+      - name: Flutter packages
+        working-directory: apps/pepehub
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: apps/pepehub
+        run: flutter analyze --no-pub
+
+      - name: Flutter tests
+        working-directory: apps/pepehub
+        run: flutter test --no-pub --reporter github
