@@ -9,6 +9,7 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
+import 'package:path/path.dart' as p;
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/activity_store.dart';
@@ -1134,7 +1135,7 @@ void main() {
     );
     await copy.writeAsString('{}');
     var report = (await a.folderStorage.inspect())!;
-    expect(report.syncthingRoot, shared.path);
+    expect(p.equals(report.syncthingRoot!, shared.path), isTrue);
     expect(report.ignoresTemporary, isFalse);
     expect(report.conflictCopies, [
       'library.sync-conflict-20261108-120000-AAAAAAA.json',

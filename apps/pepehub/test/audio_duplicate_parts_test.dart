@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:pepehub/audio/audio_catalog.dart';
 import 'package:pepehub/audio/audio_folder.dart';
 import 'package:pepehub/audio/audio_library_repository.dart';
@@ -26,7 +27,7 @@ void main() {
   late String all, book;
 
   Future<void> write(String name, String content) async {
-    final file = File('$all/$name');
+    final file = File(p.joinAll([all, ...name.split('/')]));
     await file.parent.create(recursive: true);
     await file.writeAsString(content);
   }
@@ -45,9 +46,11 @@ void main() {
     db = AppDatabase(NativeDatabase.memory());
     repo = Repository(db);
     temp = await Directory.systemTemp.createTemp('pepehub-duplicate-parts-');
-    assets = AssetStore(repo, Directory('${temp.path}/managed'));
-    all = '${temp.path}/Аудио';
-    book = '$all/Цвет волшебства';
+    assets = AssetStore(repo, Directory(p.join(temp.path, 'managed')));
+    // Platform separators: the same file must be spelled the same way when
+    // it is reached through the outer and the inner folder.
+    all = p.join(temp.path, 'Аудио');
+    book = p.join(all, 'Цвет волшебства');
     await write('Цвет волшебства/01/a.mp3', 'ID3 part one');
     await write('Цвет волшебства/02/b.mp3', 'ID3 part two');
     await write('Цвет волшебства/03/c.mp3', 'ID3 part three');

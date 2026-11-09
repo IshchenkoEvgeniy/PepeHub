@@ -121,7 +121,11 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.runAsync(() async {
       await repo.db.close();
-      await dir.delete(recursive: true);
+      try {
+        await dir.delete(recursive: true);
+      } on FileSystemException {
+        // Windows may still hold the cover image open; the temp folder stays.
+      }
     });
   });
 }
