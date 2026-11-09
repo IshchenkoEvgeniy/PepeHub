@@ -26,21 +26,6 @@ Future<void> libraryBatchAction(
       });
       return;
     }
-    if (action == 'dates') {
-      final changed = await library.fillDatesFromJournal(ids);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              changed == 0
-                  ? 'В журнале нет данных для пустых дат'
-                  : 'Даты заполнены из журнала: $changed',
-            ),
-          ),
-        );
-      }
-      return;
-    }
     if (action == 'status') {
       final selectedIds = ids.toSet();
       final cards = library.entries
@@ -157,7 +142,6 @@ const libraryBatchLabels = {
   'author': 'Изменить автора',
   'series': 'Изменить серию',
   'status': 'Изменить статус',
-  'dates': 'Заполнить даты из журнала',
   'favorite': 'В избранное',
   'hide': 'Скрыть',
   'show': 'Вернуть из скрытых',

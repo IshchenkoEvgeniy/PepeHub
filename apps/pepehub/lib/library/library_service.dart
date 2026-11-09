@@ -968,49 +968,6 @@ class LibraryService extends ChangeNotifier {
     );
   }
 
-  /// Fills empty start and completion dates from the activity journal:
-  /// the first recorded day starts the work, the last one completes a
-  /// finished work. Dates already present are never overwritten.
-  /// Returns how many cards changed.
-  Future<int> fillDatesFromJournal(Iterable<String> ids) async {
-    final store = history;
-    if (store == null) return 0;
-    await store.capture();
-    final day = RegExp(r'^\d{4}-\d\d-\d\d$');
-    var changed = 0;
-    for (final id in ids.toSet()) {
-      final card = (await repository.entries())[id];
-      if (card == null) continue;
-      final days =
-          (await store.entries(itemId: id))
-              .map((slot) => '${(slot['value'] as Map)['day'] ?? ''}')
-              .where(day.hasMatch)
-              .toList()
-            ..sort();
-      if (days.isEmpty) continue;
-      final values = card.item.values, next = {...values};
-      if ('${values['startDate'] ?? ''}'.isEmpty) {
-        next['startDate'] = days.first;
-      }
-      if (isFinishedLibraryItem(card.item) &&
-          '${values['endDate'] ?? ''}'.isEmpty) {
-        next['endDate'] = days.last;
-      }
-      if (next['startDate'] == values['startDate'] &&
-          next['endDate'] == values['endDate']) {
-        continue;
-      }
-      await save(id, next, original: values);
-      changed++;
-    }
-    return changed;
-  }
-
-  /// Cards whose start date, or completion date when finished, is empty.
-  bool missingDates(ObsidianLibraryItem item) =>
-      '${item.value('startDate') ?? ''}'.isEmpty ||
-      isFinishedLibraryItem(item) && '${item.value('endDate') ?? ''}'.isEmpty;
-
   Future<void> toRecommendations(String id) async {
     final entry = (await repository.entries())[id];
     if (entry == null) return;

@@ -175,8 +175,7 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       await mount(tester);
-      // Unfiltered: the count line is hidden.
-      expect(find.textContaining('Показано '), findsNothing);
+      expect(find.text('Показано 6 из 6'), findsOneWidget);
       expect(find.text('$year · книг: 1 · аудиокниг: 1'), findsOneWidget);
       expect(find.text('Завершено · 3'), findsOneWidget);
       await tap(tester, find.byTooltip('Фильтры библиотеки'));
@@ -216,8 +215,7 @@ void main() {
         find.byKey(const ValueKey('library-active-filters')),
         findsNothing,
       );
-      // Unfiltered: the count line is hidden.
-      expect(find.textContaining('Показано '), findsNothing);
+      expect(find.text('Показано 6 из 6'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },
@@ -242,12 +240,10 @@ void main() {
         find.byKey(const ValueKey('library-active-hidden')),
         findsOneWidget,
       );
-      // Hidden mode is a filter, so the count stays visible.
       expect(find.text('Показано 1 из 1'), findsOneWidget);
       expect(find.text('$year · завершено 2'), findsOneWidget);
       await removeFilter(tester, 'hidden');
-      // Unfiltered: the count line is hidden.
-      expect(find.textContaining('Показано '), findsNothing);
+      expect(find.text('Показано 6 из 6'), findsOneWidget);
       await tap(tester, find.byTooltip('Действия библиотеки'));
       expect(find.byType(PopupMenuItem<String>), findsNWidgets(6));
       expect(find.text('Только избранные'), findsNothing);
@@ -513,8 +509,7 @@ void main() {
           .position
           .jumpTo(0);
       await tester.pumpAndSettle();
-      // Unfiltered: the count line is hidden.
-      expect(find.textContaining('Показано '), findsNothing);
+      expect(find.text('Показано 1001 из 1001'), findsOneWidget);
       final collections = tester.widget<DropdownButton<String>>(
         find.descendant(
           of: find.byKey(const ValueKey('library-collection:all')),
