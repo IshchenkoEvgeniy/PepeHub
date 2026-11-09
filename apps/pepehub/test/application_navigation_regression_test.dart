@@ -10,9 +10,9 @@ import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/models.dart';
 import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/ui/audio_import_dialog.dart';
-import 'package:pepehub/ui/obsidian_library_page.dart';
+import 'package:pepehub/ui/library_metadata_editor.dart';
 
-const item = ObsidianLibraryItem(
+const item = LibraryItem(
   id: 'd1d2d3d4-1234-4123-8123-123456789abc',
   path: 'Books/Book.md',
   collectionId: 'book',

@@ -14,7 +14,7 @@ import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/library_page.dart';
 import 'package:pepehub/ui/library_trash_page.dart';
-import 'package:pepehub/ui/obsidian_library_dashboard.dart';
+import 'package:pepehub/ui/library_archive_page.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 import 'video_player_tools_widget_test.dart' show ready;
@@ -153,7 +153,7 @@ void main() {
       final file = File(library.covers!.path(hash));
       await file.parent.create(recursive: true);
       await file.writeAsBytes([1]);
-      final remote = ObsidianLibraryItem(
+      final remote = LibraryItem(
         id: uuid.v4(),
         path: 'Book.md',
         collectionId: 'book',
@@ -276,7 +276,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.data(Brightness.dark),
-        home: ObsidianLibraryPage(
+        home: LibraryArchivePage(
           service: library,
           navigation: ShelfNavigation(
             current: PepeSection.library,
@@ -323,7 +323,7 @@ void main() {
         ),
       );
       final dynamic state = tester.state(find.byType(LibraryPage));
-      final LibraryService live = state.obsidianLibrary;
+      final LibraryService live = state.personalLibrary;
       await ready(tester, () => !state.loading && !live.loading);
       await tester.runAsync(() => live.idle);
       await tester.pumpAndSettle();
@@ -383,7 +383,7 @@ void main() {
         ),
       );
       final dynamic state = tester.state(find.byType(LibraryPage));
-      final LibraryService live = state.obsidianLibrary;
+      final LibraryService live = state.personalLibrary;
       await ready(
         tester,
         // Background work keeps a progress bar animating; settle only once

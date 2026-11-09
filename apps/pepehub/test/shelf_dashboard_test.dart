@@ -12,7 +12,7 @@ import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/library/models.dart';
 import 'package:pepehub/ui/app_theme.dart';
-import 'package:pepehub/ui/obsidian_library_dashboard.dart';
+import 'package:pepehub/ui/library_archive_page.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 import 'support/flutter_fonts.dart';
@@ -63,7 +63,7 @@ List<LibraryEntry> fixtures() => [
     ['unknown', 'Новая запись', 'Автор', '', 'book', 'paused', null, null],
   ])
     LibraryEntry(
-      ObsidianLibraryItem(
+      LibraryItem(
         id: data[0] as String,
         path: 'Books/${data[0]}.md',
         collectionId: 'reading',
@@ -146,7 +146,7 @@ void main() {
                 child: child!,
               ),
               theme: AppTheme.data(Brightness.dark),
-              home: ObsidianLibraryPage(
+              home: LibraryArchivePage(
                 service: service,
                 navigation: ShelfNavigation(
                   current: PepeSection.library,

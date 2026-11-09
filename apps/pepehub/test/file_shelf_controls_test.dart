@@ -204,7 +204,7 @@ void main() {
           expect(state.selectedBooks, isEmpty);
         }
         expect(await repo.meta('reading-note:keep'), '{"text":"Keep quote"}');
-        expect(state.obsidianLibrary.visibleEntries, isEmpty);
+        expect(state.personalLibrary.visibleEntries, isEmpty);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
       },

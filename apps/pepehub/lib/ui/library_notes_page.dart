@@ -5,14 +5,14 @@ import 'pepe_widgets.dart';
 import 'shelf_components.dart';
 import '../diagnostics/user_message.dart';
 
-class ObsidianNotesPage extends StatefulWidget {
+class LibraryNotesPage extends StatefulWidget {
   final LibraryService library;
-  const ObsidianNotesPage({super.key, required this.library});
+  const LibraryNotesPage({super.key, required this.library});
   @override
-  State<ObsidianNotesPage> createState() => _ObsidianNotesPageState();
+  State<LibraryNotesPage> createState() => _LibraryNotesPageState();
 }
 
-class _ObsidianNotesPageState extends State<ObsidianNotesPage> {
+class _LibraryNotesPageState extends State<LibraryNotesPage> {
   List<Map<String, dynamic>> notes = [];
   String query = '', error = '';
   @override

@@ -26,14 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Node runs the relay/server tests and is also started by the Flutter
-      # sync tests (peer_relay_test, sync_e2e_test).
+      # Node runs the tests of the update publishing scripts.
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
 
-      - name: Server and bridge
+      - name: Update scripts
         run: |
           npm ci
           npm test

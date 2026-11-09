@@ -5,7 +5,7 @@ import 'personal_library.dart';
 String seriesTextKey(Object? value) =>
     '${value ?? ''}'.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
-String librarySeriesKey(ObsidianLibraryItem item) {
+String librarySeriesKey(LibraryItem item) {
   final name = seriesTextKey(item.value('series'));
   if (name.isEmpty) return 'book:${item.id}';
   final id = item.values['pepehub_series_id'];
@@ -40,7 +40,7 @@ Map<String, String> missingLibrarySeriesLinks(Iterable<LibraryEntry> entries) {
 /// Offer matching descriptive values, never another volume's reading result.
 Map<String, dynamic> commonLibrarySeriesMetadata(
   LibrarySeriesGroup group,
-  ObsidianLibraryItem target,
+  LibraryItem target,
 ) {
   final result = <String, dynamic>{};
   for (final field in [
@@ -86,14 +86,14 @@ const libraryStatusesLocal = {
 };
 
 /// Unstarted volumes describe a series' composition, outside the archive.
-bool isUnreadSeriesItem(ObsidianLibraryItem item) =>
+bool isUnreadSeriesItem(LibraryItem item) =>
     libraryStatus(item) == 'unread' &&
     '${item.value('series') ?? ''}'.trim().isNotEmpty &&
     item.values['pepehub_auto_discovered'] != true &&
     item.values['pepehub_source_only'] != true &&
     item.values['pepehub_recommendation_only'] != true;
 
-bool isSeriesCatalogItem(ObsidianLibraryItem item) =>
+bool isSeriesCatalogItem(LibraryItem item) =>
     isLibraryArchiveItem(item) || isUnreadSeriesItem(item);
 
 Map<String, String> seriesVolumeStatuses(String mediaType) => {
@@ -105,38 +105,38 @@ Map<String, String> seriesVolumeStatuses(String mediaType) => {
   },
 };
 
-Map<String, String> libraryItemStatuses(ObsidianLibraryItem item) =>
+Map<String, String> libraryItemStatuses(LibraryItem item) =>
     '${item.value('series') ?? ''}'.trim().isEmpty
     ? libraryStatusesLocal
     : seriesVolumeStatuses(item.mediaType);
 
 /// The personal archive contains outcomes, never a file shelf or reading queue.
-bool isLibraryArchiveItem(ObsidianLibraryItem item) =>
+bool isLibraryArchiveItem(LibraryItem item) =>
     libraryStatusesLocal.containsKey(libraryStatus(item)) &&
     item.values['pepehub_auto_discovered'] != true &&
     item.values['pepehub_source_only'] != true &&
     item.values['pepehub_recommendation_only'] != true;
 
-String libraryStatus(ObsidianLibraryItem item) =>
+String libraryStatus(LibraryItem item) =>
     canonicalLibraryStatus(item.value('status'));
 
-DateTime? libraryAddedAt(ObsidianLibraryItem item) =>
+DateTime? libraryAddedAt(LibraryItem item) =>
     DateTime.tryParse('${item.values['pepehub_added_at'] ?? ''}');
 
-int libraryRereads(ObsidianLibraryItem item) {
+int libraryRereads(LibraryItem item) {
   final value = item.value('rereadCount') ?? item.values['rereadCount'];
   return value is num && value.isFinite ? value.toInt().clamp(0, 99999) : 0;
 }
 
-List<String> libraryCollections(ObsidianLibraryItem item) =>
+List<String> libraryCollections(LibraryItem item) =>
     metadataStrings(item.values['pepehub_collections']);
 
-num? libraryRating(ObsidianLibraryItem item) {
+num? libraryRating(LibraryItem item) {
   final value = num.tryParse('${item.value('rating')}'.replaceAll(',', '.'));
   return value != null && value.isFinite && value >= 0 ? value : null;
 }
 
-String libraryRatingLabel(ObsidianLibraryItem item) {
+String libraryRatingLabel(LibraryItem item) {
   final rating = libraryRating(item);
   if (rating == null) return '—';
   return '★ ${rating == rating.roundToDouble() ? rating.toInt() : rating}';

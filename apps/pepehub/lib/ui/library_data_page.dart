@@ -218,7 +218,7 @@ class _LibraryDataPageState extends State<LibraryDataPage> {
     final String? selected;
     if (Platform.isAndroid) {
       selected =
-          (await peerFilesChannel.invokeMapMethod<String, dynamic>(
+          (await folderFilesChannel.invokeMapMethod<String, dynamic>(
                 'pick',
               ))?['root']
               as String?;

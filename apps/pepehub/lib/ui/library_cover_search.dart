@@ -12,7 +12,7 @@ import '../diagnostics/user_message.dart';
 
 class LibraryCoverSearch extends StatefulWidget {
   final LibraryService library;
-  final ObsidianLibraryItem item;
+  final LibraryItem item;
   const LibraryCoverSearch({
     super.key,
     required this.library,

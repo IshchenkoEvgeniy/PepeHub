@@ -11,13 +11,13 @@ class LibraryField {
   Map<String, dynamic> toJson() => {'key': key, 'field': field, 'kind': kind};
 }
 
-class ObsidianLibraryItem {
+class LibraryItem {
   final String id, path, collectionId, mediaType;
   final int modifiedAt;
   final Map<String, dynamic> values;
   final List<LibraryField> fields;
   final Map<String, dynamic>? coverAsset;
-  const ObsidianLibraryItem({
+  const LibraryItem({
     required this.id,
     required this.path,
     required this.collectionId,
@@ -27,8 +27,8 @@ class ObsidianLibraryItem {
     this.modifiedAt = 0,
     this.coverAsset,
   });
-  factory ObsidianLibraryItem.fromJson(Map<String, dynamic> json) =>
-      ObsidianLibraryItem(
+  factory LibraryItem.fromJson(Map<String, dynamic> json) =>
+      LibraryItem(
         coverAsset: json['coverAsset'] is Map
             ? Map<String, dynamic>.from(json['coverAsset'] as Map)
             : null,
@@ -67,8 +67,8 @@ class ObsidianLibraryItem {
     'values': values,
     'fields': fields.map((f) => f.toJson()).toList(),
   };
-  ObsidianLibraryItem withValues(Map<String, dynamic> next) =>
-      ObsidianLibraryItem(
+  LibraryItem withValues(Map<String, dynamic> next) =>
+      LibraryItem(
         id: id,
         path: path,
         collectionId: collectionId,
@@ -81,11 +81,11 @@ class ObsidianLibraryItem {
 }
 
 class LibraryEntry {
-  final ObsidianLibraryItem item;
+  final LibraryItem item;
   final String state;
   final String? sourceBookId, message;
   final Map<String, dynamic>? operation;
-  final ObsidianLibraryItem? remote;
+  final LibraryItem? remote;
   const LibraryEntry(
     this.item, {
     this.state = 'synced',
@@ -95,7 +95,7 @@ class LibraryEntry {
     this.remote,
   });
   factory LibraryEntry.fromJson(Map<String, dynamic> json) => LibraryEntry(
-    ObsidianLibraryItem.fromJson(
+    LibraryItem.fromJson(
       Map<String, dynamic>.from(json['item'] as Map),
     ),
     state: json['state'] as String? ?? 'synced',
@@ -106,7 +106,7 @@ class LibraryEntry {
         : Map<String, dynamic>.from(json['operation'] as Map),
     remote: json['remote'] == null
         ? null
-        : ObsidianLibraryItem.fromJson(
+        : LibraryItem.fromJson(
             Map<String, dynamic>.from(json['remote'] as Map),
           ),
   );

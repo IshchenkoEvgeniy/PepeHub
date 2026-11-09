@@ -30,7 +30,7 @@ import 'package:pepehub/recommendations/book_catalog.dart';
 import 'package:pepehub/recommendations/recommendation_store.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/audio_page.dart';
-import 'package:pepehub/ui/obsidian_library_dashboard.dart';
+import 'package:pepehub/ui/library_archive_page.dart';
 import 'package:pepehub/ui/recommendations_page.dart';
 import 'package:pepehub/ui/settings_page.dart';
 import 'package:pepehub/ui/shelf_components.dart';
@@ -604,7 +604,7 @@ void main() {
         service.entries = [
           for (var i = 0; i < 6; i++)
             LibraryEntry(
-              ObsidianLibraryItem(
+              LibraryItem(
                 id: uuid.v4(),
                 path: 'Книги/${demoTitles[i]}.md',
                 collectionId: 'book',
@@ -638,7 +638,7 @@ void main() {
         ];
         await capture(
           'obsidian',
-          ObsidianLibraryPage(
+          LibraryArchivePage(
             service: service,
             navigation: nav(PepeSection.library),
             onSettings: () {},

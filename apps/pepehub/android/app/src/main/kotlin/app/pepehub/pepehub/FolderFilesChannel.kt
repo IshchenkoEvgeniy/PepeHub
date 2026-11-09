@@ -16,11 +16,11 @@ import java.util.UUID
 import java.util.concurrent.Executors
 
 /** Direct sync sees only explicitly granted SAF trees. All provider IO runs off the UI thread. */
-class PeerFilesChannel(contextSource: android.content.Context, messenger: BinaryMessenger) {
+class FolderFilesChannel(contextSource: android.content.Context, messenger: BinaryMessenger) {
     private val context = contextSource.applicationContext
     private val resolver = context.contentResolver
     private var owner = java.lang.ref.WeakReference(contextSource as? Activity)
-    private val channel = MethodChannel(messenger, "app.pepehub/peer_files")
+    private val channel = MethodChannel(messenger, "app.pepehub/folder_files")
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private var pending: MethodChannel.Result? = null
@@ -45,7 +45,7 @@ class PeerFilesChannel(contextSource: android.content.Context, messenger: Binary
                     check(!disposed)
                     val answer = execute(call)
                     main.post { if (!disposed) result.success(answer) }
-                } catch (e: Exception) { main.post { if (!disposed) result.error("peer_files", e.message, null) } }
+                } catch (e: Exception) { main.post { if (!disposed) result.error("folder_files", e.message, null) } }
             }
         }
     }

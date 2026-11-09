@@ -45,12 +45,12 @@ Map<String, dynamic> get personalLibrarySchema => {
   ],
 };
 
-ObsidianLibraryItem personalLibraryItem(
+LibraryItem personalLibraryItem(
   String id,
   String mediaType,
   Map<String, dynamic> values, {
   int? modifiedAt,
-}) => ObsidianLibraryItem(
+}) => LibraryItem(
   id: id,
   path: '',
   collectionId: mediaType,
@@ -65,7 +65,7 @@ ObsidianLibraryItem personalLibraryItem(
 );
 
 Map<String, dynamic> personalValues(
-  ObsidianLibraryItem remote, {
+  LibraryItem remote, {
   Map? collection,
 }) {
   final aliases = {for (final f in remote.fields) f.key: f.field};
@@ -90,14 +90,14 @@ Map<String, dynamic> personalValues(
   return result;
 }
 
-bool isLibraryDeleted(ObsidianLibraryItem item) =>
+bool isLibraryDeleted(LibraryItem item) =>
     item.values['pepehub_deleted_at'] != null;
 
-bool isFinishedLibraryItem(ObsidianLibraryItem item) =>
+bool isFinishedLibraryItem(LibraryItem item) =>
     canonicalLibraryStatus(item.value('status')) == 'finished';
 
-DateTime? libraryCompletionDate(ObsidianLibraryItem item) =>
+DateTime? libraryCompletionDate(LibraryItem item) =>
     libraryDate(item.value('endDate'));
 
-DateTime? libraryStartDate(ObsidianLibraryItem item) =>
+DateTime? libraryStartDate(LibraryItem item) =>
     libraryDate(item.value('startDate'));

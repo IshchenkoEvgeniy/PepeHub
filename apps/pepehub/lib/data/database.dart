@@ -36,25 +36,15 @@ class AppDatabase extends GeneratedDatabase {
         'CREATE TABLE records (id TEXT PRIMARY KEY, type TEXT NOT NULL, revision INTEGER NOT NULL, deleted INTEGER NOT NULL, payload TEXT NOT NULL)',
       );
       await customStatement(
-        'CREATE TABLE remote_records (id TEXT PRIMARY KEY, type TEXT NOT NULL, revision INTEGER NOT NULL, deleted INTEGER NOT NULL, payload TEXT NOT NULL)',
-      );
-      await customStatement(
-        "CREATE TABLE outbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT, operation_id TEXT NOT NULL UNIQUE, entity_id TEXT NOT NULL, operation TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', receipt TEXT)",
-      );
-      await customStatement(
-        'CREATE INDEX outbox_entity ON outbox(entity_id, sequence)',
-      );
-      await customStatement(
         'CREATE INDEX records_type ON records(type, deleted)',
       );
       await customStatement(
         'CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
       );
-      await _addAudioSchema();
+      await _addAudioSchema(legacyOutbox: false);
       await _addEditionSchema();
       await createFeatureSchema(this);
       await ensurePerformanceProjections(this);
-      await removeDeviceSync(this);
       await customStatement('PRAGMA user_version = $currentDatabaseVersion');
     }),
     onUpgrade: (_, from, to) async {
@@ -149,12 +139,17 @@ class AppDatabase extends GeneratedDatabase {
     }
   }
 
-  Future<void> _addAudioSchema() async {
-    await customStatement(
-      'ALTER TABLE outbox ADD COLUMN attempted INTEGER NOT NULL DEFAULT 0',
-    );
-    // Legacy clients did not record attempts: conservatively freeze existing payloads.
-    await customStatement('UPDATE outbox SET attempted=1');
+  /// [legacyOutbox] is true only when upgrading a version 1 database, which
+  /// still has the sync outbox; version 7 drops it and a new database never
+  /// creates it.
+  Future<void> _addAudioSchema({bool legacyOutbox = true}) async {
+    if (legacyOutbox) {
+      await customStatement(
+        'ALTER TABLE outbox ADD COLUMN attempted INTEGER NOT NULL DEFAULT 0',
+      );
+      // Legacy clients did not record attempts: conservatively freeze existing payloads.
+      await customStatement('UPDATE outbox SET attempted=1');
+    }
     await customStatement(
       'CREATE TABLE local_assets (id TEXT PRIMARY KEY, book_id TEXT NOT NULL, filename TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL UNIQUE, bytes INTEGER NOT NULL)',
     );

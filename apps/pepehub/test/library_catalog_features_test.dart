@@ -23,14 +23,14 @@ import 'package:pepehub/ui/library_groups_page.dart';
 import 'package:pepehub/ui/library_work_page.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/shelf_components.dart';
-import 'package:pepehub/ui/obsidian_library_page.dart';
+import 'package:pepehub/ui/library_metadata_editor.dart';
 
 import 'support/flutter_fonts.dart';
 
 class _NoProbeLibrary extends LibraryService {
   _NoProbeLibrary(super.local, super.client);
   @override
-  Future<ObsidianLibraryItem> prepareDraft(LibraryRecord book) =>
+  Future<LibraryItem> prepareDraft(LibraryRecord book) =>
       throw StateError('Shelf files must not be scanned by the archive');
 }
 
@@ -294,7 +294,7 @@ void main() {
           ),
           home: RepaintBoundary(
             key: boundary,
-            child: ObsidianLibraryPage(
+            child: LibraryArchivePage(
               service: library,
               navigation: ShelfNavigation(
                 current: PepeSection.library,

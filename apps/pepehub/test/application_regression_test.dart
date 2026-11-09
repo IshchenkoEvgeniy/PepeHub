@@ -172,7 +172,7 @@ void main() {
     () async {
       await local.addBook('Book', 'Author', 'epub');
       final book = (await local.records('book')).single;
-      final item = ObsidianLibraryItem(
+      final item = LibraryItem(
         id: uuid.v4(),
         path: 'Books/Book.md',
         collectionId: 'book',

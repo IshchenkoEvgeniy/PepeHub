@@ -26,7 +26,7 @@ List<SeriesTitle> parseSeriesTitles(String text, {num firstIndex = 1}) {
   return result;
 }
 
-String seriesVolumeFingerprint(ObsidianLibraryItem item) {
+String seriesVolumeFingerprint(LibraryItem item) {
   final authors = metadataStrings(
     item.value('author'),
   ).map(seriesTextKey).toList()..sort();
@@ -36,7 +36,7 @@ String seriesVolumeFingerprint(ObsidianLibraryItem item) {
 /// Warnings, not automatic merges. Choosing a warned row explicitly permits
 /// creating a separate card, preserving all existing editions and history.
 Map<String, String> seriesDraftConflicts(
-  Iterable<ObsidianLibraryItem> drafts,
+  Iterable<LibraryItem> drafts,
   Iterable<LibraryEntry> existing, {
   String? existingSeriesKey,
 }) {
@@ -46,7 +46,7 @@ Map<String, String> seriesDraftConflicts(
   };
   final seen = <String>{};
   final positions = <String>{};
-  String? position(ObsidianLibraryItem item) {
+  String? position(LibraryItem item) {
     final n = num.tryParse('${item.value('seriesIndex')}'.replaceAll(',', '.'));
     if (n == null || !n.isFinite) return null;
     return '${item.mediaType}:${n == n.round() ? n.round() : n}';
@@ -83,7 +83,7 @@ Map<String, String> seriesDraftConflicts(
   return conflicts;
 }
 
-void validateSeriesDraft(ObsidianLibraryItem item) {
+void validateSeriesDraft(LibraryItem item) {
   if (!['book', 'audiobook'].contains(item.mediaType) ||
       !libraryItemStatuses(item).containsKey(libraryStatus(item))) {
     throw ArgumentError('Выберите статус каждого тома серии.');

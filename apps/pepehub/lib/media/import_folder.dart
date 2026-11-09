@@ -26,14 +26,14 @@ class ImportFolder {
     final normalized = root.startsWith('content://')
         ? root
         : p.normalize(p.absolute(root));
-    await peerFileSystem(normalized).checkRoot();
+    await folderFileSystem(normalized).checkRoot();
     await repo.setMeta(settingKey, normalized);
     repo.notifyExternalChange();
   }
 
   Future<void> check() async {
     final root = await load();
-    if (root != null) await peerFileSystem(root).checkRoot();
+    if (root != null) await folderFileSystem(root).checkRoot();
   }
 
   Future<void> clear() async {
@@ -60,14 +60,14 @@ class ImportFolder {
   }
 
   Future<String> _copy(String root, String relative, LocalAsset asset) async {
-    final files = peerFileSystem(root);
+    final files = folderFileSystem(root);
     await files.checkRoot();
     final existing = await files.hash(relative);
     if (existing != null && existing != asset.hash) {
       throw StateError('В папке импорта уже есть другой файл: $relative');
     }
     if (existing == null) {
-      final entry = PeerFileEntry(
+      final entry = FolderFileEntry(
         path: relative,
         hash: asset.hash,
         bytes: asset.bytes,
@@ -84,8 +84,8 @@ class ImportFolder {
           if (offset + chunk.length > asset.bytes) {
             throw StateError('Размер файла изменился');
           }
-          for (var start = 0; start < chunk.length; start += peerChunkSize) {
-            final end = (start + peerChunkSize).clamp(0, chunk.length);
+          for (var start = 0; start < chunk.length; start += folderChunkSize) {
+            final end = (start + folderChunkSize).clamp(0, chunk.length);
             await stage.append(offset, chunk.sublist(start, end));
             offset += end - start;
           }
@@ -137,7 +137,7 @@ class ImportFolder {
     final path = asset.path;
     if (!root.startsWith('content:') && p.isWithin(root, path)) {
       final relative = p.split(p.relative(path, from: root)).join('/');
-      if (await peerFileSystem(root).hash(relative) == asset.hash) {
+      if (await folderFileSystem(root).hash(relative) == asset.hash) {
         return (path: path, relative: relative);
       }
       throw StateError('Файл изменился во время добавления');
@@ -160,7 +160,7 @@ class ImportFolder {
                   (part) => part.isNotEmpty && part != '.' && part != '..',
                 ) &&
             !relative.contains(r'\')) {
-          final files = peerFileSystem(root);
+          final files = folderFileSystem(root);
           final inside = await files.source(relative);
           if (inside != null && Uri.parse(inside).pathSegments.last == docId) {
             if (await files.hash(relative) != asset.hash) {
@@ -257,7 +257,7 @@ class ImportFolder {
 }
 
 Future<String?> pickImportFolder() async => Platform.isAndroid
-    ? ((await peerFilesChannel.invokeMapMethod<String, dynamic>(
+    ? ((await folderFilesChannel.invokeMapMethod<String, dynamic>(
             'pick',
           ))?['root']
           as String?)

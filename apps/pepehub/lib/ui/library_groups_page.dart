@@ -6,7 +6,7 @@ import '../library/metadata_values.dart';
 import '../library/models.dart';
 import 'library_work_page.dart';
 import 'library_series_editor_page.dart';
-import 'obsidian_library_dashboard.dart' show metadataSeriesListeningLabel;
+import 'library_archive_page.dart' show metadataSeriesListeningLabel;
 
 class LibraryGroupsPage extends StatefulWidget {
   final LibraryService library;

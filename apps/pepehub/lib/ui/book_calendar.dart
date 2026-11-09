@@ -5,7 +5,7 @@ import '../library/library_service.dart';
 import '../library/reading_insights.dart';
 import 'audio_cover.dart';
 import 'library_card_link.dart';
-import 'obsidian_library_dashboard.dart' show ShelfBookCover;
+import 'library_archive_page.dart' show ShelfBookCover;
 
 class BookCalendar extends StatefulWidget {
   final int year;

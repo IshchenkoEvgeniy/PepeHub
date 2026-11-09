@@ -12,7 +12,7 @@ import '../statistics/annual_summary.dart'
 import '../statistics/year_progress.dart';
 import 'app_theme.dart';
 import 'library_card_link.dart';
-import 'obsidian_library_dashboard.dart' show ShelfBookCover;
+import 'library_archive_page.dart' show ShelfBookCover;
 import 'shelf_components.dart';
 
 /// Section heading shared by every block of the statistics feed.

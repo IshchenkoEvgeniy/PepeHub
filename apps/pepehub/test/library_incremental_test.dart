@@ -7,7 +7,7 @@ import 'package:pepehub/library/library_repository.dart';
 import 'connector_namespace.dart';
 import 'package:pepehub/library/models.dart';
 
-import 'obsidian_library_test.dart' show card, snapshot;
+import 'library_archive_test.dart' show card, snapshot;
 
 void main() {
   const index = '11111111-1111-4111-8111-111111111111',

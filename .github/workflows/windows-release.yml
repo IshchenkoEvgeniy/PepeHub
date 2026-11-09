@@ -38,7 +38,7 @@ jobs:
           node-version: '24'
           cache: npm
 
-      - name: Validate server and bridge
+      - name: Validate update scripts
         run: |
           npm ci
           npm test

@@ -7,7 +7,7 @@ import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/library/models.dart';
 import 'package:pepehub/main.dart';
-import 'package:pepehub/ui/obsidian_library_page.dart';
+import 'package:pepehub/ui/library_metadata_editor.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 void main() {
@@ -38,7 +38,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: LibraryMetadataEditor(
-            item: const ObsidianLibraryItem(
+            item: const LibraryItem(
               id: 'id',
               path: '',
               collectionId: 'book',
@@ -90,7 +90,7 @@ void main() {
         'Rating': null,
         'Notes': null,
       };
-      final item = ObsidianLibraryItem(
+      final item = LibraryItem(
         id: 'id',
         path: 'Books/Test.md',
         collectionId: 'book',
@@ -152,7 +152,7 @@ void main() {
     service.entries = [
       for (final type in ['book', 'audiobook'])
         LibraryEntry(
-          ObsidianLibraryItem(
+          LibraryItem(
             id: type,
             path: '',
             collectionId: 'book',
@@ -167,7 +167,7 @@ void main() {
     ];
     await tester.pumpWidget(
       MaterialApp(
-        home: ObsidianLibraryPage(
+        home: LibraryArchivePage(
           service: service,
           navigation: ShelfNavigation(
             current: PepeSection.library,

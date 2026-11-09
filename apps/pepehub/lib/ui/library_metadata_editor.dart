@@ -14,7 +14,7 @@ import 'library_duration_input.dart';
 import 'shelf_components.dart';
 import '../diagnostics/user_message.dart';
 
-export 'obsidian_library_dashboard.dart' show ObsidianLibraryPage;
+export 'library_archive_page.dart' show LibraryArchivePage;
 
 const libraryLabels = {
   'title': 'Название',
@@ -51,7 +51,7 @@ String libraryState(LibraryEntry entry) => switch (entry.state) {
 };
 
 class LibraryMetadataEditor extends StatefulWidget {
-  final ObsidianLibraryItem item;
+  final LibraryItem item;
   final LibraryEntry? entry;
   final Future<void> Function(Map<String, dynamic>) onSave;
   final String saveLabel;

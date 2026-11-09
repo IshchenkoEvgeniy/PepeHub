@@ -239,7 +239,7 @@ void main() {
       await capture('library-all');
       expect(tester.takeException(), isNull);
       final dynamic page = tester.state(find.byType(LibraryPage));
-      final catalog = page.obsidianLibrary as LibraryService;
+      final catalog = page.personalLibrary as LibraryService;
       await tester.pumpWidget(const SizedBox());
       var settled = false;
       catalog.idle.then((_) => settled = true);

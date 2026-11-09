@@ -133,11 +133,11 @@ class HistoryDocumentsProvider : DocumentsProvider() {
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [26, 35], shadows = [HistoryContentResolverShadow::class])
-class PeerFilesHistoryTest {
+class FolderFilesHistoryTest {
     private val authority = "pepehub.history.test"
     private val tree = Docs.buildTreeDocumentUri(authority, "root")
     private lateinit var provider: HistoryDocumentsProvider
-    private lateinit var channel: PeerFilesChannel
+    private lateinit var channel: FolderFilesChannel
     private lateinit var temporary: File
     private val context get() = RuntimeEnvironment.getApplication()
     private val enabled = mapOf("enabled" to true, "maxDays" to 30, "maxBytes" to 500L * 1024 * 1024)
@@ -146,12 +146,12 @@ class PeerFilesHistoryTest {
         provider = HistoryDocumentsProvider().apply {
             storage = temporary
             entries["root"] = HistoryDocumentsProvider.Entry("root", null, "Books", true, temporary)
-            attachInfo(this@PeerFilesHistoryTest.context, ProviderInfo().apply {
-                this.authority = this@PeerFilesHistoryTest.authority
+            attachInfo(this@FolderFilesHistoryTest.context, ProviderInfo().apply {
+                this.authority = this@FolderFilesHistoryTest.authority
                 exported = true; grantUriPermissions = true
                 readPermission = "android.permission.MANAGE_DOCUMENTS"
                 writePermission = "android.permission.MANAGE_DOCUMENTS"
-                applicationInfo = this@PeerFilesHistoryTest.context.applicationInfo
+                applicationInfo = this@FolderFilesHistoryTest.context.applicationInfo
             })
         }
         ShadowContentResolver.registerProviderInternal(authority, provider)
@@ -159,7 +159,7 @@ class PeerFilesHistoryTest {
             Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         val messenger = Proxy.newProxyInstance(BinaryMessenger::class.java.classLoader,
             arrayOf(BinaryMessenger::class.java)) { _, _, _ -> null } as BinaryMessenger
-        channel = PeerFilesChannel(context, messenger)
+        channel = FolderFilesChannel(context, messenger)
     }
     @After fun close() {
         channel.dispose()
@@ -170,7 +170,7 @@ class PeerFilesHistoryTest {
     }
     private fun digest(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
     private fun run(method: String, args: Map<String, Any?> = emptyMap(), policy: Map<String, Any?> = emptyMap()): Any? {
-        val execute = PeerFilesChannel::class.java.getDeclaredMethod("execute", MethodCall::class.java).apply { isAccessible = true }
+        val execute = FolderFilesChannel::class.java.getDeclaredMethod("execute", MethodCall::class.java).apply { isAccessible = true }
         try { return execute.invoke(channel, MethodCall(method, mapOf("root" to tree.toString(), "history" to policy) + args)) }
         catch (e: InvocationTargetException) { throw e.targetException }
     }

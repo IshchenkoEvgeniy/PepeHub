@@ -46,7 +46,7 @@ void main() {
       },
     ],
     'items': [
-      ObsidianLibraryItem(
+      LibraryItem(
         id: id,
         path: 'Books/$id.md',
         collectionId: 'reading',

@@ -248,13 +248,13 @@ void main() {
     const root = 'content://test/tree/imports';
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    final local = LocalPeerFiles(destination);
-    final stages = <String, PeerStagingFile>{};
-    messenger.setMockMethodCallHandler(peerFilesChannel, (call) async {
+    final local = LocalFolderFiles(destination);
+    final stages = <String, FolderStagingFile>{};
+    messenger.setMockMethodCallHandler(folderFilesChannel, (call) async {
       final args = call.arguments as Map;
       expect(args['root'], root);
       final path = args['path'] as String?;
-      PeerStagingFile stage() => stages[path]!;
+      FolderStagingFile stage() => stages[path]!;
       switch (call.method) {
         case 'check':
           return null;
@@ -265,7 +265,7 @@ void main() {
         case 'stage_reset':
           final hash = (args['stage'] as String).split('-').last;
           stages[path!] = await local.stage(
-            PeerFileEntry(
+            FolderFileEntry(
               path: path,
               hash: hash,
               bytes: 0,
@@ -293,7 +293,7 @@ void main() {
       }
     });
     addTearDown(
-      () => messenger.setMockMethodCallHandler(peerFilesChannel, null),
+      () => messenger.setMockMethodCallHandler(folderFilesChannel, null),
     );
     await folder.configure(root);
     final imported = await assets.importBook(

@@ -214,7 +214,7 @@ void main() {
       final asset = await assets.importBook(XFile(file.path));
       await ReadingLibrary(local).index(assets, asset);
       final book = (await local.records('book')).single;
-      final item = ObsidianLibraryItem(
+      final item = LibraryItem(
         id: uuid.v4(),
         path: '',
         collectionId: 'book',

@@ -113,7 +113,7 @@ class NoteStore extends ActivityStore {
 
   Map<String, dynamic> _reader(
     ReadingNote n,
-    ObsidianLibraryItem item,
+    LibraryItem item,
     Map? prior,
   ) => {
     'id': prior?['id'] ?? uuid.v5(item.id, 'reader-note:${n.id}'),
@@ -137,7 +137,7 @@ class NoteStore extends ActivityStore {
   };
   Future<Map<String, dynamic>> _audio(
     LibraryRecord row,
-    ObsidianLibraryItem item,
+    LibraryItem item,
     Map? prior, [
     List<LocalAsset>? trackList,
   ]) async {

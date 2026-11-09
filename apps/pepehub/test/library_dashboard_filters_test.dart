@@ -16,7 +16,7 @@ import 'package:pepehub/library/models.dart';
 import 'package:pepehub/library/personal_library.dart';
 import 'package:pepehub/library/reading_insights.dart';
 import 'package:pepehub/ui/app_theme.dart';
-import 'package:pepehub/ui/obsidian_library_dashboard.dart';
+import 'package:pepehub/ui/library_archive_page.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 import 'video_player_tools_widget_test.dart' show ready;
@@ -32,7 +32,7 @@ class _TestLibrary extends LibraryService {
   }
 }
 
-class _CountedItem extends ObsidianLibraryItem {
+class _CountedItem extends LibraryItem {
   _CountedItem(String id, String type, Map<String, dynamic> data)
     : super(
         id: id,
@@ -132,7 +132,7 @@ void main() {
         theme: AppTheme.data(Brightness.dark),
         home: RepaintBoundary(
           key: boundary,
-          child: ObsidianLibraryPage(
+          child: LibraryArchivePage(
             service: library,
             navigation: ShelfNavigation(
               current: PepeSection.library,

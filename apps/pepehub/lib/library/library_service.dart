@@ -54,7 +54,7 @@ class LibraryService extends ChangeNotifier {
   Future<void>? _refresh;
   bool _refreshAgain = false;
   Future<void> get idle => _reloadTail;
-  String? coverHash(ObsidianLibraryItem item) {
+  String? coverHash(LibraryItem item) {
     final cover = '${item.value('cover') ?? ''}';
     final reference = CoverSync.referenceHash(cover);
     if (reference != null) return reference;
@@ -68,7 +68,7 @@ class LibraryService extends ChangeNotifier {
     return CoverSync.referenceHash('pepehub-cover:$hash');
   }
 
-  String? coverPath(ObsidianLibraryItem item) {
+  String? coverPath(LibraryItem item) {
     final hash = coverHash(item);
     return hash == null ? null : coverReferencePath('pepehub-cover:$hash');
   }
@@ -263,7 +263,7 @@ class LibraryService extends ChangeNotifier {
   }
 
   /// Completing an item fills known progress. Explicit editor values win.
-  void _completeItem(ObsidianLibraryItem before, Map<String, dynamic> changes) {
+  void _completeItem(LibraryItem before, Map<String, dynamic> changes) {
     if (isFinishedLibraryItem(before) ||
         canonicalLibraryStatus(changes['status']) != 'finished') {
       return;
@@ -424,7 +424,7 @@ class LibraryService extends ChangeNotifier {
   final Map<String, Map<String, String>> policies = {};
   Map<String, List<String>> get suggestions =>
       metadataSuggestions(visibleEntries);
-  Map<String, dynamic>? collectionFor(ObsidianLibraryItem item) =>
+  Map<String, dynamic>? collectionFor(LibraryItem item) =>
       (personalLibrarySchema['collections'] as List)
           .cast<Map<String, dynamic>>()
           .where((c) => c['id'] == item.mediaType)
@@ -600,14 +600,14 @@ class LibraryService extends ChangeNotifier {
     return entry != null && isLibraryArchiveItem(entry.item) ? entry : null;
   }
 
-  ObsidianLibraryItem draft(LibraryRecord book, Map<String, dynamic> details) =>
+  LibraryItem draft(LibraryRecord book, Map<String, dynamic> details) =>
       LibraryMapper.fromBook(
         book,
         personalLibrarySchema,
         details,
         uuid.v5(Namespace.url.value, 'personal-library:${book.id}'),
       );
-  ObsidianLibraryItem emptyDraft({bool audio = false}) =>
+  LibraryItem emptyDraft({bool audio = false}) =>
       personalLibraryItem(uuid.v4(), audio ? 'audiobook' : 'book', {
         'title': '',
         'author': <String>[],
@@ -621,7 +621,7 @@ class LibraryService extends ChangeNotifier {
         'publisher': '',
         'tags': <String>[],
       });
-  Future<ObsidianLibraryItem> prepareDraft(LibraryRecord book) async {
+  Future<LibraryItem> prepareDraft(LibraryRecord book) async {
     final details = assets == null
         ? {...?book.payload}
         : await AutomaticMetadata(assets!).withCover(book, covers);
@@ -633,7 +633,7 @@ class LibraryService extends ChangeNotifier {
     return item;
   }
 
-  Future<void> _store(ObsidianLibraryItem item, String? sourceBookId) =>
+  Future<void> _store(LibraryItem item, String? sourceBookId) =>
       repository.mutate((cards) async {
         if (cards.containsKey(item.id) ||
             sourceBookId != null &&
@@ -654,7 +654,7 @@ class LibraryService extends ChangeNotifier {
         );
       });
   Future<void> add(
-    ObsidianLibraryItem item,
+    LibraryItem item,
     String sourceBookId, {
     Map<String, dynamic>? original,
   }) async {
@@ -715,7 +715,7 @@ class LibraryService extends ChangeNotifier {
   /// Save the reviewed batch once. A failed validation or write leaves both the
   /// new series and existing cards untouched; missing dates stay unknown.
   Future<List<String>> addSeries(
-    Iterable<ObsidianLibraryItem> items, {
+    Iterable<LibraryItem> items, {
     Set<String> allowDuplicateIds = const {},
     String? existingSeriesKey,
   }) async {
@@ -830,9 +830,9 @@ class LibraryService extends ChangeNotifier {
     return ids.toList();
   }
 
-  Future<ObsidianLibraryItem> previewLink(
+  Future<LibraryItem> previewLink(
     LibraryRecord book,
-    ObsidianLibraryItem target,
+    LibraryItem target,
   ) async => draft(
     book,
     matchLibraryProgress(
@@ -1021,7 +1021,7 @@ class LibraryService extends ChangeNotifier {
     }, original: item.values);
   }
 
-  ObsidianLibraryItem fromRecommendation(
+  LibraryItem fromRecommendation(
     RecommendedBook book, {
     bool audio = false,
   }) {

@@ -19,13 +19,13 @@ import 'library_groups_page.dart';
 import 'library_series_editor_page.dart';
 import 'library_batch_actions.dart';
 import '../library/library_features.dart';
-import 'obsidian_notes_page.dart';
+import 'library_notes_page.dart';
 import 'library_card_actions.dart';
 import 'library_trash_page.dart';
 import 'library_audio_time_sheet.dart';
 import 'activity_page.dart';
 import 'app_theme.dart';
-import 'obsidian_library_page.dart' show LibraryMetadataEditor, libraryState;
+import 'library_metadata_editor.dart' show LibraryMetadataEditor, libraryState;
 import 'shelf_components.dart';
 import '../diagnostics/user_message.dart';
 
@@ -42,7 +42,7 @@ String _amount(num? value) => value == null
     ? value.toInt().toString()
     : value.toStringAsFixed(1);
 
-String metadataReadingStatus(ObsidianLibraryItem item) {
+String metadataReadingStatus(LibraryItem item) {
   final status = _text(item.value('status')).toLowerCase().trim();
   final canonical = libraryStatus(item);
   if (['paused', 'abandoned'].contains(canonical)) return canonical;
@@ -96,7 +96,7 @@ String metadataReadingStatus(ObsidianLibraryItem item) {
   return 'other';
 }
 
-double? metadataProgress(ObsidianLibraryItem item) {
+double? metadataProgress(LibraryItem item) {
   if (isUnreadSeriesItem(item)) return 0;
   final total = _number(item.value('total')),
       progress = _number(item.value('progress'));
@@ -124,7 +124,7 @@ String _duration(num value) {
   ].join(' ');
 }
 
-String metadataProgressLabel(ObsidianLibraryItem item) {
+String metadataProgressLabel(LibraryItem item) {
   if (isUnreadSeriesItem(item)) return 'Ещё не начата';
   final total = _number(item.value('total')),
       progress = _number(item.value('progress'));
@@ -264,21 +264,21 @@ String libraryFormatName(Object? value) {
   };
 }
 
-class ObsidianLibraryPage extends StatefulWidget {
+class LibraryArchivePage extends StatefulWidget {
   final LibraryService service;
   final ShelfNavigation navigation;
   final VoidCallback onSettings;
-  const ObsidianLibraryPage({
+  const LibraryArchivePage({
     super.key,
     required this.service,
     required this.navigation,
     required this.onSettings,
   });
   @override
-  State<ObsidianLibraryPage> createState() => _ObsidianLibraryPageState();
+  State<LibraryArchivePage> createState() => _LibraryArchivePageState();
 }
 
-class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
+class _LibraryArchivePageState extends State<LibraryArchivePage> {
   final search = TextEditingController();
   final searchFocus = FocusNode();
   Timer? _searchTimer;
@@ -681,7 +681,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                   await Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => ObsidianNotesPage(library: service),
+                      builder: (_) => LibraryNotesPage(library: service),
                     ),
                   );
                   return;
@@ -1834,7 +1834,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     );
   }
 
-  Widget _rating(ObsidianLibraryItem item) {
+  Widget _rating(LibraryItem item) {
     final known = libraryRating(item) != null;
     final label = libraryRatingLabel(item);
     final color = ShelfPalette.of(context).accent;
@@ -1859,7 +1859,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
     );
   }
 
-  Widget _bookTitle(ObsidianLibraryItem item) {
+  Widget _bookTitle(LibraryItem item) {
     final rereads = libraryRereads(item);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -19,8 +19,8 @@ import 'package:pepehub/library/library_backup.dart';
 import 'package:pepehub/library/reading_insights.dart';
 import 'package:pepehub/ui/library_series_editor_page.dart';
 import 'package:pepehub/ui/library_work_page.dart';
-import 'package:pepehub/ui/obsidian_library_dashboard.dart';
-import 'package:pepehub/ui/obsidian_library_page.dart'
+import 'package:pepehub/ui/library_archive_page.dart';
+import 'package:pepehub/ui/library_metadata_editor.dart'
     show LibraryMetadataEditor;
 import 'package:pepehub/ui/shelf_components.dart';
 
@@ -58,7 +58,7 @@ void main() {
 
   Widget shelf() => MaterialApp(
     theme: AppTheme.data(Brightness.dark),
-    home: ObsidianLibraryPage(
+    home: LibraryArchivePage(
       service: library,
       navigation: ShelfNavigation(
         current: PepeSection.library,
@@ -446,7 +446,7 @@ void main() {
             theme: AppTheme.data(Brightness.dark),
             home: RepaintBoundary(
               key: boundary,
-              child: ObsidianLibraryPage(
+              child: LibraryArchivePage(
                 service: library,
                 navigation: ShelfNavigation(
                   current: PepeSection.library,

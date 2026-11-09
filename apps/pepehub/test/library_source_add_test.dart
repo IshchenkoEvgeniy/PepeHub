@@ -9,7 +9,7 @@ import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/library/models.dart';
 import 'package:pepehub/library/personal_library.dart';
 import 'package:pepehub/ui/library_page.dart';
-import 'package:pepehub/ui/obsidian_library_page.dart';
+import 'package:pepehub/ui/library_metadata_editor.dart';
 import 'package:pepehub/ui/library_work_page.dart';
 
 import 'library_series_add_test.dart' show volume;
@@ -46,7 +46,7 @@ void main() {
           MaterialApp(home: LibraryPage(repository: repo)),
         );
         final dynamic state = tester.state(find.byType(LibraryPage));
-        final LibraryService library = state.obsidianLibrary;
+        final LibraryService library = state.personalLibrary;
         try {
           await ready(
             tester,
@@ -96,7 +96,7 @@ void main() {
           MaterialApp(home: LibraryPage(repository: repo)),
         );
         final state = tester.state(find.byType(LibraryPage)) as dynamic;
-        final LibraryService library = state.obsidianLibrary;
+        final LibraryService library = state.personalLibrary;
         try {
           await ready(
             tester,

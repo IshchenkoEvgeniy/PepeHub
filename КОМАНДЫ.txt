@@ -1,0 +1,104 @@
+﻿PepeHub — команды
+=================
+Запускать в PowerShell из корня проекта:
+
+    cd L:\project\PepeHub
+
+Каждую команду можно скопировать целиком. То же самое можно запустить
+двойным щелчком по одноимённому .cmd в папке scripts.
+
+
+ПРОВЕРКИ (ничего не собирают)                         лог: .local\test.log
+--------------------------------------------------------------------------
+
+Все проверки: скрипты обновления, анализ, тесты приложения
+    .\scripts\test.ps1
+
+Только анализ (быстро показывает ошибки компиляции)
+    .\scripts\test.ps1 -AnalyzeOnly
+
+Все проверки + нативные Android-тесты
+    .\scripts\test.ps1 -Android
+
+Только выбранные тесты (пути относительно apps\pepehub)
+    .\scripts\test.ps1 test\library_archive_test.dart
+    .\scripts\test.ps1 test\database_schema_test.dart test\library_folder_storage_test.dart
+
+Без Node-части (только Flutter)
+    .\scripts\test.ps1 -SkipNode
+
+
+КОММИТ И ОТПРАВКА В GIT
+--------------------------------------------------------------------------
+
+Показать изменения, спросить сообщение, закоммитить, предложить отправку
+    .\scripts\commit.ps1
+
+Коммит с готовым сообщением
+    .\scripts\commit.ps1 "Сообщение коммита"
+
+Сначала проверки; если они не прошли — коммита не будет
+    .\scripts\commit.ps1 "Сообщение коммита" -Test
+
+Только локальный коммит, без отправки
+    .\scripts\commit.ps1 "Сообщение коммита" -NoPush
+
+Без вопросов: закоммитить и сразу отправить
+    .\scripts\commit.ps1 "Сообщение коммита" -Yes
+
+
+ВЫПУСК (Windows + Android, публикация на GitHub)
+--------------------------------------------------------------------------
+
+Обычный выпуск: следующая patch-версия и номер сборки
+    .\scripts\release.ps1
+
+Без повторного прогона тестов (анализ остаётся)
+    .\scripts\release.ps1 -SkipTests
+
+Задать версию вручную
+    .\scripts\release.ps1 -Version 0.32.0
+
+Выпустить версию, уже указанную в pubspec.yaml
+    .\scripts\release.ps1 -KeepVersion
+
+Только собрать и подготовить пакеты в dist\online, ничего не публикуя
+    .\scripts\release.ps1 -NoPublish
+
+Опубликовать, но не коммитить и не отправлять исходники
+    .\scripts\release.ps1 -NoSourcePush
+
+
+ЛОКАЛЬНАЯ СБОРКА (анализ, тесты, сборка, без публикации)
+--------------------------------------------------------------------------
+
+Windows: собрать и открыть приложение
+    .\scripts\run-local-build.ps1 -Target Windows
+
+Android: собрать APK в dist
+    .\scripts\run-local-build.ps1 -Target Android
+
+Собрать без тестов / не открывать результат
+    .\scripts\run-local-build.ps1 -Target Windows -SkipTests
+    .\scripts\run-local-build.ps1 -Target Windows -NoOpen
+
+Проверить только наличие инструментов и ресурсов
+    .\scripts\run-local-build.ps1 -Target Windows -CheckOnly
+
+
+ЗАПУСК ДЛЯ РАЗРАБОТКИ
+--------------------------------------------------------------------------
+
+Запустить приложение в режиме отладки
+    cd apps\pepehub
+    ..\..\.tools\flutter\bin\flutter.bat run -d windows
+
+
+ЕСЛИ POWERSHELL НЕ ЗАПУСКАЕТ СКРИПТЫ
+--------------------------------------------------------------------------
+
+При ошибке «выполнение сценариев отключено» используйте .cmd с теми же
+параметрами:
+    .\scripts\test.cmd -AnalyzeOnly
+    .\scripts\commit.cmd "Сообщение коммита" -Test
+    .\scripts\release.cmd -SkipTests

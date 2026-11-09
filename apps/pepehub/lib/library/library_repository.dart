@@ -102,7 +102,7 @@ class LibraryRepository {
     if (changes.length > 128) {
       throw const FormatException('Слишком большая страница Obsidian');
     }
-    final decoded = <({String id, ObsidianLibraryItem? item})>[];
+    final decoded = <({String id, LibraryItem? item})>[];
     final ids = <String>{};
     for (final raw in changes) {
       if (raw is! Map ||
@@ -112,7 +112,7 @@ class LibraryRepository {
       }
       final item = raw['item'] == null
           ? null
-          : ObsidianLibraryItem.fromJson(
+          : LibraryItem.fromJson(
               Map<String, dynamic>.from(raw['item'] as Map),
             );
       if (item != null && item.id != raw['id']) {
@@ -181,7 +181,7 @@ class LibraryRepository {
         if (snapshot['version'] != 1 || snapshot['ready'] != true) return;
         final remote = {
           for (final data in snapshot['items'] as List)
-            (data as Map)['id'] as String: ObsidianLibraryItem.fromJson(
+            (data as Map)['id'] as String: LibraryItem.fromJson(
               Map<String, dynamic>.from(data),
             ),
         };

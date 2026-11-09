@@ -8,7 +8,7 @@ import 'package:pepehub/library/library_features.dart';
 import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/library/models.dart';
 import 'package:pepehub/library/personal_library.dart';
-import 'package:pepehub/ui/obsidian_library_page.dart';
+import 'package:pepehub/ui/library_metadata_editor.dart';
 
 LibraryEntry member(
   String id, {

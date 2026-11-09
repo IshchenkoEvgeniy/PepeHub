@@ -12,12 +12,12 @@ import '../library/series_draft.dart';
 import 'app_theme.dart';
 import 'library_cover_search.dart';
 import 'metadata_input.dart';
-import 'obsidian_library_page.dart' show LibraryMetadataEditor;
+import 'library_metadata_editor.dart' show LibraryMetadataEditor;
 import '../diagnostics/user_message.dart';
 
 class _Volume {
   final String source;
-  ObsidianLibraryItem item;
+  LibraryItem item;
   bool selected = true, allowDuplicate = false, customType = false;
   final Set<String> overrides = {};
   _Volume(this.source, this.item);

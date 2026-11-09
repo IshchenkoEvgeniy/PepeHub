@@ -22,7 +22,7 @@ import 'package:pepehub/reader/reading_library.dart';
 import 'package:pepehub/storage/folder_files.dart';
 import 'package:pepehub/ui/library_data_page.dart';
 
-class _SlowFolderFiles extends LocalPeerFiles {
+class _SlowFolderFiles extends LocalFolderFiles {
   final started = Completer<void>(), release = Completer<void>();
   _SlowFolderFiles(super.root);
   @override
@@ -36,7 +36,7 @@ class _SlowFolderFiles extends LocalPeerFiles {
   }
 }
 
-class _CountingFolderFiles extends LocalPeerFiles {
+class _CountingFolderFiles extends LocalFolderFiles {
   int reads = 0;
   _CountingFolderFiles(super.root);
   @override
@@ -305,7 +305,7 @@ void main() {
       final archived = await add(app, title: 'Первый том');
       await app.folderStorage.connect(shared.path);
       final folder = '${shared.path}/PepeHub-library';
-      final excluded = <String, ObsidianLibraryItem>{};
+      final excluded = <String, LibraryItem>{};
       for (final status in ['planned', 'active']) {
         final id = uuid.v4();
         excluded[id] = personalLibraryItem(id, 'book', {
@@ -616,11 +616,11 @@ void main() {
     'Android SAF publishes and reloads the same portable folder format',
     () async {
       const uri = 'content://library/tree/shared';
-      final disk = LocalPeerFiles(shared);
-      final stages = <String, PeerStagingFile>{};
+      final disk = LocalFolderFiles(shared);
+      final stages = <String, FolderStagingFile>{};
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(peerFilesChannel, (call) async {
+      messenger.setMockMethodCallHandler(folderFilesChannel, (call) async {
         final args = call.arguments as Map;
         expect(args['root'], uri);
         final path = args['path'] as String?;
@@ -644,7 +644,7 @@ void main() {
           case 'stage_prepare':
             final hash = (args['stage'] as String).split('-').last;
             stages[path!] = await disk.stage(
-              PeerFileEntry(
+              FolderFileEntry(
                 path: path,
                 hash: hash,
                 bytes: 0,
@@ -675,7 +675,7 @@ void main() {
         }
       });
       addTearDown(
-        () => messenger.setMockMethodCallHandler(peerFilesChannel, null),
+        () => messenger.setMockMethodCallHandler(folderFilesChannel, null),
       );
       final a = device(), b = device();
       final id = await add(a, audio: true);

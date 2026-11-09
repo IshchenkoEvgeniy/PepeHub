@@ -81,7 +81,7 @@ import '../library/library_features.dart';
 import 'library_data_page.dart';
 import 'library_card_actions.dart';
 import 'library_work_page.dart';
-import 'obsidian_library_page.dart';
+import 'library_metadata_editor.dart';
 import '../diagnostics/user_message.dart';
 
 class LibraryPage extends StatefulWidget {
@@ -133,7 +133,7 @@ class _LibraryPageState extends State<LibraryPage> {
   late final videoLibrary = VideoRepository(widget.repository);
   late final recommendations = RecommendationStore(widget.repository);
   late final bookCatalog = BookCatalog(httpClient);
-  late final obsidianLibrary = LibraryService(
+  late final personalLibrary = LibraryService(
     widget.repository,
     httpClient,
     assets: widget.assets,
@@ -180,14 +180,14 @@ class _LibraryPageState extends State<LibraryPage> {
     widget.repository.externalChanges.addListener(_remoteChanged);
     activeFolderScan.addListener(_folderScanChanged);
     folderScanOutcome.addListener(_folderScanFinished);
-    obsidianLibrary.addListener(_libraryChanged);
+    personalLibrary.addListener(_libraryChanged);
     _initialize();
   }
 
   void _libraryChanged() {
     if (mounted) setState(() {});
     if (_remoteRefresh == null &&
-        !obsidianLibrary.loading &&
+        !personalLibrary.loading &&
         mounted &&
         !metadataSection &&
         !recommendationsSection &&
@@ -197,15 +197,15 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
-  Future<void> _loadObsidian() async {
+  Future<void> _loadPersonalLibrary() async {
     // Local migration only. Old connection settings never start network traffic.
     try {
       await widget.repository.setMeta('obsidian-library-enabled', 'false');
-      await obsidianLibrary.reload();
+      await personalLibrary.reload();
     } catch (e) {
       if (mounted) {
         setState(
-          () => obsidianLibrary.error =
+          () => personalLibrary.error =
               'Не удалось загрузить библиотеку: ${describeError(e)}',
         );
       }
@@ -220,7 +220,7 @@ class _LibraryPageState extends State<LibraryPage> {
     recommendationsSection = section == 'recommendations';
     statisticsSection = section == 'statistics';
     videoSection = section == 'video';
-    unawaited(_loadObsidian());
+    unawaited(_loadPersonalLibrary());
     await _reload(restoreDefault: true);
     if (mounted && Platform.isAndroid && widget.assets != null) {
       incomingBooks = AndroidBookFiles(
@@ -286,8 +286,8 @@ class _LibraryPageState extends State<LibraryPage> {
     audioSearch.dispose();
     searchFocus.dispose();
     incomingBooks?.dispose();
-    obsidianLibrary.removeListener(_libraryChanged);
-    obsidianLibrary.dispose();
+    personalLibrary.removeListener(_libraryChanged);
+    personalLibrary.dispose();
     httpClient.close();
     super.dispose();
   }
@@ -328,13 +328,13 @@ class _LibraryPageState extends State<LibraryPage> {
         _remoteAgain = false;
         // Service notifications still repaint the archive, but the file shelf
         // is refreshed once after metadata updates have committed.
-        await obsidianLibrary.reload();
+        await personalLibrary.reload();
         if (mounted) await _reload();
       } while (_remoteAgain && mounted);
     } catch (e) {
       if (mounted) {
         setState(
-          () => obsidianLibrary.error =
+          () => personalLibrary.error =
               'Не удалось обновить библиотеку: ${describeError(e)}',
         );
       }
@@ -1014,7 +1014,7 @@ class _LibraryPageState extends State<LibraryPage> {
       context,
       MaterialPageRoute(
         builder: (_) => HiddenDeletedPage(
-          library: obsidianLibrary,
+          library: personalLibrary,
           initialMedia: reading ? 'book' : 'audio',
         ),
       ),
@@ -1285,7 +1285,7 @@ class _LibraryPageState extends State<LibraryPage> {
       selectedBooks.clear();
     });
     await widget.repository.setMeta('library-section', 'metadata');
-    await obsidianLibrary.reload();
+    await personalLibrary.reload();
   }
 
   PepeSection get _section => videoSection
@@ -1348,26 +1348,26 @@ class _LibraryPageState extends State<LibraryPage> {
 
   void _journal() => Navigator.push(
     context,
-    MaterialPageRoute(builder: (_) => ActivityPage(library: obsidianLibrary)),
+    MaterialPageRoute(builder: (_) => ActivityPage(library: personalLibrary)),
   );
   void _appSettings() => Navigator.push(
     context,
-    MaterialPageRoute(builder: (_) => SettingsPage(library: obsidianLibrary)),
+    MaterialPageRoute(builder: (_) => SettingsPage(library: personalLibrary)),
   );
 
-  Future<void> _obsidianSettings() => Navigator.push<void>(
+  Future<void> _openLibraryData() => Navigator.push<void>(
     context,
     MaterialPageRoute(
-      builder: (_) => LibraryDataPage(library: obsidianLibrary),
+      builder: (_) => LibraryDataPage(library: personalLibrary),
     ),
   );
 
-  Future<void> _addToObsidian(LibraryRecord book) async {
-    await obsidianLibrary.loadCached();
+  Future<void> _addToLibrary(LibraryRecord book) async {
+    await personalLibrary.loadCached();
     if (!mounted) return;
     final linked =
-        obsidianLibrary.forBook(book.id) ??
-        obsidianLibrary.sourceDraft(book.id);
+        personalLibrary.forBook(book.id) ??
+        personalLibrary.sourceDraft(book.id);
     if (linked != null &&
         isSeriesCatalogItem(linked.item) &&
         !isLibraryDeleted(linked.item) &&
@@ -1377,7 +1377,7 @@ class _LibraryPageState extends State<LibraryPage> {
         context,
         MaterialPageRoute(
           builder: (_) =>
-              LibraryWorkPage(library: obsidianLibrary, itemId: linked.item.id),
+              LibraryWorkPage(library: personalLibrary, itemId: linked.item.id),
         ),
       );
       return;
@@ -1394,21 +1394,21 @@ class _LibraryPageState extends State<LibraryPage> {
         MaterialPageRoute(
           builder: (_) => LibraryMetadataEditor(
             saveLabel: 'Добавить в библиотеку',
-            coverResolver: obsidianLibrary.coverReferencePath,
-            suggestions: obsidianLibrary.suggestions,
-            seriesEntries: obsidianLibrary.seriesEntries,
-            collection: obsidianLibrary.collectionFor(linked.item),
+            coverResolver: personalLibrary.coverReferencePath,
+            suggestions: personalLibrary.suggestions,
+            seriesEntries: personalLibrary.seriesEntries,
+            collection: personalLibrary.collectionFor(linked.item),
             collections:
-                (obsidianLibrary.snapshot?['collections'] as List? ?? [])
+                (personalLibrary.snapshot?['collections'] as List? ?? [])
                     .map((c) => Map<String, dynamic>.from(c as Map))
                     .toList(),
-            syncPolicy: obsidianLibrary.policies[linked.item.id] ?? const {},
+            syncPolicy: personalLibrary.policies[linked.item.id] ?? const {},
             onSavePolicy: (policy) =>
-                obsidianLibrary.savePolicy(linked.item.id, policy),
-            onPickCover: obsidianLibrary.chooseCover,
+                personalLibrary.savePolicy(linked.item.id, policy),
+            onPickCover: personalLibrary.chooseCover,
             item: editableItem,
             entry: linked,
-            onSave: (values) => obsidianLibrary.add(
+            onSave: (values) => personalLibrary.add(
               linked.item.withValues(values),
               book.id,
               original: linked.item.values,
@@ -1419,7 +1419,7 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
     // Link a file to an existing personal card rather than duplicating it.
-    if (obsidianLibrary.entries.any(
+    if (personalLibrary.entries.any(
       (e) => e.state == 'synced' && e.sourceBookId == null,
     )) {
       final choice = await showDialog<String>(
@@ -1445,7 +1445,7 @@ class _LibraryPageState extends State<LibraryPage> {
           builder: (context) => SimpleDialog(
             title: const Text('Карточка библиотеки'),
             children: [
-              for (final entry in obsidianLibrary.entries.where(
+              for (final entry in personalLibrary.entries.where(
                 (e) => e.state == 'synced' && e.sourceBookId == null,
               ))
                 SimpleDialogOption(
@@ -1458,40 +1458,40 @@ class _LibraryPageState extends State<LibraryPage> {
           ),
         );
         if (id != null && mounted) {
-          final target = obsidianLibrary.entries
+          final target = personalLibrary.entries
               .where((e) => e.item.id == id)
               .first
               .item;
-          final preview = await obsidianLibrary.previewLink(book, target);
+          final preview = await personalLibrary.previewLink(book, target);
           if (!mounted) return;
           final policy = await reviewLibraryLink(context, target, preview);
           if (policy != null) {
-            await obsidianLibrary.link(id, book.id, policy: policy);
+            await personalLibrary.link(id, book.id, policy: policy);
           }
         }
         return;
       }
     }
-    final source = await obsidianLibrary.prepareDraft(book);
+    final source = await personalLibrary.prepareDraft(book);
     final draft = source.withValues({...source.values, 'status': 'finished'});
     if (!mounted) return;
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
         builder: (_) => LibraryMetadataEditor(
-          coverResolver: obsidianLibrary.coverReferencePath,
-          suggestions: obsidianLibrary.suggestions,
-          seriesEntries: obsidianLibrary.seriesEntries,
-          collection: obsidianLibrary.collectionFor(draft),
-          collections: (obsidianLibrary.snapshot?['collections'] as List? ?? [])
+          coverResolver: personalLibrary.coverReferencePath,
+          suggestions: personalLibrary.suggestions,
+          seriesEntries: personalLibrary.seriesEntries,
+          collection: personalLibrary.collectionFor(draft),
+          collections: (personalLibrary.snapshot?['collections'] as List? ?? [])
               .map((c) => Map<String, dynamic>.from(c as Map))
               .toList(),
           onSavePolicy: (policy) =>
-              obsidianLibrary.savePolicy(draft.id, policy),
-          onPickCover: obsidianLibrary.chooseCover,
+              personalLibrary.savePolicy(draft.id, policy),
+          onPickCover: personalLibrary.chooseCover,
           item: draft,
           saveLabel: 'Добавить в библиотеку',
-          onSave: (values) => obsidianLibrary.add(
+          onSave: (values) => personalLibrary.add(
             draft.withValues(values),
             book.id,
             original: draft.values,
@@ -1519,9 +1519,9 @@ class _LibraryPageState extends State<LibraryPage> {
       ),
     );
     if (audio == null || !mounted) return;
-    await obsidianLibrary.reload();
-    final draft = obsidianLibrary.fromRecommendation(book, audio: audio);
-    final existing = obsidianLibrary.entries
+    await personalLibrary.reload();
+    final draft = personalLibrary.fromRecommendation(book, audio: audio);
+    final existing = personalLibrary.entries
         .where((e) => e.item.id == draft.id)
         .firstOrNull;
     if (!mounted) return;
@@ -1530,15 +1530,15 @@ class _LibraryPageState extends State<LibraryPage> {
       MaterialPageRoute(
         builder: (_) => LibraryMetadataEditor(
           item: draft,
-          collection: obsidianLibrary.collectionFor(draft),
-          suggestions: obsidianLibrary.suggestions,
-          seriesEntries: obsidianLibrary.seriesEntries,
-          coverResolver: obsidianLibrary.coverReferencePath,
-          onPickCover: obsidianLibrary.chooseCover,
+          collection: personalLibrary.collectionFor(draft),
+          suggestions: personalLibrary.suggestions,
+          seriesEntries: personalLibrary.seriesEntries,
+          coverResolver: personalLibrary.coverReferencePath,
+          onPickCover: personalLibrary.chooseCover,
           saveLabel: 'Сохранить в библиотеке',
           onSave: (values) => existing == null
-              ? obsidianLibrary.add(draft.withValues(values), '')
-              : obsidianLibrary.save(
+              ? personalLibrary.add(draft.withValues(values), '')
+              : personalLibrary.save(
                   existing.item.id,
                   values,
                   original: existing.item.values,
@@ -2146,7 +2146,7 @@ class _LibraryPageState extends State<LibraryPage> {
     if (statisticsSection) {
       return StatisticsHubPage(
         repository: widget.repository,
-        library: obsidianLibrary,
+        library: personalLibrary,
         audio: widget.audio,
         navigation: _navigation,
         onJournal: _journal,
@@ -2161,10 +2161,10 @@ class _LibraryPageState extends State<LibraryPage> {
       );
     }
     if (metadataSection) {
-      return ObsidianLibraryPage(
-        service: obsidianLibrary,
+      return LibraryArchivePage(
+        service: personalLibrary,
         navigation: _navigation,
-        onSettings: () => unawaited(_obsidianSettings()),
+        onSettings: () => unawaited(_openLibraryData()),
       );
     }
     return CallbackShortcuts(
@@ -2274,12 +2274,12 @@ class _LibraryPageState extends State<LibraryPage> {
                     builder: (_) => reading
                         ? ReadingStatisticsPage(
                             repository: widget.repository,
-                            library: obsidianLibrary,
+                            library: personalLibrary,
                           )
                         : AudioStatisticsPage(
                             repository: widget.repository,
                             controller: widget.audio,
-                            library: obsidianLibrary,
+                            library: personalLibrary,
                           ),
                   ),
                 ),
@@ -2674,11 +2674,11 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
     if (value == 'delete-library-card') {
-      final entry = obsidianLibrary.sourceDraft(book.id);
+      final entry = personalLibrary.sourceDraft(book.id);
       if (entry == null || !isSeriesCatalogItem(entry.item)) return;
       await deleteLibraryCards(
         context,
-        obsidianLibrary,
+        personalLibrary,
         [entry.item.id],
         fromTrash: isLibraryDeleted(entry.item),
         checkBookClosed: () => _checkBookClosed(book.id),
@@ -2726,7 +2726,7 @@ class _LibraryPageState extends State<LibraryPage> {
     }
     if (value == 'obsidian') {
       try {
-        await _addToObsidian(book);
+        await _addToLibrary(book);
       } catch (error) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -2852,7 +2852,7 @@ class _LibraryPageState extends State<LibraryPage> {
         }
       });
     });
-    await obsidianLibrary.reload();
+    await personalLibrary.reload();
   }
 
   Widget _bookCard(LibraryRecord book) {
@@ -3074,28 +3074,28 @@ class _LibraryPageState extends State<LibraryPage> {
             if (deleted && widget.assets != null)
               'restore-deleted': 'Добавить файл заново',
             'obsidian':
-                obsidianLibrary.sourceDraft(book.id) != null &&
+                personalLibrary.sourceDraft(book.id) != null &&
                     isUnreadSeriesItem(
-                      obsidianLibrary.sourceDraft(book.id)!.item,
+                      personalLibrary.sourceDraft(book.id)!.item,
                     ) &&
                     !isLibraryDeleted(
-                      obsidianLibrary.sourceDraft(book.id)!.item,
+                      personalLibrary.sourceDraft(book.id)!.item,
                     )
                 ? 'Карточка серии'
-                : obsidianLibrary.forBook(book.id) == null ||
-                      obsidianLibrary.forBook(book.id)!.state == 'removed' ||
+                : personalLibrary.forBook(book.id) == null ||
+                      personalLibrary.forBook(book.id)!.state == 'removed' ||
                       (!isFinishedLibraryItem(
-                            obsidianLibrary.forBook(book.id)!.item,
+                            personalLibrary.forBook(book.id)!.item,
                           ) &&
-                          obsidianLibrary
+                          personalLibrary
                                   .forBook(book.id)!
                                   .item
                                   .values['pepehub_auto_discovered'] !=
                               false)
                 ? 'Добавить в библиотеку'
-                : isLibraryDeleted(obsidianLibrary.forBook(book.id)!.item)
+                : isLibraryDeleted(personalLibrary.forBook(book.id)!.item)
                 ? 'Вернуть в библиотеку'
-                : libraryState(obsidianLibrary.forBook(book.id)!),
+                : libraryState(personalLibrary.forBook(book.id)!),
             if (!deleted &&
                 Platform.isAndroid &&
                 widget.assets != null &&
@@ -3105,7 +3105,7 @@ class _LibraryPageState extends State<LibraryPage> {
                 ? 'Убрать из избранного'
                 : 'В избранное',
             'collections': 'Коллекции книги',
-            if (obsidianLibrary.sourceDraft(book.id) case final entry?
+            if (personalLibrary.sourceDraft(book.id) case final entry?
                 when isSeriesCatalogItem(entry.item))
               'delete-library-card': 'Удалить карточку библиотеки…',
             if (!audio) ...{

@@ -9,7 +9,7 @@ class MainActivity : AudioServiceActivity() {
         private val bookChannels = java.util.WeakHashMap<FlutterEngine, BookFileChannel>()
         private val videoChannels = java.util.WeakHashMap<FlutterEngine, VideoFilesChannel>()
         private val videoWindowChannels = java.util.WeakHashMap<FlutterEngine, VideoWindowChannel>()
-        private val peerChannels = java.util.WeakHashMap<FlutterEngine, PeerFilesChannel>()
+        private val folderChannels = java.util.WeakHashMap<FlutterEngine, FolderFilesChannel>()
         private val updateChannels = java.util.WeakHashMap<FlutterEngine, UpdateChannel>()
         private val reminderChannels = java.util.WeakHashMap<FlutterEngine, ReminderChannel>()
         private const val LEGACY_SYNC_JOB_ID = 42591
@@ -18,7 +18,7 @@ class MainActivity : AudioServiceActivity() {
     private var books: BookFileChannel? = null
     private var videos: VideoFilesChannel? = null
     private var videoWindow: VideoWindowChannel? = null
-    private var peers: PeerFilesChannel? = null
+    private var folderFiles: FolderFilesChannel? = null
     private var updates: UpdateChannel? = null
     private var reminders: ReminderChannel? = null
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
@@ -85,14 +85,14 @@ class MainActivity : AudioServiceActivity() {
             })
         }
         videoWindow?.attach(this)
-        peers = peerChannels[flutterEngine] ?: PeerFilesChannel(this, flutterEngine.dartExecutor.binaryMessenger).also { channel ->
-            peerChannels[flutterEngine] = channel
+        folderFiles = folderChannels[flutterEngine] ?: FolderFilesChannel(this, flutterEngine.dartExecutor.binaryMessenger).also { channel ->
+            folderChannels[flutterEngine] = channel
             flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
                 override fun onPreEngineRestart() {}
-                override fun onEngineWillDestroy() { channel.dispose(); peerChannels.remove(flutterEngine) }
+                override fun onEngineWillDestroy() { channel.dispose(); folderChannels.remove(flutterEngine) }
             })
         }
-        peers?.attach(this)
+        folderFiles?.attach(this)
     }
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
@@ -108,7 +108,7 @@ class MainActivity : AudioServiceActivity() {
     }
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         if (updates?.onActivityResult(requestCode) != true &&
-            peers?.onActivityResult(requestCode, resultCode, data) != true &&
+            folderFiles?.onActivityResult(requestCode, resultCode, data) != true &&
             books?.onActivityResult(requestCode, resultCode, data) != true &&
             videos?.onActivityResult(requestCode, resultCode, data) != true &&
             folders?.onActivityResult(requestCode, resultCode, data) != true) {
@@ -135,7 +135,7 @@ class MainActivity : AudioServiceActivity() {
         books?.detach(this)
         videos?.detach(this)
         videoWindow?.detach(this)
-        peers?.detach(this)
+        folderFiles?.detach(this)
         updates?.detach(this)
         reminders?.detach(this)
         super.onDestroy()

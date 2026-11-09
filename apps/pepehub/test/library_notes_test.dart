@@ -15,14 +15,14 @@ void main() {
   late AppDatabase db;
   late Repository local;
   late String book;
-  late ObsidianLibraryItem item;
+  late LibraryItem item;
   late NoteStore store;
   setUp(() async {
     db = AppDatabase(NativeDatabase.memory());
     local = Repository(db);
     await local.addBook('Книга', 'Автор', 'epub');
     book = (await local.records('book')).single.id;
-    item = ObsidianLibraryItem(
+    item = LibraryItem(
       id: uuid.v4(),
       path: 'Books/One.md',
       collectionId: 'book',
@@ -210,7 +210,7 @@ void main() {
           book,
         ],
       );
-      final audioItem = ObsidianLibraryItem(
+      final audioItem = LibraryItem(
         id: item.id,
         path: item.path,
         collectionId: 'audiobook',

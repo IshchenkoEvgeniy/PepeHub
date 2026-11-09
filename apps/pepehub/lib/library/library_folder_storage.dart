@@ -142,7 +142,7 @@ String _fileName(String title, String fallback) {
   final name = shortened.toString().replaceAll(RegExp(r'^\.+|[. ]+$'), '');
   if (name.isEmpty) return fallback;
   try {
-    return peerPath(name);
+    return folderPath(name);
   } on FormatException {
     return '_$name';
   }
@@ -162,7 +162,7 @@ Map<String, ({String id, String raw})> _namedBooks(Map<String, dynamic> data) {
   final items = [
     for (final key
         in data.keys.where((key) => key.startsWith('cards/')).toList()..sort())
-      ObsidianLibraryItem.fromJson(data[key]),
+      LibraryItem.fromJson(data[key]),
   ];
   final seriesNames = <String, String>{};
   // Names are unique per parent: «Книги/Серия» and «Корзина/Серия» coexist.
@@ -416,7 +416,7 @@ class _Chain {
 }
 
 class _FolderFiles {
-  final PeerFileSystem files;
+  final FolderFileSystem files;
   final bool direct;
   const _FolderFiles(this.files, {required this.direct});
   String _path(String path) => direct ? path.substring(_prefix.length) : path;
@@ -424,13 +424,13 @@ class _FolderFiles {
 
   /// Size and modification time without reading; null when unsupported.
   Future<String?> stamp(String path) async => switch (files) {
-    final LocalPeerFiles local => local.stamp(_path(path)),
-    final SafPeerFiles saf => saf.stamp(_path(path)),
+    final LocalFolderFiles local => local.stamp(_path(path)),
+    final SafFolderFiles saf => saf.stamp(_path(path)),
     _ => null,
   };
   Future<List<int>> read(String path, int offset, int count) =>
       files.read(_path(path), offset, count);
-  Future<PeerStagingFile> stage(PeerFileEntry entry) =>
+  Future<FolderStagingFile> stage(FolderFileEntry entry) =>
       files.stage(entry.withClock(entry.clock, path: _path(entry.path)));
   Future<void> remove(String path, String expected) =>
       files.remove(_path(path), expected);
@@ -438,7 +438,7 @@ class _FolderFiles {
   /// PepeHub-library on this computer; null for Android folders, which
   /// cannot be listed cheaply.
   Directory? get localLibrary => switch (files) {
-    final LocalPeerFiles local =>
+    final LocalFolderFiles local =>
       direct
           ? local.root
           : Directory(p.join(local.root.path, 'PepeHub-library')),
@@ -447,7 +447,7 @@ class _FolderFiles {
 
   /// The selected folder on this computer.
   Directory? get localRoot => switch (files) {
-    final LocalPeerFiles local => local.root,
+    final LocalFolderFiles local => local.root,
     _ => null,
   };
 }
@@ -459,11 +459,11 @@ class _LibraryChangedDuringSave implements Exception {}
 /// A persisted three-way baseline also protects edits pending after a crash.
 class LibraryFolderStorage extends ChangeNotifier {
   final LibraryService library;
-  final PeerFileSystem Function(String) _fileSystem;
+  final FolderFileSystem Function(String) _fileSystem;
   LibraryFolderStorage(
     this.library, {
-    PeerFileSystem Function(String)? fileSystem,
-  }) : _fileSystem = fileSystem ?? peerFileSystem;
+    FolderFileSystem Function(String)? fileSystem,
+  }) : _fileSystem = fileSystem ?? folderFileSystem;
   String? folder;
   String? error;
   String? warning;
@@ -695,13 +695,13 @@ class LibraryFolderStorage extends ChangeNotifier {
     final bytes = BytesBuilder(copy: false);
     var offset = 0;
     while (true) {
-      final chunk = await fs.read(path, offset, peerChunkSize);
+      final chunk = await fs.read(path, offset, folderChunkSize);
       bytes.add(chunk);
       offset += chunk.length;
       if (offset > limit) {
         throw FormatException('Слишком большой файл библиотеки: $path');
       }
-      if (chunk.length < peerChunkSize) break;
+      if (chunk.length < folderChunkSize) break;
     }
     final result = bytes.takeBytes();
     if (sha256.convert(result).toString() != expected) {
@@ -778,7 +778,7 @@ class LibraryFolderStorage extends ChangeNotifier {
     String? expected,
   ) async {
     final stage = await fs.stage(
-      PeerFileEntry(
+      FolderFileEntry(
         path: path,
         hash: sha256.convert(bytes).toString(),
         bytes: bytes.length,
@@ -788,10 +788,10 @@ class LibraryFolderStorage extends ChangeNotifier {
     try {
       await stage.prepare();
       await stage.reset();
-      for (var at = 0; at < bytes.length; at += peerChunkSize) {
+      for (var at = 0; at < bytes.length; at += folderChunkSize) {
         await stage.append(
           at,
-          bytes.sublist(at, (at + peerChunkSize).clamp(0, bytes.length)),
+          bytes.sublist(at, (at + folderChunkSize).clamp(0, bytes.length)),
         );
       }
       await stage.publish(expected);
@@ -1086,7 +1086,7 @@ class LibraryFolderStorage extends ChangeNotifier {
       final nonArchiveIds = {
         for (final e in decoded.entries)
           if (e.key.startsWith('cards/') &&
-              !isSeriesCatalogItem(ObsidianLibraryItem.fromJson(e.value)))
+              !isSeriesCatalogItem(LibraryItem.fromJson(e.value)))
             e.key.substring('cards/'.length),
       };
       for (final id in nonArchiveIds) {
@@ -1276,7 +1276,7 @@ class LibraryFolderStorage extends ChangeNotifier {
           !_hash.hasMatch(entry.value)) {
         throw const FormatException('Повреждён список именованных файлов книг');
       }
-      peerPath(entry.key);
+      folderPath(entry.key);
     }
     final previousPaths = {
       for (final path in previous.keys) path.toLowerCase(): path,
@@ -1393,7 +1393,7 @@ class LibraryFolderStorage extends ChangeNotifier {
           }
         }
       } else if (parts[0] == 'cards') {
-        final item = ObsidianLibraryItem.fromJson(
+        final item = LibraryItem.fromJson(
           Map<String, dynamic>.from(e.value as Map),
         );
         if (item.id != parts[1] ||
@@ -1435,7 +1435,7 @@ class LibraryFolderStorage extends ChangeNotifier {
   ) async {
     final available = <String>{};
     for (final e in data.entries.where((e) => e.key.startsWith('cards/'))) {
-      final item = ObsidianLibraryItem.fromJson(
+      final item = LibraryItem.fromJson(
         Map<String, dynamic>.from(e.value as Map),
       );
       final hash = library.coverHash(item);
@@ -1502,7 +1502,7 @@ class LibraryFolderStorage extends ChangeNotifier {
     await library.repository.mutate((cards) async {
       cards.removeWhere((_, entry) => isSeriesCatalogItem(entry.item));
       for (final e in data.entries.where((e) => e.key.startsWith('cards/'))) {
-        final item = ObsidianLibraryItem.fromJson(
+        final item = LibraryItem.fromJson(
           Map<String, dynamic>.from(e.value as Map),
         );
         final prior = existing[item.id];
@@ -1577,7 +1577,7 @@ class LibraryFolderStorage extends ChangeNotifier {
     for (final e in data.entries) {
       if (e.key.startsWith('cards/')) {
         cards++;
-        final item = ObsidianLibraryItem.fromJson(
+        final item = LibraryItem.fromJson(
           Map<String, dynamic>.from(e.value as Map),
         );
         if (isLibraryDeleted(item)) deleted++;
@@ -1781,7 +1781,7 @@ class LibraryFolderStorage extends ChangeNotifier {
       var removed = 0;
       for (final path in paths) {
         if (!p.posix.basename(path).contains('.sync-conflict-')) continue;
-        final full = '$_prefix${peerPath(path)}';
+        final full = '$_prefix${folderPath(path)}';
         final hash = await fs.hash(full);
         if (hash == null) continue;
         await fs.remove(full, hash);

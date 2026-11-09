@@ -24,7 +24,7 @@ void main() {
     await local.addBook('Книга', 'Автор', format);
     final book = (await local.records('book'))
         .singleWhere((b) => !previous.contains(b.id));
-    final item = ObsidianLibraryItem.fromJson({
+    final item = LibraryItem.fromJson({
       'id': uuid.v4(),
       'path': 'Books/One.md',
       'collectionId': 'book',

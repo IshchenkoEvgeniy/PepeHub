@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../library/models.dart';
-import 'obsidian_library_page.dart' show libraryLabels;
+import 'library_metadata_editor.dart' show libraryLabels;
 
 Future<Map<String, String>?> reviewLibraryLink(
   BuildContext context,
-  ObsidianLibraryItem target,
-  ObsidianLibraryItem source,
+  LibraryItem target,
+  LibraryItem source,
 ) {
   final sourceFields = {
     for (final field in source.fields) field.field: field.key,

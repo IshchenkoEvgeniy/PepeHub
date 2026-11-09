@@ -12,7 +12,7 @@ import 'package:pepehub/library/personal_library.dart';
 void main() {
   test('Obsidian coverAsset survives semantic conversion while a manual HTTPS cover wins', () {
     final hash = 'a' * 64;
-    ObsidianLibraryItem card(String cover) => ObsidianLibraryItem(
+    LibraryItem card(String cover) => LibraryItem(
       id: 'book',
       path: 'Books/Book.md',
       collectionId: 'book',

@@ -53,7 +53,7 @@ void main() {
     },
   );
   test('an existing edition page count scales source text progress', () {
-    final target = ObsidianLibraryItem(
+    final target = LibraryItem(
       id: 'id',
       path: 'book.md',
       collectionId: 'book',
@@ -125,7 +125,7 @@ void main() {
     expect(summary.position, 1000);
   });
   test('audio exports retain an existing hours unit', () {
-    final target = ObsidianLibraryItem(
+    final target = LibraryItem(
       id: 'id',
       path: 'book.md',
       collectionId: 'book',

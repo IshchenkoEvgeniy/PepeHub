@@ -95,7 +95,7 @@ class YearBook {
 
 /// All recorded completions, using the same rules for filters and annual goals.
 /// The current endDate mirrors a completion already recorded on that day.
-List<DateTime> libraryCompletionDates(ObsidianLibraryItem item) {
+List<DateTime> libraryCompletionDates(LibraryItem item) {
   if (!isLibraryArchiveItem(item)) return const [];
   final dates = <DateTime>[];
   final recorded = item.values['pepehub_completions'];

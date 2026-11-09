@@ -15,7 +15,7 @@ import 'package:pepehub/library/models.dart';
 import 'package:pepehub/library/personal_library.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/metadata_input.dart';
-import 'package:pepehub/ui/obsidian_library_page.dart';
+import 'package:pepehub/ui/library_metadata_editor.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 import 'support/flutter_fonts.dart';
@@ -165,7 +165,7 @@ void main() {
       ];
       Widget page() => MaterialApp(
         theme: AppTheme.data(Brightness.dark),
-        home: ObsidianLibraryPage(
+        home: LibraryArchivePage(
           service: library,
           navigation: ShelfNavigation(
             current: PepeSection.library,
@@ -381,7 +381,7 @@ void main() {
             theme: AppTheme.data(Brightness.dark),
             home: RepaintBoundary(
               key: boundary,
-              child: ObsidianLibraryPage(
+              child: LibraryArchivePage(
                 service: library,
                 navigation: ShelfNavigation(
                   current: PepeSection.library,

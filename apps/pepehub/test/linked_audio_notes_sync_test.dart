@@ -30,7 +30,7 @@ void main() {
   late Repository local;
   late NoteStore store;
   late LegacyConnector config;
-  late ObsidianLibraryItem item;
+  late LibraryItem item;
   late String book;
   late List<LocalAsset> tracks;
 
@@ -47,7 +47,7 @@ void main() {
     );
     tracks = await AssetStore(local, Directory('.')).audioTracks(book);
     config = LegacyConnector('https://example.test', 'test-token');
-    item = ObsidianLibraryItem(
+    item = LibraryItem(
       id: uuid.v4(),
       path: 'Audio/One.md',
       collectionId: 'audiobook',

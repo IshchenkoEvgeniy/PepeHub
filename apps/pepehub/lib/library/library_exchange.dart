@@ -289,7 +289,7 @@ class LibraryExchange {
 
   /// Map semantic local properties to the actual aliases of this connection.
   Map<String, dynamic> exportValues(
-    ObsidianLibraryItem item,
+    LibraryItem item,
     List<LibraryField> fields,
     Map collection,
   ) {

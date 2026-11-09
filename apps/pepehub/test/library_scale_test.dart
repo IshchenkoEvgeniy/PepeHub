@@ -17,7 +17,7 @@ import 'package:pepehub/reader/reading_library.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/library_page.dart';
 import 'package:pepehub/ui/audio_cover.dart';
-import 'package:pepehub/ui/obsidian_library_page.dart';
+import 'package:pepehub/ui/library_metadata_editor.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 import 'video_player_tools_widget_test.dart' show ready;
@@ -242,7 +242,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.data(Brightness.dark),
-          home: ObsidianLibraryPage(
+          home: LibraryArchivePage(
             service: archive,
             navigation: ShelfNavigation(
               current: PepeSection.library,
@@ -308,7 +308,7 @@ void main() {
           ),
         );
         final state = tester.state(find.byType(LibraryPage)) as dynamic;
-        final LibraryService service = state.obsidianLibrary;
+        final LibraryService service = state.personalLibrary;
         try {
           await ready(tester, () => !state.loading && !service.loading);
           expect((state.books as List).length, 500);

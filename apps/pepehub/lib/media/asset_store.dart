@@ -302,7 +302,7 @@ class AssetStore {
         '«Добавить файл книги» или настройте папку импорта.',
       );
     }
-    if (root != null) await peerFileSystem(root).checkRoot();
+    if (root != null) await folderFileSystem(root).checkRoot();
 
     final expected = await selected.length();
     if (expected > limit || (!isDocument && expected <= 0)) {

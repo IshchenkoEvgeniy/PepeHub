@@ -4,7 +4,7 @@ import 'metadata_values.dart';
 
 /// Property names always come from the plugin snapshot and its configured aliases.
 class LibraryMapper {
-  static ObsidianLibraryItem fromBook(
+  static LibraryItem fromBook(
     LibraryRecord book,
     Map<String, dynamic> snapshot,
     Map<String, dynamic> details,
@@ -110,7 +110,7 @@ class LibraryMapper {
             cover.startsWith('pepehub-cover:'))) {
       set('cover', cover);
     }
-    return ObsidianLibraryItem(
+    return LibraryItem(
       id: id,
       path: '',
       collectionId: collection['id'] as String,

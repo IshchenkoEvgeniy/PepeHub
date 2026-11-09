@@ -175,7 +175,7 @@ void main() {
       ),
     );
     final state = tester.state(find.byType(LibraryPage)) as dynamic;
-    final library = state.obsidianLibrary;
+    final library = state.personalLibrary;
     await ready(tester, () => !state.loading && !library.loading);
     await tester.tap(find.byTooltip('Действия с книгой').first);
     await tester.pumpAndSettle();

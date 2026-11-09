@@ -8,7 +8,7 @@ import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/library/models.dart';
 import 'package:pepehub/library/personal_library.dart';
 import 'package:pepehub/ui/app_theme.dart';
-import 'package:pepehub/ui/obsidian_library_dashboard.dart';
+import 'package:pepehub/ui/library_archive_page.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 void main() {
@@ -49,7 +49,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.data(Brightness.dark),
-        home: ObsidianLibraryPage(
+        home: LibraryArchivePage(
           service: library,
           navigation: ShelfNavigation(
             current: PepeSection.library,

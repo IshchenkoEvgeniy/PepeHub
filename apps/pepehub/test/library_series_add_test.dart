@@ -20,13 +20,13 @@ import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/library_series_editor_page.dart';
 import 'package:pepehub/ui/library_groups_page.dart';
 import 'package:pepehub/ui/metadata_input.dart';
-import 'package:pepehub/ui/obsidian_library_page.dart';
+import 'package:pepehub/ui/library_metadata_editor.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 import 'video_player_tools_widget_test.dart' show ready;
 import 'support/flutter_fonts.dart';
 
-ObsidianLibraryItem volume(
+LibraryItem volume(
   String id, {
   String type = 'book',
   String seriesId = 'cycle',
@@ -319,7 +319,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.data(Brightness.dark),
-        home: ObsidianLibraryPage(
+        home: LibraryArchivePage(
           service: library,
           navigation: ShelfNavigation(
             current: PepeSection.library,
@@ -497,7 +497,7 @@ void main() {
       expect(state.volumes[1].item.value('genre'), ['Детектив']);
       await tester.runAsync(
         () => library.addSeries(
-          (state.volumes as List).map((v) => v.item as ObsidianLibraryItem),
+          (state.volumes as List).map((v) => v.item as LibraryItem),
         ),
       );
       expect(library.visibleEntries, hasLength(2));

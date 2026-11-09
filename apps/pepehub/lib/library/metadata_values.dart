@@ -47,7 +47,7 @@ String exportLibraryStatus(Object? value, Map? collection) {
 
 Map<String, dynamic> matchLibraryProgress(
   Map<String, dynamic> details,
-  ObsidianLibraryItem target,
+  LibraryItem target,
 ) {
   final result = Map<String, dynamic>.from(details);
   if (details['unit'] == 'minutes' && target.value('unit') == 'hours') {

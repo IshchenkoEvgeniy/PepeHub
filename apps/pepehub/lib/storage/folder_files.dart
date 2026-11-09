@@ -14,10 +14,10 @@ import '../diagnostics/user_message.dart';
 // Replacements are staged in a temporary file and renamed into place, so a
 // file synchronization tool such as Syncthing never sees a half-written file.
 
-/// The native Android channel keeps its historical name.
-const peerFilesChannel = MethodChannel('app.pepehub/peer_files');
-const peerChunkSize = 256 * 1024;
-const peerMaxFiles = 10000;
+/// Native Android access to Storage Access Framework folders.
+const folderFilesChannel = MethodChannel('app.pepehub/folder_files');
+const folderChunkSize = 256 * 1024;
+const folderMaxFiles = 10000;
 
 /// The Android side still accepts a version-history policy; it is always off.
 const _noHistory = {
@@ -26,7 +26,7 @@ const _noHistory = {
   'maxBytes': 500 * 1024 * 1024,
 };
 
-String peerPath(String value) {
+String folderPath(String value) {
   final parts = value.split('/');
   if (value.isEmpty ||
       value.length > 1024 ||
@@ -52,28 +52,28 @@ String peerPath(String value) {
   return value;
 }
 
-bool peerIgnored(String name) =>
+bool folderIgnored(String name) =>
     name.toLowerCase() == '.pepehub' ||
     name.toLowerCase().startsWith('.pepehub-') ||
     name.toLowerCase().startsWith('.syncthing.') ||
     name.toLowerCase().startsWith('~syncthing~') ||
     {'desktop.ini', 'thumbs.db', '.ds_store'}.contains(name.toLowerCase());
 
-String peerStorageKey(String value) =>
+String folderStorageKey(String value) =>
     sha256.convert(utf8.encode(value)).toString();
 
-class PeerFileEntry {
+class FolderFileEntry {
   final String path;
   final String? hash;
   final int bytes;
   final Map<String, int> clock;
   bool get deleted => hash == null;
-  PeerFileEntry({
+  FolderFileEntry({
     required String path,
     required this.hash,
     required this.bytes,
     required Map<String, int> clock,
-  }) : path = peerPath(path),
+  }) : path = folderPath(path),
        clock = Map.unmodifiable(clock) {
     if (bytes < 0 ||
         bytes > 1 << 50 ||
@@ -90,8 +90,8 @@ class PeerFileEntry {
       throw const FormatException('Некорректная версия файла');
     }
   }
-  PeerFileEntry withClock(Map<String, int> value, {String? path}) =>
-      PeerFileEntry(
+  FolderFileEntry withClock(Map<String, int> value, {String? path}) =>
+      FolderFileEntry(
         path: path ?? this.path,
         hash: hash,
         bytes: bytes,
@@ -103,7 +103,7 @@ class PeerFileEntry {
     'bytes': bytes,
     'clock': clock,
   };
-  factory PeerFileEntry.fromJson(Map<String, dynamic> json) => PeerFileEntry(
+  factory FolderFileEntry.fromJson(Map<String, dynamic> json) => FolderFileEntry(
     path: json['path'] as String,
     hash: json['hash'] as String?,
     bytes: json['bytes'] as int,
@@ -111,18 +111,18 @@ class PeerFileEntry {
   );
 }
 
-class PeerDiskFile {
+class FolderDiskFile {
   final String path, hash;
   final int bytes;
   final String? stamp;
-  const PeerDiskFile(this.path, this.hash, this.bytes, [this.stamp]);
+  const FolderDiskFile(this.path, this.hash, this.bytes, [this.stamp]);
   Map<String, dynamic> toJson() => {
     'path': path,
     'hash': hash,
     'bytes': bytes,
     'stamp': stamp,
   };
-  factory PeerDiskFile.fromJson(Map<String, dynamic> value) => PeerDiskFile(
+  factory FolderDiskFile.fromJson(Map<String, dynamic> value) => FolderDiskFile(
     value['path'] as String,
     value['hash'] as String,
     value['bytes'] as int,
@@ -130,22 +130,22 @@ class PeerDiskFile {
   );
 }
 
-abstract class PeerFileSystem {
+abstract class FolderFileSystem {
   Future<void> checkRoot();
   Future<String?> source(String path);
-  Future<List<PeerDiskFile>> scan({
+  Future<List<FolderDiskFile>> scan({
     void Function(String path, int checked)? onProgress,
-    Map<String, PeerDiskFile> cached = const {},
+    Map<String, FolderDiskFile> cached = const {},
     Set<String> invalidated = const {},
     bool forceHash = false,
   });
   Future<String?> hash(String path);
   Future<List<int>> read(String path, int offset, int count);
-  Future<PeerStagingFile> stage(PeerFileEntry entry);
+  Future<FolderStagingFile> stage(FolderFileEntry entry);
   Future<void> remove(String path, String? expectedHash);
 }
 
-abstract class PeerStagingFile {
+abstract class FolderStagingFile {
   Future<int> prepare();
   Future<void> reset();
   Future<void> append(int offset, List<int> bytes);
@@ -154,31 +154,31 @@ abstract class PeerStagingFile {
   Future<void> discard();
 }
 
-String peerStageKey(PeerFileEntry entry) {
+String folderStageKey(FolderFileEntry entry) {
   if (entry.deleted) throw StateError('Удалению не нужен временный файл');
-  return '${peerStorageKey(entry.path)}-${entry.hash}';
+  return '${folderStorageKey(entry.path)}-${entry.hash}';
 }
 
-PeerFileSystem peerFileSystem(
+FolderFileSystem folderFileSystem(
   String root, {
   void Function(String)? onWarning,
 }) => root.startsWith('content://')
-    ? SafPeerFiles(root, onWarning: onWarning)
-    : LocalPeerFiles(Directory(root), onWarning: onWarning);
+    ? SafFolderFiles(root, onWarning: onWarning)
+    : LocalFolderFiles(Directory(root), onWarning: onWarning);
 
-Future<String> hashPeerFile(File file) {
+Future<String> hashFolderFile(File file) {
   final path = file.path;
   return Isolate.run(
     () async => (await sha256.bind(File(path).openRead()).first).toString(),
   );
 }
 
-class LocalPeerFiles implements PeerFileSystem {
+class LocalFolderFiles implements FolderFileSystem {
   final Directory root;
   final void Function(String)? onWarning;
-  LocalPeerFiles(this.root, {this.onWarning});
+  LocalFolderFiles(this.root, {this.onWarning});
 
-  Future<String> digest(File file) => hashPeerFile(file);
+  Future<String> digest(File file) => hashFolderFile(file);
   Future<File> publishFile(File staged, String destination) =>
       staged.rename(destination);
   @override
@@ -205,7 +205,7 @@ class LocalPeerFiles implements PeerFileSystem {
   }
 
   Future<File> _file(String path, {bool parents = false}) async {
-    peerPath(path);
+    folderPath(path);
     final base = await _base();
     var current = base;
     final parts = path.split('/');
@@ -233,9 +233,9 @@ class LocalPeerFiles implements PeerFileSystem {
   }
 
   @override
-  Future<List<PeerDiskFile>> scan({
+  Future<List<FolderDiskFile>> scan({
     void Function(String path, int checked)? onProgress,
-    Map<String, PeerDiskFile> cached = const {},
+    Map<String, FolderDiskFile> cached = const {},
     Set<String> invalidated = const {},
     bool forceHash = false,
   }) async {
@@ -243,7 +243,7 @@ class LocalPeerFiles implements PeerFileSystem {
     if (!await root.exists()) {
       throw StateError('Общая папка недоступна; индекс сохранён');
     }
-    final files = <PeerDiskFile>[], folded = <String>{};
+    final files = <FolderDiskFile>[], folded = <String>{};
     var visited = 0;
     Future<void> visit(Directory dir, String prefix, int depth) async {
       if (depth > 32) throw StateError('Больше 32 уровней вложенности');
@@ -252,11 +252,11 @@ class LocalPeerFiles implements PeerFileSystem {
           throw StateError('В общей папке больше 50000 элементов');
         }
         final name = p.basename(entry.path);
-        if (peerIgnored(name)) continue;
+        if (folderIgnored(name)) continue;
         if (entry is Link) {
           throw StateError('Общая папка содержит ссылку: $name');
         }
-        final path = peerPath('$prefix$name');
+        final path = folderPath('$prefix$name');
         if (!folded.add(path.toLowerCase())) {
           throw StateError('Имена различаются только регистром: $path');
         }
@@ -279,9 +279,9 @@ class LocalPeerFiles implements PeerFileSystem {
           if (before.size != after.size || before.modified != after.modified) {
             throw StateError('Файл меняется во время сканирования: $path');
           }
-          files.add(PeerDiskFile(path, hash, after.size, stamp));
-          if (files.length > peerMaxFiles) {
-            throw StateError('В общей папке больше $peerMaxFiles файлов');
+          files.add(FolderDiskFile(path, hash, after.size, stamp));
+          if (files.length > folderMaxFiles) {
+            throw StateError('В общей папке больше $folderMaxFiles файлов');
           }
         }
       }
@@ -294,7 +294,7 @@ class LocalPeerFiles implements PeerFileSystem {
   @override
   Future<String?> hash(String path) async {
     final file = await _file(path);
-    return await file.exists() ? hashPeerFile(file) : null;
+    return await file.exists() ? hashFolderFile(file) : null;
   }
 
   /// Cheap change marker: size and modification times, no file read.
@@ -313,7 +313,7 @@ class LocalPeerFiles implements PeerFileSystem {
     try {
       if (offset < 0 ||
           count < 1 ||
-          count > peerChunkSize ||
+          count > folderChunkSize ||
           offset > await file.length()) {
         throw const FormatException('Неверный диапазон');
       }
@@ -346,8 +346,8 @@ class LocalPeerFiles implements PeerFileSystem {
   }
 
   @override
-  Future<PeerStagingFile> stage(PeerFileEntry entry) async =>
-      _LocalPeerStage(this, entry);
+  Future<FolderStagingFile> stage(FolderFileEntry entry) async =>
+      _LocalFolderStage(this, entry);
 
   @override
   Future<void> remove(String path, String? expectedHash) async {
@@ -357,15 +357,15 @@ class LocalPeerFiles implements PeerFileSystem {
   }
 }
 
-class _LocalPeerStage implements PeerStagingFile {
-  final LocalPeerFiles files;
-  final PeerFileEntry entry;
-  _LocalPeerStage(this.files, this.entry);
+class _LocalFolderStage implements FolderStagingFile {
+  final LocalFolderFiles files;
+  final FolderFileEntry entry;
+  _LocalFolderStage(this.files, this.entry);
   Future<File> _file() async {
     final file = File(
       p.join(
         (await files._support('staging')).path,
-        '${peerStageKey(entry)}.part',
+        '${folderStageKey(entry)}.part',
       ),
     );
     final type = await FileSystemEntity.type(file.path, followLinks: false);
@@ -387,7 +387,7 @@ class _LocalPeerStage implements PeerStagingFile {
   Future<void> reset() async => (await _file()).writeAsBytes([]);
   @override
   Future<void> append(int offset, List<int> bytes) async {
-    if (offset < 0 || bytes.isEmpty || bytes.length > peerChunkSize) {
+    if (offset < 0 || bytes.isEmpty || bytes.length > folderChunkSize) {
       throw StateError('Неверный блок временного файла');
     }
     final file = await _file();
@@ -403,7 +403,7 @@ class _LocalPeerStage implements PeerStagingFile {
   }
 
   @override
-  Future<String> hash() async => hashPeerFile(await _file());
+  Future<String> hash() async => hashFolderFile(await _file());
   @override
   Future<void> discard() async {
     final file = await _file();
@@ -414,7 +414,7 @@ class _LocalPeerStage implements PeerStagingFile {
   Future<void> publish(String? expectedHash) async {
     final target = await files._file(entry.path, parents: true),
         staging = await _file();
-    if (await hashPeerFile(staging) != entry.hash) {
+    if (await hashFolderFile(staging) != entry.hash) {
       throw StateError('Временный файл изменился до публикации');
     }
     await files._check(entry.path, expectedHash);
@@ -429,7 +429,7 @@ class _LocalPeerStage implements PeerStagingFile {
     // The received file is already on the destination volume: no private cache
     // and no second full copy of the new payload are needed.
     try {
-      if (previous != null && await hashPeerFile(previous) != expectedHash) {
+      if (previous != null && await hashFolderFile(previous) != expectedHash) {
         throw StateError(
           'Локальный файл изменился во время замены: ${entry.path}',
         );
@@ -455,26 +455,26 @@ class _LocalPeerStage implements PeerStagingFile {
   }
 }
 
-class SafPeerFiles implements PeerFileSystem {
+class SafFolderFiles implements FolderFileSystem {
   @override
   Future<void> checkRoot() =>
-      peerFilesChannel.invokeMethod<void>('check', {'root': root});
+      folderFilesChannel.invokeMethod<void>('check', {'root': root});
   final String root;
   final void Function(String)? onWarning;
-  const SafPeerFiles(this.root, {this.onWarning});
+  const SafFolderFiles(this.root, {this.onWarning});
   @override
-  Future<String?> source(String path) => peerFilesChannel.invokeMethod<String>(
+  Future<String?> source(String path) => folderFilesChannel.invokeMethod<String>(
     'locate',
-    {'root': root, 'path': peerPath(path)},
+    {'root': root, 'path': folderPath(path)},
   );
   @override
-  Future<List<PeerDiskFile>> scan({
+  Future<List<FolderDiskFile>> scan({
     void Function(String path, int checked)? onProgress,
-    Map<String, PeerDiskFile> cached = const {},
+    Map<String, FolderDiskFile> cached = const {},
     Set<String> invalidated = const {},
     bool forceHash = false,
   }) async {
-    final entries = await peerFilesChannel.invokeListMethod<Map>('scan', {
+    final entries = await folderFilesChannel.invokeListMethod<Map>('scan', {
       'root': root,
       'cached': {for (final e in cached.entries) e.key: e.value.toJson()},
       'invalidated': invalidated.toList(),
@@ -483,8 +483,8 @@ class SafPeerFiles implements PeerFileSystem {
     if (entries == null) throw StateError('Общая папка недоступна');
     return [
       for (final e in entries)
-        PeerDiskFile(
-          peerPath(e['path'] as String),
+        FolderDiskFile(
+          folderPath(e['path'] as String),
           e['hash'] as String,
           e['bytes'] as int,
           e['stamp'] as String?,
@@ -493,18 +493,18 @@ class SafPeerFiles implements PeerFileSystem {
   }
 
   @override
-  Future<String?> hash(String path) => peerFilesChannel.invokeMethod<String>(
+  Future<String?> hash(String path) => folderFilesChannel.invokeMethod<String>(
     'hash',
-    {'root': root, 'path': peerPath(path)},
+    {'root': root, 'path': folderPath(path)},
   );
 
   /// Size and modification time from the document provider, no file read.
   /// `missing` when absent; null when the native side predates `stat`.
   Future<String?> stamp(String path) async {
     try {
-      return await peerFilesChannel.invokeMethod<String>('stat', {
+      return await folderFilesChannel.invokeMethod<String>('stat', {
             'root': root,
-            'path': peerPath(path),
+            'path': folderPath(path),
           }) ??
           'missing';
     } on MissingPluginException {
@@ -517,21 +517,21 @@ class SafPeerFiles implements PeerFileSystem {
 
   @override
   Future<List<int>> read(String path, int offset, int count) async =>
-      await peerFilesChannel.invokeMethod<Uint8List>('read', {
+      await folderFilesChannel.invokeMethod<Uint8List>('read', {
         'root': root,
-        'path': peerPath(path),
+        'path': folderPath(path),
         'offset': offset,
         'count': count,
       }) ??
       <int>[];
   @override
-  Future<PeerStagingFile> stage(PeerFileEntry entry) async =>
-      _SafPeerStage(root, entry, onWarning);
+  Future<FolderStagingFile> stage(FolderFileEntry entry) async =>
+      _SafFolderStage(root, entry, onWarning);
   @override
   Future<void> remove(String path, String? expectedHash) async {
-    final result = await peerFilesChannel.invokeMethod<Object?>('remove', {
+    final result = await folderFilesChannel.invokeMethod<Object?>('remove', {
       'root': root,
-      'path': peerPath(path),
+      'path': folderPath(path),
       'expected': expectedHash,
       'history': _noHistory,
     });
@@ -543,38 +543,38 @@ class SafPeerFiles implements PeerFileSystem {
   }
 }
 
-class _SafPeerStage implements PeerStagingFile {
+class _SafFolderStage implements FolderStagingFile {
   final String root;
-  final PeerFileEntry entry;
+  final FolderFileEntry entry;
   final void Function(String)? onWarning;
-  _SafPeerStage(this.root, this.entry, this.onWarning);
+  _SafFolderStage(this.root, this.entry, this.onWarning);
   Map<String, dynamic> get arguments => {
     'root': root,
     'path': entry.path,
-    'stage': peerStageKey(entry),
+    'stage': folderStageKey(entry),
     'history': _noHistory,
   };
   @override
-  Future<int> prepare() async => (await peerFilesChannel.invokeMethod<num>(
+  Future<int> prepare() async => (await folderFilesChannel.invokeMethod<num>(
     'stage_prepare',
     arguments,
   ))!.toInt();
   @override
   Future<void> reset() =>
-      peerFilesChannel.invokeMethod<void>('stage_reset', arguments);
+      folderFilesChannel.invokeMethod<void>('stage_reset', arguments);
   @override
   Future<void> append(int offset, List<int> bytes) =>
-      peerFilesChannel.invokeMethod<void>('stage_append', {
+      folderFilesChannel.invokeMethod<void>('stage_append', {
         ...arguments,
         'offset': offset,
         'bytes': Uint8List.fromList(bytes),
       });
   @override
   Future<String> hash() async =>
-      (await peerFilesChannel.invokeMethod<String>('stage_hash', arguments))!;
+      (await folderFilesChannel.invokeMethod<String>('stage_hash', arguments))!;
   @override
   Future<void> publish(String? expectedHash) async {
-    final result = await peerFilesChannel.invokeMethod<Object?>(
+    final result = await folderFilesChannel.invokeMethod<Object?>(
       'stage_publish',
       {...arguments, 'expected': expectedHash},
     );
@@ -587,5 +587,5 @@ class _SafPeerStage implements PeerStagingFile {
 
   @override
   Future<void> discard() =>
-      peerFilesChannel.invokeMethod<void>('stage_discard', arguments);
+      folderFilesChannel.invokeMethod<void>('stage_discard', arguments);
 }
