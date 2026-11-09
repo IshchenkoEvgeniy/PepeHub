@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../data/repository.dart';
+import '../library/library_features.dart';
+import '../library/library_service.dart';
+import '../library/models.dart';
+import 'library_work_page.dart';
 import '../recommendations/book_catalog.dart';
 import '../recommendations/recommendation_store.dart';
 import 'pepe_widgets.dart';
@@ -15,12 +19,16 @@ class RecommendationsPage extends StatefulWidget {
   final BookCatalog catalog;
   final ShelfNavigation? navigation;
   final Future<void> Function(RecommendedBook)? onCompleted;
+
+  /// Supplies the next unread volumes of series the user has started.
+  final LibraryService? library;
   const RecommendationsPage({
     super.key,
     required this.store,
     required this.catalog,
     this.navigation,
     this.onCompleted,
+    this.library,
   });
   @override
   State<RecommendationsPage> createState() => _RecommendationsPageState();
@@ -621,6 +629,116 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
     RecommendationSort.author => 'По автору',
   };
 
+  /// Series with a started or finished volume and at least one unread one:
+  /// the lowest unread volume is the natural next pick.
+  List<({String series, LibraryEntry next, int done, int total})>
+  _nextVolumes() {
+    final library = widget.library;
+    if (library == null) return const [];
+    final result =
+        <({String series, LibraryEntry next, int done, int total})>[];
+    for (final group in groupLibrarySeries(library.seriesEntries)) {
+      if (!group.isSeries || group.entries.any(_hidden)) continue;
+      final started = group.entries.any(
+        (e) => ['finished', 'active', 'paused'].contains(libraryStatus(e.item)),
+      );
+      final waiting =
+          group.entries
+              .where(
+                (e) =>
+                    isUnreadSeriesItem(e.item) ||
+                    libraryStatus(e.item) == 'planned',
+              )
+              .toList()
+            ..sort((a, b) => _index(a).compareTo(_index(b)));
+      if (!started || waiting.isEmpty) continue;
+      result.add((
+        series: group.name,
+        next: waiting.first,
+        done: group.entries
+            .where((e) => libraryStatus(e.item) == 'finished')
+            .length,
+        total: group.entries.length,
+      ));
+    }
+    return result..sort((a, b) => a.series.compareTo(b.series));
+  }
+
+  static bool _hidden(LibraryEntry e) =>
+      e.item.values['pepehub_hidden'] == true;
+  static num _index(LibraryEntry e) =>
+      num.tryParse('${e.item.value('seriesIndex')}'.replaceAll(',', '.')) ??
+      double.infinity;
+
+  Widget _seriesNext(ShelfPalette palette) {
+    final library = widget.library;
+    if (library == null) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: library,
+      builder: (context, _) {
+        final next = _nextVolumes();
+        if (next.isEmpty) return const SizedBox.shrink();
+        return ShelfPanel(
+          key: const ValueKey('recommendations-series-next'),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Следующие тома серий · ${next.length}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              for (final row in next.take(8))
+                ListTile(
+                  key: ValueKey('series-next:${row.next.item.id}'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    row.next.item.mediaType == 'audiobook'
+                        ? Icons.headphones_outlined
+                        : Icons.auto_stories_outlined,
+                    size: 18,
+                    color: palette.muted,
+                  ),
+                  title: Text(
+                    row.next.item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    [
+                      row.series,
+                      if (row.next.item.value('seriesIndex') != null)
+                        'том ${row.next.item.value('seriesIndex')}',
+                    ].join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: Text(
+                    '${row.done} из ${row.total}',
+                    style: TextStyle(fontSize: 11, color: palette.muted),
+                  ),
+                  onTap: () => Navigator.push<void>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => LibraryWorkPage(
+                        library: library,
+                        itemId: row.next.item.id,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _sortControl() => DropdownButtonFormField<RecommendationSort>(
     key: ValueKey('recommendation-sort-${effectiveSort.name}'),
     initialValue: effectiveSort,
@@ -841,6 +959,8 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
               const SizedBox(height: 16),
               buttons,
               const SizedBox(height: 16),
+              _seriesNext(palette),
+              const SizedBox(height: 16),
               search,
               const SizedBox(height: 14),
               Wrap(
@@ -923,6 +1043,8 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
                     search,
                     const SizedBox(height: 12),
                     buttons,
+                    const SizedBox(height: 12),
+                    _seriesNext(palette),
                     const SizedBox(height: 12),
                     _sortControl(),
                     const SizedBox(height: 18),

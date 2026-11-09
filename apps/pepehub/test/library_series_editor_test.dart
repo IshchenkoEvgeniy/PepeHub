@@ -121,9 +121,14 @@ void main() {
         );
       });
       await library.loadCached();
-      expect(library.suggestions['author'], ['Общий автор', 'Удалённый автор']);
+      // A planned card belongs to the library; a file-only draft does not.
+      expect(library.suggestions['author'], [
+        'В планах',
+        'Общий автор',
+        'Удалённый автор',
+      ]);
       await library.deleteCards(['removed']);
-      expect(library.suggestions['author'], ['Общий автор']);
+      expect(library.suggestions['author'], ['В планах', 'Общий автор']);
       expect(library.suggestions['genre'], ['Фантастика']);
       expect(library.suggestions['series'], ['Живая серия']);
       expect(library.suggestions['narrator'], ['Второй чтец', 'Первый чтец']);

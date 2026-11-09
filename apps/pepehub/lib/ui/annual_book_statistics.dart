@@ -74,6 +74,9 @@ class AnnualBookStatistics extends StatefulWidget {
   final int audioEstimateMs, audioUndatedMs;
   final ValueChanged<int> onYear;
   final ValueChanged<String> onScope;
+
+  /// Opens the books completed in a month (1–12) of [year].
+  final ValueChanged<int>? onMonth;
   final bool loading;
   final String? error;
   final DateTime Function()? clock;
@@ -102,6 +105,7 @@ class AnnualBookStatistics extends StatefulWidget {
     this.audioUndatedMs = 0,
     required this.onYear,
     required this.onScope,
+    this.onMonth,
     this.loading = false,
     this.error,
     this.clock,
@@ -442,7 +446,7 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
         'Завершения по месяцам',
         note: completions(completedCount),
       ),
-      () => _bars(palette, months, completions),
+      () => _bars(palette, months, completions, onTap: widget.onMonth),
       () => statisticsHeading(
         context,
         'Время по месяцам',
@@ -775,6 +779,7 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
     List<int> values,
     String Function(int) label, {
     bool counts = true,
+    ValueChanged<int>? onTap,
   }) {
     final max = values.fold<int>(1, (a, b) => a > b ? a : b);
     return SizedBox(
@@ -784,46 +789,55 @@ class _AnnualBookStatisticsState extends State<AnnualBookStatistics> {
         children: [
           for (var i = 0; i < 12; i++)
             Expanded(
-              child: Tooltip(
-                message: '${bookMonths[i]}: ${label(values[i])}',
-                child: Semantics(
-                  label: '${bookMonths[i]}: ${label(values[i])}',
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        if (values[i] > 0 && counts)
-                          SizedBox(
-                            height: 16,
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                '${values[i]}',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: palette.muted,
+              child: InkWell(
+                key: onTap == null ? null : ValueKey('annual-month:${i + 1}'),
+                onTap: onTap == null || values[i] == 0
+                    ? null
+                    : () => onTap(i + 1),
+                child: Tooltip(
+                  message: '${bookMonths[i]}: ${label(values[i])}',
+                  child: Semantics(
+                    label: '${bookMonths[i]}: ${label(values[i])}',
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (values[i] > 0 && counts)
+                            SizedBox(
+                              height: 16,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  '${values[i]}',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: palette.muted,
+                                  ),
                                 ),
                               ),
                             ),
+                          Container(
+                            height: values[i] == 0
+                                ? 2
+                                : 4 + 100 * values[i] / max,
+                            decoration: BoxDecoration(
+                              color: values[i] == 0
+                                  ? palette.line
+                                  : palette.accent,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
                           ),
-                        Container(
-                          height: values[i] == 0
-                              ? 2
-                              : 4 + 100 * values[i] / max,
-                          decoration: BoxDecoration(
-                            color: values[i] == 0
-                                ? palette.line
-                                : palette.accent,
-                            borderRadius: BorderRadius.circular(3),
+                          const SizedBox(height: 8),
+                          Text(
+                            bookMonths[i].substring(0, 1),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: palette.muted,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          bookMonths[i].substring(0, 1),
-                          style: TextStyle(fontSize: 11, color: palette.muted),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

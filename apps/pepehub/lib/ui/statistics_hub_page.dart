@@ -316,6 +316,10 @@ class _StatisticsHubPageState extends State<StatisticsHubPage> {
           clock: () => _now,
           firstYear: firstYear,
           onScope: (value) => setState(() => scope = value),
+          onMonth: (month) {
+            libraryFilterRequest.value = (year: year, month: month);
+            widget.navigation.onSelect(PepeSection.library);
+          },
           onYear: (value) {
             if (loading) return;
             setState(() => year = value);

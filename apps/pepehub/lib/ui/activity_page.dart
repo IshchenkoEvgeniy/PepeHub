@@ -24,13 +24,21 @@ String activityTime(num ms) {
 class ActivityPage extends StatefulWidget {
   final LibraryService library;
   final String? itemId;
+
+  /// Journal of several works (a series); [seriesTitle] names the page.
+  final Set<String>? itemIds;
+  final String? seriesTitle;
   final String? initialDay;
   const ActivityPage({
     super.key,
     required this.library,
     this.itemId,
+    this.itemIds,
+    this.seriesTitle,
     this.initialDay,
   });
+
+  bool get _all => itemId == null && itemIds == null;
   @override
   State<ActivityPage> createState() => _ActivityPageState();
 }
@@ -90,9 +98,15 @@ class _ActivityPageState extends State<ActivityPage> {
     try {
       await widget.library.history?.capture();
       final values =
-          await widget.library.history?.entries(itemId: widget.itemId) ??
+          (await widget.library.history?.entries(itemId: widget.itemId))
+              ?.where(
+                (s) =>
+                    widget.itemIds == null ||
+                    widget.itemIds!.contains((s['value'] as Map)['itemId']),
+              )
+              .toList() ??
           <Map<String, dynamic>>[];
-      final native = widget.itemId == null
+      final native = widget._all
           ? await JournalDays.outsideArchive(widget.library)
           : JournalDays([], {});
       if (mounted) {
@@ -744,12 +758,14 @@ class _ActivityPageState extends State<ActivityPage> {
     );
 
     return PepeSubpage(
-      title: widget.itemId == null
-          ? 'Журнал'
-          : titles[widget.itemId] ?? 'Журнал книги',
-      back: widget.itemId == null ? 'Статистика' : 'Журнал',
+      title: widget.itemId != null
+          ? titles[widget.itemId] ?? 'Журнал книги'
+          : widget.itemIds != null
+          ? widget.seriesTitle ?? 'Журнал серии'
+          : 'Журнал',
+      back: widget._all ? 'Статистика' : 'Журнал',
       section: PepeSection.statistics,
-      subtitle: widget.itemId == null
+      subtitle: widget._all
           ? 'Чтение и прослушивание · ${waiting == 0 ? 'всё синхронизировано' : 'ожидают обмена: $waiting'}'
           : null,
       actions: [

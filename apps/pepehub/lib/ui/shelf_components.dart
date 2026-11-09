@@ -63,6 +63,10 @@ enum PepeSection {
   const PepeSection(this.label, this.icon, this.selectedIcon);
 }
 
+/// Lets other sections (statistics) open the library with a completion
+/// filter: set it, then select [PepeSection.library].
+final libraryFilterRequest = ValueNotifier<({int year, int? month})?>(null);
+
 class ShelfNavigation {
   /// Highlighted section; null on screens that belong to none.
   final PepeSection? current;

@@ -36,6 +36,8 @@ Map<String, dynamic> get personalLibrarySchema => {
         'id': type,
         'mediaType': type,
         'statuses': {
+          'active': 'active',
+          'planned': 'planned',
           'paused': 'paused',
           'abandoned': 'abandoned',
           'finished': 'finished',

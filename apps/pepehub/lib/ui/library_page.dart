@@ -2158,6 +2158,7 @@ class _LibraryPageState extends State<LibraryPage> {
         catalog: bookCatalog,
         navigation: _navigation,
         onCompleted: _archiveRecommendation,
+        library: obsidianLibrary,
       );
     }
     if (metadataSection) {
