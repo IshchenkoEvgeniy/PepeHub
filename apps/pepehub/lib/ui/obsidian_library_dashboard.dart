@@ -1069,8 +1069,6 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 onSelected: (_) => setState(() => statusFilter = 'all'),
               ),
               for (final entry in {
-                'active': 'В процессе',
-                'planned': 'В планах',
                 'finished': 'Завершено',
                 'paused': 'Отложено',
                 'abandoned': 'Брошено',
@@ -1366,7 +1364,7 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
                 const Padding(
                   padding: EdgeInsets.only(top: 8),
                   child: Text(
-                    'Добавьте книгу из вкладки файлов или кнопкой «Добавить» — с любым статусом: в процессе, в планах, завершена, отложена или брошена.',
+                    'Добавьте завершённую, отложенную или брошенную книгу из вкладки файлов или кнопкой «Добавить».',
                     textAlign: TextAlign.center,
                   ),
                 ),

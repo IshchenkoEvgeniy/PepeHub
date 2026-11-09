@@ -299,25 +299,26 @@ void main() {
   );
 
   test(
-    'upgrades a legacy folder and keeps planned and active cards in named files',
+    'upgrades a legacy folder and keeps only archive cards in named files',
     () async {
       final app = device();
       final archived = await add(app, title: 'Первый том');
       await app.folderStorage.connect(shared.path);
       final folder = '${shared.path}/PepeHub-library';
-      final queued = <String, ObsidianLibraryItem>{};
+      final excluded = <String, ObsidianLibraryItem>{};
       for (final status in ['planned', 'active']) {
         final id = uuid.v4();
-        queued[id] = personalLibraryItem(id, 'book', {
+        excluded[id] = personalLibraryItem(id, 'book', {
           'title': status,
           'status': status,
         });
+        await putDocument('cards/$id', excluded[id]!.toJson());
       }
       final legacy = (await manifest())..['version'] = 1;
       await File('$folder/library.json').writeAsString(jsonEncode(legacy));
       await File('$folder/objects/book-files.json').delete();
       await app.repository.mutate((cards) async {
-        for (final e in queued.entries) {
+        for (final e in excluded.entries) {
           cards[e.key] = LibraryEntry(e.value);
         }
       });
@@ -326,12 +327,10 @@ void main() {
       final after = await manifest();
       expect(after['version'], 2);
       expect(
-        (after['documents'] as Map).keys
-            .where((k) => k.startsWith('cards/'))
-            .toSet(),
-        {'cards/$archived', for (final id in queued.keys) 'cards/$id'},
+        (after['documents'] as Map).keys.where((k) => k.startsWith('cards/')),
+        ['cards/$archived'],
       );
-      expect((await app.repository.entries()).keys, containsAll(queued.keys));
+      expect((await app.repository.entries()).keys, containsAll(excluded.keys));
       expect(
         jsonDecode(
           await File('$folder/objects/library-before-named-books.json')
@@ -348,7 +347,7 @@ void main() {
             .list(recursive: true)
             .where((entry) => entry is File)
             .length,
-        3,
+        1,
       );
     },
   );

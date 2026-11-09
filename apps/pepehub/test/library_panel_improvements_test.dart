@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
-import 'package:pepehub/library/library_features.dart';
 import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/library/models.dart';
 import 'package:pepehub/library/personal_library.dart';
@@ -13,27 +12,6 @@ import 'package:pepehub/ui/obsidian_library_dashboard.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 void main() {
-  test('every user status is a library status; drafts stay outside', () {
-    for (final status in ['active', 'planned', 'paused', 'abandoned']) {
-      expect(
-        isLibraryArchiveItem(
-          personalLibraryItem('x', 'book', {'status': status}),
-        ),
-        isTrue,
-        reason: status,
-      );
-    }
-    expect(
-      isLibraryArchiveItem(
-        personalLibraryItem('x', 'book', {
-          'status': 'active',
-          'pepehub_auto_discovered': true,
-        }),
-      ),
-      isFalse,
-    );
-  });
-
   test('format names are shown in Russian', () {
     expect(libraryFormatName('Audiobook'), 'Аудиокнига');
     expect(libraryFormatName('E-book'), 'Электронная книга');

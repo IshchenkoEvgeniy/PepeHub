@@ -88,13 +88,9 @@ void main() {
       await AudioJournal(repo).put('audio_event', 'listen', event);
       final before = await repo.record('listen');
       final history = await AudioStatisticsHistory.load(repo);
-      // Planned and in-progress cards belong to the library, so their
-      // manually entered listening time counts like any other card's.
       expect(AudioStats(history.events).books, {
         'card:minutes': 7200000,
         'native': 1800000,
-        'card:planned': 7200000,
-        'card:active': 7200000,
         'card:unknown-date': 7200000,
       });
       expect(AudioStats(history.events).undatedMs, 7200000);

@@ -96,13 +96,13 @@ void main() {
     expect(service.completed.single.item.id, identity);
   });
 
-  test('planned imports stay in the library and can move to recommendations without deleting their source', () async {
+  test('planned imports move to existing recommendations without deleting their source', () async {
     final remote = LibraryRepository(local, connection.namespace);
     final id = const Uuid().v4();
     await remote.receive(snapshot(id, status: 'В планах'));
     await service.reload();
     expect(service.completed, isEmpty);
-    expect(service.visibleEntries.single.item.title, 'Книга');
+    expect(service.visibleEntries, isEmpty);
     final personalId = service.entries.single.item.id;
     await service.toRecommendations(personalId);
     await service.toRecommendations(personalId);

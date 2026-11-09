@@ -120,15 +120,15 @@ void main() {
     expect(await library.local.records('session'), isEmpty);
     expect(await library.history!.entries(), isEmpty);
     final raw = await library.local.meta(personalLibraryKey);
-    // Planned and in-progress volumes are regular library statuses now;
-    // an unknown status is still rejected without writing.
-    await expectLater(
-      library.addSeries([
-        volume('bad', seriesId: 'bad', values: {'status': 'someday'}),
-      ]),
-      throwsArgumentError,
-    );
-    expect(await library.local.meta(personalLibraryKey), raw);
+    for (final invalid in ['planned', 'active']) {
+      await expectLater(
+        library.addSeries([
+          volume('bad', seriesId: 'bad', values: {'status': invalid}),
+        ]),
+        throwsArgumentError,
+      );
+      expect(await library.local.meta(personalLibraryKey), raw);
+    }
   });
 
   test(

@@ -80,8 +80,6 @@ Map<String, dynamic> commonLibrarySeriesMetadata(
 }
 
 const libraryStatusesLocal = {
-  'active': 'В процессе',
-  'planned': 'В планах',
   'paused': 'Отложена',
   'abandoned': 'Брошена',
   'finished': 'Завершённая',
@@ -112,8 +110,7 @@ Map<String, String> libraryItemStatuses(ObsidianLibraryItem item) =>
     ? libraryStatusesLocal
     : seriesVolumeStatuses(item.mediaType);
 
-/// The personal library holds every work the user added explicitly, whatever
-/// its status. Automatic drafts and file-only records stay outside it.
+/// The personal archive contains outcomes, never a file shelf or reading queue.
 bool isLibraryArchiveItem(ObsidianLibraryItem item) =>
     libraryStatusesLocal.containsKey(libraryStatus(item)) &&
     item.values['pepehub_auto_discovered'] != true &&

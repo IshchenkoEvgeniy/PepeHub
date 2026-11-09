@@ -125,7 +125,7 @@ void main() {
     }
   });
 
-  test('archive migration hides automatic drafts and keeps added planned and active cards', () async {
+  test('archive migration hides automatic drafts and queues while preserving every saved record', () async {
     final wanted = <String>[];
     for (final status in ['finished', 'paused', 'abandoned']) {
       wanted.add(
@@ -155,17 +155,12 @@ void main() {
         );
       }
     });
-    final queued = library.repository;
-    final added = (await queued.entries()).values
-        .where((e) => e.item.title.startsWith('Старая очередь'))
-        .map((e) => e.item.id);
     await local.setMeta('library-manual-archive-v1', '0');
     await library.reload();
     expect(library.entries, hasLength(8));
-    // Cards the user added stay in the library whatever their status.
     expect(
       library.visibleEntries.map((e) => e.item.id).toSet(),
-      {...wanted, ...added},
+      wanted.toSet(),
     );
     expect(library.forBook('old-finished'), isNull);
     expect(
@@ -177,26 +172,20 @@ void main() {
       isTrue,
     );
     expect(libraryStatusesLocal.keys.toSet(), {
-      'active',
-      'planned',
       'finished',
       'paused',
       'abandoned',
     });
-    await add('В планах', values: {'status': 'planned'});
-    await library.editCards([wanted.first], {'status': 'active'});
     await expectLater(
-      add('Неизвестно', values: {'status': 'someday'}),
+      add('Нельзя', values: {'status': 'planned'}),
+      throwsArgumentError,
+    );
+    await expectLater(
+      library.editCards([wanted.first], {'status': 'active'}),
       throwsArgumentError,
     );
     await library.reload();
-    expect(library.visibleEntries, hasLength(6));
-    expect(
-      libraryStatus(
-        library.visibleEntries.firstWhere((e) => e.item.id == wanted.first).item,
-      ),
-      'active',
-    );
+    expect(library.visibleEntries, hasLength(3));
   });
 
   test(
