@@ -11,7 +11,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../data/repository.dart';
-import '../sync/peer/peer_files.dart';
+import '../storage/folder_files.dart';
 import '../audio/audio_import.dart';
 import '../audio/audio_link.dart';
 import '../reader/epub.dart';

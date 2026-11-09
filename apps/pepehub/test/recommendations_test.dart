@@ -48,7 +48,6 @@ void main() {
         );
         await store.saveCategory('Мой топ');
         expect((await store.load()).categories.length, 4);
-        expect(await repo.pendingCount(), 0);
         expect(await repo.records('book'), isEmpty);
       },
     );

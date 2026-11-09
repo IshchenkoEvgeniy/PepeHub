@@ -149,7 +149,7 @@ void main() {
       'Track 10',
     ]);
     expect(selected.sources.where((s) => s.isAudio), hasLength(2));
-    final repo = Repository(db), videos = VideoRepository(Repository(db));
+    final videos = VideoRepository(Repository(db));
     final item = await videos.addSources(
       title: selected.title,
       sources: selected.sources,
@@ -180,7 +180,6 @@ void main() {
     expect(refreshed, hasLength(4));
     expect(refreshed.last.isAudio, isTrue);
     expect((await videos.progress(music))!.positionMs, 10000);
-    expect(await repo.pending(), isEmpty);
     expect(
       await videos.addSources(
         title: 'Repeated',

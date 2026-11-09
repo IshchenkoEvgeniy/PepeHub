@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../data/repository.dart';
-import '../sync/peer/app_sync_usage.dart';
 import 'reading_library.dart';
 import 'reading_notes_export.dart';
 import '../ui/pepe_widgets.dart';
@@ -155,7 +154,6 @@ class ReadingNotesPage extends StatefulWidget {
 }
 
 class _ReadingNotesPageState extends State<ReadingNotesPage> {
-  void Function()? _releaseSync;
   late final library = ReadingLibrary(widget.repository);
   List<ReadingNote> notes = [];
   String query = '';
@@ -167,14 +165,12 @@ class _ReadingNotesPageState extends State<ReadingNotesPage> {
   @override
   void initState() {
     super.initState();
-    _releaseSync = AppSyncUsage.hold(widget.repository.db, 'reading-notes');
     widget.repository.externalChanges.addListener(_reload);
     _reload();
   }
 
   @override
   void dispose() {
-    _releaseSync?.call();
     widget.repository.externalChanges.removeListener(_reload);
     super.dispose();
   }

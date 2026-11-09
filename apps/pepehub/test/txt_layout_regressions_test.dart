@@ -13,7 +13,6 @@ import 'package:pepehub/reader/reader_layout.dart';
 import 'package:pepehub/reader/reader_rebase.dart';
 import 'package:pepehub/reader/reading_library.dart';
 import 'package:pepehub/reader/text_book.dart';
-import 'package:pepehub/sync/peer/app_sync_presentation.dart';
 
 Uint8List bytes(String text) => Uint8List.fromList(utf8.encode(text));
 
@@ -44,7 +43,7 @@ void main() {
   );
 
   test(
-    'single-line TXT context uses exact offsets after hundreds of lines',
+    'single-line TXT keeps its exact text after hundreds of lines',
     () {
       final source = [
         'Chapter 1',
@@ -54,12 +53,6 @@ void main() {
       final chapter = parseTextBook(bytes(source), 'book.txt').chapters.single;
       expect(chapter.paragraphSeparator, '\n');
       expect(chapter.text, source);
-      final context = readerPositionContext(
-        chapter.text,
-        source.indexOf('TARGET'),
-      );
-      expect(context, contains('TARGET quote'));
-      expect(context, isNot(contains('Paragraph 390')));
     },
   );
 

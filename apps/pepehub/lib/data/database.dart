@@ -54,6 +54,7 @@ class AppDatabase extends GeneratedDatabase {
       await _addEditionSchema();
       await createFeatureSchema(this);
       await ensurePerformanceProjections(this);
+      await removeDeviceSync(this);
       await customStatement('PRAGMA user_version = $currentDatabaseVersion');
     }),
     onUpgrade: (_, from, to) async {
@@ -64,6 +65,7 @@ class AppDatabase extends GeneratedDatabase {
         if (from < 4) await createFeatureSchema(this);
         if (from < 5) await ensurePerformanceProjections(this);
         if (from < 6) await ensureReadingSessionBookIndex(this);
+        if (from < 7) await removeDeviceSync(this);
         await customStatement('PRAGMA user_version = $currentDatabaseVersion');
       });
     },

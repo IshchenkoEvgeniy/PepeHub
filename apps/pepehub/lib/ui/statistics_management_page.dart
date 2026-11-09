@@ -3,8 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
-import '../sync/peer/app_sync_usage.dart';
-
 import 'audio_mini_player.dart';
 import 'book_picker.dart';
 
@@ -41,7 +39,6 @@ class StatisticsManagementPage extends StatefulWidget {
 
 class _StatisticsManagementPageState extends State<StatisticsManagementPage>
     with SingleTickerProviderStateMixin {
-  void Function()? _releaseSync;
   late final TabController tabs;
   bool loading = true;
   bool mutating = false;
@@ -67,7 +64,6 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
   void initState() {
     super.initState();
     selectedBookId = widget.initialBookId;
-    _releaseSync = AppSyncUsage.hold(widget.repository.db, 'statistics-edit');
     tabs = TabController(
       length: 2,
       vsync: this,
@@ -92,7 +88,6 @@ class _StatisticsManagementPageState extends State<StatisticsManagementPage>
 
   @override
   void dispose() {
-    _releaseSync?.call();
     _searchTimer?.cancel();
     search.dispose();
     tabs.dispose();

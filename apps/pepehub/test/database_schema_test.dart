@@ -30,6 +30,10 @@ const _featureTables = [
   'reading_span_index_v1',
   'reading_span_dirty_v1',
   'audio_daily_totals_v1',
+];
+
+/// Device synchronization tables removed in version 7.
+const _syncTables = [
   'peer_sync_files',
   'peer_sync_deletions',
   'peer_sync_scan_cache',
@@ -39,6 +43,8 @@ const _featureTables = [
   'peer_app_alias',
   'cloud_local_state',
   'legacy_cloud_outbox',
+  'outbox',
+  'remote_records',
 ];
 
 Map<String, dynamic> _listen(String book, {int wall = 1000}) => {
@@ -102,6 +108,7 @@ void main() {
           currentDatabaseVersion,
         );
         expect(_names(raw, 'table'), containsAll(_featureTables));
+        expect(_names(raw, 'table').intersection(_syncTables.toSet()), isEmpty);
         expect(
           _names(raw, 'index'),
           containsAll(['records_audio_day_v2', 'video_interval_history']),
@@ -176,8 +183,6 @@ void main() {
       raw.execute(
         "CREATE INDEX records_audio_day ON records(type,json_extract(payload,'\$.localDay'),json_extract(payload,'\$.bookId'))",
       );
-      raw.execute('DROP TABLE peer_app_alias');
-      raw.execute('DROP INDEX peer_app_projection_target');
       // Existing indexes must be replaced, not retained by IF NOT EXISTS.
       for (final entry in _legacyVideoIndexes.entries) {
         raw.execute('DROP INDEX ${entry.key}');
@@ -190,10 +195,6 @@ void main() {
       try {
         final totals = await AudioDailyStore(Repository(db)).lifetime();
         expect(totals.days, {'2026-10-23': 1000});
-        expect(
-          await db.customSelect('SELECT * FROM peer_app_alias').get(),
-          isEmpty,
-        );
       } finally {
         await db.close();
       }
@@ -221,7 +222,10 @@ void main() {
             '{broken',
           ]);
         }
-        expect(_names(check, 'index'), contains('peer_app_projection_target'));
+        expect(
+          _names(check, 'table').intersection(_syncTables.toSet()),
+          isEmpty,
+        );
       } finally {
         check.close();
       }
@@ -277,6 +281,84 @@ void main() {
     },
   );
 
+  test('version 7 removes synchronization data and cards that only it brought', () async {
+    await populated();
+    final raw = sqlite.sqlite3.open(file.path);
+    raw.execute(
+      'CREATE TABLE peer_app_alias(kind TEXT NOT NULL,local_id TEXT NOT NULL,'
+      'shared_id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(kind,local_id))',
+    );
+    raw.execute(
+      'CREATE TABLE outbox(sequence INTEGER PRIMARY KEY,operation TEXT)',
+    );
+    Map<String, Object> book(String title, [String format = 'epub']) => {
+      'title': title,
+      'authors': <String>[],
+      'format': format,
+      'status': 'planned',
+    };
+    final cards = {
+      'remote': book('Только из обмена'),
+      'linked': book('Связана с карточкой библиотеки'),
+      'file': book('С файлом'),
+      'audio': book('Аудио', 'audio'),
+      'local': book('Своя'),
+    };
+    for (final card in cards.entries) {
+      raw.execute('INSERT INTO records VALUES(?,?,1,0,?)', [
+        card.key,
+        'book',
+        jsonEncode(card.value),
+      ]);
+      if (card.key != 'local') {
+        raw.execute('INSERT INTO peer_app_alias VALUES(?,?,?,?)', [
+          'book',
+          card.key,
+          'shared-${card.key}',
+          jsonEncode({
+            'descriptor': {'sources': <Object>[]},
+          }),
+        ]);
+      }
+    }
+    raw.execute(
+      "INSERT INTO local_assets VALUES('asset','file','a.epub','/a.epub','${'a' * 64}',1)",
+    );
+    raw.execute('INSERT INTO metadata VALUES(?,?)', [
+      'library-catalog-v1',
+      jsonEncode({
+        'item': {'sourceBookId': 'linked'},
+      }),
+    ]);
+    raw.execute('INSERT INTO metadata VALUES(?,?)', ['peer-sync-name', 'ПК']);
+    raw.execute('INSERT INTO metadata VALUES(?,?)', ['reading-sort', 'title']);
+    raw.execute('PRAGMA user_version=6');
+    raw.close();
+
+    final db = await reopen();
+    try {
+      final repo = Repository(db);
+      expect((await repo.record('remote'))!.deleted, true);
+      for (final id in ['linked', 'file', 'audio', 'local']) {
+        expect((await repo.record(id))!.deleted, false, reason: id);
+      }
+      expect(await repo.meta('peer-sync-name'), isNull);
+      expect(await repo.meta('reading-sort'), 'title');
+    } finally {
+      await db.close();
+    }
+    final check = sqlite.sqlite3.open(file.path);
+    try {
+      expect(_names(check, 'table').intersection(_syncTables.toSet()), isEmpty);
+      expect(
+        check.select('PRAGMA user_version').single.values.first,
+        currentDatabaseVersion,
+      );
+    } finally {
+      check.close();
+    }
+  });
+
   test('video readers skip damaged payloads after indexed writes', () async {
     final db = AppDatabase(NativeDatabase.memory());
     addTearDown(db.close);
@@ -306,24 +388,6 @@ void main() {
     expect(
       (await videos.history(lessonIds: {lesson.id}, music: false)).intervals,
       isEmpty,
-    );
-  });
-
-  test('foreign reader sources use the materialized target index', () async {
-    final db = AppDatabase(NativeDatabase.memory());
-    addTearDown(db.close);
-    final plan = await db
-        .customSelect(
-          "EXPLAIN QUERY PLAN SELECT target AS id FROM peer_app_projection "
-          "WHERE materialized=1 AND target IN "
-          "(SELECT 'm:reading-session:'||value FROM json_each('[\"s1\"]'))",
-        )
-        .get();
-    expect(
-      plan.map((row) => row.read<String>('detail')).join('\n'),
-      matches(
-        r'SEARCH peer_app_projection USING (?:COVERING )?INDEX peer_app_projection_target',
-      ),
     );
   });
 }

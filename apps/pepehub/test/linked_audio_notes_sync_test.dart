@@ -5,8 +5,6 @@ import 'dart:async';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:pepehub/audio/audio_folder.dart';
 import 'package:pepehub/audio/audio_journal.dart';
 import 'package:pepehub/audio/audio_link.dart';
@@ -15,7 +13,7 @@ import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/library_repository.dart';
 import 'package:pepehub/library/models.dart';
 import 'package:pepehub/library/note_store.dart';
-import 'package:pepehub/library/obsidian_sync_service.dart';
+import 'connector_namespace.dart';
 import 'package:pepehub/media/asset_store.dart';
 
 class LinkedNoteSource extends FolderAudioFile {
@@ -31,7 +29,7 @@ void main() {
   late AppDatabase db;
   late Repository local;
   late NoteStore store;
-  late ObsidianConfig config;
+  late LegacyConnector config;
   late ObsidianLibraryItem item;
   late String book;
   late List<LocalAsset> tracks;
@@ -48,7 +46,7 @@ void main() {
       title: 'Linked audiobook',
     );
     tracks = await AssetStore(local, Directory('.')).audioTracks(book);
-    config = ObsidianConfig('https://example.test', 'test-token');
+    config = LegacyConnector('https://example.test', 'test-token');
     item = ObsidianLibraryItem(
       id: uuid.v4(),
       path: 'Audio/One.md',
@@ -170,85 +168,4 @@ void main() {
     },
   );
 
-  test('two linked-track notes complete HTTP exchange and remote edits return to the correct track', () async {
-    final ids = [await save(track: 0), await save(track: 1)];
-    await local.setMeta('obsidian-sync-history', 'false');
-    final changes = <Map<String, dynamic>>[];
-    final client = MockClient((request) async {
-      expect(request.headers['Authorization'], 'Bearer test-token');
-      Map<String, dynamic> body;
-      if (request.url.path.endsWith('/library')) {
-        body = {
-          'version': 1,
-          'ready': true,
-          'items': [item.toJson()],
-          'fields': [],
-          'collections': [],
-        };
-      } else if (request.method == 'POST') {
-        final operations =
-            (jsonDecode(request.body) as Map)['operations'] as List;
-        for (final operation in operations) {
-          expect(validNoteValue(operation['entry']), true);
-          expect(operation['entry']['anchor'].containsKey('trackHash'), false);
-          changes.add({
-            'entry': operation['entry'],
-            'revision': 1,
-            'sequence': changes.length + 1,
-          });
-        }
-        body = {
-          'version': 1,
-          'receipts': [
-            for (var i = 0; i < operations.length; i++)
-              {
-                'operationId': operations[i]['operationId'],
-                'status': 'applied',
-                'record': changes[i],
-              },
-          ],
-        };
-      } else {
-        final secondTrack = changes.singleWhere(
-          (c) => c['entry']['anchor']['trackIndex'] == 1,
-        );
-        final edited = {
-          ...secondTrack,
-          'revision': 2,
-          'sequence': 3,
-          'entry': {
-            ...secondTrack['entry'] as Map,
-            'text': 'Edited in Obsidian',
-            'updatedAt': '2026-10-13T10:00:00.000Z',
-          },
-        };
-        body = {
-          'version': 1,
-          'records': [...changes, edited],
-          'cursor': 3,
-          'hasMore': false,
-        };
-      }
-      return http.Response(
-        jsonEncode(body),
-        200,
-        headers: {'content-type': 'application/json; charset=utf-8'},
-      );
-    });
-    addTearDown(client.close);
-    await ObsidianSyncService(
-      LibraryRepository(local, config.namespace),
-      client,
-      config,
-    ).run();
-    expect(changes, hasLength(2));
-    expect(await store.pending(), isEmpty);
-    expect((await local.record(ids[0]))!.payload!['trackId'], tracks[0].id);
-    expect((await local.record(ids[1]))!.payload!['trackId'], tracks[1].id);
-    expect(
-      (await local.record(ids[1]))!.payload!['text'],
-      'Edited in Obsidian',
-    );
-    expect((await store.state())['cursor'], 3);
-  });
 }

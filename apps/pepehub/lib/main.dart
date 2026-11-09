@@ -6,9 +6,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
-import 'sync/peer/peer_service.dart';
-import 'sync/peer/peer_store.dart';
-import 'sync/peer/peer_background.dart';
 import 'ui/app_theme.dart';
 import 'ui/goal_reminders.dart';
 import 'ui/goal_settings_page.dart';
@@ -31,14 +28,6 @@ import 'video/video_mini_player.dart';
 
 Future<void> main() => startPepeHub();
 
-@pragma('vm:entry-point')
-Future<void> peerBackgroundMain() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  ErrorLog.install();
-  await _attachErrorLog(name: 'errors-background.log');
-  await runPeerBackground();
-}
-
 const _russian = Locale('ru');
 const _localizations = <LocalizationsDelegate<Object>>[
   GlobalMaterialLocalizations.delegate,
@@ -55,17 +44,11 @@ Future<void> startPepeHub({
   // Paint immediately; the library opens behind a lightweight screen.
   runApp(const _StartupScreen());
   try {
-    await claimPeerForeground();
     final db = await (openDatabase ?? AppDatabase.open)();
     await db.customSelect('SELECT 1').get();
     final repository = Repository(db);
-    // Independent steps run together: audio services and the asset folder do
-    // not wait for the transport bookkeeping transaction.
-    final transports = repository.initializeTransports();
     final assets = await AssetStore.open(repository);
-    final audioStart = _startAudio(assets);
-    await transports;
-    final (audio, audioError) = await audioStart;
+    final (audio, audioError) = await _startAudio(assets);
     runApp(
       PepeHubApp(
         repository: repository,
@@ -159,7 +142,6 @@ class _PepeHubAppState extends State<PepeHubApp> {
       await videos.close();
       await widget.audio?.pause();
       await widget.audio?.flushJournal();
-      await peers.close();
     },
   );
   final messenger = GlobalKey<ScaffoldMessengerState>();
@@ -193,20 +175,6 @@ class _PepeHubAppState extends State<PepeHubApp> {
       return true;
     },
   );
-  late final peers = PeerSyncService(
-    PeerStore(widget.repository),
-    assets: widget.assets,
-    workDirectory: widget.assets == null
-        ? null
-        : Directory(p.join(widget.assets!.directory.path, 'peer-sync')),
-    protectsTarget: (target) =>
-        target.startsWith('p:audio:') &&
-            widget.audio?.canPlay == true &&
-            target == 'p:audio:${widget.audio?.progressEditionId}' ||
-        target.startsWith('p:video:') &&
-            videos.controller?.current != null &&
-            target == 'p:video:${videos.controller!.current!.id}',
-  );
   late final videos = VideoPlaybackSession(
     VideoRepository(widget.repository),
     audio: widget.audio,
@@ -219,8 +187,6 @@ class _PepeHubAppState extends State<PepeHubApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) => reminders.check());
     updates.addListener(_updateNotice);
     unawaited(updates.initialize());
-    attachPeerBackground(peers);
-    unawaited(peers.initialize());
     widget.repository.externalChanges.addListener(_externalChange);
   }
 
@@ -264,7 +230,6 @@ class _PepeHubAppState extends State<PepeHubApp> {
     updates.removeListener(_updateNotice);
     updates.dispose();
     videos.dispose();
-    peers.dispose();
     super.dispose();
   }
 
@@ -296,41 +261,38 @@ class _PepeHubAppState extends State<PepeHubApp> {
             ),
             child: UpdateScope(
               service: updates,
-              child: PeerSyncScope(
-                service: peers,
-                child: AudioPlayerScope(
-                  controller: widget.audio,
-                  child: VideoSessionScope(
-                    session: videos,
-                    child: Overlay.wrap(
-                      child: Stack(
-                        children: [
-                          child!,
-                          VideoMiniPlayer(
-                            session: videos,
-                            onOpen: () {
-                              final item = videos.item,
-                                  player = videos.controller;
-                              if (item == null ||
-                                  player == null ||
-                                  videos.pageAttached) {
-                                return;
-                              }
-                              navigator.currentState?.push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => VideoPlayerPage(
-                                    repository: videos.repository,
-                                    item: item,
-                                    lessons: player.lessons,
-                                    initialIndex: player.index,
-                                    session: videos,
-                                  ),
+              child: AudioPlayerScope(
+                controller: widget.audio,
+                child: VideoSessionScope(
+                  session: videos,
+                  child: Overlay.wrap(
+                    child: Stack(
+                      children: [
+                        child!,
+                        VideoMiniPlayer(
+                          session: videos,
+                          onOpen: () {
+                            final item = videos.item,
+                                player = videos.controller;
+                            if (item == null ||
+                                player == null ||
+                                videos.pageAttached) {
+                              return;
+                            }
+                            navigator.currentState?.push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => VideoPlayerPage(
+                                  repository: videos.repository,
+                                  item: item,
+                                  lessons: player.lessons,
+                                  initialIndex: player.index,
+                                  session: videos,
                                 ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                     ),
                   ),
                 ),

@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show debugPrintSynchronously;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:pepehub/audio/audio_journal.dart';
@@ -19,7 +18,6 @@ import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/library/models.dart';
-import 'package:pepehub/library/obsidian_sync_service.dart';
 import 'package:pepehub/main.dart';
 import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/media/audio_controller.dart';
@@ -218,7 +216,6 @@ void main() {
   testWidgets(
     'render README gallery from actual 0.19.0 widgets',
     (tester) async {
-      FlutterSecureStorage.setMockInitialValues({});
       debugPrintSynchronously('Loading fonts');
       await tester.runAsync(() async {
         for (final family in {
@@ -604,10 +601,6 @@ void main() {
           size: const Size(1200, 1000),
         );
         player.dispose();
-        service.config = ObsidianConfig(
-          'https://example.test',
-          'documentation',
-        );
         service.entries = [
           for (var i = 0; i < 6; i++)
             LibraryEntry(

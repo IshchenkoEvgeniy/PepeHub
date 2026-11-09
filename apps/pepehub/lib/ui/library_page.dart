@@ -35,7 +35,6 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -47,7 +46,6 @@ import '../export/markdown.dart';
 import '../media/asset_store.dart';
 import '../media/audio_controller.dart';
 import '../media/library_folder_preference.dart';
-import '../sync/sync_client.dart';
 import 'dialogs.dart';
 import 'audio_page.dart';
 import 'audio_import_dialog.dart';
@@ -66,7 +64,6 @@ import 'package:flutter/services.dart'
 import '../reader/reading_book_actions.dart';
 import '../audio/audio_book_actions.dart';
 import '../reader/reading_book_visibility.dart';
-import '../sync/peer/peer_service.dart';
 import 'reading_roots_page.dart';
 import 'hidden_deleted_page.dart';
 import 'book_delete_dialog.dart';
@@ -104,18 +101,15 @@ class LibraryPage extends StatefulWidget {
 }
 
 class _LibraryPageState extends State<LibraryPage> {
-  final storage = const FlutterSecureStorage(), httpClient = http.Client();
+  final httpClient = http.Client();
   List<LibraryRecord> books = [];
 
   /// Unstarted audiobooks whose files all belong to a fuller shown book.
   Map<String, Set<String>> containedIn = {};
   ReadingShelfSources shelfSources = ReadingShelfSources([]);
   Map<String, Map<String, dynamic>> effectiveReadingInfo = {};
-  bool _remoteOnly(LibraryRecord book) =>
-      reading && shelfSources.remoteOnly(book.id);
   List<LocalAsset> localAssets = [];
   Map<String, ({int? total, int? position, double speed})> audioSummaries = {};
-  List<Map<String, dynamic>> conflicts = [];
   List<AudioRoot> roots = [];
   Map<String, String> statusOverrides = {};
   String? selectedRoot;
@@ -180,8 +174,6 @@ class _LibraryPageState extends State<LibraryPage> {
       readingCollections = {},
       readingSourcePaths = {};
   late final readingLibrary = ReadingLibrary(widget.repository);
-  bool get showSync => false; // Final project stage; local features come first.
-  late final syncClient = SyncClient(widget.repository, httpClient);
   @override
   void initState() {
     super.initState();
@@ -195,7 +187,6 @@ class _LibraryPageState extends State<LibraryPage> {
   void _libraryChanged() {
     if (mounted) setState(() {});
     if (_remoteRefresh == null &&
-        !obsidianLibrary.syncing &&
         !obsidianLibrary.loading &&
         mounted &&
         !metadataSection &&
@@ -448,9 +439,6 @@ class _LibraryPageState extends State<LibraryPage> {
                 'audio-user-hidden:',
               ],
       );
-      final conflictsFuture = showSync
-          ? repo.conflicts().then((rows) => rows.map((r) => r.data).toList())
-          : Future.value(<Map<String, dynamic>>[]);
       final filesFuture =
           assets?.shelfAssets(audio: !readingSection) ??
           Future.value(<LocalAsset>[]);
@@ -489,7 +477,6 @@ class _LibraryPageState extends State<LibraryPage> {
         booksFuture,
         deletedFuture,
         flagsFuture,
-        conflictsFuture,
         filesFuture,
         rootsFuture,
         defaultRootFuture,
@@ -540,7 +527,6 @@ class _LibraryPageState extends State<LibraryPage> {
           (wholes[part] ??= {}).add(whole);
         }
       }
-      final c = await conflictsFuture;
       final files = await filesFuture;
       final sources = ReadingShelfSources(files);
       final rootList = await rootsFuture;
@@ -552,7 +538,6 @@ class _LibraryPageState extends State<LibraryPage> {
         } catch (_) {
           /* The listing below tolerates the legacy value anyway. */
         }
-        final sourcesLoad = sources.load(repo);
         final positionsFuture = readingLibrary.entries('reader:');
         final indexFuture = positionsFuture.then(readingLibrary.shelfIndex);
         final prefsFuture = readingLibrary.entries('reading-book:');
@@ -572,7 +557,6 @@ class _LibraryPageState extends State<LibraryPage> {
               onError: (Object _) => <String, ({int ms, int chars})>{},
             );
         await Future.wait<Object?>([
-          sourcesLoad,
           positionsFuture,
           indexFuture,
           prefsFuture,
@@ -683,7 +667,6 @@ class _LibraryPageState extends State<LibraryPage> {
           localAssets = files;
           shelfSources = sources;
           audioSummaries = summary;
-          conflicts = c;
           loading = false;
         });
       }
@@ -1251,41 +1234,6 @@ class _LibraryPageState extends State<LibraryPage> {
     }
   }
 
-  Future<void> _settings() async {
-    await _action(() async {
-      final raw = await storage.read(key: 'sync_config');
-      final config = raw == null
-          ? null
-          : SyncConfig.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-      if (!mounted) return;
-      final result = await showDialog<SyncConfig>(
-        context: context,
-        builder: (_) => SyncDialog(initial: config),
-      );
-      if (result != null) {
-        await storage.write(
-          key: 'sync_config',
-          value: jsonEncode(result.toJson()),
-        );
-        if (mounted) setState(() => message = 'Настройки сохранены');
-      }
-    });
-  }
-
-  Future<void> _sync() => _action(() async {
-    final raw = await storage.read(key: 'sync_config');
-    if (raw == null) {
-      throw StateError('Сначала откройте настройки синхронизации');
-    }
-    await syncClient.run(
-      SyncConfig.fromJson(jsonDecode(raw) as Map<String, dynamic>),
-    );
-    if (mounted) {
-      setState(
-        () => message = 'Обмен завершён · ${TimeOfDay.now().format(context)}',
-      );
-    }
-  });
   Future<void> _export() => _action(() async {
     final sessions = (await widget.repository.records('session'))
         .where((s) => s.payload?['kind'] == (reading ? 'reading' : 'listening'))
@@ -1326,62 +1274,6 @@ class _LibraryPageState extends State<LibraryPage> {
       if (mounted) setState(() => message = 'Markdown экспортирован');
     }
   });
-  Future<void> _resolve(Map<String, dynamic> conflict) async {
-    final operation =
-        jsonDecode(conflict['operation'] as String) as Map<String, dynamic>;
-    final receipt =
-        jsonDecode(conflict['receipt'] as String) as Map<String, dynamic>;
-    final accepted = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Конфликт изменений'),
-        content: SizedBox(
-          width: 550,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Локальная версия сохранена. Перед заменой при необходимости экспортируйте библиотеку. Принятие серверной версии отменит ожидающие локальные правки этой записи.',
-                ),
-                const SizedBox(height: 16),
-                const Text('Локальная правка'),
-                SelectableText(
-                  const JsonEncoder.withIndent('  ')
-                      .convert(operation['payload']),
-                ),
-                const SizedBox(height: 16),
-                const Text('Серверная версия на момент конфликта'),
-                SelectableText(
-                  const JsonEncoder.withIndent('  ')
-                      .convert(receipt['current']),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Оставить пока'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Принять серверную'),
-          ),
-        ],
-      ),
-    );
-    if (accepted == true) {
-      await _action(
-        () => widget.repository.useServerVersion(
-          conflict['operation_id'] as String,
-        ),
-      );
-    }
-  }
-
   Future<void> _metadataSection({bool closeDrawer = true}) async {
     if (closeDrawer) Navigator.pop(context);
     if (busy || loading) return;
@@ -2153,8 +2045,7 @@ class _LibraryPageState extends State<LibraryPage> {
               (rootIds == null || rootIds.contains(b.id)) &&
               !_redundant(b, rootIds) &&
               // Missing and file-less books live in «Скрытые и недоступные».
-              (!reading ||
-                  !deletedReadingBooks.contains(b.id) && !_remoteOnly(b)) &&
+              (!reading || !deletedReadingBooks.contains(b.id)) &&
               (statusFilter == 'all' || _status(b) == statusFilter) &&
               (filter == 'all' ||
                   (filter == 'books'
@@ -2287,7 +2178,7 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Widget _fileShelf(BuildContext context) {
     final liveCount = books
-        .where((b) => !deletedReadingBooks.contains(b.id) && !_remoteOnly(b))
+        .where((b) => !deletedReadingBooks.contains(b.id))
         .length;
     final visible = _visibleBooks();
     // Every match is listed in the same order with or without filters: a
@@ -2443,12 +2334,6 @@ class _LibraryPageState extends State<LibraryPage> {
                   ),
                 ],
               ),
-              if (showSync)
-                IconButton(
-                  tooltip: 'Настройки синхронизации',
-                  onPressed: busy ? null : _settings,
-                  icon: const Icon(Icons.settings_outlined),
-                ),
               const SizedBox(width: 12),
             ],
       body: SafeArea(
@@ -2473,10 +2358,7 @@ class _LibraryPageState extends State<LibraryPage> {
                             child: FolderScanPanel(progress: scan),
                           ),
                         ],
-                        if (unavailableCount +
-                                    (_statusCounts()['remote'] ?? 0) >
-                                0 &&
-                            widget.assets != null)
+                        if (unavailableCount > 0 && widget.assets != null)
                           Align(
                             alignment: Alignment.centerLeft,
                             child: TextButton.icon(
@@ -2487,7 +2369,7 @@ class _LibraryPageState extends State<LibraryPage> {
                                 size: 18,
                               ),
                               label: Text(
-                                'Скрытые, недоступные и корзина: ${unavailableCount + (_statusCounts()['remote'] ?? 0)}',
+                                'Скрытые, недоступные и корзина: $unavailableCount',
                               ),
                             ),
                           ),
@@ -2507,17 +2389,6 @@ class _LibraryPageState extends State<LibraryPage> {
                             icon: const Icon(Icons.add),
                             label: const Text('Новая карточка без файла'),
                           ),
-                        if (showSync) ...[
-                          TextButton(
-                            onPressed: _sync,
-                            child: const Text('Синхронизировать'),
-                          ),
-                          for (final c in conflicts)
-                            TextButton(
-                              onPressed: () => _resolve(c),
-                              child: const Text('Разобрать конфликт'),
-                            ),
-                        ],
                         if (message.startsWith('Ошибка')) Text(message),
                         const SizedBox(height: 8),
                         TextField(
@@ -2708,14 +2579,9 @@ class _LibraryPageState extends State<LibraryPage> {
     final canHide =
         widget.assets != null && !deletedReadingBooks.contains(book.id);
     final files = shelfSources.byBook[book.id] ?? <LocalAsset>[];
-    final descriptor = shelfSources.shared[book.id];
     final connected = roots.where((r) => r.bookIds.contains(book.id)).toList();
-    final peers = PeerSyncScope.of(context);
     final lines = <String>[
-      if (files.isEmpty)
-        descriptor == null
-            ? 'Карточка без подключённого файла. Первоначальный источник не записан.'
-            : 'Карточка участвует в синхронизации. Сам файл на этом устройстве не подключён. Обмен данными приложения переносит карточки и историю отдельно от файлов.',
+      if (files.isEmpty) 'Карточка без подключённого файла.',
       if (connected.isEmpty)
         'Связи с папкой библиотеки на этом устройстве нет.',
       for (final root in connected)
@@ -2730,26 +2596,6 @@ class _LibraryPageState extends State<LibraryPage> {
       }
       lines.add(
         '${widget.assets?.isManagedBookPath(file) == true ? 'Копия внутри приложения' : 'Подключённый файл'}: ${file.filename}\n${file.path}\n${available ? 'Доступен' : 'Нет доступа или файл отсутствует'} · ${file.bytes} байт',
-      );
-    }
-    for (final raw in descriptor?['sources'] as List? ?? []) {
-      final source = raw as Map;
-      final folder = peers?.folders
-          .where((f) => f.id == source['folder'])
-          .firstOrNull;
-      lines.add(
-        'Источник в обмене: ${source['name']}\n${folder == null ? 'Общая папка на этом устройстве не подключена' : 'Общая папка: ${folder.name}'}${source['path'] == null ? '' : '\nПуть в общей папке: ${source['path']}'}',
-      );
-    }
-    if (descriptor != null) {
-      final origin = shelfSources.receivedFrom[shelfSources.sharedIds[book.id]];
-      lines.add(
-        origin == null
-            ? 'Устройство первоначального импорта в старых данных не записано.'
-            : 'Последняя передача карточки: ${origin['name']}\n${origin['receivedAt']}',
-      );
-      lines.add(
-        'Карточка синхронизации сама по себе не означает наличие файла на телефоне или ПК.',
       );
     }
     final source = readingSourcePaths[book.id];
@@ -3321,8 +3167,6 @@ class _LibraryPageState extends State<LibraryPage> {
       if (_redundant(book, null)) continue;
       if (deletedReadingBooks.contains(book.id)) {
         add('deleted');
-      } else if (_remoteOnly(book)) {
-        add('remote');
       } else {
         add('all');
         add(_status(book));

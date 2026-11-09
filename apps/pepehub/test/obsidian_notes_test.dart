@@ -2,10 +2,6 @@ import 'dart:convert';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
-import 'package:pepehub/library/library_service.dart';
-import 'package:pepehub/library/obsidian_sync_service.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/note_store.dart';
@@ -297,104 +293,4 @@ void main() {
       expect(await store.pending(), [op]);
     },
   );
-  test('HTTP exchange uploads native quotes and imports Markdown using the active credentials', () async {
-    // This exercises the personal archive journal; a file/unknown-status draft
-    // must not enter that archive merely because it has a source book.
-    item = ObsidianLibraryItem(
-      id: item.id,
-      path: item.path,
-      collectionId: item.collectionId,
-      mediaType: item.mediaType,
-      fields: [...item.fields, const LibraryField('Status', 'status', 'text')],
-      values: {...item.values, 'Status': 'finished'},
-    );
-    final config = ObsidianConfig('https://example.test', 'test-token');
-    await LibraryRepository(local, config.namespace).mutate((entries) async {
-      entries[item.id] = LibraryEntry(item, sourceBookId: book);
-    });
-    await local.setMeta('obsidian-sync-history', 'false');
-    await ReadingLibrary(local).saveNote(note());
-    final changes = <Map<String, dynamic>>[];
-    final client = MockClient((request) async {
-      expect(request.headers['Authorization'], 'Bearer test-token');
-      Map<String, dynamic> body;
-      if (request.url.path.endsWith('/library')) {
-        body = {
-          'version': 1,
-          'ready': true,
-          'items': [item.toJson()],
-          'fields': item.fields.map((f) => f.toJson()).toList(),
-          'collections': [
-            {'id': 'book', 'mediaType': 'book'},
-          ],
-        };
-      } else if (request.method == 'POST') {
-        final operations =
-            (jsonDecode(request.body) as Map)['operations'] as List;
-        body = {
-          'version': 1,
-          'receipts': [
-            for (final op in operations)
-              {
-                'operationId': op['operationId'],
-                'status': 'applied',
-                'record': {
-                  'entry': op['entry'],
-                  'revision': 1,
-                  'sequence': changes.length + 1,
-                },
-              },
-          ],
-        };
-        for (final op in operations) {
-          changes.add({
-            'entry': op['entry'],
-            'revision': 1,
-            'sequence': changes.length + 1,
-          });
-        }
-      } else {
-        if (changes.length == 1) {
-          changes.add({
-            'entry': {
-              ...(changes.first['entry'] as Map),
-              'id': uuid.v4(),
-              'kind': 'markdown',
-              'title': 'Заметки Obsidian',
-              'quote': '',
-              'text': 'Запись из Obsidian',
-              'anchor': <String, dynamic>{},
-              'origin': 'obsidian',
-            },
-            'revision': 1,
-            'sequence': 2,
-          });
-        }
-        final after = int.parse(request.url.queryParameters['after']!);
-        final page = changes
-            .where((r) => (r['sequence'] as int) > after)
-            .toList();
-        body = {
-          'version': 1,
-          'records': page,
-          'cursor': changes.length,
-          'hasMore': false,
-        };
-      }
-      return http.Response(
-        jsonEncode(body),
-        200,
-        headers: {'content-type': 'application/json; charset=utf-8'},
-      );
-    });
-    final service = LibraryService(local, client);
-    addTearDown(service.dispose);
-    addTearDown(client.close);
-    await service.connect(config);
-    expect(service.error, isNull);
-    expect(changes.first['entry']['quote'], 'Цитата');
-    expect((await ReadingLibrary(local).notes()).length, 2);
-    expect((await NoteStore(local, config.namespace).state())['cursor'], 2);
-    expect(await service.notes!.entries(), hasLength(2));
-  });
 }

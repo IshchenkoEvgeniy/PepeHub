@@ -247,8 +247,8 @@ void main() {
                 find.byType(CircularProgressIndicator).evaluate().isEmpty,
           );
         }
-        await openSetting('sync');
-        expect(find.text('Прямая синхронизация'), findsOneWidget);
+        await openSetting('data');
+        expect(find.text('Папка библиотеки'), findsOneWidget);
         expect(find.byKey(const ValueKey('audio-mini-player')), findsOneWidget);
         // The app runs in Russian, so the back button tooltip is «Назад».
         await tester.tap(find.byTooltip('Назад'));

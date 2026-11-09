@@ -54,7 +54,6 @@ class LibraryMetadataEditor extends StatefulWidget {
   final ObsidianLibraryItem item;
   final LibraryEntry? entry;
   final Future<void> Function(Map<String, dynamic>) onSave;
-  final Future<void> Function()? onUseObsidian;
   final String saveLabel;
   final Future<String?> Function()? onPickCover, onSearchCover;
   final Map<String, List<String>> suggestions;
@@ -71,7 +70,6 @@ class LibraryMetadataEditor extends StatefulWidget {
     required this.item,
     required this.onSave,
     this.entry,
-    this.onUseObsidian,
     this.saveLabel = 'Сохранить',
     this.onPickCover,
     this.onSearchCover,
@@ -1375,41 +1373,6 @@ class _LibraryMetadataEditorState extends State<LibraryMetadataEditor> {
                     ),
                   if (widget.entry?.message != null)
                     Text(widget.entry!.message!),
-                  if (widget.entry?.state == 'conflict' ||
-                      widget.entry?.state == 'error') ...[
-                    ShelfPanel(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Изменения требуют внимания',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          if (widget.entry?.remote != null)
-                            ExpansionTile(
-                              title: const Text('Текущие метаданные Obsidian'),
-                              children: [
-                                SelectableText(
-                                  const JsonEncoder.withIndent('  ')
-                                      .convert(widget.entry!.remote!.values),
-                                ),
-                              ],
-                            ),
-                          TextButton(
-                            onPressed: saving
-                                ? null
-                                : () async {
-                                    await widget.onUseObsidian?.call();
-                                    if (context.mounted) Navigator.pop(context);
-                                  },
-                            child: const Text('Принять версию Obsidian'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
                   const SizedBox(height: 10),
                   LayoutBuilder(
                     builder: (context, constraints) {

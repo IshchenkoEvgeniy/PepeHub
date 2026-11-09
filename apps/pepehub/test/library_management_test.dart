@@ -10,66 +10,6 @@ import 'package:pepehub/library/models.dart';
 import 'package:pepehub/library/personal_library.dart';
 
 void main() {
-  test('cover normalization does not export unchanged vault paths, and pending acknowledgements preserve newer edits', () async {
-    final db = AppDatabase(NativeDatabase.memory());
-    addTearDown(db.close);
-    final local = Repository(db),
-        client = MockClient((_) => throw StateError('No network'));
-    addTearDown(client.close);
-    final service = LibraryService(local, client);
-    addTearDown(service.dispose);
-    final remote = LibraryRepository(local, 'cached'),
-        adapter = LibraryExchange(local, service.repository, 'cached');
-    final hash = 'a' * 64;
-    final item = ObsidianLibraryItem(
-      id: '00000000-0000-4000-8000-000000000002',
-      path: 'Books/Book.md',
-      collectionId: 'book',
-      mediaType: 'book',
-      fields: const [
-        LibraryField('Title', 'title', 'text'),
-        LibraryField('Cover', 'cover', 'text'),
-      ],
-      values: const {'Title': 'Книга', 'Cover': 'Covers/Book.png'},
-      coverAsset: {'hash': hash},
-    );
-    await remote.receive({
-      'version': 1,
-      'ready': true,
-      'fields': item.fields.map((f) => f.toJson()).toList(),
-      'collections': personalLibrarySchema['collections'],
-      'items': [item.toJson()],
-    });
-    await adapter.importCached();
-    await service.reload();
-    final card = service.entries.single;
-    await adapter.queue(card.item.id);
-    expect((await remote.entries()).values.single.operation, isNull);
-    await service.save(card.item.id, {
-      ...card.item.values,
-      'title': 'Первая правка',
-    }, original: card.item.values);
-    await adapter.queue(card.item.id);
-    final pending = (await remote.entries()).values.single;
-    expect(pending.operation!['values'], {'Title': 'Первая правка'});
-    expect(pending.item.coverAsset?['hash'], hash);
-    await adapter.importCached();
-    await service.reload();
-    final first = service.entries.single;
-    await service.save(first.item.id, {
-      ...first.item.values,
-      'title': 'Новая правка',
-    }, original: first.item.values);
-    await remote.receipt(pending.item.id, {
-      'operationId': pending.operation!['operationId'],
-      'status': 'applied',
-    });
-    await adapter.importCached();
-    await service.reload();
-    expect(service.entries.single.item.title, 'Новая правка');
-    expect(service.entries.single.item.value('cover'), 'pepehub-cover:$hash');
-    expect((await adapter.bindings())[card.item.id]['conflicts'], isEmpty);
-  });
   test('Obsidian coverAsset survives semantic conversion while a manual HTTPS cover wins', () {
     final hash = 'a' * 64;
     ObsidianLibraryItem card(String cover) => ObsidianLibraryItem(

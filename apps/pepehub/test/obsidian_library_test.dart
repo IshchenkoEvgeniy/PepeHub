@@ -8,7 +8,7 @@ import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/library_repository.dart';
 import 'package:pepehub/library/library_service.dart';
-import 'package:pepehub/library/obsidian_sync_service.dart';
+import 'connector_namespace.dart';
 import 'package:uuid/uuid.dart';
 
 final fields = [
@@ -53,7 +53,7 @@ http.Response jsonResponse(Object data) => http.Response(
 void main() {
   late AppDatabase db;
   late Repository local;
-  final config = ObsidianConfig('https://example.test', 'test-token');
+  final config = LegacyConnector('https://example.test', 'test-token');
   setUp(() async {
     db = AppDatabase(NativeDatabase.memory());
     local = Repository(db);
@@ -83,7 +83,6 @@ void main() {
     await service.reload();
     await service.reload();
     expect(service.entries, hasLength(120));
-    expect(service.config, isNull);
     expect(requests, 0);
     expect(service.completed, isEmpty);
     final imported = service.entries.where(
@@ -124,74 +123,6 @@ void main() {
     expect(resumed.completed.single.item.mediaType, 'audiobook');
     expect(requests, 0);
   });
-  test('blank finish date is editable and only changed fields go back; stale editor bases are retained', () async {
-    final id = const Uuid().v4(), data = snapshot([card(const Uuid().v4())]);
-    data['items'] = [card(id)];
-    final posts = <Map<String, dynamic>>[];
-    final client = MockClient((request) async {
-      if (request.method == 'POST') {
-        posts.add(jsonDecode(request.body) as Map<String, dynamic>);
-      }
-      return jsonResponse(
-        request.url.path.endsWith('/library')
-            ? data
-            : {'operationId': posts.last['operationId'], 'status': 'pending'},
-      );
-    });
-    final service = LibraryService(local, client);
-    addTearDown(service.dispose);
-    addTearDown(client.close);
-    await service.connect(config);
-    expect(service.error, isNull);
-    final original = {...service.entries.single.item.values};
-    final localId = service.entries.single.item.id;
-    (data['items'][0]['values'] as Map)['Title'] = 'Changed in Obsidian';
-    await service.sync();
-    await service.save(localId, {
-      ...original,
-      'endDate': '2026-10-03',
-    }, original: original);
-    await service.exportToObsidian(localId);
-    expect(posts.single['values'], {'Дата завершения': '2026-10-03'});
-    expect(posts.single['base'], {'Дата завершения': null});
-    expect(service.entries.single.item.title, 'Changed in Obsidian');
-    expect(service.entries.single.item.value('endDate'), '2026-10-03');
-  });
-  test('conflict keeps local values and remote metadata; explicit resolution restores remote', () async {
-    final repo = LibraryRepository(local, config.namespace),
-        id = const Uuid().v4();
-    await repo.receive(snapshot([card(id)]));
-    final client = MockClient(
-      (_) async => throw http.ClientException('offline'),
-    );
-    final service = LibraryService(local, client);
-    addTearDown(service.dispose);
-    addTearDown(client.close);
-    await service.connect(config);
-    final original = service.entries.single.item.values;
-    final localId = service.entries.single.item.id;
-    await service.save(localId, {
-      ...original,
-      'title': 'Local edit',
-    }, original: original);
-    await service.exportToObsidian(localId);
-    final queued = (await repo.entries())[id]!;
-    await repo.receipt(id, {
-      'operationId': queued.operation!['operationId'],
-      'status': 'conflict',
-      'message': 'Title changed',
-    });
-    await repo.receive(snapshot([card(id, title: 'Remote edit')]));
-    await service.reload();
-    expect(service.entries.single.item.title, 'Local edit');
-    expect(
-      (await service.exchange!.bindings())[localId]['conflicts']['title'],
-      'Remote edit',
-    );
-    await service.useObsidian(localId);
-    expect(service.entries.single.item.title, 'Remote edit');
-    expect(service.entries.single.operation, isNull);
-  });
   test('renames preserve identity, deletions never enqueue creation, namespaces are isolated', () async {
     final repo = LibraryRepository(local, config.namespace),
         id = const Uuid().v4();
@@ -209,39 +140,9 @@ void main() {
     expect(
       await LibraryRepository(
         local,
-        ObsidianConfig('https://other.test', 'token').namespace,
+        LegacyConnector('https://other.test', 'token').namespace,
       ).entries(),
       isEmpty,
     );
   });
-  test(
-    'API token requires HTTPS and is not forwarded through redirects',
-    () async {
-      expect(
-        () => ObsidianConfig('http://example.test', 'token'),
-        throwsFormatException,
-      );
-      expect(
-        () => ObsidianConfig('https://user:password@example.test', 'token'),
-        throwsFormatException,
-      );
-      expect(
-        ObsidianConfig('http://localhost:8080', 'token').url,
-        'http://localhost:8080',
-      );
-      final client = MockClient((request) async {
-        expect(request.followRedirects, isFalse);
-        return http.Response('', 302);
-      });
-      addTearDown(client.close);
-      await expectLater(
-        ObsidianSyncService(
-          LibraryRepository(local, config.namespace),
-          client,
-          config,
-        ).run(),
-        throwsStateError,
-      );
-    },
-  );
 }

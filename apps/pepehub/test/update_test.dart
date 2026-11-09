@@ -253,7 +253,6 @@ void main() {
     await service.check();
     expect(service.error, contains('устаревший'));
     expect(service.release!.build, 52);
-    expect(await f.repo.pendingCount(), 0);
     service.dispose();
   });
 

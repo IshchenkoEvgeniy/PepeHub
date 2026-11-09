@@ -20,8 +20,7 @@ import 'package:pepehub/media/import_folder.dart';
 import 'package:pepehub/reader/reading_roots.dart';
 import 'package:pepehub/reader/reading_book_actions.dart';
 import 'package:pepehub/reader/text_book.dart';
-import 'package:pepehub/sync/peer/peer_files.dart';
-import 'package:pepehub/sync/peer/peer_models.dart';
+import 'package:pepehub/storage/folder_files.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/import_folder_page.dart';
 

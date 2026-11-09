@@ -11,13 +11,13 @@ import 'package:pepehub/reader/reading_book_visibility.dart';
 import 'package:pepehub/reader/reading_library.dart';
 import 'package:pepehub/reader/reading_roots.dart';
 
-import 'peer_sync_test.dart' show ReplicaFixture, deviceA;
+import 'folder_fixture.dart';
 
-Future<(ReplicaFixture, AssetStore, LocalAsset, File)> prepare() async {
-  final fixture = ReplicaFixture(deviceA);
+Future<(FolderFixture, AssetStore, LocalAsset, File)> prepare() async {
+  final fixture = FolderFixture();
   await fixture.open();
   final assets = AssetStore(
-    fixture.store.repository,
+    fixture.repository,
     Directory(p.join(fixture.base.path, 'managed')),
   );
   final file = await File(p.join(fixture.root.path, 'archived.txt'))
@@ -36,7 +36,7 @@ void main() {
   test('permanent file deletion archives the card and reconnect restores the same identity and history', () async {
     final (f, assets, book, file) = await prepare();
     addTearDown(f.close);
-    final repo = f.store.repository;
+    final repo = f.repository;
     final record = (await repo.record(book.bookId))!;
     await repo.put('book', book.bookId, {
       ...record.payload!,
@@ -63,7 +63,7 @@ void main() {
   test('folder refresh archives a missing source; explicit reimport restores it without a duplicate', () async {
     final (f, assets, book, file) = await prepare();
     addTearDown(f.close);
-    final repo = f.store.repository;
+    final repo = f.repository;
     await repo.setMeta('reader:${book.hash}', 'position');
     await file.delete();
     await ReadingRoots(assets)
@@ -84,7 +84,7 @@ void main() {
     final (f, assets, book, first) = await prepare();
     addTearDown(f.close);
     final roots = ReadingRoots(assets),
-        state = ReadingBookVisibility(f.store.repository);
+        state = ReadingBookVisibility(f.repository);
     final other = await Directory(p.join(f.base.path, 'second-source'))
         .create();
     final second = await File(p.join(other.path, 'same-book.txt'))
@@ -99,14 +99,14 @@ void main() {
     await first.writeAsString('An archived book.');
     await roots.connect(await scanAudioFolder(f.root.path, books: true));
     expect(await state.deletedIds(), isEmpty);
-    expect(await f.store.repository.records('book'), hasLength(2));
+    expect(await f.repository.records('book'), hasLength(2));
   });
 
   test('disconnect and manual hiding do not mean deleted; a failed scan cannot change availability', () async {
     final (f, assets, book, file) = await prepare();
     addTearDown(f.close);
     final roots = ReadingRoots(assets),
-        state = ReadingBookVisibility(f.store.repository);
+        state = ReadingBookVisibility(f.repository);
     await ReadingBookActions(assets).hide(book.bookId);
     expect(await state.deletedIds(), isEmpty);
     await roots.disconnect((await roots.list()).single);
@@ -114,7 +114,7 @@ void main() {
     expect(await file.exists(), true);
     await roots.connect(await scanAudioFolder(f.root.path, books: true));
     expect(
-      await f.store.repository.meta('reading-library-hidden:${book.bookId}'),
+      await f.repository.meta('reading-library-hidden:${book.bookId}'),
       '1',
     );
     await expectLater(
@@ -143,13 +143,13 @@ void main() {
         addTearDown(() => tester.runAsync(f.close));
         await tester.runAsync(() async {
           for (final asset in await assets.list()) {
-            await ReadingLibrary(f.store.repository).index(assets, asset);
+            await ReadingLibrary(f.repository).index(assets, asset);
           }
           await ReadingBookActions(assets).deleteForever(book.bookId);
-          await f.store.repository.setMeta('library-section', 'reading');
+          await f.repository.setMeta('library-section', 'reading');
         });
         await tester.pumpWidget(
-          PepeHubApp(repository: f.store.repository, assets: assets),
+          PepeHubApp(repository: f.repository, assets: assets),
         );
         await tester.pumpAndSettle();
         final all = find.byKey(const ValueKey('status-tab:all'));

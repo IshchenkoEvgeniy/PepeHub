@@ -1,20 +1,15 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:pepehub/audio/audio_folder.dart';
 import 'package:pepehub/audio/audio_journal.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/activity_store.dart';
-import 'package:pepehub/library/cover_sync.dart';
 import 'package:pepehub/library/library_repository.dart';
 import 'package:pepehub/library/models.dart';
-import 'package:pepehub/library/obsidian_sync_service.dart';
 import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/reader/reading_library.dart';
 import 'package:pepehub/reader/reading_activity.dart';
@@ -102,55 +97,6 @@ void main() {
       expect(
         readingFraction({...index, 'paragraphStarts': []}, {'chapter': 1}),
         .5,
-      );
-    },
-  );
-
-  test(
-    'a missing local cover file never queues removal of the Obsidian cover',
-    () async {
-      final config = ObsidianConfig('https://example.test', 'secret');
-      await local.addBook('Book', 'Author', 'epub');
-      final book = (await local.records('book')).single;
-      final cover = File('${directory.path}/cover.png');
-      await cover.writeAsBytes(
-        base64Decode(
-          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1kAAAAASUVORK5CYII=',
-        ),
-      );
-      await ReadingLibrary(local)
-          .saveDetails(book.id, {'title': 'Book', 'cover': cover.path});
-      final item = ObsidianLibraryItem(
-        id: uuid.v4(),
-        path: 'Books/Book.md',
-        collectionId: 'book',
-        mediaType: 'book',
-        values: {'Cover': '[[Images/cover.png]]'},
-        fields: const [LibraryField('Cover', 'cover', 'text')],
-      );
-      final repository = LibraryRepository(local, config.namespace);
-      await repository.mutate((entries) async {
-        entries[item.id] = LibraryEntry(item, sourceBookId: book.id);
-      });
-      final client = MockClient((_) async => http.Response('{}', 200));
-      addTearDown(client.close);
-      final covers = CoverSync(assets, client, config);
-      expect(await covers.run(), isFalse);
-      final state = await local.meta(
-        'obsidian-cover-state:${config.namespace}',
-      );
-      await cover.delete();
-      expect(await covers.run(), isFalse);
-      final entry = (await repository.entries())[item.id]!;
-      expect(entry.state, 'synced');
-      expect(entry.item.value('cover'), '[[Images/cover.png]]');
-      expect(
-        await local.meta('obsidian-cover-state:${config.namespace}'),
-        state,
-      );
-      expect(
-        await local.meta('obsidian-cover-errors:${config.namespace}'),
-        isNotEmpty,
       );
     },
   );
@@ -252,43 +198,6 @@ void main() {
         DateTime.parse(span['end']).difference(DateTime.parse(span['start'])),
         const Duration(minutes: 1),
       );
-    },
-  );
-
-  test(
-    'an audio cover cache disappearing does not delete remote artwork',
-    () async {
-      final config = ObsidianConfig('https://example.test', 'secret');
-      await local.addBook('Audio', 'Author', 'audio');
-      final book = (await local.records('book')).single;
-      final cover = File('${directory.path}/audio-cover.png');
-      await cover.writeAsBytes([1, 2, 3]);
-      await local.setMeta('audio-cover:${book.id}', cover.path);
-      final item = ObsidianLibraryItem(
-        id: uuid.v4(),
-        path: 'Books/Audio.md',
-        collectionId: 'audio',
-        mediaType: 'audiobook',
-        values: {'Cover': '[[Images/audio.png]]'},
-        fields: const [LibraryField('Cover', 'cover', 'text')],
-      );
-      final repository = LibraryRepository(local, config.namespace);
-      await repository.mutate((entries) async {
-        entries[item.id] = LibraryEntry(item, sourceBookId: book.id);
-      });
-      final client = MockClient((_) async => http.Response('{}', 200));
-      addTearDown(client.close);
-      final covers = CoverSync(assets, client, config);
-      expect(await covers.run(), isFalse);
-      await cover.delete();
-      expect(await covers.run(), isFalse);
-      expect((await repository.entries())[item.id]!.state, 'synced');
-      // An explicit Hide action still queues a removal, even when the file is missing.
-      await local.setMeta('audio-cover-hidden:${book.id}', 'true');
-      expect(await covers.run(), isTrue);
-      expect((await repository.entries())[item.id]!.operation!['values'], {
-        'Cover': null,
-      });
     },
   );
 

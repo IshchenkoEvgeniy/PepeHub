@@ -31,7 +31,6 @@ void main() {
   });
 
   test('import copies a selected audio file, deduplicates by content, preserves original and local position', () async {
-    await repository.setCloudTracking(true);
     final original = File('${root.path}/My book.mp3');
     // Header fixture exercises import, not native decoding.
     final bytes = [
@@ -54,7 +53,6 @@ void main() {
     expect(await original.readAsBytes(), bytes);
     expect(await File(first.path).readAsBytes(), bytes);
     expect((await repository.records('book')).length, 1);
-    expect(await repository.pendingCount(), 1);
     final library = AudioLibraryRepository(db);
     // A book without progress starts at the player's default speed.
     await repository.setMeta('audio-sleep-settings', '{"defaultSpeed":1.25}');
@@ -77,10 +75,6 @@ void main() {
     final saved = await library.progressForTrack(first.id);
     expect(saved.locator.positionMs, 42123);
     expect(saved.speed, 1.5);
-    final queued = (await repository.pending()).single.read<String>(
-      'operation',
-    );
-    expect(queued.contains(root.path), false);
     expect(
       (await assets.directory.list().toList()).where(
         (f) => f.path.endsWith('.part'),
@@ -102,7 +96,6 @@ void main() {
         throwsArgumentError,
       );
       expect(await repository.records('book'), isEmpty);
-      expect(await repository.pendingCount(), 0);
       expect(await assets.directory.list().toList(), isEmpty);
     },
   );
@@ -122,7 +115,7 @@ void main() {
     now = 1000000;
     expect(clock.milliseconds, 20000);
   });
-  test('v1 database migrates without losing a card or changing an old pending payload', () async {
+  test('v1 database migrates without losing a card and drops the old sync queue', () async {
     final file = File('${root.path}/legacy.sqlite');
     final raw = sqlite.sqlite3.open(file.path);
     final bookId = uuid.v4(), operationId = uuid.v4();
@@ -169,39 +162,16 @@ void main() {
     try {
       final legacy = Repository(upgraded);
       expect((await legacy.records('book')).single.title, 'Старая библиотека');
-      final pending = (await legacy.pending()).single;
-      expect(pending.read<String>('operation'), operation);
-      expect(pending.read<int>('attempted'), 1);
+      final tables = await upgraded
+          .customSelect(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('outbox','remote_records')",
+          )
+          .get();
+      expect(tables, isEmpty);
       expect(await AssetStore(legacy, assets.directory).list(), isEmpty);
     } finally {
       await upgraded.close();
     }
-  });
-  test('checkpoints coalesce until first network attempt and never alter a retry payload', () async {
-    await repository.setCloudTracking(true);
-    await repository.addBook('Audio', '', 'audio');
-    final book = (await repository.records('book')).single;
-    final session = uuid.v4();
-    Map<String, dynamic> data(int seconds) => {
-      'bookId': book.id,
-      'kind': 'listening',
-      'startedAt': '2026-09-12T10:00:00.000Z',
-      'endedAt': '2026-09-12T11:00:00.000Z',
-      'activeSeconds': seconds,
-      'timezone': 'UTC',
-      'source': 'player',
-    };
-    await repository.put('session', session, data(10), coalesce: true);
-    await repository.put('session', session, data(20), coalesce: true);
-    expect(await repository.pendingCount(), 2); // book + one session
-    final pending = (await repository.pending()).last;
-    final frozen = await repository.freezeOperation(
-      pending.read<String>('operation_id'),
-    );
-    await repository.put('session', session, data(30), coalesce: true);
-    expect(await repository.pendingCount(), 3);
-    final unchanged = (await repository.pending())[1].read<String>('operation');
-    expect(jsonDecode(unchanged), frozen);
-    expect((await repository.record(session))!.payload!['activeSeconds'], 30);
   });
 }

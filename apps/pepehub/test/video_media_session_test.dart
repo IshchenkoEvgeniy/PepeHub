@@ -370,6 +370,5 @@ void main() {
       ),
       throwsStateError,
     );
-    expect(await h.repository.pending(), isEmpty);
   });
 }

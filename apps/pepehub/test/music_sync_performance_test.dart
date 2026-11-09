@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:drift/native.dart';
@@ -11,10 +10,6 @@ import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/music/music_metadata.dart';
 import 'package:pepehub/reader/reading_library.dart';
-import 'package:pepehub/sync/peer/app_sync_models.dart';
-import 'package:pepehub/sync/peer/app_sync_presentation.dart';
-import 'package:pepehub/sync/peer/peer_folder_setup_page.dart';
-import 'package:pepehub/sync/peer/peer_qr.dart';
 import 'package:pepehub/video/models.dart';
 import 'package:pepehub/video/video_controller.dart';
 import 'package:pepehub/video/video_repository.dart';
@@ -412,115 +407,4 @@ void main() {
     );
     expect((await h.repo.intervals(music: true)).single.id, 'music');
   });
-
-  test('QR accepts only structured PepeHub invitations and never follows arbitrary links', () {
-    final code = Uri(
-      scheme: 'pepehub-peer',
-      host: 'pair',
-      queryParameters: {
-        'v': '1',
-        'device': '11111111-1111-1111-1111-111111111111',
-        'invite': '22222222-2222-2222-2222-222222222222',
-        'host': '192.168.1.10',
-        'port': '42589',
-        'key': base64Url.encode(List.filled(32, 1)),
-      },
-    ).toString();
-    expect(peerInvitationFromQr(' $code '), code);
-    for (final invalid in [
-      'https://example.org',
-      code.replaceFirst('42589', '99999'),
-      code.replaceFirst('v=1', 'v=2'),
-      'x' * 4097,
-    ]) {
-      expect(peerInvitationFromQr(invalid), isNull);
-    }
-  });
-
-  test('field comparison and reader previews describe human changes', () {
-    AppSyncVersion v(Map<String, dynamic>? data) => AppSyncVersion(
-      'note:test',
-      data,
-      {'11111111-1111-1111-1111-111111111111': 1},
-    );
-    expect(
-      appSyncChangedFields([
-        v({'title': 'A', 'comment': 'Old'}),
-        v({'title': 'A', 'comment': 'New'}),
-      ]),
-      ['Комментарий'],
-    );
-    expect(
-      appSyncChangedFields([
-        v({'title': 'A'}),
-        v(null),
-      ]),
-      contains('Состояние'),
-    );
-    expect(
-      appSyncChangedFields([
-        v({'body': 'a' * 2500 + 'X'}),
-        v({'body': 'a' * 2500 + 'Y'}),
-      ]),
-      ['Текст'],
-    );
-    expect(
-      appSyncChangedFields([
-        v({
-          'tags': [
-            {'x': 1},
-          ],
-        }),
-        v({
-          'tags': [
-            {'x': 2},
-          ],
-        }),
-      ]),
-      ['Теги'],
-    );
-    expect(
-      readerPositionDescription(
-        {'chapter': 1, 'textOffset': 50},
-        {
-          'chapters': ['Start', 'The island'],
-          'lengths': [20, 100],
-        },
-      ),
-      'The island · 50% главы',
-    );
-    expect(readerPositionContext('Before 🙂 after', 8), contains('🙂'));
-  });
-
-  test(
-    'folder preview reads names and sizes without creating sync files',
-    () async {
-      final root = await Directory.systemTemp.createTemp('pepehub-preview-');
-      try {
-        await File('${root.path}/one.txt').writeAsString('123');
-        await Directory('${root.path}/.pepehub').create();
-        await File('${root.path}/.pepehub/private').writeAsString('ignored');
-        await Directory('${root.path}/nested').create();
-        await File('${root.path}/nested/two.mp3').writeAsString('12345');
-        final before =
-            (await root
-                  .list(recursive: true)
-                  .map((entry) => entry.path)
-                  .toList())
-              ..sort();
-        final preview = await previewPeerFolder(root.path);
-        expect((preview.files, preview.bytes), (2, 8));
-        expect(preview.examples.toSet(), {'one.txt', 'nested/two.mp3'});
-        final after =
-            (await root
-                  .list(recursive: true)
-                  .map((entry) => entry.path)
-                  .toList())
-              ..sort();
-        expect(after, before);
-      } finally {
-        await root.delete(recursive: true);
-      }
-    },
-  );
 }

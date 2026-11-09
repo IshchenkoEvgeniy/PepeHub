@@ -116,7 +116,6 @@ void main() {
           ),
           true,
         );
-        expect(await repo.pendingCount(), 0);
         // ignore: avoid_print
         print(
           'Public update verified: build ${release.build}, ${asset.bytes} bytes, ${files.length} files, Range resume=$resumed. No install performed.',

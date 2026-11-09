@@ -152,16 +152,10 @@ void main() {
         jsonEncode({'bookId': 'audio-book', 'activeSeconds': 123}),
       );
       expect(
-        (await db
-                .customSelect('SELECT operation,attempted FROM outbox')
-                .getSingle())
-            .read<String>('operation'),
-        'frozen-payload',
-      );
-      expect(
-        (await db.customSelect('SELECT attempted FROM outbox').getSingle())
-            .read<int>('attempted'),
-        1,
+        await db
+            .customSelect("SELECT 1 FROM sqlite_master WHERE name='outbox'")
+            .get(),
+        isEmpty,
       );
       expect(
         (await db

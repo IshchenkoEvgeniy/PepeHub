@@ -10,8 +10,7 @@ import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:path/path.dart' as p;
 
 import '../data/repository.dart' show uuid;
-import '../sync/peer/peer_files.dart';
-import '../sync/peer/peer_models.dart';
+import '../storage/folder_files.dart';
 import 'activity_store.dart';
 import 'cover_sync.dart';
 import 'library_features.dart';
@@ -41,6 +40,21 @@ const _maxAncestors = 128;
 /// Unreferenced objects and covers are removed after this long.
 const libraryFolderCleanupAge = Duration(days: 30);
 const _folderReadme = '''# PepeHub Library
+
+Книги/ — файлы с названиями произведений, разложенные по сериям.
+Корзина/ — файлы удалённых карточек, пока они хранятся в корзине.
+library.json и objects/ — служебный каталог и версии данных для обмена.
+covers/<SHA-256>.png — сохранённые обложки.
+
+Именованные JSON-файлы содержат карточку, заметки и историю. Изменяйте данные в PepeHub.
+Синхронизируйте всю папку PepeHub-library. Исходные книги и аудио хранятся отдельно.
+Служебные версии, на которые больше не ссылается каталог, удаляются через 30 дней.
+
+Syncthing: добавьте в игнорируемые шаблоны строку .pepehub* на каждом устройстве —
+так называются временные файлы записи. Копии *.sync-conflict-* не нужны: изменения
+обоих устройств PepeHub объединяет сам, а копии можно удалить на вкладке «Данные».
+''';
+const _releasedFolderReadme = '''# PepeHub Library
 
 Книги/ — файлы с названиями произведений, разложенные по сериям.
 Корзина/ — файлы удалённых карточек, пока они хранятся в корзине.
@@ -301,18 +315,14 @@ class LibraryFolderReport {
   });
 }
 
+/// `.pepehub*` covers the `.pepehub` folder and the `.pepehub-transfer-*` /
+/// `.pepehub-rollback-*` files Android leaves next to the file it replaces.
+const syncthingIgnorePattern = '.pepehub*';
+
 bool _ignoresPepeHub(String stignore) => const LineSplitter()
     .convert(stignore)
     .map((line) => line.trim().replaceFirst(RegExp(r'^(\(\?[di]\))+'), ''))
-    .any(
-      (line) => const {
-        '.pepehub',
-        '/.pepehub',
-        '**/.pepehub',
-        '.pepehub/',
-        '/.pepehub/',
-      }.contains(line),
-    );
+    .any((line) => const {'.pepehub*', '**/.pepehub*'}.contains(line));
 
 enum LibraryFolderPreference { local, folder }
 
@@ -700,6 +710,67 @@ class LibraryFolderStorage extends ChangeNotifier {
     return result;
   }
 
+  /// Android replaces library.json by renaming the old file aside and the new
+  /// one into place. When Syncthing copies the folder between those renames,
+  /// this computer receives the leftovers (`.pepehub-rollback-*`,
+  /// `.pepehub-transfer-*.part`) and no library.json. Put the newest complete
+  /// catalog back; the regular merge then handles it like any other version.
+  Future<bool> _restoreManifest(_FolderFiles fs) async {
+    final dir = fs.localLibrary;
+    if (dir == null || await fs.stamp(_manifestPath) != 'missing') return false;
+    if (!await dir.exists()) return false;
+    final saved = await library.local.meta(_baselineKey);
+    final id = saved == null ? null : _Manifest.read(saved).id;
+    final found = <String, ({String raw, _Manifest manifest})>{};
+    await for (final entry in dir.list(followLinks: false)) {
+      if (entry is! File) continue;
+      final name = p.basename(entry.path);
+      final transfer = RegExp(
+        r'^\.pepehub-transfer-[a-f0-9]{64}-([a-f0-9]{64})\.part$',
+      ).firstMatch(name);
+      final rollback =
+          name.startsWith('.pepehub-rollback-') &&
+          name.endsWith('-library.json');
+      if (transfer == null && !rollback) continue;
+      if (await entry.length() > 16777216) continue;
+      final bytes = await entry.readAsBytes();
+      final digest = sha256.convert(bytes).toString();
+      // An unfinished transfer is named after the content it expects.
+      if (transfer != null && transfer.group(1) != digest) continue;
+      try {
+        final raw = utf8.decode(bytes);
+        final manifest = _Manifest.read(raw);
+        if (id != null && manifest.id != id) continue;
+        var complete = true;
+        for (final hash in manifest.documents.values.toSet()) {
+          final object = p.join(
+            dir.path,
+            'objects',
+            hash.substring(0, 2),
+            '$hash.json',
+          );
+          if (!await File(object).exists()) {
+            complete = false;
+            break;
+          }
+        }
+        if (complete) found[digest] = (raw: raw, manifest: manifest);
+      } catch (_) {
+        // Not a catalog, or damaged: ignore.
+      }
+    }
+    final newest = [
+      for (final e in found.entries)
+        if (!found.values.any((o) => o.manifest.ancestors.contains(e.key)))
+          e.value,
+    ];
+    if (newest.length != 1 || await fs.stamp(_manifestPath) != 'missing') {
+      return false;
+    }
+    await _write(fs, _manifestPath, utf8.encode(newest.single.raw), null);
+    return true;
+  }
+
   Future<void> _write(
     _FolderFiles fs,
     String path,
@@ -790,6 +861,7 @@ class LibraryFolderStorage extends ChangeNotifier {
           return false;
         }
       }
+      if (!connecting && await _restoreManifest(fs)) _lastManifestStamp = null;
       final manifestBytes = await _read(fs, _manifestPath, 16777216);
       final raw = manifestBytes == null ? null : utf8.decode(manifestBytes);
       var revision = await _revision();
@@ -1060,7 +1132,8 @@ class LibraryFolderStorage extends ChangeNotifier {
       final readme = await fs.hash('${_prefix}README.md');
       if (readme == null ||
           readme == _digest(_legacyFolderReadme) ||
-          readme == _digest(_previousFolderReadme)) {
+          readme == _digest(_previousFolderReadme) ||
+          readme == _digest(_releasedFolderReadme)) {
         await _write(
           fs,
           '${_prefix}README.md',
@@ -1718,14 +1791,16 @@ class LibraryFolderStorage extends ChangeNotifier {
     });
   }
 
-  /// Adds `.pepehub` (temporary files of writes) to Syncthing's ignore list.
+  /// Adds [syncthingIgnorePattern] (temporary files of writes) to Syncthing's
+  /// ignore list.
   Future<void> ignoreTemporaryFiles(String syncthingRoot) async {
     final file = File(p.join(syncthingRoot, '.stignore'));
     final old = await file.exists() ? await file.readAsString() : '';
     if (_ignoresPepeHub(old)) return;
     final separator = old.isEmpty || old.endsWith('\n') ? '' : '\n';
     await file.writeAsString(
-      '$old$separator// PepeHub: временные файлы записи библиотеки\n.pepehub\n',
+      '$old$separator// PepeHub: временные файлы записи библиотеки\n'
+      '$syncthingIgnorePattern\n',
       flush: true,
     );
   }

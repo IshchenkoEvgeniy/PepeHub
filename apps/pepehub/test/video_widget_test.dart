@@ -258,7 +258,6 @@ void main() {
       expect(find.text('English lesson'), findsOneWidget);
       expect(await repo.meta('library-section'), 'video');
       expect(await repo.records('video_item'), hasLength(1));
-      expect(await repo.pending(), isEmpty);
       expect(tester.takeException(), isNull);
       await tester.tap(find.byTooltip('Книги'));
       await tester.pumpAndSettle();

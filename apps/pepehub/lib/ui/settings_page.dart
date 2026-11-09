@@ -10,9 +10,6 @@ import '../media/audio_player_scope.dart';
 import '../reader/reader_appearance.dart';
 import '../reader/reader_layout.dart';
 import '../recommendations/recommendation_store.dart';
-import '../sync/peer/peer_service.dart';
-import '../sync/peer/peer_sync_log_page.dart';
-import '../sync/peer/peer_sync_page.dart';
 import '../updates/update_page.dart';
 import '../updates/update_service.dart';
 import 'app_preferences.dart';
@@ -53,12 +50,6 @@ enum SettingsArea {
     'Папки книг, скрытые книги и рекомендации',
     Icons.folder_open_outlined,
   ),
-  sync(
-    'Данные',
-    'Синхронизация',
-    'Устройства, общие папки и расписание',
-    Icons.sync,
-  ),
   data(
     'Данные',
     'Резервные копии и экспорт',
@@ -96,8 +87,7 @@ enum SettingsArea {
 class SettingsRoute {
   final SettingsArea? area;
 
-  /// Page inside [area]: `player` and `goals` in reading; `devices`,
-  /// `folders`, `rules` and `connection` in sync; `details` in about;
+  /// Page inside [area]: `player` and `goals` in reading; `details` in about;
   /// `missing-file` and `hotkeys` in help.
   final String? page;
   const SettingsRoute(SettingsArea this.area, [this.page]);
@@ -210,34 +200,9 @@ const settingsSearchIndex = <SettingsSearchEntry>[
     keywords: 'open library inventaire author.today каталоги',
   ),
   (
-    title: 'Синхронизация',
-    route: SettingsRoute(SettingsArea.sync),
-    keywords: 'обмен телефон пк компьютер',
-  ),
-  (
-    title: 'Подключить устройство',
-    route: SettingsRoute(SettingsArea.sync, 'devices'),
-    keywords: 'qr код сопряжение устройства',
-  ),
-  (
-    title: 'Общие папки',
-    route: SettingsRoute(SettingsArea.sync, 'folders'),
-    keywords: 'обмен файлами история версий',
-  ),
-  (
-    title: 'Расписание и сеть',
-    route: SettingsRoute(SettingsArea.sync, 'rules'),
-    keywords: 'интервал автообмен фон wi-fi',
-  ),
-  (
-    title: 'Имя устройства и сервер',
-    route: SettingsRoute(SettingsArea.sync, 'connection'),
-    keywords: 'адрес порт интернет relay',
-  ),
-  (
     title: 'Резервные копии',
     route: SettingsRoute(SettingsArea.data),
-    keywords: 'бэкап восстановить экспорт перенос папка библиотеки',
+    keywords: 'бэкап восстановить экспорт перенос папка библиотеки синхронизация syncthing телефон пк',
   ),
   (
     title: 'Место на диске',
@@ -658,20 +623,6 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ],
         ),
-        const SettingsSubheading('Другие устройства'),
-        SettingsGroup(
-          children: [
-            SettingsLink(
-              title: 'Общие папки',
-              subtitle: 'Передача файлов — в разделе «Синхронизация»',
-              icon: Icons.folder_shared_outlined,
-              onTap: () => _go(
-                const SettingsRoute(SettingsArea.sync, 'folders'),
-                replace: true,
-              ),
-            ),
-          ],
-        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
           child: Text(
@@ -684,7 +635,6 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _help() {
-    final peers = PeerSyncScope.of(context);
     final assets = widget.library.assets;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -724,14 +674,6 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: () => _open(const ErrorLogPage()),
             ),
             SettingsLink(
-              title: 'Журнал синхронизации',
-              subtitle: 'Результаты, ошибки и объём данных',
-              icon: Icons.receipt_long_outlined,
-              onTap: peers == null
-                  ? null
-                  : () => _open(PeerSyncLogPage(journal: peers.journal)),
-            ),
-            SettingsLink(
               title: 'Снимки и журналы аудиокниг',
               subtitle: 'Сохранить снимок или восстановить прослушивание',
               icon: Icons.restore_page_outlined,
@@ -750,10 +692,10 @@ class _SettingsPageState extends State<SettingsPage> {
     children: [
       const SettingsHeading(
         'Почему книга без файла?',
-        'Карточка и файл книги хранятся отдельно. Синхронизация карточки не всегда передаёт сам файл.',
+        'Карточка и файл книги хранятся отдельно. Папка библиотеки переносит карточки, но не сами файлы книг.',
       ),
       const SettingsNotice(
-        '1. Откройте меню книги → «Источник и файл»: там указаны путь и доступность.\n\n2. Если папку переместили или отключили, подключите её снова и обновите список. На Android может понадобиться заново разрешить доступ.\n\n3. Карточки с другого устройства без локального файла лежат на полке во вкладке «Без файла». Подключите соответствующую папку или добавьте файл и свяжите его с карточкой — история, цитаты и карточка сохранятся.',
+        '1. Откройте меню книги → «Источник и файл»: там указаны путь и доступность.\n\n2. Если папку переместили или отключили, подключите её снова и обновите список. На Android может понадобиться заново разрешить доступ.\n\n3. Чтобы книга была на обоих устройствах, держите её файл в папке, которую синхронизирует Syncthing, и подключите эту папку как источник книг на каждом устройстве.',
       ),
       SettingsGroup(
         children: [
@@ -769,7 +711,7 @@ class _SettingsPageState extends State<SettingsPage> {
     ],
   );
 
-  /// Pages with their own scrolling list (sync, data, storage, about).
+  /// Pages with their own scrolling list (data, storage, about).
   Widget? _embedded(SettingsRoute current) {
     final area = current.area;
     switch (area) {
@@ -808,48 +750,28 @@ class _SettingsPageState extends State<SettingsPage> {
               _go(const SettingsRoute(SettingsArea.about, 'details')),
           extra: [about],
         );
-      case SettingsArea.sync:
-        final peers = PeerSyncScope.of(context);
-        if (peers == null) return null;
-        return PeerSyncPage(
-          service: peers,
-          embedded: true,
-          section: current.page ?? 'overview',
-          onNavigate: (next) => _go(
-            SettingsRoute(SettingsArea.sync, next == 'overview' ? null : next),
-          ),
-        );
       default:
         return null;
     }
   }
 
-  Widget _section(SettingsRoute current, AppTheme appearance) => switch ((
-    current.area,
-    current.page,
-  )) {
-    (SettingsArea.interface, _) => InterfaceSettings(
-      appearance: appearance,
-      repository: widget.library.local,
-    ),
-    (SettingsArea.reading, 'player') => const PlaybackSettings(),
-    (SettingsArea.reading, 'goals') => GoalAndReminderSettings(
-      repository: widget.library.local,
-    ),
-    (SettingsArea.reading, _) => _reading(),
-    (SettingsArea.files, _) => _files(),
-    (SettingsArea.sync, _) => const Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SettingsHeading('Синхронизация', 'Прямой обмен между устройствами.'),
-        SettingsNotice('Прямая синхронизация недоступна в этой сборке.'),
-      ],
-    ),
-    (SettingsArea.help, 'missing-file') => _missingFile(),
-    (SettingsArea.help, 'hotkeys') => const HotkeysSettings(),
-    (SettingsArea.help, _) => _help(),
-    _ => _home(),
-  };
+  Widget _section(SettingsRoute current, AppTheme appearance) =>
+      switch ((current.area, current.page)) {
+        (SettingsArea.interface, _) => InterfaceSettings(
+          appearance: appearance,
+          repository: widget.library.local,
+        ),
+        (SettingsArea.reading, 'player') => const PlaybackSettings(),
+        (SettingsArea.reading, 'goals') => GoalAndReminderSettings(
+          repository: widget.library.local,
+        ),
+        (SettingsArea.reading, _) => _reading(),
+        (SettingsArea.files, _) => _files(),
+        (SettingsArea.help, 'missing-file') => _missingFile(),
+        (SettingsArea.help, 'hotkeys') => const HotkeysSettings(),
+        (SettingsArea.help, _) => _help(),
+        _ => _home(),
+      };
 
   Widget _content(SettingsRoute current, AppTheme appearance) {
     final embedded = _embedded(current);

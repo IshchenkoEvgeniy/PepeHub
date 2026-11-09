@@ -9,8 +9,7 @@ import 'package:path/path.dart' as p;
 import '../audio/audio_folder.dart';
 import '../data/repository.dart';
 import '../reader/reading_log.dart';
-import '../sync/peer/peer_files.dart';
-import '../sync/peer/peer_models.dart';
+import '../storage/folder_files.dart';
 import 'asset_store.dart';
 
 /// A local destination for explicitly imported text books, independent of the

@@ -311,7 +311,6 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
   Object? _filterKey;
   List<LibraryEntry> _filtered = [];
   int? annualGoal;
-  String? goalNamespace;
   @override
   void initState() {
     super.initState();
@@ -401,20 +400,14 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
 
   String get _goalKey => 'library-year-goal:personal:${DateTime.now().year}';
   Future<void> _loadGoal() async {
-    final namespace = widget.service.config?.namespace;
     final raw =
         await widget.service.local.meta(_goalKey) ??
         await widget.service.local.meta(
-          'library-year-goal:${namespace ?? 'unconnected'}:${DateTime.now().year}',
+          'library-year-goal:unconnected:${DateTime.now().year}',
         );
-    if (mounted && namespace == widget.service.config?.namespace) {
-      if (raw != null) await widget.service.local.setMeta(_goalKey, raw);
-      if (!mounted) return;
-      setState(() {
-        goalNamespace = namespace;
-        annualGoal = int.tryParse(raw ?? '');
-      });
-    }
+    if (!mounted) return;
+    if (raw != null) await widget.service.local.setMeta(_goalKey, raw);
+    if (mounted) setState(() => annualGoal = int.tryParse(raw ?? ''));
   }
 
   Future<void> _setGoal() async {
@@ -652,11 +645,6 @@ class _ObsidianLibraryPageState extends State<ObsidianLibraryPage> {
       listenable: widget.service,
       builder: (context, _) {
         final service = widget.service, palette = ShelfPalette.of(context);
-        if (goalNamespace != service.config?.namespace) {
-          goalNamespace = service.config?.namespace;
-          annualGoal = null;
-          unawaited(_loadGoal());
-        }
         final entries = _results(service.seriesEntries);
         final all = _catalogEntries;
         final candidates = groupSeries

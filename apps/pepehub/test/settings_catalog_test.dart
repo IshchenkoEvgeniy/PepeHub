@@ -8,14 +8,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/media/asset_store.dart';
-import 'package:pepehub/sync/peer/peer_service.dart';
-import 'package:pepehub/sync/peer/peer_store.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/settings_page.dart';
 import 'package:pepehub/ui/library_data_page.dart';
 import 'package:pepehub/updates/update_service.dart';
 
-import 'peer_sync_test.dart' show MemorySecrets;
 import 'video_player_tools_widget_test.dart' show ready;
 
 import 'package:pepehub/ui/storage_settings_page.dart';
@@ -37,17 +34,9 @@ void main() {
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
         final f = UpdateFixture();
-        late PeerSyncService peers;
         late UpdateService updates;
         await tester.runAsync(() async {
           await f.open();
-          peers = PeerSyncService(
-            PeerStore(f.repo),
-            secrets: MemorySecrets(),
-            observeLifecycle: false,
-            discoverAddresses: false,
-          );
-          await peers.initialize();
           f.native.current = UpdateAppInfo(
             '0.24.0',
             size.width < 500 ? 2067 : 67,
@@ -112,32 +101,29 @@ void main() {
         }
 
         await tester.pumpWidget(
-          PeerSyncScope(
-            service: peers,
-            child: UpdateScope(
-              service: updates,
-              child: ListenableBuilder(
-                listenable: appearance,
-                builder: (context, _) => ThemeScope(
-                  controller: appearance,
-                  child: RepaintBoundary(
-                    key: captureKey,
-                    child: MaterialApp(
-                      debugShowCheckedModeBanner: false,
-                      theme: AppTheme.data(
-                        Brightness.dark,
-                        style: appearance.style,
-                      ),
-                      builder: (context, child) => MediaQuery(
-                        data: MediaQuery.of(context).copyWith(
-                          textScaler: TextScaler.linear(
-                            size.width == 360 ? 1.35 : 1,
-                          ),
-                        ),
-                        child: child!,
-                      ),
-                      home: SettingsPage(library: library),
+          UpdateScope(
+            service: updates,
+            child: ListenableBuilder(
+              listenable: appearance,
+              builder: (context, _) => ThemeScope(
+                controller: appearance,
+                child: RepaintBoundary(
+                  key: captureKey,
+                  child: MaterialApp(
+                    debugShowCheckedModeBanner: false,
+                    theme: AppTheme.data(
+                      Brightness.dark,
+                      style: appearance.style,
                     ),
+                    builder: (context, child) => MediaQuery(
+                      data: MediaQuery.of(context).copyWith(
+                        textScaler: TextScaler.linear(
+                          size.width == 360 ? 1.35 : 1,
+                        ),
+                      ),
+                      child: child!,
+                    ),
+                    home: SettingsPage(library: library),
                   ),
                 ),
               ),
@@ -184,34 +170,6 @@ void main() {
           await tester.pumpAndSettle();
         }
 
-        await open('sync');
-        expect(find.text('Прямая синхронизация'), findsOneWidget);
-        expect(
-          find.text('Интервал автоматической синхронизации'),
-          findsNothing,
-        );
-        await capture('sync');
-        await tap('Расписание и сеть');
-        await tester.ensureVisible(
-          find.byKey(const ValueKey('peer-sync-interval')),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('peer-sync-interval')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('3 ч').last);
-        await tester.pumpAndSettle();
-        expect(await f.repo.meta('peer-sync-interval'), '180');
-        expect(
-          peers.enabled,
-          false,
-        ); // Navigating never enables network access.
-        await capture('rules');
-        await tester.pageBack();
-        await tester.pumpAndSettle();
-        expect(find.text('Прямая синхронизация'), findsOneWidget);
-        expect(find.text('Obsidian'), findsNothing);
-        await tester.pageBack();
-        await tester.pumpAndSettle();
         await open('data');
         expect(find.text('Папка библиотеки'), findsOneWidget);
         await tester.scrollUntilVisible(
@@ -226,7 +184,6 @@ void main() {
         );
         expect(find.text('Создать резервную копию'), findsOneWidget);
         expect(find.text('Обменять с Obsidian'), findsNothing);
-        expect(await f.repo.meta('peer-sync-interval'), '180');
         await tester.pageBack();
         await tester.pumpAndSettle();
         await open('about');
@@ -381,8 +338,6 @@ void main() {
         http.close();
         updates.dispose();
         await tester.runAsync(() async {
-          await peers.close();
-          peers.dispose();
           await f.close();
         });
       },

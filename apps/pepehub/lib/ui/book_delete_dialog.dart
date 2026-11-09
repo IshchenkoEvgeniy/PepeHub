@@ -5,7 +5,6 @@ import '../library/book_trash.dart';
 import '../media/asset_store.dart';
 import '../media/audio_player_scope.dart';
 import '../reader/reading_book_actions.dart';
-import '../sync/peer/peer_service.dart';
 import 'library_card_actions.dart';
 
 /// A book or audiobook the user is about to remove from PepeHub.
@@ -90,7 +89,6 @@ Future<List<String>> deleteBooksToTrash(
   final withFiles = await askBookDeletion(context, books, retentionDays: days);
   if (withFiles == null || !context.mounted) return const [];
   final player = AudioPlayerScope.of(context);
-  final peer = PeerSyncScope.of(context);
   final moved = <String>[];
   try {
     for (final book in books) {
@@ -107,7 +105,6 @@ Future<List<String>> deleteBooksToTrash(
             !await deleteBookFilesWithAccess(context, actions, book.id)) {
           break;
         }
-        peer?.localFilesChanged();
       }
       moved.add(book.id);
     }

@@ -11,7 +11,6 @@ import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/library/models.dart';
-import 'package:pepehub/library/obsidian_sync_service.dart';
 import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/obsidian_library_dashboard.dart';
 import 'package:pepehub/ui/shelf_components.dart';
@@ -111,7 +110,6 @@ void main() {
         });
         addTearDown(client.close);
         final service = LibraryService(repo, client)
-          ..config = ObsidianConfig('https://example.com', 'test-only')
           ..entries = fixtures();
         addTearDown(service.dispose);
         final key = GlobalKey();

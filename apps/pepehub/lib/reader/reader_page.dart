@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import '../sync/peer/app_sync_usage.dart';
-
 import 'reader_routes.dart';
 
 import 'dart:convert';
@@ -233,18 +231,6 @@ class _ReaderPageState extends State<ReaderPage>
       const Duration(seconds: 30),
       (_) => _loadToday(),
     );
-    final releasePosition = AppSyncUsage.hold(
-      widget.repository.db,
-      'p:reader:${widget.asset.hash}',
-    );
-    final releaseNotes = AppSyncUsage.hold(
-      widget.repository.db,
-      'reading-notes',
-    );
-    _releaseSync = () {
-      releasePosition();
-      releaseNotes();
-    };
     WidgetsBinding.instance.addObserver(this);
     // Any touch while reading extends the screen wake period.
     GestureBinding.instance.pointerRouter.addGlobalRoute(_pointerActivity);
@@ -252,7 +238,6 @@ class _ReaderPageState extends State<ReaderPage>
   }
 
   bool routeVisible = true;
-  void Function()? _releaseSync;
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -293,10 +278,8 @@ class _ReaderPageState extends State<ReaderPage>
     WidgetsBinding.instance.removeObserver(this);
     debounce?.cancel();
     settledMoves.flush();
-    Future.wait<void>([_save(), if (activity != null) activity!.close()]).then(
-      (_) => _releaseSync?.call(),
-      onError: (Object _, StackTrace _) => _releaseSync?.call(),
-    );
+    Future.wait<void>([_save(), if (activity != null) activity!.close()])
+        .ignore();
     super.dispose();
   }
 

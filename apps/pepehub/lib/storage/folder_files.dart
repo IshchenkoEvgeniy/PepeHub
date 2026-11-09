@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -6,12 +7,109 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
-import 'peer_models.dart';
-import 'peer_history.dart';
-import 'peer_local_history.dart';
-import '../../diagnostics/user_message.dart';
+import '../diagnostics/user_message.dart';
 
+// Files of a user-chosen folder (library folder, linked book folders):
+// a plain directory on desktop, a Storage Access Framework tree on Android.
+// Replacements are staged in a temporary file and renamed into place, so a
+// file synchronization tool such as Syncthing never sees a half-written file.
+
+/// The native Android channel keeps its historical name.
 const peerFilesChannel = MethodChannel('app.pepehub/peer_files');
+const peerChunkSize = 256 * 1024;
+const peerMaxFiles = 10000;
+
+/// The Android side still accepts a version-history policy; it is always off.
+const _noHistory = {
+  'enabled': false,
+  'maxDays': 30,
+  'maxBytes': 500 * 1024 * 1024,
+};
+
+String peerPath(String value) {
+  final parts = value.split('/');
+  if (value.isEmpty ||
+      value.length > 1024 ||
+      parts.length > 32 ||
+      parts.any(
+        (part) =>
+            part.isEmpty ||
+            part == '.' ||
+            part == '..' ||
+            part.length > 240 ||
+            part.endsWith('.') ||
+            part.endsWith(' ') ||
+            part.toLowerCase() == '.pepehub' ||
+            part.toLowerCase().startsWith('.pepehub-') ||
+            RegExp(r'[<>:"\\|?*\x00-\x1f\x7f]').hasMatch(part) ||
+            RegExp(
+              r'^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])( *\.| *$)',
+              caseSensitive: false,
+            ).hasMatch(part),
+      )) {
+    throw const FormatException('Недопустимый относительный путь');
+  }
+  return value;
+}
+
+bool peerIgnored(String name) =>
+    name.toLowerCase() == '.pepehub' ||
+    name.toLowerCase().startsWith('.pepehub-') ||
+    name.toLowerCase().startsWith('.syncthing.') ||
+    name.toLowerCase().startsWith('~syncthing~') ||
+    {'desktop.ini', 'thumbs.db', '.ds_store'}.contains(name.toLowerCase());
+
+String peerStorageKey(String value) =>
+    sha256.convert(utf8.encode(value)).toString();
+
+class PeerFileEntry {
+  final String path;
+  final String? hash;
+  final int bytes;
+  final Map<String, int> clock;
+  bool get deleted => hash == null;
+  PeerFileEntry({
+    required String path,
+    required this.hash,
+    required this.bytes,
+    required Map<String, int> clock,
+  }) : path = peerPath(path),
+       clock = Map.unmodifiable(clock) {
+    if (bytes < 0 ||
+        bytes > 1 << 50 ||
+        hash != null && !RegExp(r'^[a-f0-9]{64}$').hasMatch(hash!) ||
+        hash == null && bytes != 0 ||
+        clock.isEmpty ||
+        clock.length > 64 ||
+        clock.entries.any(
+          (e) =>
+              !RegExp(r'^[a-f0-9-]{36}$').hasMatch(e.key) ||
+              e.value < 1 ||
+              e.value > 9007199254740991,
+        )) {
+      throw const FormatException('Некорректная версия файла');
+    }
+  }
+  PeerFileEntry withClock(Map<String, int> value, {String? path}) =>
+      PeerFileEntry(
+        path: path ?? this.path,
+        hash: hash,
+        bytes: bytes,
+        clock: value,
+      );
+  Map<String, dynamic> toJson() => {
+    'path': path,
+    'hash': hash,
+    'bytes': bytes,
+    'clock': clock,
+  };
+  factory PeerFileEntry.fromJson(Map<String, dynamic> json) => PeerFileEntry(
+    path: json['path'] as String,
+    hash: json['hash'] as String?,
+    bytes: json['bytes'] as int,
+    clock: Map<String, int>.from(json['clock'] as Map),
+  );
+}
 
 class PeerDiskFile {
   final String path, hash;
@@ -63,15 +161,10 @@ String peerStageKey(PeerFileEntry entry) {
 
 PeerFileSystem peerFileSystem(
   String root, {
-  PeerHistorySettings history = const PeerHistorySettings(),
-  void Function(String)? onHistoryWarning,
+  void Function(String)? onWarning,
 }) => root.startsWith('content://')
-    ? SafPeerFiles(root, history: history, onHistoryWarning: onHistoryWarning)
-    : LocalPeerFiles(
-        Directory(root),
-        history: history,
-        onHistoryWarning: onHistoryWarning,
-      );
+    ? SafPeerFiles(root, onWarning: onWarning)
+    : LocalPeerFiles(Directory(root), onWarning: onWarning);
 
 Future<String> hashPeerFile(File file) {
   final path = file.path;
@@ -80,39 +173,10 @@ Future<String> hashPeerFile(File file) {
   );
 }
 
-class LocalPeerFiles implements PeerFileSystem, PeerHistoryStorage {
+class LocalPeerFiles implements PeerFileSystem {
   final Directory root;
-  final PeerHistorySettings history;
-  final void Function(String)? onHistoryWarning;
-  LocalPeerFiles(
-    this.root, {
-    this.history = const PeerHistorySettings(),
-    this.onHistoryWarning,
-  });
-  late final historyStore = PeerLocalHistory(_base, history);
-  @override
-  Future<PeerHistorySummary> maintainHistory({
-    bool migrate = false,
-    bool prune = false,
-    bool clear = false,
-  }) => historyStore.maintainHistory(
-    migrate: migrate,
-    prune: prune,
-    clear: clear,
-  );
-  Future<void> _pruneHistory() async {
-    if (!history.enabled) return;
-    try {
-      final report = await maintainHistory(prune: true);
-      for (final warning in report.warnings) {
-        onHistoryWarning?.call(warning);
-      }
-    } catch (e) {
-      onHistoryWarning?.call(
-        'Не удалось применить ограничения истории: ${describeError(e)}',
-      );
-    }
-  }
+  final void Function(String)? onWarning;
+  LocalPeerFiles(this.root, {this.onWarning});
 
   Future<String> digest(File file) => hashPeerFile(file);
   Future<File> publishFile(File staged, String destination) =>
@@ -289,18 +353,7 @@ class LocalPeerFiles implements PeerFileSystem, PeerHistoryStorage {
   Future<void> remove(String path, String? expectedHash) async {
     await _check(path, expectedHash);
     if (expectedHash == null) return;
-    final target = await _file(path);
-    if (history.enabled) {
-      await target.rename(
-        p.join(
-          (await historyStore.directory(create: true))!.path,
-          historyStore.name(path),
-        ),
-      );
-      await _pruneHistory();
-    } else {
-      await target.delete();
-    }
+    await (await _file(path)).delete();
   }
 }
 
@@ -367,11 +420,6 @@ class _LocalPeerStage implements PeerStagingFile {
     await files._check(entry.path, expectedHash);
     File? previous;
     if (expectedHash != null) {
-      if (files.history.enabled) {
-        await files.historyStore.directory(create: true);
-      }
-      // A pending rollback is not history yet: another engine may clear or
-      // prune history while the replacement is still being committed.
       final backupPath = p.join(
         (await files._support('staging')).path,
         'rollback-${const Uuid().v4()}.part',
@@ -397,52 +445,23 @@ class _LocalPeerStage implements PeerStagingFile {
     }
     if (previous != null) {
       try {
-        if (files.history.enabled) {
-          await previous.rename(
-            p.join(
-              (await files.historyStore.directory(create: true))!.path,
-              files.historyStore.name(entry.path),
-            ),
-          );
-        } else {
-          await previous.delete();
-        }
+        await previous.delete();
       } catch (e) {
-        files.onHistoryWarning?.call(
+        files.onWarning?.call(
           'Предыдущая версия осталась во временной папке: ${previous.path}: ${describeError(e)}',
         );
       }
     }
-    await files._pruneHistory();
   }
 }
 
-class SafPeerFiles implements PeerFileSystem, PeerHistoryStorage {
+class SafPeerFiles implements PeerFileSystem {
   @override
   Future<void> checkRoot() =>
       peerFilesChannel.invokeMethod<void>('check', {'root': root});
   final String root;
-  final PeerHistorySettings history;
-  final void Function(String)? onHistoryWarning;
-  const SafPeerFiles(
-    this.root, {
-    this.history = const PeerHistorySettings(),
-    this.onHistoryWarning,
-  });
-  @override
-  Future<PeerHistorySummary> maintainHistory({
-    bool migrate = false,
-    bool prune = false,
-    bool clear = false,
-  }) async => PeerHistorySummary.fromJson(
-    (await peerFilesChannel.invokeMapMethod<String, dynamic>('history', {
-      'root': root,
-      'history': history.toJson(),
-      'migrate': migrate,
-      'prune': prune,
-      'clear': clear,
-    }))!,
-  );
+  final void Function(String)? onWarning;
+  const SafPeerFiles(this.root, {this.onWarning});
   @override
   Future<String?> source(String path) => peerFilesChannel.invokeMethod<String>(
     'locate',
@@ -507,18 +526,18 @@ class SafPeerFiles implements PeerFileSystem, PeerHistoryStorage {
       <int>[];
   @override
   Future<PeerStagingFile> stage(PeerFileEntry entry) async =>
-      _SafPeerStage(root, entry, history, onHistoryWarning);
+      _SafPeerStage(root, entry, onWarning);
   @override
   Future<void> remove(String path, String? expectedHash) async {
     final result = await peerFilesChannel.invokeMethod<Object?>('remove', {
       'root': root,
       'path': peerPath(path),
       'expected': expectedHash,
-      'history': history.toJson(),
+      'history': _noHistory,
     });
     if (result is Map) {
       for (final warning in result['warnings'] as List? ?? const []) {
-        onHistoryWarning?.call(warning.toString());
+        onWarning?.call(warning.toString());
       }
     }
   }
@@ -527,14 +546,13 @@ class SafPeerFiles implements PeerFileSystem, PeerHistoryStorage {
 class _SafPeerStage implements PeerStagingFile {
   final String root;
   final PeerFileEntry entry;
-  final PeerHistorySettings history;
-  final void Function(String)? onHistoryWarning;
-  _SafPeerStage(this.root, this.entry, this.history, this.onHistoryWarning);
+  final void Function(String)? onWarning;
+  _SafPeerStage(this.root, this.entry, this.onWarning);
   Map<String, dynamic> get arguments => {
     'root': root,
     'path': entry.path,
     'stage': peerStageKey(entry),
-    'history': history.toJson(),
+    'history': _noHistory,
   };
   @override
   Future<int> prepare() async => (await peerFilesChannel.invokeMethod<num>(
@@ -562,7 +580,7 @@ class _SafPeerStage implements PeerStagingFile {
     );
     if (result is Map) {
       for (final warning in result['warnings'] as List? ?? const []) {
-        onHistoryWarning?.call(warning.toString());
+        onWarning?.call(warning.toString());
       }
     }
   }

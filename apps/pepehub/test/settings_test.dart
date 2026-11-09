@@ -132,16 +132,10 @@ void main() {
       }
       await tester.pageBack();
       await tester.pumpAndSettle();
-      await tester.ensureVisible(
+      expect(
         find.byKey(const ValueKey('settings-entry:sync')),
+        findsNothing,
       );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('settings-entry:sync')));
-      await tester.pumpAndSettle();
-      expect(find.text('Obsidian'), findsNothing);
-      expect(find.text('Экспорт и резервные копии'), findsNothing);
-      await tester.pageBack();
-      await tester.pumpAndSettle();
       await tester.ensureVisible(
         find.byKey(const ValueKey('settings-entry:data')),
       );

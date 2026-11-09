@@ -1,13 +1,10 @@
-import 'dart:convert';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/library_repository.dart';
-import 'package:pepehub/library/obsidian_sync_service.dart';
+import 'connector_namespace.dart';
 import 'package:pepehub/library/models.dart';
 
 import 'obsidian_library_test.dart' show card, snapshot;
@@ -19,7 +16,7 @@ void main() {
   late AppDatabase db;
   late Repository local;
   late LibraryRepository repository;
-  final config = ObsidianConfig('https://example.test', 'test-token');
+  final config = LegacyConnector('https://example.test', 'test-token');
   setUp(() async {
     db = AppDatabase(NativeDatabase.memory());
     local = Repository(db);
@@ -28,56 +25,6 @@ void main() {
     await local.setMeta('obsidian-sync-notes', 'false');
   });
   tearDown(() => db.close());
-  http.Response json(
-    Object value, {
-    Map<String, String> headers = const {},
-    int status = 200,
-  }) => http.Response(
-    jsonEncode(value),
-    status,
-    headers: {'content-type': 'application/json; charset=utf-8', ...headers},
-  );
-
-  test('one full bootstrap is followed by delta-only updates, deletion and an empty idle page', () async {
-    var full = 0, pulls = 0;
-    final initial = snapshot([card(a, title: 'A'), card(b, title: 'B')]);
-    final client = MockClient((request) async {
-      if (request.url.path.endsWith('/changes')) {
-        pulls++;
-        expect(request.url.queryParameters['index'], index);
-        return json({
-          'version': 1,
-          'indexId': index,
-          'cursor': 3,
-          'hasMore': false,
-          'schema': {...initial}..remove('items'),
-          'changes': pulls == 1
-              ? [
-                  {'id': a, 'item': card(a, title: 'Edited')},
-                  {'id': b, 'item': null},
-                ]
-              : [],
-        });
-      }
-      full++;
-      return json(
-        initial,
-        headers: {'x-pepehub-index': index, 'x-pepehub-cursor': '1'},
-      );
-    });
-    addTearDown(client.close);
-    final service = ObsidianSyncService(repository, client, config);
-    await service.run();
-    await service.run();
-    await service.run();
-    expect(full, 1);
-    expect(pulls, 2);
-    final values = await repository.entries();
-    expect(values[a]!.item.title, 'Edited');
-    expect(values[b]!.state, 'removed');
-    expect((await repository.snapshot())!['_cursor'], 3);
-  });
-
   test(
     'delta keeps a pending local edit and rejects a malformed page atomically',
     () async {
@@ -126,23 +73,4 @@ void main() {
     },
   );
 
-  test('explicit cursor reset retrieves one fresh snapshot without deleting pending data', () async {
-    await repository.receive({
-      ...snapshot([card(a)]),
-      '_indexId': index,
-      '_cursor': 100,
-    });
-    var calls = 0;
-    final client = MockClient((request) async {
-      calls++;
-      if (request.url.path.endsWith('/changes')) {
-        return json({'reset': true}, status: 409);
-      }
-      return json(snapshot([card(a, title: 'After reset')]));
-    });
-    addTearDown(client.close);
-    await ObsidianSyncService(repository, client, config).run();
-    expect(calls, 2);
-    expect((await repository.entries())[a]!.item.title, 'After reset');
-  });
 }

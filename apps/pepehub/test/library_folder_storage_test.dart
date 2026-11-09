@@ -18,8 +18,7 @@ import 'package:pepehub/library/models.dart';
 import 'package:pepehub/library/personal_library.dart';
 import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/reader/reading_library.dart';
-import 'package:pepehub/sync/peer/peer_files.dart';
-import 'package:pepehub/sync/peer/peer_models.dart';
+import 'package:pepehub/storage/folder_files.dart';
 import 'package:pepehub/ui/library_data_page.dart';
 
 class _SlowFolderFiles extends LocalPeerFiles {
@@ -1128,6 +1127,8 @@ void main() {
     await add(a);
     await Directory('${shared.path}/.stfolder').create();
     await a.folderStorage.connect(shared.path);
+    // The pattern of older versions misses Android's temporary files.
+    await File('${shared.path}/.stignore').writeAsString('.pepehub\n');
     final copy = File(
       '${shared.path}/PepeHub-library/library.sync-conflict-20261108-120000-AAAAAAA.json',
     );
@@ -1141,7 +1142,7 @@ void main() {
     await a.folderStorage.ignoreTemporaryFiles(report.syncthingRoot!);
     await a.folderStorage.ignoreTemporaryFiles(report.syncthingRoot!);
     expect(
-      RegExp(r'^\.pepehub$', multiLine: true)
+      RegExp(r'^\.pepehub\*$', multiLine: true)
           .allMatches(await File('${shared.path}/.stignore').readAsString())
           .length,
       1,
@@ -1285,4 +1286,38 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
+
+  test('restores library.json from Android replacement leftovers', () async {
+    final dir = '${shared.path}/PepeHub-library';
+    final a = device();
+    await a.folderStorage.connect(shared.path);
+    await add(a, title: 'Первая');
+    await a.folderStorage.synchronize(force: true);
+    final older = await File('$dir/library.json').readAsBytes();
+    final b = device();
+    await b.folderStorage.connect(shared.path);
+    await add(b, title: 'Вторая');
+    await b.folderStorage.synchronize(force: true);
+    final newer = await File('$dir/library.json').readAsBytes();
+    expect(sha256.convert(newer), isNot(sha256.convert(older)));
+
+    // Syncthing copied the folder between the two renames of a replacement.
+    await File('$dir/library.json').delete();
+    await File('$dir/.pepehub-rollback-1794211468757-61209190-library.json')
+        .writeAsBytes(older);
+    final digest = sha256.convert(newer).toString();
+    await File('$dir/.pepehub-transfer-${'c' * 64}-$digest.part')
+        .writeAsBytes(newer);
+    // An unfinished transfer is never used.
+    await File('$dir/.pepehub-transfer-${'d' * 64}-${'e' * 64}.part')
+        .writeAsBytes(older);
+
+    await a.folderStorage.synchronize(force: true);
+    expect(a.folderStorage.error, isNull);
+    expect(await File('$dir/library.json').exists(), isTrue);
+    expect(
+      (await a.repository.entries()).values.map((e) => e.item.title).toSet(),
+      containsAll(['Первая', 'Вторая']),
+    );
+  });
 }

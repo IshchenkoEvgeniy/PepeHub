@@ -12,15 +12,12 @@ import 'package:pepehub/video/video_repository.dart';
 
 void main() {
   test(
-    'reconnecting a course retains IDs, position, favorite and book outbox',
+    'reconnecting a course retains IDs, position, favorite and books',
     () async {
       final db = AppDatabase(NativeDatabase.memory());
       addTearDown(db.close);
       final repo = Repository(db), videos = VideoRepository(Repository(db));
       await repo.addBook('Existing book', '', 'epub');
-      final outbox = await db
-          .customSelect('SELECT COUNT(*) AS count FROM outbox')
-          .getSingle();
       final course = await videos.addSources(
         title: 'English',
         root: 'course-folder',
@@ -56,10 +53,6 @@ void main() {
       expect(lessons.first.id, first.id);
       expect(lessons.first.title, 'Lesson 1');
       expect((await videos.progress(first))!.positionMs, 42000);
-      final after = await db
-          .customSelect('SELECT COUNT(*) AS count FROM outbox')
-          .getSingle();
-      expect(after.read<int>('count'), outbox.read<int>('count'));
       expect(await repo.records('book'), hasLength(1));
     },
   );

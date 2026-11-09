@@ -180,12 +180,6 @@ class ActivityStore {
           "WHERE key IN (SELECT 'reading-session:'||value FROM json_each(?))",
       'reading-session:',
     );
-    await lookup(
-      'reader',
-      'SELECT target AS id FROM peer_app_projection WHERE materialized=1 '
-          "AND target IN (SELECT 'm:reading-session:'||value FROM json_each(?))",
-      'm:reading-session:',
-    );
     return [
       for (final slot in rows)
         if ((slot['source'] == null ||

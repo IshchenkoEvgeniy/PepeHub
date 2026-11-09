@@ -118,7 +118,7 @@ void main() {
   test('learning decisions belong to a media version and do not enter book synchronization', () async {
     final db = AppDatabase(NativeDatabase.memory());
     addTearDown(db.close);
-    final repo = Repository(db), videos = VideoRepository(Repository(db));
+    final videos = VideoRepository(Repository(db));
     final item = await videos.addSources(
       title: 'Lesson',
       sources: [const VideoSourceDraft('lesson.mp4', 'Lesson')],
@@ -137,7 +137,6 @@ void main() {
       throwsStateError,
     );
     expect((await videos.learningState(lesson)).manualCompletedAt, isNotNull);
-    expect(await repo.pendingCount(), 0);
   });
 
   test('history keyset handles identical timestamps, old payloads and a growing checkpoint', () async {

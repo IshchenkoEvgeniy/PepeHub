@@ -58,7 +58,6 @@ void main() {
       throwsStateError,
     );
     expect((await vocabulary.list()).single.back, 'Он уже ушёл');
-    expect(await repo.pendingCount(), 0);
     await vocabulary.delete(changed);
     expect(await vocabulary.list(), isEmpty);
     await expectLater(
@@ -123,6 +122,5 @@ void main() {
       throwsArgumentError,
     );
     expect(await vocabulary.list(), isEmpty);
-    expect(await repo.pendingCount(), 0);
   });
 }

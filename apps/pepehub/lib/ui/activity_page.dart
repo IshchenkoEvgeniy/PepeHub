@@ -62,7 +62,7 @@ class _ActivityPageState extends State<ActivityPage> {
   }
 
   void _changed() {
-    if (!widget.library.syncing) _load();
+    _load();
   }
 
   Future<void> _load() async {
@@ -760,13 +760,8 @@ class _ActivityPageState extends State<ActivityPage> {
         ),
         IconButton(
           tooltip: 'Обновить',
-          onPressed: widget.library.syncing ? null : widget.library.reload,
-          icon: widget.library.syncing
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.sync),
+          onPressed: widget.library.reload,
+          icon: const Icon(Icons.refresh),
         ),
       ],
       body: loading

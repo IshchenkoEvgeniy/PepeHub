@@ -12,21 +12,19 @@ import 'package:pepehub/reader/reading_roots.dart';
 import 'package:pepehub/reader/reading_library.dart';
 import 'package:pepehub/ui/reading_hidden_books_page.dart';
 
-import 'peer_sync_test.dart' show ReplicaFixture, deviceA;
+import 'folder_fixture.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   tearDown(() => messenger.setMockMethodCallHandler(audioFolderChannel, null));
-  Future<(ReplicaFixture, AssetStore, File)> fixture({
-    bool close = true,
-  }) async {
-    final f = ReplicaFixture(deviceA);
+  Future<(FolderFixture, AssetStore, File)> fixture({bool close = true}) async {
+    final f = FolderFixture();
     await f.open();
     if (close) addTearDown(f.close);
     final assets = AssetStore(
-      f.store.repository,
+      f.repository,
       Directory(p.join(f.base.path, 'managed')),
     );
     final file = await File(p.join(f.root.path, 'story.txt'))
@@ -39,27 +37,24 @@ void main() {
   test('hide is local, survives refresh and restore retains file, notes and progress', () async {
     final (f, assets, file) = await fixture();
     final book = (await assets.list()).single;
-    await f.store.repository.setMeta('reader:${book.hash}', 'saved position');
-    await f.store.repository.setMeta('reading-note:test', 'saved note');
+    await f.repository.setMeta('reader:${book.hash}', 'saved position');
+    await f.repository.setMeta('reading-note:test', 'saved note');
     await ReadingBookActions(assets).hide(book.bookId);
     await ReadingRoots(assets)
         .connect(await scanAudioFolder(f.root.path, books: true));
     expect(
-      await f.store.repository.meta('reading-library-hidden:${book.bookId}'),
+      await f.repository.meta('reading-library-hidden:${book.bookId}'),
       '1',
     );
     expect(await file.exists(), true);
-    expect((await f.store.repository.record(book.bookId))!.deleted, false);
+    expect((await f.repository.record(book.bookId))!.deleted, false);
     await ReadingBookActions(assets).hide(book.bookId, hidden: false);
     expect(
-      await f.store.repository.meta('reading-library-hidden:${book.bookId}'),
+      await f.repository.meta('reading-library-hidden:${book.bookId}'),
       '0',
     );
-    expect(
-      await f.store.repository.meta('reader:${book.hash}'),
-      'saved position',
-    );
-    expect(await f.store.repository.meta('reading-note:test'), 'saved note');
+    expect(await f.repository.meta('reader:${book.hash}'), 'saved position');
+    expect(await f.repository.meta('reading-note:test'), 'saved note');
   });
 
   test('missing source disappears after folder refresh but imported copy stays usable', () async {
@@ -69,7 +64,7 @@ void main() {
     await ReadingRoots(assets)
         .connect(await scanAudioFolder(f.root.path, books: true));
     expect(
-      await f.store.repository.meta('reading-library-hidden:${linked.bookId}'),
+      await f.repository.meta('reading-library-hidden:${linked.bookId}'),
       '1',
     );
     await file.writeAsString('An example book.');
@@ -82,7 +77,7 @@ void main() {
     await ReadingRoots(assets)
         .connect(await scanAudioFolder(f.root.path, books: true));
     expect(
-      await f.store.repository.meta('reading-library-hidden:${linked.bookId}'),
+      await f.repository.meta('reading-library-hidden:${linked.bookId}'),
       '0',
     );
     expect(await File(imported.path).exists(), true);
@@ -100,15 +95,15 @@ void main() {
         .writeAsString('cached');
     final other = await File(p.join(f.root.path, 'unrelated.txt'))
         .writeAsString('keep');
-    await f.store.repository.setMeta('reader:${imported.hash}', 'history');
+    await f.repository.setMeta('reader:${imported.hash}', 'history');
     await ReadingBookActions(assets).deleteForever(imported.bookId);
     expect(await file.exists(), false);
     expect(await File(imported.path).exists(), false);
     expect(await cached.exists(), false);
     expect(await other.readAsString(), 'keep');
-    expect(await f.store.repository.meta('reader:${imported.hash}'), 'history');
+    expect(await f.repository.meta('reader:${imported.hash}'), 'history');
     expect(
-      await f.store.repository.meta('reading-user-hidden:${imported.bookId}'),
+      await f.repository.meta('reading-user-hidden:${imported.bookId}'),
       '0',
     );
     await ReadingBookActions(assets).deleteForever(imported.bookId);
@@ -126,7 +121,7 @@ void main() {
       );
       expect(await file.readAsString(), 'A replacement book');
       expect(
-        await f.store.repository.meta('reading-user-hidden:${book.bookId}'),
+        await f.repository.meta('reading-user-hidden:${book.bookId}'),
         isNull,
       );
     },
@@ -134,19 +129,18 @@ void main() {
 
   const safRoot = 'content://books.test/tree/books';
   const safFile = '$safRoot/document/story';
-  Future<(ReplicaFixture, AssetStore, File)> safFixture() async {
+  Future<(FolderFixture, AssetStore, File)> safFixture() async {
     final prepared = await fixture(close: false);
     final (f, assets, _) = prepared;
     final book = (await assets.list()).single;
-    await ReadingLibrary(f.store.repository).index(assets, book);
-    await f.store.repository.db.customStatement(
+    await ReadingLibrary(f.repository).index(assets, book);
+    await f.repository.db.customStatement(
       'UPDATE local_assets SET path=? WHERE book_id=?',
       [safFile, book.bookId],
     );
-    await f.store.repository.db.customStatement(
-      'DELETE FROM metadata WHERE key=?',
-      ['reading-source-path:${book.bookId}'],
-    );
+    await f.repository.db.customStatement('DELETE FROM metadata WHERE key=?', [
+      'reading-source-path:${book.bookId}',
+    ]);
     return prepared;
   }
 
@@ -175,7 +169,7 @@ void main() {
     );
     expect(calls.single.arguments['checkOnly'], true);
     expect(
-      await f.store.repository.meta('reading-user-hidden:${book.bookId}'),
+      await f.repository.meta('reading-user-hidden:${book.bookId}'),
       isNull,
     );
     expect(
@@ -234,9 +228,9 @@ void main() {
         }
         return null;
       });
-      await f.store.repository.setMeta('library-section', 'reading');
+      await f.repository.setMeta('library-section', 'reading');
       await tester.pumpWidget(
-        PepeHubApp(repository: f.store.repository, assets: assets),
+        PepeHubApp(repository: f.repository, assets: assets),
       );
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byTooltip('Действия с книгой').first);
@@ -268,9 +262,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         if (outcome == 'granted' &&
-            await f.store.repository.meta(
-                  'reading-user-hidden:${book.bookId}',
-                ) ==
+            await f.repository.meta('reading-user-hidden:${book.bookId}') ==
                 '1') {
           break;
         }
@@ -292,12 +284,12 @@ void main() {
         outcome == 'cancel-dialog' ? 0 : 1,
       );
       expect(
-        await f.store.repository.meta('reading-user-hidden:${book.bookId}'),
+        await f.repository.meta('reading-user-hidden:${book.bookId}'),
         outcome == 'granted' ? '0' : isNull,
       );
       // Only a book whose file went is moved to the trash.
       expect(
-        await f.store.repository.meta('book-shelf-removed:${book.bookId}'),
+        await f.repository.meta('book-shelf-removed:${book.bookId}'),
         outcome == 'granted' ? '1' : isNull,
       );
       if (outcome == 'changed') {
@@ -320,7 +312,7 @@ void main() {
       final prepared = await tester.runAsync(() => fixture(close: false));
       final (f, assets, file) = prepared!;
       addTearDown(() => tester.runAsync(f.close));
-      final repo = f.store.repository;
+      final repo = f.repository;
       await tester.runAsync(() async {
         await ReadingLibrary(repo).index(assets, (await assets.list()).single);
       });

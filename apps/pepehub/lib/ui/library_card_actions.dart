@@ -6,7 +6,6 @@ import '../library/library_service.dart';
 import '../library/personal_library.dart';
 import '../media/audio_player_scope.dart';
 import '../reader/reading_book_actions.dart';
-import '../sync/peer/peer_service.dart';
 import '../diagnostics/user_message.dart';
 
 enum _Removal { trash, card, files }
@@ -74,7 +73,6 @@ Future<bool> _removeLibraryCards(
       fileActions != null && await fileActions.hasRegisteredFiles(sourceId!);
   if (!context.mounted) return false;
   final player = withFiles && audio ? AudioPlayerScope.of(context) : null;
-  final peer = withFiles ? PeerSyncScope.of(context) : null;
   final choice = await showDialog<_Removal>(
     context: context,
     builder: (context) => AlertDialog(
@@ -155,7 +153,6 @@ Future<bool> _removeLibraryCards(
         !await deleteBookFilesWithAccess(context, fileActions!, sourceId!)) {
       return false;
     }
-    peer?.localFilesChanged();
   }
   var removed = selected.length;
   if (choice == _Removal.trash) {

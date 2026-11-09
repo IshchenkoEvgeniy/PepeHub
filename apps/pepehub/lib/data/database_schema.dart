@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 
 /// SQL expressions shared by the schema and by the queries that must repeat
@@ -48,8 +50,6 @@ Future<void> createFeatureSchema(GeneratedDatabase db) async {
   await _readingSpans(db);
   await _audioDailyTotals(db);
   await _recordIndexes(db);
-  await _peerSync(db);
-  await _cloudTransport(db);
   await _exportRevisions(db);
 }
 
@@ -305,30 +305,77 @@ Future<void> _recordIndexes(GeneratedDatabase db) async {
   );
 }
 
-/// Folder exchange state and replicated application data between devices.
-Future<void> _peerSync(GeneratedDatabase db) async {
-  for (final statement in [
-    'CREATE TABLE IF NOT EXISTS peer_sync_files(folder_id TEXT NOT NULL,path TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(folder_id,path))',
-    'CREATE TABLE IF NOT EXISTS peer_sync_deletions(folder_id TEXT NOT NULL,path TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(folder_id,path))',
-    'CREATE TABLE IF NOT EXISTS peer_sync_scan_cache(folder_id TEXT NOT NULL,path TEXT NOT NULL,root TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(folder_id,path))',
-    'CREATE TABLE IF NOT EXISTS peer_sync_remote_index(device TEXT NOT NULL,folder TEXT NOT NULL,revision TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(device,folder))',
-    'CREATE TABLE IF NOT EXISTS peer_app_versions(id TEXT PRIMARY KEY,entity_key TEXT NOT NULL,payload TEXT NOT NULL,active INTEGER NOT NULL)',
-    'CREATE INDEX IF NOT EXISTS peer_app_heads ON peer_app_versions(entity_key,active)',
-    'CREATE TABLE IF NOT EXISTS peer_app_projection(entity_key TEXT PRIMARY KEY,target TEXT NOT NULL,digest TEXT NOT NULL,clock TEXT NOT NULL,materialized INTEGER NOT NULL)',
-    'CREATE INDEX IF NOT EXISTS peer_app_projection_target ON peer_app_projection(target) WHERE materialized=1',
-    'CREATE TABLE IF NOT EXISTS peer_app_alias(kind TEXT NOT NULL,local_id TEXT NOT NULL,shared_id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(kind,local_id))',
-    'CREATE INDEX IF NOT EXISTS peer_app_shared ON peer_app_alias(kind,shared_id)',
-  ]) {
-    await db.customStatement(statement);
+/// Schema version 7: built-in device synchronization was removed; the
+/// library folder is moved between devices by Syncthing instead. Book cards
+/// that only arrived through that synchronization — no file on this device and
+/// no library card linked to them — are deleted with its bookkeeping tables and
+/// settings. Reading history is kept. The upgrade first copies the previous
+/// database file (see database_files.dart).
+Future<void> removeDeviceSync(GeneratedDatabase db) async {
+  if (await _tableExists(db, 'peer_app_alias')) {
+    final linked = <String>{};
+    for (final row
+        in await db
+            .customSelect(
+              // The personal catalog and catalogs of the old connector.
+              "SELECT key,value FROM metadata WHERE key='library-catalog-v1' "
+              "OR (key>='obsidian-library:' AND key<'obsidian-library;')",
+            )
+            .get()) {
+      if (row.read<String>('key').endsWith(':schema')) continue;
+      try {
+        final catalog = jsonDecode(row.read<String>('value'));
+        if (catalog is! Map) continue;
+        for (final entry in catalog.values) {
+          if (entry is! Map) continue;
+          if (entry['sourceBookId'] case final String id) linked.add(id);
+        }
+      } catch (_) {
+        // A damaged catalog links nothing; its own loader reports it.
+      }
+    }
+    final remote = await db
+        .customSelect(
+          "SELECT r.id AS id,r.payload AS payload FROM peer_app_alias a "
+          "JOIN records r ON r.id=a.local_id "
+          "WHERE a.kind='book' AND r.type='book' AND r.deleted=0 "
+          "AND json_valid(a.data) AND json_type(a.data,'\$.descriptor')='object' "
+          'AND NOT EXISTS(SELECT 1 FROM local_assets l WHERE l.book_id=r.id)',
+        )
+        .get();
+    for (final row in remote) {
+      final id = row.read<String>('id');
+      if (linked.contains(id)) continue;
+      Object? payload;
+      try {
+        payload = jsonDecode(row.read<String>('payload'));
+      } catch (_) {}
+      if (payload is Map && payload['format'] == 'audio') continue;
+      await db.customStatement(
+        "UPDATE records SET deleted=1,payload='null',revision=revision+1 "
+        'WHERE id=?',
+        [id],
+      );
+    }
   }
-}
-
-/// Optional legacy cloud transport; its outbox archive is filled at startup.
-Future<void> _cloudTransport(GeneratedDatabase db) async {
+  for (final table in [
+    'peer_sync_files',
+    'peer_sync_deletions',
+    'peer_sync_scan_cache',
+    'peer_sync_remote_index',
+    'peer_app_versions',
+    'peer_app_projection',
+    'peer_app_alias',
+    'cloud_local_state',
+    'legacy_cloud_outbox',
+    'outbox',
+    'remote_records',
+  ]) {
+    await db.customStatement('DROP TABLE IF EXISTS $table');
+  }
   await db.customStatement(
-    'CREATE TABLE IF NOT EXISTS cloud_local_state(id TEXT PRIMARY KEY,digest TEXT NOT NULL)',
-  );
-  await db.customStatement(
-    'CREATE TABLE IF NOT EXISTS legacy_cloud_outbox(operation_id TEXT PRIMARY KEY,entity_id TEXT NOT NULL,operation TEXT NOT NULL,state TEXT NOT NULL,receipt TEXT,attempted INTEGER NOT NULL,archived_at TEXT NOT NULL)',
+    "DELETE FROM metadata WHERE (key>='peer-' AND key<'peer.') "
+    "OR (key>='peer:' AND key<'peer;') "
+    "OR key IN ('cloud-transport-enabled','sync_identity','cursor')",
   );
 }

@@ -16,7 +16,6 @@ import 'library_mapper.dart';
 import 'library_exchange.dart';
 import 'personal_library.dart';
 import 'models.dart';
-import 'obsidian_sync_service.dart';
 import 'activity_store.dart';
 import 'cover_sync.dart';
 import 'automatic_metadata.dart';
@@ -33,7 +32,6 @@ class LibraryService extends ChangeNotifier {
   final AssetStore? assets;
   LibraryService(this.local, this.client, {this.assets});
   late final folderStorage = LibraryFolderStorage(this);
-  ObsidianConfig? config;
   LibraryRepository get repository => LibraryRepository(
     local,
     personalLibraryNamespace,
@@ -43,18 +41,13 @@ class LibraryService extends ChangeNotifier {
       ActivityStore(local, personalLibraryNamespace, catalog: repository);
   NoteStore? get notes =>
       NoteStore(local, personalLibraryNamespace, catalog: repository);
-  CoverSync? get covers =>
-      assets == null ? null : CoverSync.local(assets!, client);
-  LibraryExchange? get exchange => config == null
-      ? null
-      : LibraryExchange(local, repository, config!.namespace);
+  CoverSync? get covers => assets == null ? null : CoverSync.local(assets!);
   Future<String?> chooseCover() async {
     if (covers == null) throw StateError('Хранилище обложек недоступно.');
     return covers!.choose();
   }
 
   final Set<String> _knownNamespaces = {};
-  final Set<String> _uploadedCovers = {};
   bool _migrated = false;
   Future<void> _reloadTail = Future.value();
   Future<void>? _refresh;
@@ -443,42 +436,11 @@ class LibraryService extends ChangeNotifier {
     policies[id] = Map.of(policy);
   }
 
-  bool syncing = false, _syncAgain = false, _disposed = false;
+  bool _disposed = false;
   bool loading = false;
   String? error;
-  Timer? _timer;
-  int _generation = 0;
   void _notify() {
     if (!_disposed) notifyListeners();
-  }
-
-  Future<void> connect(ObsidianConfig? next) async {
-    _generation++;
-    _timer?.cancel();
-    config = next;
-    await local.setMeta('obsidian-library-enabled', '${next != null}');
-    await local.setMeta('obsidian-active-namespace', next?.namespace ?? '');
-    error = null;
-    await reload();
-    if (next != null && !_disposed) {
-      await configureTimer();
-      await sync();
-    }
-  }
-
-  Future<void> configureTimer() async {
-    final generation = _generation;
-    final seconds =
-        int.tryParse(await local.meta('obsidian-sync-seconds') ?? '') ?? 30;
-    if (_disposed || generation != _generation) return;
-    _timer?.cancel();
-    _timer = null;
-    if (config != null && seconds > 0) {
-      _timer = Timer.periodic(
-        Duration(seconds: seconds.clamp(30, 3600)),
-        (_) => unawaited(sync()),
-      );
-    }
   }
 
   Future<void> reload() {
@@ -501,7 +463,6 @@ class LibraryService extends ChangeNotifier {
 
   Future<void> _reload() async {
     if (_disposed) return;
-    final generation = _generation;
     loading = true;
     error = null;
     // Paint the working copy even while an external folder is reconnecting.
@@ -533,11 +494,6 @@ class LibraryService extends ChangeNotifier {
         await local.setMeta('library-legacy-migration-v1', '1');
         _migrated = true;
       }
-      if (config != null) {
-        _knownNamespaces.add(config!.namespace);
-        await exchange!.importCached();
-        await exchange!.journals();
-      }
       if (_disposed) return;
       if (assets != null) {
         await AutomaticMetadata(assets!).refresh(
@@ -554,7 +510,7 @@ class LibraryService extends ChangeNotifier {
           'Не удалось обновить сведения о некоторых файлах: ${describeError(e)}';
     } finally {
       loading = false;
-      if (generation == _generation && !_disposed) await loadCached();
+      if (!_disposed) await loadCached();
     }
   }
 
@@ -627,52 +583,6 @@ class LibraryService extends ChangeNotifier {
         ),
       );
     _notify();
-  }
-
-  Future<void> sync() async {
-    final adapter = exchange, connection = config;
-    if (syncing) {
-      _syncAgain = true;
-      return;
-    }
-    if (adapter == null || connection == null || _disposed) return;
-    final generation = _generation;
-    syncing = true;
-    error = null;
-    _notify();
-    try {
-      do {
-        _syncAgain = false;
-        await adapter.importCached();
-        final includeCover =
-            await local.meta('obsidian-sync-covers') != 'false';
-        for (final id in (await adapter.bindings()).keys) {
-          if (includeCover) await _publishCover(id);
-          await adapter.queue(id, includeCover: includeCover);
-        }
-        await adapter.journals(send: true);
-        if (await ObsidianSyncService(
-          adapter.remote,
-          client,
-          connection,
-          covers: assets == null
-              ? null
-              : CoverSync(assets!, client, connection),
-        ).run()) {
-          _syncAgain = true;
-        }
-        await adapter.importCached();
-        await adapter.journals();
-      } while (_syncAgain && generation == _generation && !_disposed);
-    } catch (e) {
-      if (generation == _generation) error = describeError(e);
-    } finally {
-      syncing = false;
-      await reload();
-      if (generation != _generation && config != null && !_disposed) {
-        unawaited(sync());
-      }
-    }
   }
 
   LibraryEntry? sourceDraft(String id) => _bySource[id];
@@ -1058,42 +968,6 @@ class LibraryService extends ChangeNotifier {
     );
   }
 
-  Future<void> exportToObsidian(String id) async {
-    if (exchange == null) {
-      throw StateError('Подключите Obsidian в разделе обмена данными.');
-    }
-    final includeCover = await local.meta('obsidian-sync-covers') != 'false';
-    if (includeCover) await _publishCover(id);
-    await exchange!.queue(id, explicit: true, includeCover: includeCover);
-    await sync();
-  }
-
-  Future<void> _publishCover(String id) async {
-    final connection = config;
-    if (connection == null || assets == null) return;
-    final card = (await repository.entries())[id];
-    final reference = card?.item.value('cover');
-    final hash = CoverSync.referenceHash(reference);
-    if (hash == null ||
-        _uploadedCovers.contains('${connection.namespace}:$hash')) {
-      return;
-    }
-    final path = coverReferencePath('$reference');
-    if (path == null) return;
-    await CoverSync(assets!, client, connection).publishCached(hash, path);
-    _uploadedCovers.add('${connection.namespace}:$hash');
-  }
-
-  Future<void> useObsidian(String id) async {
-    await exchange?.resolve(id, useRemote: true);
-    await reload();
-  }
-
-  Future<void> keepLocal(String id) async {
-    await exchange?.resolve(id, useRemote: false);
-    await sync();
-  }
-
   Future<void> toRecommendations(String id) async {
     final entry = (await repository.entries())[id];
     if (entry == null) return;
@@ -1188,7 +1062,6 @@ class LibraryService extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _timer?.cancel();
     folderStorage.dispose();
     super.dispose();
   }

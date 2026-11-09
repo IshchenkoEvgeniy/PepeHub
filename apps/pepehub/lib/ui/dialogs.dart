@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../sync/sync_client.dart';
 import '../reader/book_formats.dart';
-import '../diagnostics/user_message.dart';
 
 class AddBookDialog extends StatefulWidget {
   final bool? audioOnly;
@@ -140,96 +138,6 @@ class _SessionDialogState extends State<SessionDialog> {
         onPressed: () {
           if (form.currentState!.validate()) {
             Navigator.pop(context, int.parse(minutes.text));
-          }
-        },
-        child: const Text('Сохранить'),
-      ),
-    ],
-  );
-}
-
-class SyncDialog extends StatefulWidget {
-  final SyncConfig? initial;
-  const SyncDialog({super.key, this.initial});
-  @override
-  State<SyncDialog> createState() => _SyncDialogState();
-}
-
-class _SyncDialogState extends State<SyncDialog> {
-  late final endpoint = TextEditingController(
-    text: widget.initial?.endpoint ?? 'http://127.0.0.1:8787',
-  );
-  late final device = TextEditingController(
-    text: widget.initial?.deviceId ?? '',
-  );
-  late final token = TextEditingController(text: widget.initial?.token ?? '');
-  String? error;
-  @override
-  void dispose() {
-    endpoint.dispose();
-    device.dispose();
-    token.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Синхронизация'),
-    content: SizedBox(
-      width: 480,
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Без подключения библиотека работает локально. Для обмена используйте адрес своего сервера и ключ устройства.',
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: endpoint,
-              decoration: const InputDecoration(labelText: 'Адрес сервера'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: device,
-              decoration: const InputDecoration(labelText: 'ID устройства'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: token,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'Ключ устройства'),
-            ),
-            if (error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text(
-                  error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-          ],
-        ),
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: const Text('Отмена'),
-      ),
-      FilledButton(
-        onPressed: () {
-          try {
-            final config = SyncConfig(
-              endpoint.text.trim(),
-              device.text.trim(),
-              token.text.trim(),
-            );
-            config.validate();
-            Navigator.pop(context, config);
-          } catch (e) {
-            setState(() => error = describeError(e));
           }
         },
         child: const Text('Сохранить'),

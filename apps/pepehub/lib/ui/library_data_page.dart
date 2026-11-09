@@ -12,7 +12,7 @@ import '../diagnostics/user_message.dart';
 import '../library/library_backup.dart';
 import '../library/library_folder_storage.dart';
 import '../library/library_service.dart';
-import '../sync/peer/peer_files.dart';
+import '../storage/folder_files.dart';
 import 'pepe_widgets.dart';
 import 'reading_roots_page.dart' show readableFolderPath;
 import 'settings_components.dart';
@@ -570,7 +570,7 @@ class _LibraryDataPageState extends State<LibraryDataPage> {
                 when !info!.ignoresTemporary)
               _plaque(
                 Icons.sync,
-                'Папка синхронизируется Syncthing. Добавьте .pepehub в исключения: там временные файлы записи, передавать их не нужно.',
+                'Папка синхронизируется Syncthing. Добавьте .pepehub* в исключения: так называются временные файлы записи, передавать их не нужно.',
                 color: palette.accent,
                 key: const ValueKey('library-folder-stignore'),
                 action: TextButton(
@@ -578,7 +578,7 @@ class _LibraryDataPageState extends State<LibraryDataPage> {
                       ? null
                       : () => _run(() async {
                           await folder.ignoreTemporaryFiles(root);
-                          return 'Строка .pepehub добавлена в .stignore. На телефоне добавьте её '
+                          return 'Строка .pepehub* добавлена в .stignore. На телефоне добавьте её '
                               'в игнорируемые шаблоны этой папки в Syncthing.';
                         }),
                   child: const Text('Добавить'),
@@ -637,7 +637,7 @@ class _LibraryDataPageState extends State<LibraryDataPage> {
             Text(
               '1. В Syncthing добавьте одну и ту же папку на телефоне и ПК — PepeHub-library или папку, в которой она лежит.\n'
               '2. На каждом устройстве выберите эту папку здесь, в «Папке библиотеки».\n'
-              '3. В игнорируемых шаблонах папки в Syncthing добавьте строку .pepehub — '
+              '3. В игнорируемых шаблонах папки в Syncthing добавьте строку .pepehub* — '
               'там временные файлы записи.\n\n'
               'PepeHub сохраняет изменения в папку сам и проверяет её каждые несколько секунд. '
               'Сессии чтения записываются не чаще раза в 2 минуты и сразу, когда приложение сворачивается. '
@@ -651,17 +651,19 @@ class _LibraryDataPageState extends State<LibraryDataPage> {
             const SizedBox(height: 8),
             TextButton.icon(
               onPressed: () async {
-                await Clipboard.setData(const ClipboardData(text: '.pepehub'));
+                await Clipboard.setData(
+                  const ClipboardData(text: syncthingIgnorePattern),
+                );
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Строка .pepehub скопирована'),
+                      content: Text('Строка .pepehub* скопирована'),
                     ),
                   );
                 }
               },
               icon: const Icon(Icons.copy, size: 18),
-              label: const Text('Скопировать шаблон .pepehub'),
+              label: const Text('Скопировать шаблон .pepehub*'),
             ),
           ],
         ),

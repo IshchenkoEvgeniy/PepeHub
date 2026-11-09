@@ -279,7 +279,6 @@ void main() {
       );
       expect(h.captions.settings.subtitle, 'external:${first.id}');
       expect(await h.videos.subtitles(h.lessons.first), hasLength(1));
-      expect(await h.repository.pending(), isEmpty);
     },
   );
   test('dual captions have independent delays and hiding translation changes no coverage', () async {

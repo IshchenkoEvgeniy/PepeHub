@@ -63,13 +63,6 @@ void main() {
       expect(tracks.first.hash, startsWith('external:'));
       expect(tracks.last.bytes, 0);
       expect(await root.list().toList(), isEmpty);
-      final outbox = await db
-          .customSelect('SELECT operation FROM outbox')
-          .get();
-      expect(
-        outbox.map((r) => r.read<String>('operation')).join(),
-        isNot(contains('content://')),
-      );
       expect(audioSourceUri(tracks.first.path).scheme, 'content');
       expect(audioSourceUri(r'C:\Books\one.mp3').scheme, 'file');
     },

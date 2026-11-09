@@ -334,7 +334,6 @@ void main() {
     expect((await h.videos.annotations(lesson)).single.body, 'Why this tense?');
     expect(await h.videos.intervals(), isEmpty);
     expect(await h.videos.progress(lesson), isNull);
-    expect(await h.repository.pending(), isEmpty);
     await expectLater(
       h.videos.saveAnnotation(
         lesson,

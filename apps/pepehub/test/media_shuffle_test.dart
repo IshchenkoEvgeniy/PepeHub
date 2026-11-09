@@ -78,7 +78,6 @@ void main() {
     await h.player.setShuffle(true);
     expect(identical(h.player.playbackOrder, order), isTrue);
     expect((await h.videos.lessons()).map((lesson) => lesson.id), originalIds);
-    expect(await h.repository.pending(), isEmpty);
   });
 
   test('automatic shuffle plays each song once and stops at the end without wrapping', () async {

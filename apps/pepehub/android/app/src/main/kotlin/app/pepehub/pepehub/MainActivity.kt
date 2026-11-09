@@ -10,22 +10,22 @@ class MainActivity : AudioServiceActivity() {
         private val videoChannels = java.util.WeakHashMap<FlutterEngine, VideoFilesChannel>()
         private val videoWindowChannels = java.util.WeakHashMap<FlutterEngine, VideoWindowChannel>()
         private val peerChannels = java.util.WeakHashMap<FlutterEngine, PeerFilesChannel>()
-        private val peerNetworkChannels = java.util.WeakHashMap<FlutterEngine, PeerNetworkChannel>()
-        private val peerBackgroundChannels = java.util.WeakHashMap<FlutterEngine, PeerBackgroundChannel>()
         private val updateChannels = java.util.WeakHashMap<FlutterEngine, UpdateChannel>()
         private val reminderChannels = java.util.WeakHashMap<FlutterEngine, ReminderChannel>()
+        private const val LEGACY_SYNC_JOB_ID = 42591
     }
     private var folders: AudioFolderChannel? = null
     private var books: BookFileChannel? = null
     private var videos: VideoFilesChannel? = null
     private var videoWindow: VideoWindowChannel? = null
     private var peers: PeerFilesChannel? = null
-    private var peerBackground: PeerBackgroundChannel? = null
     private var updates: UpdateChannel? = null
     private var reminders: ReminderChannel? = null
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState?.getBoolean("bookIntentConsumed") != true) books?.receive(intent)
+        // Background device synchronization was removed; drop its scheduled job.
+        getSystemService(android.app.job.JobScheduler::class.java)?.cancel(LEGACY_SYNC_JOB_ID)
     }
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
@@ -53,24 +53,6 @@ class MainActivity : AudioServiceActivity() {
             })
         }
         updates?.attach(this)
-        if (!peerBackgroundChannels.containsKey(flutterEngine)) {
-            val channel = PeerBackgroundChannel(this, flutterEngine.dartExecutor.binaryMessenger)
-            peerBackgroundChannels[flutterEngine] = channel
-            flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
-                override fun onPreEngineRestart() {}
-                override fun onEngineWillDestroy() { channel.dispose(); peerBackgroundChannels.remove(flutterEngine) }
-            })
-        }
-        peerBackground = peerBackgroundChannels[flutterEngine]
-        peerBackground?.attach(this)
-        if (!peerNetworkChannels.containsKey(flutterEngine)) {
-            val channel = PeerNetworkChannel(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
-            peerNetworkChannels[flutterEngine] = channel
-            flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
-                override fun onPreEngineRestart() {}
-                override fun onEngineWillDestroy() { channel.dispose(); peerNetworkChannels.remove(flutterEngine) }
-            })
-        }
         folders = channels[flutterEngine] ?: AudioFolderChannel(this, flutterEngine.dartExecutor.binaryMessenger).also { channel ->
             channels[flutterEngine] = channel
             flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
@@ -138,7 +120,7 @@ class MainActivity : AudioServiceActivity() {
         super.onUserLeaveHint()
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        if (reminders?.onPermissions(requestCode, grantResults) != true && peerBackground?.onPermissions(requestCode, grantResults) != true) super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (reminders?.onPermissions(requestCode, grantResults) != true) super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
     override fun onPictureInPictureModeChanged(inPictureInPicture: Boolean, configuration: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(inPictureInPicture, configuration)
@@ -154,7 +136,6 @@ class MainActivity : AudioServiceActivity() {
         videos?.detach(this)
         videoWindow?.detach(this)
         peers?.detach(this)
-        peerBackground?.detach(this)
         updates?.detach(this)
         reminders?.detach(this)
         super.onDestroy()

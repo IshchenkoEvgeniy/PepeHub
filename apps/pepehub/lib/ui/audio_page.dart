@@ -8,7 +8,6 @@ import 'audio_rewind_options.dart';
 import 'package:flutter/material.dart';
 
 import '../data/repository.dart';
-import '../sync/peer/app_sync_usage.dart';
 import '../media/audio_controller.dart';
 import 'pepe_widgets.dart';
 import 'shelf_components.dart';
@@ -32,22 +31,6 @@ class AudioPage extends StatefulWidget {
 }
 
 class _AudioPageState extends State<AudioPage> {
-  void Function()? _releaseSync;
-  @override
-  void initState() {
-    super.initState();
-    _releaseSync = AppSyncUsage.hold(
-      widget.controller.assets.repository.db,
-      'audio-notes',
-    );
-  }
-
-  @override
-  void dispose() {
-    _releaseSync?.call();
-    super.dispose();
-  }
-
   double? dragPosition, bookDragPosition;
   AudioController get controller => widget.controller;
   Future<void> _anki() async {

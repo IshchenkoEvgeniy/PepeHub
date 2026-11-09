@@ -116,7 +116,6 @@ void main() {
     final tracks = await assets.audioTracks(first.bookId);
     expect(tracks.map((t) => t.filename), ['2.mp3', '1.mp3']);
     expect(await repository.records('book'), hasLength(1));
-    expect(await repository.pendingCount(), 0);
     expect(
       (await AudioLibraryRepository(db).progressForTrack(tracks.last.id))
           .locator
@@ -182,7 +181,6 @@ void main() {
         ),
         throwsA(isA<ImportCancelled>()),
       );
-      expect(await repository.pendingCount(), 0);
       expect(await assets.directory.list().toList(), isEmpty);
     },
   );
@@ -197,7 +195,6 @@ void main() {
       throwsA(anything),
     );
     expect(await repository.records('book'), isEmpty);
-    expect(await repository.pendingCount(), 0);
     expect(await assets.directory.list().toList(), isEmpty);
   });
 
