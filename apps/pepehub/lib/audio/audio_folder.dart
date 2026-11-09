@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../reader/book_formats.dart';
+import 'audio_import.dart' show naturalAudioOrder;
 
 const audioFolderChannel = MethodChannel('app.pepehub/audio_folder');
 bool isAudioSupportFolder(String name) =>
@@ -101,6 +102,10 @@ Future<AudioFolder> scanAudioFolder(
   }
 
   await visit(root, 0);
+  // Directory listings come back in file-system order (alphabetical on NTFS,
+  // arbitrary on ext4 or on another device). Sort so the same folder gives the
+  // same track order everywhere.
+  files.sort((a, b) => naturalAudioOrder(a.name, b.name));
   return AudioFolder(
     p.basename(p.normalize(path)),
     files,

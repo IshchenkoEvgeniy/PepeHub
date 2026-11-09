@@ -106,6 +106,9 @@ class LibraryPage extends StatefulWidget {
 class _LibraryPageState extends State<LibraryPage> {
   final storage = const FlutterSecureStorage(), httpClient = http.Client();
   List<LibraryRecord> books = [];
+
+  /// Unstarted audiobooks whose files all belong to a fuller shown book.
+  Map<String, Set<String>> containedIn = {};
   ReadingShelfSources shelfSources = ReadingShelfSources([]);
   Map<String, Map<String, dynamic>> effectiveReadingInfo = {};
   bool _remoteOnly(LibraryRecord book) =>
@@ -265,6 +268,7 @@ class _LibraryPageState extends State<LibraryPage> {
       reading = next;
       selectedBooks.clear();
       books = [];
+      containedIn = {};
       roots = [];
       selectedRoot = null;
       _searchDebounce?.cancel();
@@ -469,6 +473,9 @@ class _LibraryPageState extends State<LibraryPage> {
         repo,
         reading: readingSection,
       ).load();
+      final containedFuture = readingSection
+          ? Future.value(const <(String, String)>[])
+          : AudioLibraryRepository(repo.db).containedBooks();
       final summaryFuture = readingSection
           ? Future.value(
               <String, ({int? total, int? position, double speed})>{},
@@ -487,6 +494,7 @@ class _LibraryPageState extends State<LibraryPage> {
         rootsFuture,
         defaultRootFuture,
         summaryFuture,
+        containedFuture,
       ]);
       // File-less cards are counted on the shelf (see _statusCounts).
       final unavailable =
@@ -518,6 +526,18 @@ class _LibraryPageState extends State<LibraryPage> {
             flags['audio-user-hidden:${book.id}'] != '1' &&
             flags['audio-library-hidden:${book.id}'] != '1') {
           b.add(book);
+        }
+      }
+      // The same files connected twice (an overlapping folder, another
+      // grouping mode, a card from another device) must not show up as both
+      // the whole book and its unstarted parts. Only hidden on the shelf (see
+      // _redundant): the part's card and data stay, and it returns if the
+      // whole book goes away.
+      final shownIds = {for (final book in b) book.id};
+      final wholes = <String, Set<String>>{};
+      for (final (part, whole) in await containedFuture) {
+        if (shownIds.contains(whole) && shownIds.contains(part)) {
+          (wholes[part] ??= {}).add(whole);
         }
       }
       final c = await conflictsFuture;
@@ -647,6 +667,7 @@ class _LibraryPageState extends State<LibraryPage> {
                   '${coverMetadata['audio-cover:${book.id}'] ?? ''}:${coverMetadata['audio-cover-hidden:${book.id}'] ?? ''}',
           };
           books = b;
+          containedIn = wholes;
           deletedReadingBooks = deleted;
           unavailableCount = unavailable;
           statusOverrides = overrides;
@@ -2078,6 +2099,15 @@ class _LibraryPageState extends State<LibraryPage> {
     },
   );
 
+  /// A part is left out of «Вся библиотека» when its whole book is shown, and
+  /// out of a folder when that folder also holds the whole book; a folder that
+  /// only holds the parts still lists them.
+  bool _redundant(LibraryRecord book, Set<String>? rootIds) {
+    final wholes = containedIn[book.id];
+    if (wholes == null) return false;
+    return rootIds == null || wholes.any(rootIds.contains);
+  }
+
   List<Object?>? _visibleInputs;
   List<LibraryRecord> _visibleCache = [];
   Timer? _searchDebounce;
@@ -2097,6 +2127,7 @@ class _LibraryPageState extends State<LibraryPage> {
       readingSortReverse,
       audioSortReverse,
       bookPrefs,
+      containedIn,
       audioSummaries,
       audioRecent,
       audioSourcePaths,
@@ -2120,6 +2151,7 @@ class _LibraryPageState extends State<LibraryPage> {
         .where(
           (b) =>
               (rootIds == null || rootIds.contains(b.id)) &&
+              !_redundant(b, rootIds) &&
               // Missing and file-less books live in «Скрытые и недоступные».
               (!reading ||
                   !deletedReadingBooks.contains(b.id) && !_remoteOnly(b)) &&
@@ -3280,11 +3312,13 @@ class _LibraryPageState extends State<LibraryPage> {
       shelfSources,
       statusOverrides,
       readingPrefs,
+      containedIn,
     ];
     if (listEquals(inputs, _countInputs)) return _counts;
     final counts = <String, int>{};
     void add(String key) => counts[key] = (counts[key] ?? 0) + 1;
     for (final book in books) {
+      if (_redundant(book, null)) continue;
       if (deletedReadingBooks.contains(book.id)) {
         add('deleted');
       } else if (_remoteOnly(book)) {

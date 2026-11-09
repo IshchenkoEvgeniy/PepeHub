@@ -64,6 +64,31 @@ void main() {
     expect(groupAudioCatalog(folder, mode: 'files'), hasLength(4));
   });
 
+  test('scan order does not depend on the file system', () async {
+    final root = await Directory.systemTemp.createTemp('scan-order-');
+    addTearDown(() => root.delete(recursive: true));
+    // Created out of order: a listing may return them in any order.
+    for (final name in [
+      'Book B/1.mp3',
+      '10.mp3',
+      'Book A/2.mp3',
+      '2.mp3',
+      'Book A/10.mp3',
+    ]) {
+      final file = File('${root.path}/$name');
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes(List.filled(16, 1));
+    }
+    final folder = await scanAudioFolder(root.path);
+    expect(folder.files.map((f) => f.name), [
+      '2.mp3',
+      '10.mp3',
+      'Book A/2.mp3',
+      'Book A/10.mp3',
+      'Book B/1.mp3',
+    ]);
+  });
+
   test('catalog is atomic, deduplicated, and replaces aggregate preserving position', () async {
     final root = await Directory.systemTemp.createTemp('catalog-test-');
     final db = AppDatabase(NativeDatabase.memory());

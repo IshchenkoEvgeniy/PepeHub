@@ -10,6 +10,45 @@ class AudioLibraryRepository {
   final AppDatabase db;
   AudioLibraryRepository(this.db);
 
+  /// Pairs (part, whole): every audio file of `part` is also in `whole`,
+  /// which has more files, and `part` was never started. Such a part is a
+  /// leftover of the same files connected another way (an overlapping folder,
+  /// another grouping mode, a card from another device) and only duplicates
+  /// `whole` on the shelf. Files are compared by identity, never by name:
+  /// imported copies by content hash; linked files by path, and an Android
+  /// document by its document id, which is the same under any picked folder
+  /// (`content://…/tree/<folder>/document/<file>`).
+  Future<List<(String, String)>> containedBooks() async {
+    final rows = await db.customSelect('''
+      WITH h AS (
+        SELECT DISTINCT e.book_id AS book,
+          CASE WHEN t.asset_hash NOT LIKE 'external:%' THEN t.asset_hash
+            WHEN r.path LIKE 'content:%' AND instr(r.path,'/document/')>0
+              THEN 'doc:'||substr(r.path,instr(r.path,'/document/')+10)
+            ELSE 'path:'||r.path END AS hash
+        FROM audio_tracks t JOIN audio_editions e ON e.id=t.edition_id
+        JOIN audio_resources r ON r.sha256=t.asset_hash
+      ),
+      n AS (SELECT book,COUNT(*) AS c FROM h GROUP BY book),
+      started AS (
+        SELECT DISTINCT e.book_id AS book FROM audio_progress p
+        JOIN audio_editions e ON e.id=p.edition_id
+        JOIN audio_tracks t ON t.id=p.track_id
+        WHERE p.position_ms>0 OR t.ordinal>0
+      )
+      SELECT a.book AS part,b.book AS whole
+      FROM h a JOIN h b ON b.hash=a.hash AND b.book<>a.book
+      JOIN n na ON na.book=a.book JOIN n nb ON nb.book=b.book
+      WHERE nb.c>na.c AND a.book NOT IN (SELECT book FROM started)
+      GROUP BY a.book,b.book
+      HAVING COUNT(*)=MAX(na.c)
+    ''').get();
+    return [
+      for (final row in rows)
+        (row.read<String>('part'), row.read<String>('whole')),
+    ];
+  }
+
   Future<Map<String, ({int? total, int? position, double speed})>>
   bookSummaries({String? bookId}) async {
     final rows = await db
