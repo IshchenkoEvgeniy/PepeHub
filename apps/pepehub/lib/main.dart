@@ -165,6 +165,8 @@ class _PepeHubAppState extends State<PepeHubApp> {
       if (host == null) return false;
       host.showSnackBar(
         SnackBar(
+          // Flutter keeps snack bars with an action until dismissed.
+          persist: false,
           content: const Text(
             'Время для чтения или аудиокниги. Проверьте свои цели на сегодня.',
           ),
@@ -213,6 +215,8 @@ class _PepeHubAppState extends State<PepeHubApp> {
     _notifiedUpdate = '${release.version}+${release.build}';
     host.showSnackBar(
       SnackBar(
+        // Flutter keeps snack bars with an action until dismissed.
+        persist: false,
         content: Text('Доступно обновление PepeHub ${release.version}'),
         duration: const Duration(seconds: 10),
         action: SnackBarAction(

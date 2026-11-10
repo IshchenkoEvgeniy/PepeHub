@@ -139,7 +139,7 @@ void main() {
         expect((await position())['textOffset'], before['textOffset']);
         await tapReaderControl(tester, find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
-        await tapSetting('Прокрутка');
+        await tapSetting('Вертикально');
         await tester.pumpAndSettle();
         await tester.ensureVisible(
           find.byKey(const ValueKey('reader-appearance-done')),
@@ -150,7 +150,7 @@ void main() {
         expect(tester.takeException(), isNull);
         await tapReaderControl(tester, find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
-        await tapSetting('Страницы');
+        await tapSetting('Горизонтально');
         await tester.pumpAndSettle();
         await tester.ensureVisible(
           find.byKey(const ValueKey('reader-appearance-done')),
@@ -164,7 +164,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('reader-palette:dark')));
         await tester.pumpAndSettle();
-        await tapSetting('Прокрутка');
+        await tapSetting('Вертикально');
         await tester.pumpAndSettle();
         await tapSetting('Каждая глава отдельно');
         await tester.pumpAndSettle();

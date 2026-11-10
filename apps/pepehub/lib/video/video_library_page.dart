@@ -218,6 +218,8 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
     if (removed == null || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        // Flutter keeps snack bars with an action until dismissed.
+        persist: false,
         content: Text('«${item.title}» удалён из медиатеки'),
         action: SnackBarAction(
           label: 'Вернуть',

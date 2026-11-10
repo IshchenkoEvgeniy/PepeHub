@@ -312,6 +312,8 @@ class _LibraryPageState extends State<LibraryPage> {
     final scheme = Theme.of(context).colorScheme;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        // Flutter keeps snack bars with an action until dismissed.
+        persist: false,
         content: Text(outcome.message),
         backgroundColor: outcome.failed ? scheme.error : null,
         action: outcome.failed && widget.assets != null

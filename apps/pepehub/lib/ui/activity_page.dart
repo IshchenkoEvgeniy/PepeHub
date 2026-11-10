@@ -267,6 +267,8 @@ class _ActivityPageState extends State<ActivityPage> {
       if (removed && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            // Flutter keeps snack bars with an action until dismissed.
+            persist: false,
             content: const Text('Запись удалена'),
             action: SnackBarAction(
               label: 'Отменить',

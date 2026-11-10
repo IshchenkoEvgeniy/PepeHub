@@ -163,6 +163,8 @@ extension _LibraryPageBookMenu on _LibraryPageState {
       if (value == 'hide-book' && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            // Flutter keeps snack bars with an action until dismissed.
+            persist: false,
             content: const Text(
               'Книга скрыта с полки. Файл и история сохранены.',
             ),

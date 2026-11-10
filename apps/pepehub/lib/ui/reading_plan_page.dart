@@ -118,6 +118,8 @@ class _ReadingPlanPageState extends State<ReadingPlanPage> {
           ..hideCurrentSnackBar()
           ..showSnackBar(
             SnackBar(
+              // Flutter keeps snack bars with an action until dismissed.
+              persist: false,
               content: const Text('План удалён. Статистика сохранена.'),
               action: SnackBarAction(
                 label: 'Отменить',

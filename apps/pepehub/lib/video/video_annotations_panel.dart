@@ -87,6 +87,8 @@ class _VideoAnnotationsPanelState extends State<VideoAnnotationsPanel> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
+          // Flutter keeps snack bars with an action until dismissed.
+          persist: false,
           content: const Text('Заметка удалена'),
           action: SnackBarAction(
             label: 'Отменить',

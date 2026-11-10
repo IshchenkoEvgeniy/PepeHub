@@ -56,9 +56,10 @@ void main() {
     expect(imageHeaderSize(Uint8List.fromList([0x89, 0x50])), isNull);
   });
 
-  for (final paged in [true, false]) {
+  for (final mode in ['pages', 'seamless', 'compact']) {
+    final paged = mode == 'pages';
     testWidgets(
-      'a wide figure keeps its proportions (paged=$paged) and opens on tap',
+      'a wide figure keeps its proportions ($mode) and opens on tap',
       (tester) async {
         tester.view.physicalSize = const Size(390, 800);
         tester.view.devicePixelRatio = 1;
@@ -80,7 +81,7 @@ void main() {
                 margin: 20,
                 anchor: 0,
                 scrolling: !paged,
-                compactFlow: !paged,
+                compactFlow: mode == 'compact',
                 firstChapter: true,
                 lastChapter: true,
                 preferences: const ReaderPreferences(),
@@ -106,9 +107,13 @@ void main() {
         final size = tester.getSize(image);
         expect(size.width, closeTo(350, .5));
         expect(size.height, closeTo(350 * 90 / 600, .5));
-        if (paged) {
-          // The figure shares its screen with the text before and after it.
+        if (mode != 'compact') {
+          // The figure shares its screen with the text before and after it,
+          // in sideways pages and in vertical pages alike.
           expect(controller.pageInfo.value?.count, 1);
+          expect(controller.pageInfo.value?.page, 1);
+        } else {
+          expect(controller.pageInfo.value, isNull);
         }
         await tester.tapAt(tester.getCenter(image));
         await tester.pump();

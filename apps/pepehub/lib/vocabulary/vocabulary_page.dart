@@ -159,6 +159,8 @@ class _VocabularyPageState extends State<VocabularyPage> {
       if (saved && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
+            // Flutter keeps snack bars with an action until dismissed.
+            persist: false,
             content: Text(
               'Экспортировано карточек: ${batch.length}. В Anki выберите тип «Обычный» / Basic.',
             ),

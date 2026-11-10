@@ -3,13 +3,11 @@ import 'package:flutter/material.dart';
 import 'epub.dart';
 import 'reader_fonts.dart';
 
-/// Text reading modes: `pages` (turn pages), `compact` (one scroll through the
-/// whole book) and `scroll` (scroll one chapter at a time). The former
-/// `seamless` mode stacked page-sized blocks with gaps; it now opens as
-/// [compact], which scrolls the same whole-book flow without empty space.
+/// Text reading modes: `pages` (turn pages sideways), `seamless` (screen
+/// pages scrolled vertically, divided by a rule), `compact` (one vertical
+/// ribbon without page breaks) and `scroll` (vertical pages of one chapter).
 String readerMode(Object? value) => switch (value) {
-  'pages' || 'scroll' || 'compact' => value as String,
-  'seamless' => 'compact',
+  'pages' || 'seamless' || 'compact' || 'scroll' => value as String,
   _ => 'pages',
 };
 

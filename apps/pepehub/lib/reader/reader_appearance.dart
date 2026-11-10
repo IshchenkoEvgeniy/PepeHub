@@ -389,6 +389,8 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
       );
     }
     final paged = value.mode == 'pages';
+    final chapters = value.mode == 'scroll';
+    final split = value.mode != 'compact';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -398,31 +400,47 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
           segments: const [
             ButtonSegment(
               value: 'pages',
-              label: Text('Страницы'),
-              icon: Icon(Icons.auto_stories_outlined),
+              label: Text('Горизонтально'),
+              icon: Icon(Icons.swap_horiz),
             ),
             ButtonSegment(
-              value: 'scrolling',
-              label: Text('Прокрутка'),
+              value: 'vertical',
+              label: Text('Вертикально'),
               icon: Icon(Icons.swap_vert),
             ),
           ],
-          selected: {paged ? 'pages' : 'scrolling'},
+          selected: {paged ? 'pages' : 'vertical'},
           onSelectionChanged: (v) => change(
-            value.copy(mode: v.first == 'pages' ? 'pages' : 'compact'),
+            value.copy(mode: v.first == 'pages' ? 'pages' : 'seamless'),
           ),
         ),
-        if (!paged)
+        if (!paged) ...[
+          SwitchListTile.adaptive(
+            key: const ValueKey('reader-mode-split'),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: const Text('Разбивка на страницы'),
+            subtitle: Text(
+              chapters
+                  ? 'Внутри главы страницы всегда разделены'
+                  : 'Страницы размером с экран, между ними черта',
+            ),
+            value: split,
+            onChanged: chapters
+                ? null
+                : (v) => change(value.copy(mode: v ? 'seamless' : 'compact')),
+          ),
           SwitchListTile.adaptive(
             key: const ValueKey('reader-mode-chapters'),
             contentPadding: EdgeInsets.zero,
             dense: true,
             title: const Text('Каждая глава отдельно'),
             subtitle: const Text('Иначе вся книга идёт одной лентой'),
-            value: value.mode == 'scroll',
+            value: chapters,
             onChanged: (v) =>
-                change(value.copy(mode: v ? 'scroll' : 'compact')),
+                change(value.copy(mode: v ? 'scroll' : 'seamless')),
           ),
+        ],
       ],
     );
   }
@@ -702,10 +720,7 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
                       section('Шрифт', fonts()),
                     ],
                     section('Цвет страницы', palettes()),
-                    section(
-                      widget.pdf ? 'Листание' : 'Режим чтения',
-                      readingMode(),
-                    ),
+                    section('Листать страницы', readingMode()),
                     if (widget.pdf && widget.pdfPageTools != null)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 18),

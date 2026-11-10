@@ -979,6 +979,8 @@ class _ReaderPageState extends State<ReaderPage>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
+          // Flutter keeps snack bars with an action until dismissed.
+          persist: false,
           content: const Text('Закладка сохранена'),
           action: SnackBarAction(
             label: 'Открыть',
@@ -1431,8 +1433,8 @@ class _ReaderPageState extends State<ReaderPage>
                                       width: box.maxWidth,
                                       height: box.maxHeight,
                                       margin: preferences.margin,
-                                      pageHeightFactor:
-                                          preferences.pageHeightFactor,
+                                      // A page is one screen, as in a printed book.
+                                      pageHeightFactor: 1,
                                       anchor: flow == null
                                           ? offset
                                           : flow.starts[chapter] + offset,
@@ -1526,9 +1528,8 @@ class _ReaderPageState extends State<ReaderPage>
                                         }
                                       },
                                       scrolling: preferences.mode != 'pages',
-                                      // Both scrolling modes flow without
-                                      // page-sized gaps.
-                                      compactFlow: preferences.mode != 'pages',
+                                      compactFlow:
+                                          preferences.mode == 'compact',
                                       firstChapter:
                                           wholeBookFlow || chapter == 0,
                                       lastChapter:
@@ -1665,6 +1666,7 @@ class _ReaderPageState extends State<ReaderPage>
                                         listenable: Listenable.merge([
                                           positionChanges,
                                           dragProgress,
+                                          viewportController.pageInfo,
                                         ]),
                                         builder: (context, _) => _footer(
                                           context,
@@ -1674,7 +1676,6 @@ class _ReaderPageState extends State<ReaderPage>
                                               : (d.starts[chapter] + offset) /
                                                     d.length,
                                           chromeInk,
-                                          wideLayout,
                                         ),
                                       ),
                                     ),
@@ -1742,7 +1743,7 @@ class _ReaderPageState extends State<ReaderPage>
         final progress = d.length == 0
             ? 0.0
             : (d.starts[chapter] + offset) / d.length;
-        final place = page != null && preferences.mode == 'pages'
+        final place = page != null
             ? '${page.page} из ${page.count}${page.complete ? '' : '+'}'
             : '${(progress * 100).floor()}%';
         final title = d.book.chapters[chapter].title.trim();
@@ -1910,13 +1911,24 @@ class _ReaderPageState extends State<ReaderPage>
         child: Text(label),
       ),
     );
+    Widget icon(String tooltip, IconData data, VoidCallback onTap) =>
+        IconButton(
+          tooltip: tooltip,
+          color: ink.withValues(alpha: .85),
+          onPressed: onTap,
+          icon: Icon(data, size: 23),
+        );
     final moreActions = PopupMenuButton<String>(
       tooltip: 'Другие действия',
-      iconColor: ink.withValues(alpha: .8),
+      iconColor: ink.withValues(alpha: .85),
       onSelected: (value) {
         switch (value) {
+          case 'bookmark':
+            _quickBookmark();
           case 'bookmarks':
             _bookmarks(context);
+          case 'notes':
+            _notes(context);
           case 'highlights':
             _toggleHighlights();
           case 'resources':
@@ -1928,11 +1940,21 @@ class _ReaderPageState extends State<ReaderPage>
         }
       },
       itemBuilder: (_) => [
+        PopupMenuItem(
+          value: 'bookmark',
+          enabled: !savingBookmark,
+          child: const Text('Добавить закладку'),
+        ),
         const PopupMenuItem(value: 'bookmarks', child: Text('Закладки')),
+        PopupMenuItem(
+          value: 'notes',
+          child: Text(notes.isEmpty ? 'Заметки' : 'Заметки · ${notes.length}'),
+        ),
         const PopupMenuItem(
           value: 'resources',
           child: Text('Сноски и иллюстрации'),
         ),
+        const PopupMenuDivider(),
         PopupMenuItem(
           value: 'highlights',
           child: Text(
@@ -1966,33 +1988,30 @@ class _ReaderPageState extends State<ReaderPage>
             moreActions,
           ]
         : <Widget>[
-            IconButton(
-              tooltip: 'Поиск по книге',
-              color: ink.withValues(alpha: .8),
-              onPressed: () => _search(context),
-              icon: const Icon(Icons.search, size: 22),
+            icon('Поиск по книге', Icons.search, () => _search(context)),
+            icon('Оглавление', Icons.toc, () => _contents(context)),
+            icon(
+              'Оформление чтения',
+              Icons.text_format,
+              () => _settings(context),
             ),
             moreActions,
           ];
     return Material(
       color: background,
+      elevation: 2,
+      shadowColor: Colors.black54,
       child: SafeArea(
         bottom: false,
-        child: Container(
-          height: 56,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: ink.withValues(alpha: .1)),
-            ),
-          ),
+        child: SizedBox(
+          height: 60,
           child: Row(
             children: [
               IconButton(
                 tooltip: 'Закрыть книгу',
                 color: ink,
                 onPressed: _close,
-                icon: const Icon(Icons.chevron_left, size: 26),
+                icon: const Icon(Icons.arrow_back),
               ),
               Expanded(
                 child: Column(
@@ -2012,13 +2031,14 @@ class _ReaderPageState extends State<ReaderPage>
                       style: TextStyle(
                         fontFamily: AppFonts.body,
                         fontSize: 12,
-                        color: ink.withValues(alpha: .58),
+                        color: ink.withValues(alpha: .6),
                       ),
                     ),
                   ],
                 ),
               ),
               ...tools,
+              const SizedBox(width: 4),
             ],
           ),
         ),
@@ -2036,12 +2056,14 @@ class _ReaderPageState extends State<ReaderPage>
     ),
   );
 
+  /// The bottom bar, as in a paper-like reader: where you are (page of the
+  /// book) and how to get elsewhere (the progress bar). Everything else lives
+  /// in the header.
   Widget _footer(
     BuildContext context,
     ReaderDocument d,
     double progress,
     Color ink,
-    bool wide,
   ) {
     final value = (dragProgress.value ?? progress).clamp(0.0, 1.0);
     if (!identical(_tickDocument, d)) {
@@ -2060,117 +2082,95 @@ class _ReaderPageState extends State<ReaderPage>
         ? tracker.speedChars / (tracker.speedActiveMs / 60000)
         : null;
     final minutesLeft = perMinute == null ? null : (left / perMinute).ceil();
-    Widget action(
-      String tooltip,
-      String label,
-      IconData icon,
-      VoidCallback? onTap,
-    ) => Expanded(
-      child: Tooltip(
-        message: tooltip,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 22, color: ink.withValues(alpha: .8)),
-                const SizedBox(height: 3),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: AppFonts.body,
-                    fontSize: 11,
-                    color: ink.withValues(alpha: .7),
-                  ),
+    final page = viewportController.pageInfo.value;
+    final dragging = dragProgress.value != null;
+    final place = page != null && !dragging
+        ? '${page.page} из ${page.count}${page.complete ? '' : '+'}'
+        : '${(value * 100).toStringAsFixed(dragging ? 1 : 0)}%';
+    final details = [
+      'глава ${chapter + 1} из ${d.texts.length}',
+      if (page != null && !dragging) '${(value * 100).round()}% книги',
+      if (minutesLeft != null && !dragging)
+        minutesLeft <= 1
+            ? 'до конца главы < 1 мин'
+            : 'до конца главы ~$minutesLeft мин',
+    ].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 48,
+                child: history.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Вернуться к прежнему месту',
+                        color: ink.withValues(alpha: .8),
+                        onPressed: _undoJump,
+                        icon: const Icon(Icons.undo),
+                      ),
+              ),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      place,
+                      key: const ValueKey('reader-footer-place'),
+                      style: TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w600,
+                        color: ink,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      details,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontSize: 12,
+                        color: ink.withValues(alpha: .6),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              SizedBox(
+                width: 48,
+                child: IconButton(
+                  tooltip: 'Сохранить закладку',
+                  color: ink.withValues(alpha: .8),
+                  onPressed: savingBookmark ? null : _quickBookmark,
+                  icon: const Icon(Icons.bookmark_add_outlined),
+                ),
+              ),
+            ],
           ),
-        ),
-      ),
-    );
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ReaderProgressFooter(
-          value: value,
-          ticks: _bookTicks,
-          ink: ink,
-          accent: PepeColors.of(context).accent,
-          onChanged: (v) => dragProgress.value = v,
-          onChangeCancel: () => dragProgress.value = null,
-          onChangeEnd: (v) {
-            dragProgress.value = null;
-            final target = d.locate(v);
-            _go(target.chapter, target.offset, keepControls: true);
-          },
-          details: [
-            Text(
-              '${(value * 100).toStringAsFixed(dragProgress.value == null ? 0 : 1)}% · глава ${chapter + 1} из ${d.texts.length}',
-            ),
-            if (minutesLeft != null)
-              Text(
-                minutesLeft <= 1
-                    ? 'до конца главы меньше минуты'
-                    : 'до конца главы ~$minutesLeft мин',
-              ),
-          ],
-          actions: [
-            if (history.isNotEmpty)
-              IconButton(
-                tooltip: 'Вернуться к прежнему месту',
-                visualDensity: VisualDensity.compact,
-                onPressed: _undoJump,
-                icon: const Icon(Icons.undo),
-              ),
-            if (wide)
-              IconButton(
-                tooltip: 'Сохранить закладку',
-                visualDensity: VisualDensity.compact,
-                onPressed: savingBookmark ? null : _quickBookmark,
-                icon: const Icon(Icons.bookmark_add_outlined),
-              ),
-          ],
-        ),
-        if (!wide)
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-            child: Row(
-              children: [
-                action(
-                  'Оглавление',
-                  'Оглавление',
-                  Icons.toc,
-                  () => _contents(context),
-                ),
-                action(
-                  'Оформление чтения',
-                  'Оформление',
-                  Icons.text_format,
-                  () => _settings(context),
-                ),
-                action(
-                  'Заметки книги',
-                  notes.isEmpty ? 'Заметки' : 'Заметки · ${notes.length}',
-                  Icons.edit_note,
-                  () => _notes(context),
-                ),
-                action(
-                  'Сохранить закладку',
-                  'Закладка',
-                  Icons.bookmark_add_outlined,
-                  savingBookmark ? null : _quickBookmark,
-                ),
-              ],
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: ReaderProgressBar(
+              value: value,
+              ticks: _bookTicks,
+              ink: ink,
+              accent: PepeColors.of(context).accent,
+              onChanged: (v) => dragProgress.value = v,
+              onChangeCancel: () => dragProgress.value = null,
+              onChangeEnd: (v) {
+                dragProgress.value = null;
+                final target = d.locate(v);
+                _go(target.chapter, target.offset, keepControls: true);
+              },
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 

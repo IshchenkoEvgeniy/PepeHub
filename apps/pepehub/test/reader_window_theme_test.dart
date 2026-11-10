@@ -219,7 +219,7 @@ void main() {
             expectReaderWindowTheme(tester, find.byType(AlertDialog), theme);
             await close();
             await close();
-            await tapReaderControl(tester, find.byTooltip('Заметки книги'));
+            await openReaderMenu(tester, 'Заметки');
             await settle(tester);
             expectReaderWindowTheme(
               tester,

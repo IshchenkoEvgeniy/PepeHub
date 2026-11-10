@@ -375,7 +375,7 @@ void main() {
         expect(saved.quote, sourceText.substring(saved.start, saved.end));
         expect(saved.tags, ['Сюжет', 'Море']);
         expect(saved.characters, ['Капитан']);
-        await tapReaderControl(tester, find.byTooltip('Заметки книги'));
+        await openReaderMenu(tester, 'Заметки');
         await settle();
         await tester.tap(find.byTooltip('Фильтр по цвету'));
         await tester.pumpAndSettle();

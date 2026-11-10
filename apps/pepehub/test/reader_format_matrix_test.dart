@@ -401,8 +401,8 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.byKey(const ValueKey('reader-palette:sepia')));
           await tester.pumpAndSettle();
-          await tester.ensureVisible(find.text('Прокрутка'));
-          await tester.tap(find.text('Прокрутка'));
+          await tester.ensureVisible(find.text('Вертикально'));
+          await tester.tap(find.text('Вертикально'));
           await tester.pumpAndSettle();
           await tester.tap(
             find.byKey(const ValueKey('reader-appearance-done')),
@@ -423,7 +423,7 @@ void main() {
             find.byType(ReaderViewport),
           );
           expect(viewport.preferences!.palette, 'sepia');
-          expect(viewport.preferences!.mode, 'compact');
+          expect(viewport.preferences!.mode, 'seamless');
           expect((await position())['textOffset'], saved['textOffset']);
           await tester.runAsync(() async {
             expect(

@@ -189,7 +189,7 @@ void main() {
         expect(notes, hasLength(1));
         expect(notes.single.start, 8);
         expect(notes.single.quote, 'Повтор');
-        await tapReaderControl(tester, find.byTooltip('Заметки книги'));
+        await openReaderMenu(tester, 'Заметки');
         await settle();
         await tester.enterText(find.byType(TextField), 'капитан');
         await tester.pumpAndSettle();

@@ -273,14 +273,14 @@ void main() {
         expect(before.height, screen.height - textFrameReserve - 48);
         final close = find.byTooltip('Закрыть книгу');
         expect(close.hitTestable(), findsNothing);
-        expect(find.byType(ReaderProgressFooter), findsNothing);
+        expect(find.byType(ReaderProgressBar), findsNothing);
 
         final center = tester.getCenter(viewport);
         // Empty page space also supports the configured centre tap.
         await tester.tapAt(center);
         await settle(tester);
         expect(close.hitTestable(), findsOneWidget);
-        expect(find.byType(ReaderProgressFooter), findsOneWidget);
+        expect(find.byType(ReaderProgressBar), findsOneWidget);
         expect(tester.state(viewport), same(state));
         expect(tester.widget<ReaderViewport>(viewport).key, before.key);
         expect(tester.widget<ReaderViewport>(viewport).height, before.height);
@@ -289,7 +289,7 @@ void main() {
         await settle(tester);
         expect(close.hitTestable(), findsNothing);
         expect(find.byType(FloatingActionButton), findsNothing);
-        expect(find.byType(ReaderProgressFooter), findsNothing);
+        expect(find.byType(ReaderProgressBar), findsNothing);
         expect(tester.state(viewport), same(state));
         expect(tester.widget<ReaderViewport>(viewport).key, before.key);
         await tester.tapAt(center);

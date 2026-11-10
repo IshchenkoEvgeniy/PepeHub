@@ -164,6 +164,8 @@ Future<bool> _removeLibraryCards(
   if (context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        // Flutter keeps snack bars with an action until dismissed.
+        persist: false,
         content: Text(switch (choice) {
           _Removal.trash => 'В корзине: ${selected.length}',
           _Removal.card => 'Карточек удалено: $removed. Файлы сохранены.',

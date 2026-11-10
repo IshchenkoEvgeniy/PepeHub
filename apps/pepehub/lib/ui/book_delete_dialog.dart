@@ -125,6 +125,8 @@ void showMovedToTrash(
   if (ids.isEmpty) return;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
+      // Flutter keeps snack bars with an action until dismissed.
+      persist: false,
       content: Text(
         ids.length == 1
             ? 'Книга перемещена в корзину'

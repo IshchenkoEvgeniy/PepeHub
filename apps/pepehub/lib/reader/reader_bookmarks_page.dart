@@ -103,6 +103,8 @@ class _ReaderBookmarksPageState extends State<ReaderBookmarksPage> {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
+          // Flutter keeps snack bars with an action until dismissed.
+          persist: false,
           content: const Text('Закладка удалена'),
           action: SnackBarAction(
             label: 'Отменить',

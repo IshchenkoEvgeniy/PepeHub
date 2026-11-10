@@ -17,15 +17,14 @@ import 'epub_test.dart' show fixture;
 import 'package:pepehub/reader/epub.dart';
 
 void main() {
-  test('reader defaults to pages; the old gapped flow opens as scrolling', () {
+  test('reader defaults to sideways pages and keeps every saved mode', () {
     const preferences = ReaderPreferences();
     expect(preferences.mode, 'pages');
     expect(preferences.showScrollbar, isFalse);
     expect(ReaderPreferences.fromJson(const {}).mode, 'pages');
-    expect(ReaderPreferences.fromJson({'mode': 'compact'}).mode, 'compact');
-    expect(ReaderPreferences.fromJson({'mode': 'scroll'}).mode, 'scroll');
-    // «Непрерывно» stacked page-sized blocks with empty space between them.
-    expect(ReaderPreferences.fromJson({'mode': 'seamless'}).mode, 'compact');
+    for (final mode in ['pages', 'seamless', 'compact', 'scroll']) {
+      expect(ReaderPreferences.fromJson({'mode': mode}).mode, mode);
+    }
     expect(ReaderPreferences.fromJson({'mode': 'unknown'}).mode, 'pages');
     final adjusted = ReaderPreferences.fromJson({
       'size': 48,

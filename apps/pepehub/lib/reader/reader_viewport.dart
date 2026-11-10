@@ -653,7 +653,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
     final list = pages;
     final info = widget.controller?.pageInfo;
     if (info == null || !mounted) return;
-    info.value = widget.scrolling || list == null || layoutStart > 0
+    info.value = widget.compactFlow || list == null || layoutStart > 0
         ? null
         : (page: index + 1, count: list.length, complete: layoutComplete);
   }
@@ -848,11 +848,12 @@ class _ReaderViewportState extends State<ReaderViewport> {
       )) {
         final at = image.offset.clamp(from, widget.text.length);
         await appendText(at);
-        if (widget.scrolling && !widget.compactFlow) finishPage();
         final slice = ReaderSlice(at, at, height: _imageExtent(image));
         images[slice] = image;
         if (widget.scrolling) {
-          result.add(slice);
+          // Vertical pages take the figure like a paragraph: it starts a new
+          // page only when the rest of the current one is too short.
+          addSegment(slice);
           continue;
         }
         final last = result.lastOrNull;
@@ -961,7 +962,10 @@ class _ReaderViewportState extends State<ReaderViewport> {
       withinPage -= itemExtent;
       position = segment.end;
     }
-    if (index != next) setState(() => index = next);
+    if (index != next) {
+      setState(() => index = next);
+      _reportPage();
+    }
     widget.onPosition(position.clamp(page.start, page.end));
   }
 

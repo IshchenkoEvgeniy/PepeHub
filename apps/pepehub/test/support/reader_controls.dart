@@ -58,3 +58,10 @@ Future<void> tapReaderControl(WidgetTester tester, Finder control) async {
   await showReaderControls(tester);
   await tester.tap(control);
 }
+
+/// Opens an item of the reader's «⋮» menu in the header.
+Future<void> openReaderMenu(WidgetTester tester, String item) async {
+  await tapReaderControl(tester, find.byTooltip('Другие действия'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.textContaining(item).last);
+}

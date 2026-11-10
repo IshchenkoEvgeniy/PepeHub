@@ -270,6 +270,8 @@ class _AudioPageState extends State<AudioPage> {
                                       this.context,
                                     ).showSnackBar(
                                       SnackBar(
+                                        // Flutter keeps snack bars with an action until dismissed.
+                                        persist: false,
                                         content: const Text('Закладка удалена'),
                                         duration: const Duration(seconds: 10),
                                         action: SnackBarAction(

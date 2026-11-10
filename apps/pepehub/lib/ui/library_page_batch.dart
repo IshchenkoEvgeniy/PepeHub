@@ -86,6 +86,8 @@ extension _LibraryPageBatch on _LibraryPageState {
           _update(selectedBooks.clear);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
+              // Flutter keeps snack bars with an action until dismissed.
+              persist: false,
               content: Text('Скрыто с полки: ${ids.length}'),
               action: SnackBarAction(
                 label: 'Вернуть',
