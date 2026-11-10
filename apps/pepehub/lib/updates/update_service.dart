@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../data/repository.dart';
+import 'update_installer.dart';
 import 'update_manifest.dart';
 import 'update_package.dart';
 import 'update_delta.dart';
@@ -100,11 +101,15 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
   final bool observeLifecycle;
   final Duration installTimeout;
 
-  /// How long PowerShell may take to start, and then to verify the staged
-  /// files (hashing ~150 MB, slower while an antivirus scans them).
+  /// How long the unpacked application may take to start as the installer,
+  /// and then to verify the staged files (hashing ~150 MB, slower while an
+  /// antivirus scans them).
   final Duration helperStartTimeout, helperReadyTimeout;
   final Future<void> Function()? prepareRestart;
-  final Future<void> Function(File config, File helper)? launchHelper;
+
+  /// Starts [installer], the unpacked `pepehub.exe` of the new version, which
+  /// replaces the installed files once this application has closed.
+  final Future<void> Function(File config, File installer)? launchHelper;
   final String Function() executable;
   final bool _ownsClient;
   UpdateService(
@@ -195,8 +200,45 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
     }
     loaded = true;
     _notify();
+    if (app?.platform == 'windows-x64') unawaited(_cleanTransactions());
     if (app != null && automatic && observeLifecycle && !_disposed) {
       unawaited(check(quiet: true));
+    }
+  }
+
+  /// Removes unpacked packages and backups of finished Windows installations.
+  /// The installer runs from such a folder, so it cannot remove it itself.
+  Future<void> _cleanTransactions() async {
+    try {
+      final root = await directory();
+      if (!await root.exists()) return;
+      await for (final entry in root.list(followLinks: false)) {
+        if (entry is! Directory ||
+            !p.basename(entry.path).startsWith('windows-') ||
+            entry.path == _pendingTransaction?.path) {
+          continue;
+        }
+        var finished = false;
+        try {
+          final status = jsonDecode(
+            await File(p.join(entry.path, 'status.json')).readAsString(),
+          );
+          finished = status is Map && status['state'] == 'complete';
+        } catch (_) {
+          /* Interrupted or failed installations are kept for two days. */
+        }
+        if (finished ||
+            now().difference((await entry.stat()).modified) >
+                const Duration(days: 2)) {
+          try {
+            await entry.delete(recursive: true);
+          } on FileSystemException {
+            /* Still in use by the installer; the next start removes it. */
+          }
+        }
+      }
+    } catch (error, stack) {
+      ErrorLog.record(error, stack, context: 'update: clean transactions');
     }
   }
 
@@ -719,11 +761,9 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
         final transaction = await cache.createTemp('windows-');
         _pendingTransaction = transaction;
         final stage = p.join(transaction.path, 'stage');
+        installStep = 'Распаковываем обновление…';
+        _notify();
         final files = await stageUpdatePackage(file.path, stage);
-        final helper = File(p.join(transaction.path, 'install.ps1'));
-        await helper.writeAsString(
-          await rootBundle.loadString('assets/updater/install-windows.ps1'),
-        );
         final install = File(executable()).absolute.parent.path;
         final config = File(p.join(transaction.path, 'transaction.json'));
         await config.writeAsString(
@@ -731,15 +771,25 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
             'installDir': install,
             'stageDir': stage,
             'transactionDir': transaction.path,
-            'parentPid': pid,
             'expectedVersion':
                 '${selectedRelease.version}+${selectedRelease.build}',
             'files': files,
           }),
         );
-        installStep = 'Запускаем помощник обновления…';
+        installStep = 'Запускаем установку обновления…';
         _notify();
-        await (launchHelper ?? _launchHelper)(config, helper);
+        // The new version installs itself: its unpacked executable waits for
+        // this application to close and copies the package over it.
+        try {
+          await (launchHelper ?? _launchHelper)(
+            config,
+            File(p.join(stage, 'pepehub.exe')),
+          );
+        } on ProcessException catch (failure) {
+          throw UpdateException(
+            'Windows не запустил установку обновления: ${failure.message}',
+          );
+        }
         await _waitForHelper(transaction);
         await prepareRestart?.call();
         await platform.exitForUpdate();
@@ -766,9 +816,8 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// The helper marks `started` at once, then verifies every staged file
-  /// before writing `ready`. Earlier versions gave it 10 s in total, which a
-  /// cold PowerShell plus hashing the package often exceeded.
+  /// The installer marks `started` at once, then verifies every staged file
+  /// before writing `ready`; only then does this application close.
   Future<void> _waitForHelper(Directory transaction) async {
     File marker(String name) => File(p.join(transaction.path, name));
     final watch = Stopwatch()..start();
@@ -779,16 +828,11 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
       if (await failure.exists()) {
         final reason = (await failure.readAsString()).trim();
         ErrorLog.record(
-          StateError('Windows update helper: $reason'),
+          StateError('Windows update installer: $reason'),
           StackTrace.current,
           context: 'update: helper failure',
         );
-        throw UpdateException(
-          reason.contains('Close all other PepeHub windows') ||
-                  reason.contains('Another application instance')
-              ? 'Закройте другие окна PepeHub и повторите обновление.'
-              : 'Не удалось подготовить установку: $reason',
-        );
+        throw UpdateException('Не удалось подготовить установку: $reason');
       }
       if (!started &&
           (await marker('started').exists() ||
@@ -801,9 +845,9 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
       if (watch.elapsed >= limit || _disposed) {
         throw UpdateException(
           started
-              ? 'Помощник обновления не успел проверить файлы. Повторите попытку.'
-              : 'Помощник обновления не запустился: Windows PowerShell не ответил. '
-                    'Проверьте, не блокирует ли его антивирус.',
+              ? 'Установка не успела проверить файлы обновления. Повторите попытку.'
+              : 'Установка обновления не запустилась. Проверьте, не блокирует '
+                    'ли антивирус запуск PepeHub из временной папки.',
         );
       }
       await Future<void>.delayed(const Duration(milliseconds: 150));
@@ -851,26 +895,11 @@ class UpdateService extends ChangeNotifier with WidgetsBindingObserver {
     _notify();
   }
 
-  /// Plain `-File` arguments: antivirus heuristics often kill a hidden
-  /// PowerShell started with `-EncodedCommand` before the script runs.
-  static List<String> helperArguments(File config, File helper) => [
-    '-NoProfile',
-    '-NonInteractive',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-WindowStyle',
-    'Hidden',
-    '-File',
-    helper.path,
-    '-ConfigPath',
-    config.path,
-  ];
-
-  static Future<void> _launchHelper(File config, File helper) async {
-    final system = Platform.environment['SystemRoot'] ?? r'C:\Windows';
+  static Future<void> _launchHelper(File config, File installer) async {
     await Process.start(
-      p.join(system, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
-      helperArguments(config, helper),
+      installer.path,
+      [applyUpdateFlag, config.path],
+      workingDirectory: installer.parent.path,
       mode: ProcessStartMode.detached,
     );
   }

@@ -9,6 +9,8 @@ import 'package:path/path.dart' as p;
 import 'ui/app_theme.dart';
 import 'ui/goal_reminders.dart';
 import 'ui/goal_settings_page.dart';
+import 'updates/update_installer.dart';
+import 'updates/update_installer_app.dart';
 import 'updates/update_service.dart';
 import 'updates/update_page.dart';
 
@@ -26,7 +28,12 @@ import 'video/video_session.dart';
 import 'video/video_player_page.dart';
 import 'video/video_mini_player.dart';
 
-Future<void> main() => startPepeHub();
+Future<void> main([List<String> args = const []]) {
+  // The unpacked new version installs itself over the old one; see
+  // WindowsUpdateInstaller.
+  final update = Platform.isWindows ? updateInstallerConfig(args) : null;
+  return update == null ? startPepeHub() : runUpdateInstaller(update);
+}
 
 const _russian = Locale('ru');
 const _localizations = <LocalizationsDelegate<Object>>[

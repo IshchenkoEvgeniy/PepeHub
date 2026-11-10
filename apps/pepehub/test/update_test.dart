@@ -149,27 +149,6 @@ class UpdateFixture {
 }
 
 void main() {
-  test(
-    'Windows helper starts as a plain script file, not an encoded command',
-    () {
-      final args = UpdateService.helperArguments(
-        File(
-          r'C:\Users\Пользователь\AppData\Local\Temp\pepehub-updates\windows-1\transaction.json',
-        ),
-        File(
-          r'C:\Users\Пользователь\AppData\Local\Temp\pepehub-updates\windows-1\install.ps1',
-        ),
-      );
-      expect(args, isNot(contains('-EncodedCommand')));
-      expect(args.indexOf('-File'), args.length - 4);
-      expect(args.sublist(args.length - 3), [
-        r'C:\Users\Пользователь\AppData\Local\Temp\pepehub-updates\windows-1\install.ps1',
-        '-ConfigPath',
-        r'C:\Users\Пользователь\AppData\Local\Temp\pepehub-updates\windows-1\transaction.json',
-      ]);
-      expect(args, containsAllInOrder(['-ExecutionPolicy', 'Bypass']));
-    },
-  );
   TestWidgetsFlutterBinding.ensureInitialized();
   late UpdateFixture f;
   setUp(() async {
@@ -452,7 +431,7 @@ void main() {
     service.dispose();
   });
 
-  test('Windows service stages a full bundle, waits for helper readiness and cancels it if saving fails', () async {
+  test('Windows service stages a full bundle, starts its executable as the installer and cancels it if saving fails', () async {
     final archive = Archive()
       ..addFile(ArchiveFile.string('pepehub.exe', 'exe'))
       ..addFile(ArchiveFile.string('flutter_windows.dll', 'dll'))
@@ -482,7 +461,10 @@ void main() {
             jsonDecode(await config.readAsString()) as Map<String, dynamic>;
         expect(value['expectedVersion'], '0.21.0+52');
         expect(value['files'], hasLength(3));
-        expect(await helper.exists(), true);
+        expect(value.containsKey('parentPid'), false);
+        // The unpacked new version is its own installer.
+        expect(helper.path, p.join(config.parent.path, 'stage', 'pepehub.exe'));
+        expect(await helper.readAsString(), 'exe');
         transactions.add(config.parent);
         await File(p.join(config.parent.path, 'ready')).writeAsString('ready');
       },
@@ -508,7 +490,7 @@ void main() {
     service.dispose();
   });
 
-  test('Windows helper may verify slowly after starting and reports its failure reason', () async {
+  test('Windows installer may verify slowly after starting and reports its failure reason', () async {
     final archive = Archive()
       ..addFile(ArchiveFile.string('pepehub.exe', 'exe'))
       ..addFile(ArchiveFile.string('flutter_windows.dll', 'dll'))
@@ -540,9 +522,8 @@ void main() {
             if (mode == 'slow') {
               await File(p.join(dir, 'ready')).writeAsString('ready');
             } else {
-              await File(p.join(dir, 'failure.txt')).writeAsString(
-                'Close all other PepeHub windows before updating.',
-              );
+              await File(p.join(dir, 'failure.txt'))
+                  .writeAsString('Нет права записи в папку приложения.');
             }
           }),
         );
@@ -557,13 +538,67 @@ void main() {
     mode = 'failure';
     service.phase = UpdatePhase.ready;
     await service.install();
-    expect(service.error, contains('Закройте другие окна PepeHub'));
+    expect(service.error, contains('Нет права записи в папку приложения'));
     mode = 'silent';
     await service.install();
-    expect(service.error, contains('не запустился'));
+    expect(service.error, contains('не запустилась'));
     expect(service.phase, UpdatePhase.ready);
     service.dispose();
   });
+
+  test(
+    'finished Windows installations are removed on the next start',
+    () async {
+      Directory transaction(String name, String? state) {
+        final dir = Directory(p.join(f.cache.path, name))..createSync();
+        File(p.join(dir.path, 'stage', 'pepehub.exe'))
+          ..createSync(recursive: true)
+          ..writeAsStringSync('exe');
+        if (state != null) {
+          File(p.join(dir.path, 'status.json'))
+              .writeAsStringSync(jsonEncode({'state': state}));
+        }
+        return dir;
+      }
+
+      final complete = transaction('windows-done', 'complete');
+      final failed = transaction('windows-failed', 'rolledBack');
+      final waiting = transaction('windows-waiting', null);
+      final other = transaction('other-folder', 'complete');
+      final package = File(
+        p.join(f.cache.path, '51-windows-x64-${'a' * 64}.zip'),
+      )..writeAsStringSync('zip');
+      var clock = updateNow;
+      Future<void> start() async {
+        final service = UpdateService(
+          f.repo,
+          platform: f.native,
+          publicKey: f.publicKey,
+          now: () => clock,
+          observeLifecycle: false,
+          directory: () async => f.cache,
+          client: MockClient((_) async => http.Response('', 404)),
+        );
+        await service.initialize();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        service.dispose();
+      }
+
+      clock = DateTime.now();
+      await start();
+      expect(complete.existsSync(), false);
+      expect(failed.existsSync(), true);
+      expect(waiting.existsSync(), true);
+      expect(other.existsSync(), true);
+      expect(package.existsSync(), true);
+      clock = DateTime.now().add(const Duration(days: 3));
+      await start();
+      expect(failed.existsSync(), false);
+      expect(waiting.existsSync(), false);
+      expect(other.existsSync(), true);
+      expect(package.existsSync(), true);
+    },
+  );
 
   test('Windows extraction accepts complete bundles and blocks traversal, links and personal database files', () async {
     List<int> zip(String? extra, {bool link = false}) {

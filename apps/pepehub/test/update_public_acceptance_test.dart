@@ -108,14 +108,8 @@ void main() {
           service.package!.path,
           p.join(cache.path, 'staged'),
         );
-        expect(
-          files.any(
-            (f) =>
-                f['path'] ==
-                'data/flutter_assets/assets/updater/install-windows.ps1',
-          ),
-          true,
-        );
+        // The unpacked executable is the installer of its own package.
+        expect(files.any((f) => f['path'] == 'pepehub.exe'), true);
         // ignore: avoid_print
         print(
           'Public update verified: build ${release.build}, ${asset.bytes} bytes, ${files.length} files, Range resume=$resumed. No install performed.',

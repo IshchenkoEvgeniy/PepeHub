@@ -146,7 +146,7 @@ SQLite — рабочая копия, папка `PepeHub-library` — пере�
 | `app.pepehub/reminders` | `ReminderChannel` | Напоминания о целях. |
 | `pepehub/updates` | `UpdateChannel` | Установка APK обновления. |
 
-На Windows отдельных каналов почти нет: напоминания и установка обновления выполняются PowerShell-скриптами из `assets/`.
+На Windows отдельных каналов почти нет: напоминания выполняются PowerShell-скриптом из `assets/`, а обновление ставит распакованный `pepehub.exe` новой версии, запущенный с `--apply-update` (`lib/updates/update_installer.dart`).
 
 ## 10. Обновления
 
