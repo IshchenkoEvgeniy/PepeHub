@@ -17,12 +17,16 @@ import 'epub_test.dart' show fixture;
 import 'package:pepehub/reader/epub.dart';
 
 void main() {
-  test('reader defaults to seamless flow without a scrollbar', () {
+  test('reader defaults to pages; the old gapped flow opens as scrolling', () {
     const preferences = ReaderPreferences();
-    expect(preferences.mode, 'seamless');
+    expect(preferences.mode, 'pages');
     expect(preferences.showScrollbar, isFalse);
-    expect(ReaderPreferences.fromJson(const {}).mode, 'seamless');
+    expect(ReaderPreferences.fromJson(const {}).mode, 'pages');
     expect(ReaderPreferences.fromJson({'mode': 'compact'}).mode, 'compact');
+    expect(ReaderPreferences.fromJson({'mode': 'scroll'}).mode, 'scroll');
+    // «Непрерывно» stacked page-sized blocks with empty space between them.
+    expect(ReaderPreferences.fromJson({'mode': 'seamless'}).mode, 'compact');
+    expect(ReaderPreferences.fromJson({'mode': 'unknown'}).mode, 'pages');
     final adjusted = ReaderPreferences.fromJson({
       'size': 48,
       'pageHeightFactor': 1.3,
@@ -552,7 +556,7 @@ void main() {
       }
       expect(chapterChanges, 1);
       expect(tester.takeException(), isNull);
-      expect(const ReaderPreferences().mode, 'seamless');
+      expect(const ReaderPreferences().mode, 'pages');
     },
   );
 }

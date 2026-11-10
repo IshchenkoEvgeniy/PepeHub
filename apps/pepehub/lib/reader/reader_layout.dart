@@ -3,6 +3,16 @@ import 'package:flutter/material.dart';
 import 'epub.dart';
 import 'reader_fonts.dart';
 
+/// Text reading modes: `pages` (turn pages), `compact` (one scroll through the
+/// whole book) and `scroll` (scroll one chapter at a time). The former
+/// `seamless` mode stacked page-sized blocks with gaps; it now opens as
+/// [compact], which scrolls the same whole-book flow without empty space.
+String readerMode(Object? value) => switch (value) {
+  'pages' || 'scroll' || 'compact' => value as String,
+  'seamless' => 'compact',
+  _ => 'pages',
+};
+
 class ReaderPreferences {
   final double size, spacing, margin, pageHeightFactor, columnWidth;
   final String font, palette, mode;
@@ -28,7 +38,7 @@ class ReaderPreferences {
     this.columnWidth = 900,
     this.font = 'serif',
     this.palette = 'system',
-    this.mode = 'seamless',
+    this.mode = 'pages',
     this.showScrollbar = false,
     this.showHighlights = true,
     this.highlightColor = 'yellow',
@@ -57,10 +67,7 @@ class ReaderPreferences {
         const ['light', 'dark', 'sepia', 'system'].contains(data['palette'])
         ? data['palette'] as String
         : 'system',
-    mode:
-        const ['pages', 'scroll', 'seamless', 'compact'].contains(data['mode'])
-        ? data['mode'] as String
-        : 'seamless',
+    mode: readerMode(data['mode']),
     showScrollbar: data['showScrollbar'] == true,
     showHighlights: data['showHighlights'] != false,
     highlightColor: highlightColors.contains(data['highlightColor'])

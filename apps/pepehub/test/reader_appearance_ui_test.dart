@@ -52,28 +52,18 @@ void main() {
         );
         await tester.tap(find.text('Открыть'));
         await tester.pumpAndSettle();
-        for (final tab in [
-          if (!pdf) 'Текст',
-          'Страница',
-          'Цвет',
-          'Управление',
-        ]) {
-          final target = find.byKey(ValueKey('reader-appearance-tab:$tab'));
-          await tester.ensureVisible(target);
-          await tester.tap(target);
-          await tester.pumpAndSettle();
-          expect(tester.takeException(), isNull);
-        }
-        await tester.ensureVisible(
-          find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
-        );
-        await tester.tap(
-          find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
-        );
+        final more = find.byKey(const ValueKey('reader-appearance-more'));
+        await tester.ensureVisible(more);
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Сепия'));
+        await tester.tap(more);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Сепия'));
+        await tester.ensureVisible(find.byTooltip('Центральная зона'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final sepia = find.byKey(const ValueKey('reader-palette:sepia'));
+        await tester.ensureVisible(sepia);
+        await tester.pumpAndSettle();
+        await tester.tap(sepia);
         await tester.pump(const Duration(milliseconds: 200));
         expect(preview?.palette, 'sepia');
         await tester.tap(find.text('Отменить'));
@@ -117,13 +107,13 @@ void main() {
         ),
       );
       expect(sample.style?.fontSize, 23);
-      await tester.tap(find.text('Готово'));
+      await tester.tap(find.byKey(const ValueKey('reader-appearance-done')));
       await tester.pumpAndSettle();
       expect(saved?.size, 23);
     },
   );
 
-  testWidgets('quick cancel or back cannot reapply a pending live preview', (
+  testWidgets('cancel restores at once; closing keeps the live changes', (
     tester,
   ) async {
     size(tester, const Size(390, 844));
@@ -159,7 +149,10 @@ void main() {
         await tester.tap(find.text('Отменить'));
       }
       await tester.pumpAndSettle();
-      expect(current.size, 22);
+      // «Отменить» restores the original, and a pending preview cannot
+      // reapply the change afterwards; closing the sheet keeps it.
+      expect(current.size, back ? 23 : 22);
+      current = const ReaderPreferences();
     }
   });
 

@@ -14,6 +14,7 @@ import 'package:pepehub/reader/reader_page.dart';
 import 'package:pepehub/reader/reader_viewport.dart';
 
 import 'reader_improvements_test.dart' show settle, size;
+import 'support/reader_controls.dart';
 
 void main() {
   test('collapseBookWhitespace equals the \\s+ regular expression exactly', () {
@@ -161,10 +162,10 @@ void main() {
         expect(first, lessThan(64));
         // Turning pages lays out the following ones on demand.
         for (var i = 0; i < 24; i++) {
-          await tester.tap(find.byTooltip('Следующая страница'));
+          await turnReaderPage(tester);
           await settle(tester);
         }
-        expect(find.textContaining('Страница · 25/'), findsOneWidget);
+        expect(find.textContaining('25 из '), findsOneWidget);
         expect(published(), greaterThan(25));
         expect(published(), greaterThan(first));
         final saved = jsonDecode(

@@ -43,6 +43,111 @@ Future<void> showBookFootnote(BuildContext context, BookFootnote note) =>
       ),
     );
 
+/// Full-screen illustration on a dark backdrop: pinch or double-tap to zoom,
+/// tap the backdrop or the close button to return to the text.
+Future<void> showBookIllustration(
+  BuildContext context,
+  BookIllustration illustration,
+) => Navigator.of(context).push(
+  PageRouteBuilder<void>(
+    opaque: false,
+    barrierDismissible: true,
+    barrierLabel: 'Закрыть иллюстрацию',
+    barrierColor: Colors.black,
+    transitionDuration: const Duration(milliseconds: 160),
+    reverseTransitionDuration: const Duration(milliseconds: 120),
+    pageBuilder: (context, animation, _) => FadeTransition(
+      opacity: animation,
+      child: _IllustrationViewer(illustration),
+    ),
+  ),
+);
+
+class _IllustrationViewer extends StatefulWidget {
+  final BookIllustration illustration;
+  const _IllustrationViewer(this.illustration);
+  @override
+  State<_IllustrationViewer> createState() => _IllustrationViewerState();
+}
+
+class _IllustrationViewerState extends State<_IllustrationViewer> {
+  final transform = TransformationController();
+  TapDownDetails? doubleTap;
+
+  @override
+  void dispose() {
+    transform.dispose();
+    super.dispose();
+  }
+
+  void _toggleZoom() {
+    final at = doubleTap?.localPosition ?? Offset.zero;
+    transform.value = transform.value.getMaxScaleOnAxis() > 1.01
+        ? Matrix4.identity()
+        : (Matrix4.identity()
+            ..translateByDouble(-at.dx * 1.5, -at.dy * 1.5, 0, 1)
+            ..scaleByDouble(2.5, 2.5, 1, 1));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = widget.illustration.label.trim();
+    return Material(
+      color: Colors.black,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          GestureDetector(
+            onDoubleTapDown: (details) => doubleTap = details,
+            onDoubleTap: _toggleZoom,
+            child: InteractiveViewer(
+              transformationController: transform,
+              minScale: 1,
+              maxScale: 6,
+              child: Center(
+                child: Image.memory(
+                  widget.illustration.bytes,
+                  fit: BoxFit.contain,
+                  semanticLabel: label.isEmpty ? null : label,
+                  errorBuilder: (_, e, s) => const Text(
+                    'Формат изображения не поддерживается',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topRight,
+              child: IconButton(
+                tooltip: 'Закрыть иллюстрацию',
+                color: Colors.white,
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close),
+              ),
+            ),
+          ),
+          if (label.isNotEmpty)
+            SafeArea(
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 Future<void> showChapterResources(
   BuildContext context,
   EpubChapter chapter,
@@ -81,29 +186,7 @@ Future<void> showChapterResources(
             Card(
               clipBehavior: Clip.antiAlias,
               child: InkWell(
-                onTap: () => showDialog<void>(
-                  context: context,
-                  useSafeArea: true,
-                  builder: (context) => Dialog.fullscreen(
-                    child: Scaffold(
-                      appBar: AppBar(title: Text(illustration.label)),
-                      body: InteractiveViewer(
-                        minScale: .5,
-                        maxScale: 5,
-                        child: Center(
-                          child: Image.memory(
-                            illustration.bytes,
-                            cacheWidth: 1600,
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, e, s) => const Text(
-                              'Формат изображения не поддерживается',
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                onTap: () => showBookIllustration(context, illustration),
                 child: Column(
                   children: [
                     Image.memory(

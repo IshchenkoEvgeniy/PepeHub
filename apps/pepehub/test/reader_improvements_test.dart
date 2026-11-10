@@ -16,6 +16,8 @@ import 'package:pepehub/reader/reader_search.dart';
 import 'package:pepehub/reader/reader_viewport.dart';
 import 'package:pepehub/reader/reading_library.dart';
 
+import 'support/reader_controls.dart';
+
 Future<void> settle(WidgetTester tester) async {
   for (var i = 0; i < 10; i++) {
     await tester.runAsync(
@@ -295,7 +297,8 @@ void main() {
               .controller!;
           controller.jumpToPage(0);
           await tester.pumpAndSettle();
-          await tester.tap(find.byTooltip('Предыдущая страница'));
+          // The previous screen from the first page of this source window.
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
         } else {
           final list = tester.widget<ListView>(find.byType(ListView).first);
           list.controller!.jumpTo(0);
@@ -373,23 +376,22 @@ void main() {
         await settle(tester);
         expect(Theme.of(tester.element(viewport)).brightness, Brightness.dark);
         expect(identical(tester.state(viewport), initialState), isTrue);
-        await tester.tap(find.byTooltip('Оформление чтения'));
+        await tapReaderControl(tester, find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
+        await tester.tap(find.byKey(const ValueKey('reader-palette:sepia')));
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('reader-appearance-done')),
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Сепия'));
-        await tester.ensureVisible(find.text('Готово'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Готово'));
+        await tester.tap(find.byKey(const ValueKey('reader-appearance-done')));
         await settle(tester);
         expect(identical(tester.state(viewport), initialState), isTrue);
-        await tester.tap(find.byTooltip('Оформление чтения'));
+        await tapReaderControl(tester, find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('reader-appearance-tab:Страница')),
-        );
+        final more = find.byKey(const ValueKey('reader-appearance-more'));
+        await tester.ensureVisible(more);
+        await tester.pumpAndSettle();
+        await tester.tap(more);
         await tester.pumpAndSettle();
         await tester.ensureVisible(
           find.byKey(const ValueKey('reader-column-width')),
@@ -398,9 +400,11 @@ void main() {
         final slider = find.byKey(const ValueKey('reader-column-width'));
         final box = tester.getRect(slider);
         await tester.tapAt(Offset(box.left + 30, box.center.dy));
-        await tester.ensureVisible(find.text('Готово'));
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('reader-appearance-done')),
+        );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Готово'));
+        await tester.tap(find.byKey(const ValueKey('reader-appearance-done')));
         await settle(tester);
         expect(tester.widget<ReaderViewport>(viewport).width, lessThan(650));
         expect(identical(tester.state(viewport), initialState), isFalse);
@@ -452,7 +456,7 @@ void main() {
       try {
         await tester.pumpWidget(page());
         await settle(tester);
-        await tester.tap(find.byTooltip('Поиск по книге'));
+        await tapReaderControl(tester, find.byTooltip('Поиск по книге'));
         await tester.pumpAndSettle();
         await tester.enterText(find.byType(TextField), 'needle');
         await settle(tester);

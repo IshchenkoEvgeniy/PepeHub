@@ -15,6 +15,7 @@ import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/reader/reader_page.dart';
 
 import 'support/flutter_fonts.dart';
+import 'support/reader_controls.dart';
 
 void main() {
   testWidgets(
@@ -115,11 +116,11 @@ void main() {
         );
         await settle();
         expect(find.byType(PageView), findsOneWidget);
-        await tester.tap(find.byTooltip('Следующая страница'));
+        await turnReaderPage(tester);
         await settle();
         final before = await position();
         expect(before['textOffset'] as int, greaterThan(0));
-        await tester.tap(find.byTooltip('Поиск по книге'));
+        await tapReaderControl(tester, find.byTooltip('Поиск по книге'));
         await tester.pumpAndSettle();
         await tester.enterText(find.byType(TextField), 'Конец фрагмента 50');
         await settle();
@@ -130,52 +131,47 @@ void main() {
           (await position())['textOffset'] as int,
           greaterThan(before['textOffset'] as int),
         );
-        await tester.tap(find.byTooltip('Вернуться к прежнему месту'));
+        await tapReaderControl(
+          tester,
+          find.byTooltip('Вернуться к прежнему месту'),
+        );
         await settle();
         expect((await position())['textOffset'], before['textOffset']);
-        await tester.tap(find.byTooltip('Оформление чтения'));
+        await tapReaderControl(tester, find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('reader-appearance-tab:Страница')),
+        await tapSetting('Прокрутка');
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('reader-appearance-done')),
         );
-        await tester.pumpAndSettle();
-        await tapSetting('Без пустых мест');
-        await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Готово'));
-        await tester.tap(find.text('Готово'));
+        await tester.tap(find.byKey(const ValueKey('reader-appearance-done')));
         await settle();
         expect(find.byType(ReaderSelectableParagraph), findsWidgets);
         expect(tester.takeException(), isNull);
-        await tester.tap(find.byTooltip('Оформление чтения'));
+        await tapReaderControl(tester, find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('reader-appearance-tab:Страница')),
+        await tapSetting('Страницы');
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('reader-appearance-done')),
         );
-        await tester.pumpAndSettle();
-        await tapSetting('Перелистывание');
-        await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Готово'));
-        await tester.tap(find.text('Готово'));
+        await tester.tap(find.byKey(const ValueKey('reader-appearance-done')));
         await settle();
         expect(find.byType(PageView), findsOneWidget);
         expect(find.byType(SelectableText), findsWidgets);
         expect(tester.takeException(), isNull);
-        await tester.tap(find.byTooltip('Оформление чтения'));
+        await tapReaderControl(tester, find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
+        await tester.tap(find.byKey(const ValueKey('reader-palette:dark')));
+        await tester.pumpAndSettle();
+        await tapSetting('Прокрутка');
+        await tester.pumpAndSettle();
+        await tapSetting('Каждая глава отдельно');
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('reader-appearance-done')),
         );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Тёмная'));
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('reader-appearance-tab:Страница')),
-        );
-        await tester.pumpAndSettle();
-        await tapSetting('По главам');
-        await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Готово'));
-        await tester.tap(find.text('Готово'));
+        await tester.tap(find.byKey(const ValueKey('reader-appearance-done')));
         await settle();
         expect(find.byType(PageView), findsNothing);
         expect((await position())['textOffset'], before['textOffset']);

@@ -6,6 +6,9 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 
+import 'dart:math' as math;
+
+import 'image_size.dart';
 import 'reader_layout.dart';
 import 'reading_library.dart';
 import 'reading_notes_page.dart';
@@ -23,6 +26,9 @@ const justifyFillerText = ' ..';
 /// Allows deliberate navigation inside the already measured source window.
 /// A false result asks the owner to open a new window near the target instead.
 class ReaderViewportController {
+  /// Current screen in page mode: 1-based page, total and whether the total
+  /// is final. Null in scrolling modes.
+  final pageInfo = ValueNotifier<({int page, int count, bool complete})?>(null);
   Object? _owner;
   bool Function(int)? _seek;
   VoidCallback? _flush;
@@ -47,8 +53,7 @@ class ReaderViewport extends StatefulWidget {
   final String text;
   final TextStyle style;
   final TextScaler scaler;
-  final double width, height, margin, pageHeightFactor, controlsBottomInset;
-  final double controlsSideInset;
+  final double width, height, margin, pageHeightFactor;
   final int anchor;
   final int? highlightStart, highlightEnd;
   final bool scrolling, compactFlow, firstChapter, lastChapter;
@@ -63,9 +68,12 @@ class ReaderViewport extends StatefulWidget {
   final ReaderPreferences? preferences;
   final VoidCallback? onToggleControls;
   final void Function(int offset, bool end)? onBoundary;
-  final bool selectingRange, hideControls;
+  final bool selectingRange;
   final List<BookFootnote> footnotes;
   final ValueChanged<BookFootnote>? onFootnote;
+
+  /// Tap on an illustration (in the zone that would toggle the controls).
+  final ValueChanged<BookIllustration>? onImage;
   final List<BookMarkup> markup;
   final List<BookIllustration> illustrations;
   final List<int> chapterBreaks;
@@ -84,8 +92,6 @@ class ReaderViewport extends StatefulWidget {
     required this.height,
     required this.margin,
     this.pageHeightFactor = 1,
-    this.controlsBottomInset = 0,
-    this.controlsSideInset = 0,
     required this.anchor,
     this.highlightStart,
     this.highlightEnd,
@@ -107,9 +113,9 @@ class ReaderViewport extends StatefulWidget {
     this.onToggleControls,
     this.onBoundary,
     this.selectingRange = false,
-    this.hideControls = false,
     this.footnotes = const [],
     this.onFootnote,
+    this.onImage,
     this.markup = const [],
     this.illustrations = const [],
     this.chapterBreaks = const [],
@@ -130,9 +136,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
   Offset? down;
   DateTime? downAt;
   int? tapPointer;
-  int? controlPointer;
   bool tapMoved = false;
   bool tapLinkHandled = false;
+  BookIllustration? tappedImage;
   bool hasSelection = false;
   final selectionArea = GlobalKey<SelectionAreaState>();
   final selectedRanges = <int, TextSelection>{};
@@ -193,12 +199,47 @@ class _ReaderViewportState extends State<ReaderViewport> {
         .toDouble();
   }
 
-  double get illustrationHeight => (extent * .85).clamp(
-    0,
-    (extent - widget.margin * 2 - (widget.scrolling ? 14 : 24)).clamp(
-      0,
-      double.infinity,
-    ),
+  /// Space above and below an illustration.
+  static const imageGap = 12.0;
+  final imageSizes = <BookIllustration, Size?>{};
+
+  /// Displayed size of an illustration: its own proportions, never wider than
+  /// the text column, never taller than the screen, and never enlarged past
+  /// its natural size (small icons and formulas stay small).
+  Size illustrationBox(BookIllustration image) {
+    final maxWidth = textWidth.clamp(1.0, double.infinity).toDouble();
+    final maxHeight = (viewportExtent - 32 - imageGap * 2)
+        .clamp(48.0, double.infinity)
+        .toDouble();
+    final natural = imageSizes.putIfAbsent(
+      image,
+      () => imageHeaderSize(image.bytes),
+    );
+    if (natural == null) {
+      // Unknown format: a moderate box; the image is fitted inside it.
+      return Size(maxWidth, math.min(maxWidth * .75, maxHeight));
+    }
+    var width = math.min(natural.width, maxWidth);
+    var height = width * natural.height / natural.width;
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * natural.width / natural.height;
+    }
+    return Size(width, height);
+  }
+
+  double _imageExtent(BookIllustration image) =>
+      illustrationBox(image).height + imageGap * 2;
+
+  /// Visible height of one piece of a fixed page (see `pageContent`).
+  double _pagePieceExtent(ReaderSlice piece) {
+    final image = images[piece];
+    return image != null ? _imageExtent(image) : (piece.height ?? 0) + 24;
+  }
+
+  double _pageUsed(ReaderSlice page) => (page.segments ?? [page]).fold(
+    0.0,
+    (sum, piece) => sum + _pagePieceExtent(piece),
   );
   BookMarkup? _blockAt(int at) {
     final ranges = _markupOverlapping(at, at + 1);
@@ -366,6 +407,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
       pager!.jumpToPage(target);
     }
     setState(() => index = target);
+    _reportPage();
     if (!layoutComplete && list.length - target <= 8) _requestMorePages();
     return true;
   }
@@ -517,9 +559,8 @@ class _ReaderViewportState extends State<ReaderViewport> {
   )..layout(maxWidth: _measuredTextWidth(start));
 
   double _segmentExtent(ReaderSlice segment) {
-    if (images.containsKey(segment)) {
-      return illustrationHeight + widget.margin * 2;
-    }
+    final image = images[segment];
+    if (image != null) return _imageExtent(image);
     final block = _blockAt(segment.start)?.block;
     final blockMargin = const {'aside', 'pre'}.contains(block) ? 8.0 : 0.0;
     return (segment.height ?? 0) + (widget.scrolling ? 10 : 24) + blockMargin;
@@ -551,6 +592,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
     }
     if (pages != null) {
       setState(() => pages = List.unmodifiable(result));
+      _reportPage();
       return;
     }
     final imageAtAnchor = result.indexWhere(
@@ -603,7 +645,17 @@ class _ReaderViewportState extends State<ReaderViewport> {
       ),
     );
     setState(() => pages = List.unmodifiable(result));
+    _reportPage();
     widget.onReady?.call();
+  }
+
+  void _reportPage() {
+    final list = pages;
+    final info = widget.controller?.pageInfo;
+    if (info == null || !mounted) return;
+    info.value = widget.scrolling || list == null || layoutStart > 0
+        ? null
+        : (page: index + 1, count: list.length, complete: layoutComplete);
   }
 
   Future<void> _layout() async {
@@ -643,6 +695,16 @@ class _ReaderViewportState extends State<ReaderViewport> {
         if (usedPageHeight >= pageCapacity) finishPage();
       }
 
+      // Page mode: an illustration shares its page with the text around it.
+      // [openImagePage] still has room below its last illustration for the
+      // first lines of the text that follows.
+      int? openImagePage;
+      double? roomBelowImage;
+      final minimumRoom =
+          widget.scaler.scale(widget.style.fontSize ?? 22) *
+          (widget.style.height ?? 1.4) *
+          2;
+
       var from = layoutStart;
       var laidOutSlices = 0;
       Future<void> appendText(int end) async {
@@ -675,10 +737,11 @@ class _ReaderViewportState extends State<ReaderViewport> {
             final blockMargin = const {'aside', 'pre'}.contains(block)
                 ? 8.0
                 : 0.0;
-            final firstHeight =
-                widget.scrolling &&
-                    !widget.compactFlow &&
-                    currentPage.isNotEmpty
+            final firstHeight = !widget.scrolling
+                ? roomBelowImage
+                : widget.scrolling &&
+                      !widget.compactFlow &&
+                      currentPage.isNotEmpty
                 ? (extent - 16 - usedPageHeight - 10 - blockMargin)
                       .clamp(0.0, textHeight)
                       .toDouble()
@@ -687,13 +750,31 @@ class _ReaderViewportState extends State<ReaderViewport> {
             // (or a book without chapters) shows its first screens and waits
             // for the reader instead of laying out every page up front.
             Future<bool> place(ReaderSlice slice) async {
-              addSegment(
-                ReaderSlice(
-                  paragraphStart + slice.start,
-                  paragraphStart + slice.end,
-                  height: slice.height,
-                ),
+              final piece = ReaderSlice(
+                paragraphStart + slice.start,
+                paragraphStart + slice.end,
+                height: slice.height,
               );
+              final host = openImagePage;
+              openImagePage = null;
+              roomBelowImage = null;
+              if (host != null &&
+                  host < result.length &&
+                  _pageUsed(result[host]) + _pagePieceExtent(piece) <=
+                      extent + .5) {
+                final page = result[host];
+                result[host] = ReaderSlice(
+                  page.start,
+                  piece.end,
+                  height: extent,
+                  segments: List.unmodifiable([
+                    ...page.segments ?? [page],
+                    piece,
+                  ]),
+                );
+              } else {
+                addSegment(piece);
+              }
               if (progressiveLayout && result.isNotEmpty) {
                 if (pages == null && result.last.end >= widget.anchor) {
                   final anchorPage = result.lastIndexWhere(
@@ -735,6 +816,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
             );
             if (!mounted) return;
           }
+          // The room below an illustration belongs to its own chapter.
+          openImagePage = null;
+          roomBelowImage = null;
         }
 
         var cursor = from;
@@ -765,9 +849,43 @@ class _ReaderViewportState extends State<ReaderViewport> {
         final at = image.offset.clamp(from, widget.text.length);
         await appendText(at);
         if (widget.scrolling && !widget.compactFlow) finishPage();
-        final slice = ReaderSlice(at, at, height: extent);
+        final slice = ReaderSlice(at, at, height: _imageExtent(image));
         images[slice] = image;
-        result.add(slice);
+        if (widget.scrolling) {
+          result.add(slice);
+          continue;
+        }
+        final last = result.lastOrNull;
+        final sameChapter =
+            last != null &&
+            !widget.chapterBreaks.any((b) => b > last.start && b <= at);
+        if (last != null &&
+            sameChapter &&
+            _pageUsed(last) + _pagePieceExtent(slice) <= extent + .5) {
+          result[result.length - 1] = ReaderSlice(
+            last.start,
+            math.max(last.end, at),
+            height: extent,
+            segments: List.unmodifiable([
+              ...last.segments ?? [last],
+              slice,
+            ]),
+          );
+        } else {
+          result.add(
+            ReaderSlice(
+              at,
+              at,
+              height: extent,
+              segments: List.unmodifiable([slice]),
+            ),
+          );
+        }
+        final room = extent - _pageUsed(result.last) - 24 - 4;
+        if (room >= minimumRoom) {
+          openImagePage = result.length - 1;
+          roomBelowImage = room;
+        }
       }
       await appendText(widget.text.length);
       if (widget.scrolling && !widget.compactFlow) finishPage();
@@ -1247,26 +1365,61 @@ class _ReaderViewportState extends State<ReaderViewport> {
     }
 
     Widget pageContent(ReaderSlice segment) {
-      if (images.containsKey(segment)) {
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              widget.margin,
-              widget.margin,
-              widget.margin,
-              widget.margin,
+      final image = images[segment];
+      if (image != null) {
+        final box = illustrationBox(image);
+        final ink = widget.style.color ?? const Color(0xff302b24);
+        final darkPaper = ink.computeLuminance() > .5;
+        Widget picture = Image.memory(
+          image.bytes,
+          width: box.width,
+          height: box.height,
+          fit: BoxFit.contain,
+          cacheWidth: math.min(1600, (box.width * 3).round()),
+          semanticLabel: image.label,
+          errorBuilder: (_, _, _) => Center(
+            child: Text(
+              image.label,
+              textAlign: TextAlign.center,
+              style: widget.style.copyWith(
+                fontSize: (widget.style.fontSize ?? 22) * .8,
+                color: ink.withValues(alpha: .6),
+              ),
             ),
-            child: SizedBox(
-              height: illustrationHeight,
-              child: Image.memory(
-                images[segment]!.bytes,
-                fit: BoxFit.contain,
-                cacheWidth: 1024,
-                semanticLabel: images[segment]!.label,
-                errorBuilder: (_, _, _) =>
-                    Center(child: Text(images[segment]!.label)),
+          ),
+        );
+        if (darkPaper) {
+          // White figure backgrounds glare on a dark page: tone them down.
+          picture = ColorFiltered(
+            colorFilter: const ColorFilter.mode(
+              Color(0xffcfcfcf),
+              BlendMode.modulate,
+            ),
+            child: picture,
+          );
+        }
+        return Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerUp: (event) {
+            if (_isReadingTap(event)) tappedImage = image;
+          },
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: widget.margin,
+              vertical: imageGap,
+            ),
+            child: Center(
+              child: Semantics(
+                button: widget.onImage != null,
+                hint: widget.onImage == null ? null : 'Открыть иллюстрацию',
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: SizedBox(
+                    width: box.width,
+                    height: box.height,
+                    child: picture,
+                  ),
+                ),
               ),
             ),
           ),
@@ -1382,20 +1535,23 @@ class _ReaderViewportState extends State<ReaderViewport> {
         final foreground =
             widget.style.color ?? Theme.of(context).colorScheme.onSurface;
         final isCode = block?.block == 'pre';
+        // Book typography: a sidebar is set off by a hairline rule, not by a
+        // filled card; code keeps a faint plate so its spacing reads clearly.
         styledText = Container(
           margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 3),
-          decoration: BoxDecoration(
-            color: foreground.withValues(alpha: isCode ? .08 : .045),
-            border: isCode
-                ? Border.all(color: foreground.withValues(alpha: .22))
-                : Border(
+          decoration: isCode
+              ? BoxDecoration(
+                  color: foreground.withValues(alpha: .05),
+                  borderRadius: BorderRadius.circular(3),
+                )
+              : BoxDecoration(
+                  border: Border(
                     left: BorderSide(
-                      color: foreground.withValues(alpha: .55),
-                      width: 3,
+                      color: foreground.withValues(alpha: .28),
+                      width: 1.5,
                     ),
                   ),
-            borderRadius: BorderRadius.circular(6),
-          ),
+                ),
           child: text,
         );
       }
@@ -1418,6 +1574,15 @@ class _ReaderViewportState extends State<ReaderViewport> {
       final current = list[i];
       final segments = current.segments;
       if (segments == null) return pageContent(current);
+      if (!widget.scrolling && segments.every(images.containsKey)) {
+        // A page of illustrations only: keep them in the middle of the screen.
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [for (final segment in segments) pageContent(segment)],
+          ),
+        );
+      }
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [for (final segment in segments) pageContent(segment)],
@@ -1504,10 +1669,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
       child: Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (event) {
-          if (event.buttons != kPrimaryButton ||
-              controlPointer == event.pointer) {
-            return;
-          }
+          if (event.buttons != kPrimaryButton) return;
           tapPointer = event.pointer;
           down = event.position;
           downAt = DateTime.now();
@@ -1523,11 +1685,22 @@ class _ReaderViewportState extends State<ReaderViewport> {
         },
         onPointerCancel: (_) => tapPointer = null,
         onPointerUp: (event) {
+          final image = tappedImage;
+          tappedImage = null;
           if (_isReadingTap(event) && !tapLinkHandled) {
-            _tapAt(event.localPosition.dx / widget.width);
+            final fraction = event.localPosition.dx / widget.width;
+            final action = widget.preferences?.tapAt(fraction) ?? 'controls';
+            // Side zones keep turning pages over a picture; the middle opens it.
+            if (image != null &&
+                widget.onImage != null &&
+                !hasSelection &&
+                (action == 'controls' || action == 'none')) {
+              widget.onImage!(image);
+            } else {
+              _tapAt(fraction);
+            }
           }
           tapPointer = null;
-          controlPointer = null;
         },
         onPointerSignal: (event) {
           if (event is PointerScrollEvent &&
@@ -1664,6 +1837,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
                           itemCount: list.length,
                           onPageChanged: (i) {
                             setState(() => index = i);
+                            _reportPage();
                             if (!layoutComplete && list.length - i <= 8) {
                               _requestMorePages();
                             }
@@ -1673,48 +1847,6 @@ class _ReaderViewportState extends State<ReaderViewport> {
                         ),
                       ),
               ),
-              if (!widget.scrolling && !widget.hideControls)
-                Positioned(
-                  left: widget.controlsSideInset,
-                  right: widget.controlsSideInset,
-                  bottom: widget.controlsBottomInset,
-                  height: 48,
-                  child: Listener(
-                    onPointerDown: (event) => controlPointer = event.pointer,
-                    child: Material(
-                      color: Theme.of(context).scaffoldBackgroundColor,
-                      child: Row(
-                        children: [
-                          IconButton(
-                            tooltip: 'Предыдущая страница',
-                            onPressed:
-                                index == 0 &&
-                                    widget.firstChapter &&
-                                    layoutStart == 0
-                                ? null
-                                : () => _step(-1),
-                            icon: const Icon(Icons.chevron_left),
-                          ),
-                          Expanded(
-                            child: Text(
-                              '${layoutStart > 0 ? 'Участок' : 'Страница'} · ${index + 1}/${list.length}${layoutComplete ? '' : '+'}',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.labelSmall,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip:
-                                index == list.length - 1 && widget.lastChapter
-                                ? 'Конец книги'
-                                : 'Следующая страница',
-                            onPressed: () => _step(1),
-                            icon: const Icon(Icons.chevron_right),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
             ],
           ),
         ),

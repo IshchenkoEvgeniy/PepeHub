@@ -34,7 +34,7 @@ Future<void> showReaderShortcuts(
           ),
           if (!pdf)
             const Text('Ctrl+B — список закладок; F3 / Shift+F3 — совпадения'),
-          const Text('F11 — полный экран; Esc — выйти из полного экрана'),
+          const Text('F11 — показать или скрыть панели; Esc — скрыть панели'),
         ],
       ),
     ),

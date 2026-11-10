@@ -17,6 +17,7 @@ import 'package:pepehub/ui/app_theme.dart';
 
 import 'reader_annotations_bookmarks_test.dart' show asset, document, select;
 import 'reader_improvements_test.dart' show settle, size;
+import 'support/reader_controls.dart';
 
 void expectReaderWindowTheme(
   WidgetTester tester,
@@ -43,6 +44,29 @@ void expectReaderWindowTheme(
   expect(actual.extensions, expected.extensions);
 }
 
+/// The font tile marked as selected in the appearance sheet.
+String selectedFont(WidgetTester tester) {
+  final tiles = find.byWidgetPredicate(
+    (w) =>
+        w is InkWell &&
+        w.key is ValueKey<String> &&
+        (w.key! as ValueKey<String>).value.startsWith('reader-font:'),
+    skipOffstage: false,
+  );
+  final selected = [
+    for (final element in tiles.evaluate())
+      if (element
+              .findAncestorWidgetOfExactType<Semantics>()
+              ?.properties
+              .selected ==
+          true)
+        ((element.widget.key! as ValueKey<String>).value).substring(
+          'reader-font:'.length,
+        ),
+  ];
+  return selected.single;
+}
+
 void main() {
   testWidgets(
     'a new font chosen in the picker survives saving and reopening the book',
@@ -61,16 +85,21 @@ void main() {
       try {
         await tester.pumpWidget(book());
         await settle(tester);
-        await tester.tap(find.byTooltip('Оформление чтения'));
+        await tapReaderControl(tester, find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('reader-font')));
-        await tester.pumpAndSettle();
-        final target = find.text('PT Sans · без засечек').last;
-        await tester.ensureVisible(target);
+        final target = find.byKey(const ValueKey('reader-font:pt-sans'));
+        await tester.scrollUntilVisible(
+          target,
+          120,
+          scrollable: find.descendant(
+            of: find.byKey(const ValueKey('reader-font')),
+            matching: find.byType(Scrollable),
+          ),
+        );
         await tester.pumpAndSettle();
         await tester.tap(target);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Готово'));
+        await tester.tap(find.byKey(const ValueKey('reader-appearance-done')));
         await settle(tester);
         expect(
           tester
@@ -94,16 +123,9 @@ void main() {
               .fontFamily,
           'ReaderPTSans',
         );
-        await tester.tap(find.byTooltip('Оформление чтения'));
+        await tapReaderControl(tester, find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
-        expect(
-          tester
-              .widget<DropdownButtonFormField<String>>(
-                find.byKey(const ValueKey('reader-font')),
-              )
-              .initialValue,
-          'pt-sans',
-        );
+        expect(selectedFont(tester), 'pt-sans');
         expect(tester.takeException(), isNull);
       } finally {
         await tester.pumpWidget(const SizedBox());
@@ -153,30 +175,26 @@ void main() {
                 .fontFamily,
             'ReaderLiterata',
           );
-          await tester.tap(find.byTooltip('Оформление чтения'));
+          await tapReaderControl(tester, find.byTooltip('Оформление чтения'));
           await tester.pumpAndSettle();
           expectReaderWindowTheme(
             tester,
             find.text('Оформление чтения'),
             theme,
           );
-          final field = find.byKey(const ValueKey('reader-font'));
-          expect(
-            tester.widget<DropdownButtonFormField<String>>(field).initialValue,
-            'literata',
-          );
+          expect(selectedFont(tester), 'literata');
           await close();
 
           if (style == AppStyle.pine) {
-            await tester.tap(find.byTooltip('Оглавление'));
+            await tapReaderControl(tester, find.byTooltip('Оглавление'));
             await tester.pumpAndSettle();
             expectReaderWindowTheme(tester, find.text('Оглавление · 3'), theme);
             await close();
-            await tester.tap(find.byTooltip('Поиск по книге'));
+            await tapReaderControl(tester, find.byTooltip('Поиск по книге'));
             await settle(tester);
             expectReaderWindowTheme(tester, find.byType(ReaderSearch), theme);
             await close();
-            await tester.tap(find.byTooltip('Другие действия'));
+            await tapReaderControl(tester, find.byTooltip('Другие действия'));
             await tester.pumpAndSettle();
             expectReaderWindowTheme(
               tester,
@@ -187,7 +205,7 @@ void main() {
             await tester.pumpAndSettle();
             expectReaderWindowTheme(tester, find.byType(AlertDialog), theme);
             await close();
-            await tester.tap(find.byTooltip('Другие действия'));
+            await tapReaderControl(tester, find.byTooltip('Другие действия'));
             await tester.pumpAndSettle();
             await tester.tap(find.text('Закладки'));
             await settle(tester);
@@ -201,7 +219,7 @@ void main() {
             expectReaderWindowTheme(tester, find.byType(AlertDialog), theme);
             await close();
             await close();
-            await tester.tap(find.byTooltip('Заметки книги'));
+            await tapReaderControl(tester, find.byTooltip('Заметки книги'));
             await settle(tester);
             expectReaderWindowTheme(
               tester,

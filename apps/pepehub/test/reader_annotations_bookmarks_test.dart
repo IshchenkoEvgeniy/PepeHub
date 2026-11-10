@@ -17,6 +17,7 @@ import 'package:pepehub/reader/reading_library.dart';
 import 'package:pepehub/reader/reading_notes_page.dart';
 
 import 'reader_improvements_test.dart' show settle, size;
+import 'support/reader_controls.dart';
 
 final document = ReaderDocument(
   const EpubBook('Book', [], [
@@ -40,7 +41,7 @@ Widget reader(Repository repo) => MaterialApp(
 );
 
 Future<void> action(WidgetTester tester, String label) async {
-  await tester.tap(find.byTooltip('Другие действия'));
+  await tapReaderControl(tester, find.byTooltip('Другие действия'));
   await tester.pumpAndSettle();
   await tester.tap(find.text(label));
   await settle(tester);
@@ -170,12 +171,7 @@ void main() {
       await repo.setMeta('reader:appearance', jsonEncode({'mode': 'pages'}));
       await repo.setMeta(
         'reader:${asset.hash}',
-        jsonEncode({
-          'layoutVersion': 2,
-          'chapter': 1,
-          'textOffset': 7,
-          'pinnedChapter': {'chapter': 0, 'offset': 4},
-        }),
+        jsonEncode({'layoutVersion': 2, 'chapter': 1, 'textOffset': 7}),
       );
       try {
         await tester.pumpWidget(reader(repo));
@@ -233,7 +229,7 @@ void main() {
         final position =
             jsonDecode((await repo.meta('reader:${asset.hash}'))!) as Map;
         expect((position['chapter'], position['textOffset']), (1, 7));
-        expect(position['pinnedChapter'], {'chapter': 0, 'offset': 4});
+        expect(position.containsKey('pinnedChapter'), isFalse);
         expect(await ReadingLibrary(repo).notes(hash: asset.hash), isEmpty);
         expect(tester.takeException(), isNull);
       } finally {
@@ -256,7 +252,7 @@ void main() {
           await tester.pumpWidget(reader(repo));
           await settle(tester);
           if (width < 1000) {
-            await tester.tap(find.byTooltip('Оглавление'));
+            await tapReaderControl(tester, find.byTooltip('Оглавление'));
             await tester.pumpAndSettle();
           }
           final field = find.descendant(
@@ -285,7 +281,7 @@ void main() {
           );
           expect(returned.text.substring(returned.anchor), document.texts[2]);
           if (width < 1000) {
-            await tester.tap(find.byTooltip('Оглавление'));
+            await tapReaderControl(tester, find.byTooltip('Оглавление'));
             await tester.pumpAndSettle();
           }
           await tester.enterText(field, '2');
@@ -470,48 +466,60 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-    'pinned chapter chip shows only from another chapter and unpins',
-    (tester) async {
-      size(tester, const Size(390, 844));
-      final db = AppDatabase(NativeDatabase.memory());
-      final repo = Repository(db);
-      await repo.setMeta('reader:appearance', jsonEncode({'mode': 'pages'}));
-      await repo.setMeta(
-        'reader:${asset.hash}',
-        jsonEncode({
-          'layoutVersion': 2,
-          'chapter': 1,
-          'textOffset': 7,
-          'pinnedChapter': {'chapter': 1, 'offset': 4},
-        }),
-      );
-      try {
-        await tester.pumpWidget(reader(repo));
-        await settle(tester);
-        final chip = find.byKey(const ValueKey('pinned-chapter-chip'));
-        // Reading on inside the pinned chapter must not cover the text.
-        expect(chip, findsNothing);
-        tester
-            .widget<ReaderViewport>(find.byType(ReaderViewport))
-            .onChapter(-1);
-        await settle(tester);
-        expect(chip, findsOneWidget);
-        expect(find.text('К главе 2'), findsOneWidget);
-        await tester.tap(
-          find.descendant(of: chip, matching: find.byIcon(Icons.clear)),
-        );
-        await settle(tester);
-        expect(chip, findsNothing);
-        final position =
-            jsonDecode((await repo.meta('reader:${asset.hash}'))!) as Map;
-        expect(position.containsKey('pinnedChapter'), isFalse);
-        expect(tester.takeException(), isNull);
-      } finally {
-        await tester.pumpWidget(const SizedBox());
-        await settle(tester);
-        await db.close();
-      }
-    },
-  );
+  testWidgets('a jump offers a short-lived way back that returns exactly', (
+    tester,
+  ) async {
+    size(tester, const Size(390, 844));
+    final db = AppDatabase(NativeDatabase.memory());
+    final repo = Repository(db);
+    await repo.setMeta('reader:appearance', jsonEncode({'mode': 'pages'}));
+    await repo.setMeta(
+      'reader:${asset.hash}',
+      jsonEncode({'layoutVersion': 2, 'chapter': 1, 'textOffset': 7}),
+    );
+    Future<Map> position() async =>
+        jsonDecode((await repo.meta('reader:${asset.hash}'))!) as Map;
+    Future<void> jumpToFirstChapter() async {
+      await tapReaderControl(tester, find.byTooltip('Оглавление'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Отправление'));
+      await settle(tester);
+    }
+
+    try {
+      await tester.pumpWidget(reader(repo));
+      await settle(tester);
+      final back = find.byKey(const ValueKey('reader-jump-back'));
+      // Nothing floats over the text while reading.
+      expect(back, findsNothing);
+      expect(find.byKey(const ValueKey('reader-footer')), findsNothing);
+
+      await jumpToFirstChapter();
+      expect(((await position())['chapter']), 0);
+      // The jump hides the controls and leaves one small way back.
+      expect(find.byKey(const ValueKey('reader-footer')), findsNothing);
+      expect(back, findsOneWidget);
+      expect(tester.getSize(back).height, lessThan(48));
+      await tester.tap(back);
+      await settle(tester);
+      final returned = await position();
+      expect((returned['chapter'], returned['textOffset']), (1, 7));
+      expect(back, findsNothing);
+
+      // It does not stay on the page: the hint fades by itself.
+      await jumpToFirstChapter();
+      expect(back, findsOneWidget);
+      await tester.pump(const Duration(seconds: 7));
+      await tester.pump();
+      expect(back, findsNothing);
+      // The way back stays in the controls until it is used.
+      await showReaderControls(tester);
+      expect(find.byTooltip('Вернуться к прежнему месту'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await tester.pumpWidget(const SizedBox());
+      await settle(tester);
+      await db.close();
+    }
+  });
 }

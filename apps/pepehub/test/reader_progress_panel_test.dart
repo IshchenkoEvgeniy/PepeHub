@@ -9,6 +9,7 @@ import 'package:pepehub/reader/reading_library.dart';
 
 import 'reader_annotations_bookmarks_test.dart' show reader, asset;
 import 'reader_improvements_test.dart' show settle, size;
+import 'support/reader_controls.dart';
 
 void main() {
   testWidgets(
@@ -59,9 +60,9 @@ void main() {
     },
   );
 
-  for (final mode in ['seamless', 'compact', 'scroll']) {
+  for (final mode in ['pages', 'compact', 'scroll']) {
     testWidgets(
-      '$mode has one book progress bar; collapsing preserves position and header',
+      '$mode: controls float over a fixed page and never move the text',
       (tester) async {
         size(tester, const Size(390, 800));
         final db = AppDatabase(NativeDatabase.memory()), repo = Repository(db);
@@ -69,30 +70,41 @@ void main() {
           await repo.setMeta('reader:appearance', '{"mode":"$mode"}');
           await tester.pumpWidget(reader(repo));
           await settle(tester);
-          expect(find.byType(ReaderProgressBar), findsOneWidget);
-          expect(find.byType(Slider), findsNothing);
+          // Reading: only the text and a quiet status line.
+          expect(find.byType(ReaderProgressBar), findsNothing);
+          expect(find.byTooltip('Поиск по книге').hitTestable(), findsNothing);
+          expect(
+            find.byKey(const ValueKey('reader-status-place')),
+            findsOneWidget,
+          );
+          final viewport = find.byType(ReaderViewport);
+          final state = tester.state(viewport);
+          final rect = tester.getRect(viewport);
           final before = await ReadingLibrary(repo)
               .value('reader:${asset.hash}');
-          await tester.drag(
-            find.textContaining('% книги'),
-            const Offset(0, 65),
+
+          await showReaderControls(tester);
+          await settle(tester);
+          expect(find.byType(ReaderProgressBar), findsOneWidget);
+          expect(find.byType(Slider), findsNothing);
+          expect(
+            find.byTooltip('Поиск по книге').hitTestable(),
+            findsOneWidget,
           );
+          // Showing the controls neither re-measures nor moves the page.
+          expect(identical(tester.state(viewport), state), isTrue);
+          expect(tester.getRect(viewport), rect);
+
+          await tester.tapAt(rect.center);
           await settle(tester);
           expect(find.byType(ReaderProgressBar), findsNothing);
-          expect(find.byTooltip('Поиск по книге'), findsOneWidget);
-          expect(find.byType(ReaderViewport), findsOneWidget);
-          await tester.drag(
-            find.byTooltip('Показать нижнюю панель'),
-            const Offset(0, -65),
-          );
-          await settle(tester);
+          expect(identical(tester.state(viewport), state), isTrue);
           final after = await ReadingLibrary(repo)
               .value('reader:${asset.hash}');
           expect(
             (after['chapter'], after['textOffset']),
             (before['chapter'], before['textOffset']),
           );
-          expect(find.byType(ReaderProgressBar), findsOneWidget);
           expect(tester.takeException(), isNull);
         } finally {
           await tester.pumpWidget(const SizedBox());

@@ -24,6 +24,7 @@ import 'package:pepehub/reader/reader_resources.dart';
 import 'package:pepehub/ui/app_theme.dart';
 
 import 'support/flutter_fonts.dart';
+import 'support/reader_controls.dart';
 
 const pixel =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
@@ -238,7 +239,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
   testWidgets(
-    'long quote survives page turns and fullscreen; notes filter and edit on phone',
+    'long quote survives page turns with hidden controls; notes filter and edit on phone',
     (tester) async {
       tester.view.physicalSize = const Size(430, 900);
       tester.view.display.size = const Size(430, 900);
@@ -316,18 +317,15 @@ void main() {
           ),
         );
         await settle();
-        await tester.tap(find.byTooltip('Полный экран'));
-        await settle();
-        expect(find.byType(AppBar), findsNothing);
-        await tester.tapAt(tester.getCenter(find.byType(ReaderViewport)));
-        await settle();
+        // Reading starts without controls over the text.
+        expect(find.byKey(const ValueKey('reader-footer')), findsNothing);
         await select(0, 6);
         expect(find.text('Начать длинную цитату'), findsNothing);
         await tester.tap(find.text('Ещё'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Начать длинную цитату'));
         await settle();
-        await tester.tap(find.byTooltip('Следующая страница'));
+        await turnReaderPage(tester);
         await settle();
         await select(0, 12);
         await tester.tap(find.text('Ещё'));
@@ -377,7 +375,7 @@ void main() {
         expect(saved.quote, sourceText.substring(saved.start, saved.end));
         expect(saved.tags, ['Сюжет', 'Море']);
         expect(saved.characters, ['Капитан']);
-        await tester.tap(find.byTooltip('Заметки книги'));
+        await tapReaderControl(tester, find.byTooltip('Заметки книги'));
         await settle();
         await tester.tap(find.byTooltip('Фильтр по цвету'));
         await tester.pumpAndSettle();

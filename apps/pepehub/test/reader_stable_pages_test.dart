@@ -17,6 +17,9 @@ import 'package:pepehub/reader/reader_viewport.dart';
 import 'reader_annotations_bookmarks_test.dart' show asset, document;
 import 'reader_improvements_test.dart' show settle, size;
 
+/// Space under the page for the status line, plus the 4 px top margin.
+const textFrameReserve = 26.0 + 4;
+
 void main() {
   test(
     'screen geometry retains usable dimensions when display data disappears',
@@ -122,7 +125,7 @@ void main() {
       final viewport = find.byType(ReaderViewport);
       final before = tester.widget<ReaderViewport>(viewport);
       expect(before.width, 390);
-      expect(before.height, 796);
+      expect(before.height, 796 - textFrameReserve);
       expect(find.byTooltip('Закрыть книгу'), findsOneWidget);
       final text = find
           .descendant(
@@ -197,12 +200,13 @@ void main() {
           final state = tester.state(viewport);
           final before = tester.widget<ReaderViewport>(viewport);
           expect(before.width, screen.width);
-          expect(before.height, screen.height);
-          if (mode == 'pages') {
-            final arrows = tester.getRect(find.byTooltip('Следующая страница'));
-            expect(arrows.right, lessThanOrEqualTo(window.width));
-            expect(arrows.bottom, lessThanOrEqualTo(window.height));
-          }
+          // The page leaves room only for the quiet status line below it.
+          expect(before.height, screen.height - textFrameReserve);
+          final status = tester.getRect(
+            find.byKey(const ValueKey('reader-status-place')),
+          );
+          expect(status.right, lessThanOrEqualTo(window.width));
+          expect(status.bottom, lessThanOrEqualTo(window.height));
           final position = mode == 'pages'
               ? tester.widget<PageView>(list).controller!.page!
               : tester.widget<ListView>(list).controller!.offset;
@@ -214,7 +218,10 @@ void main() {
           await settle(tester);
           expect(tester.state(viewport), same(state));
           expect(tester.widget<ReaderViewport>(viewport).key, before.key);
-          expect(tester.widget<ReaderViewport>(viewport).height, screen.height);
+          expect(
+            tester.widget<ReaderViewport>(viewport).height,
+            screen.height - textFrameReserve,
+          );
           final fullscreenPosition = mode == 'pages'
               ? tester.widget<PageView>(list).controller!.page!
               : tester.widget<ListView>(list).controller!.offset;
@@ -262,36 +269,32 @@ void main() {
         final viewport = find.byType(ReaderViewport);
         final before = tester.widget<ReaderViewport>(viewport);
         final state = tester.state(viewport);
-        expect(before.height, screen.height);
-        expect(before.pageHeightFactor, 1.3);
-
-        await tester.drag(find.byType(ReaderBottomPanel), const Offset(0, 70));
-        await settle(tester);
-        expect(find.byTooltip('Показать нижнюю панель'), findsOneWidget);
-        expect(tester.state(viewport), same(state));
-        expect(tester.widget<ReaderViewport>(viewport).key, before.key);
+        // Fixed frame: the status line and the (unchanging) system insets.
+        expect(before.height, screen.height - textFrameReserve - 48);
+        final close = find.byTooltip('Закрыть книгу');
+        expect(close.hitTestable(), findsNothing);
+        expect(find.byType(ReaderProgressFooter), findsNothing);
 
         final center = tester.getCenter(viewport);
         // Empty page space also supports the configured centre tap.
         await tester.tapAt(center);
-        tester.view.padding = FakeViewPadding.zero;
-        tester.view.viewPadding = FakeViewPadding.zero;
         await settle(tester);
-        expect(tester.widget<ReaderViewport>(viewport).hideControls, isTrue);
+        expect(close.hitTestable(), findsOneWidget);
+        expect(find.byType(ReaderProgressFooter), findsOneWidget);
         expect(tester.state(viewport), same(state));
         expect(tester.widget<ReaderViewport>(viewport).key, before.key);
-        expect(find.byType(FloatingActionButton), findsNothing);
-        expect(find.byType(ReaderProgressFooter), findsNothing);
-        expect(find.byTooltip('Закрыть книгу'), findsNothing);
+        expect(tester.widget<ReaderViewport>(viewport).height, before.height);
 
         await tester.tapAt(center);
-        tester.view.padding = const FakeViewPadding(top: 24, bottom: 24);
-        tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 24);
         await settle(tester);
-        expect(tester.widget<ReaderViewport>(viewport).hideControls, isFalse);
+        expect(close.hitTestable(), findsNothing);
+        expect(find.byType(FloatingActionButton), findsNothing);
+        expect(find.byType(ReaderProgressFooter), findsNothing);
         expect(tester.state(viewport), same(state));
         expect(tester.widget<ReaderViewport>(viewport).key, before.key);
-        expect(find.byTooltip('Закрыть книгу'), findsOneWidget);
+        await tester.tapAt(center);
+        await settle(tester);
+        expect(close.hitTestable(), findsOneWidget);
         await tester.pumpWidget(const SizedBox());
         await settle(tester);
       });

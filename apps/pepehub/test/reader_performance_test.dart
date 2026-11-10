@@ -18,6 +18,7 @@ import 'package:pepehub/reader/reading_activity.dart';
 import 'package:pepehub/reader/reading_daily_totals.dart';
 
 import 'reader_improvements_test.dart' show settle, size;
+import 'support/reader_controls.dart';
 
 void main() {
   test(
@@ -163,7 +164,7 @@ void main() {
           jsonDecode((await repo.meta('reader:${asset.hash}'))!)['textOffset'],
           7,
         );
-        await tester.tap(find.byTooltip('Поиск по книге'));
+        await tapReaderControl(tester, find.byTooltip('Поиск по книге'));
         await tester.pumpAndSettle();
         await tester.enterText(find.byType(TextField), 'needle');
         await settle(tester);

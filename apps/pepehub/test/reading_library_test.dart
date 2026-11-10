@@ -18,6 +18,8 @@ import 'package:pepehub/reader/reader_page.dart';
 import 'package:pepehub/reader/reading_collections.dart';
 import 'package:pepehub/ui/library_page.dart';
 
+import 'support/reader_controls.dart';
+
 const pixel =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
 Uint8List epub() {
@@ -187,7 +189,7 @@ void main() {
         expect(notes, hasLength(1));
         expect(notes.single.start, 8);
         expect(notes.single.quote, 'Повтор');
-        await tester.tap(find.byTooltip('Заметки книги'));
+        await tapReaderControl(tester, find.byTooltip('Заметки книги'));
         await settle();
         await tester.enterText(find.byType(TextField), 'капитан');
         await tester.pumpAndSettle();

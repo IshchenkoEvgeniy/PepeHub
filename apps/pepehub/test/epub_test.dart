@@ -13,6 +13,8 @@ import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/reader/epub.dart';
 import 'package:pepehub/reader/reader_page.dart';
 
+import 'support/reader_controls.dart';
+
 Uint8List fixture({Map<String, String> overrides = const {}}) {
   final files = {
     'mimetype': 'application/epub+zip',
@@ -138,7 +140,7 @@ void main() {
         }
         await tester.pumpAndSettle();
         expect(find.textContaining('Первый & второй'), findsOneWidget);
-        await tester.tap(find.byTooltip('Оглавление'));
+        await tapReaderControl(tester, find.byTooltip('Оглавление'));
         await tester.pumpAndSettle();
         await tester.tap(find.widgetWithText(ListTile, 'Вторая глава'));
         await tester.runAsync(() async {
@@ -146,15 +148,17 @@ void main() {
         });
         await tester.pumpAndSettle();
         expect(find.textContaining('Конец'), findsWidgets);
-        await tester.tap(find.byTooltip('Оформление чтения'));
+        await tapReaderControl(tester, find.byTooltip('Оформление чтения'));
         await tester.pumpAndSettle();
         for (var i = 0; i < 2; i++) {
           await tester.tap(find.byTooltip('Увеличить размер текста'));
           await tester.pump();
         }
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('Готово'));
-        await tester.tap(find.text('Готово'));
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('reader-appearance-done')),
+        );
+        await tester.tap(find.byKey(const ValueKey('reader-appearance-done')));
         await tester.runAsync(() async {
           await Future<void>.delayed(const Duration(milliseconds: 100));
         });
@@ -167,7 +171,10 @@ void main() {
           expect(position['paragraph'], 0);
           expect(position['fontSize'], 26.0);
         });
-        await tester.tap(find.byTooltip('Вернуться к прежнему месту'));
+        await tapReaderControl(
+          tester,
+          find.byTooltip('Вернуться к прежнему месту'),
+        );
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 100)),
         );

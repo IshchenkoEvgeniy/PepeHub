@@ -22,6 +22,7 @@ import 'package:pepehub/reader/text_book.dart';
 
 import 'reader_annotations_bookmarks_test.dart' show asset;
 import 'reader_improvements_test.dart' show settle, size;
+import 'support/reader_controls.dart';
 
 class DelayedBookmarks extends ReaderBookmarkStore {
   int calls = 0;
@@ -184,7 +185,7 @@ void main() {
           ),
           isTrue,
         );
-        await tester.tap(find.byTooltip('Сохранить закладку'));
+        await tapReaderControl(tester, find.byTooltip('Сохранить закладку'));
         await settle(tester);
         final rebuilt = tester.widget<ReaderViewport>(
           find.byType(ReaderViewport),
@@ -216,7 +217,7 @@ void main() {
         ),
       );
       await settle(tester);
-      await tester.tap(find.byTooltip('Поиск по книге'));
+      await tapReaderControl(tester, find.byTooltip('Поиск по книге'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'needle');
       await settle(tester);

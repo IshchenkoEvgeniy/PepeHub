@@ -21,6 +21,7 @@ import 'package:pepehub/ui/app_theme.dart';
 
 import 'reader_annotations_bookmarks_test.dart' show select;
 import 'reader_improvements_test.dart' show settle, size;
+import 'support/reader_controls.dart';
 
 // Exercise actual files/imports/parsers, rather than supplying a ReaderDocument.
 // PDF has a separate native suite in pdf_reader_test.dart.
@@ -334,12 +335,12 @@ void main() {
           }
           expect(find.byType(ReaderViewport), findsOneWidget);
           expect(find.byType(PageView), findsOneWidget);
-          await tester.tap(find.byTooltip('Следующая страница'));
+          await turnReaderPage(tester);
           await settle(tester);
           final beforeSearch = await position();
           expect(beforeSearch['textOffset'] as int, greaterThan(0));
 
-          await tester.tap(find.byTooltip('Поиск по книге'));
+          await tapReaderControl(tester, find.byTooltip('Поиск по книге'));
           await tester.pumpAndSettle();
           await tester.enterText(find.byType(TextField), _needle);
           await settle(tester);
@@ -351,7 +352,10 @@ void main() {
             hit['textOffset'] as int,
             greaterThan(beforeSearch['textOffset'] as int),
           );
-          await tester.tap(find.byTooltip('Вернуться к прежнему месту'));
+          await tapReaderControl(
+            tester,
+            find.byTooltip('Вернуться к прежнему месту'),
+          );
           await settle(tester);
           expect((await position())['textOffset'], beforeSearch['textOffset']);
 
@@ -374,7 +378,7 @@ void main() {
           expect(notes.single.quote, quote);
           expect(notes.single.color, 'blue');
 
-          await tester.tap(find.byTooltip('Другие действия'));
+          await tapReaderControl(tester, find.byTooltip('Другие действия'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('Закладки'));
           await settle(tester);
@@ -393,32 +397,16 @@ void main() {
           await tester.binding.handlePopRoute();
           await settle(tester);
 
-          await tester.tap(find.byTooltip('Оформление чтения'));
+          await tapReaderControl(tester, find.byTooltip('Оформление чтения'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('reader-palette:sepia')));
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text('Прокрутка'));
+          await tester.tap(find.text('Прокрутка'));
           await tester.pumpAndSettle();
           await tester.tap(
-            find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
+            find.byKey(const ValueKey('reader-appearance-done')),
           );
-          await tester.pumpAndSettle();
-          await tester.ensureVisible(find.text('Сепия'));
-          await tester.tap(
-            find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
-          );
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('Сепия'));
-          await tester.pumpAndSettle();
-          await tester.tap(
-            find.byKey(const ValueKey('reader-appearance-tab:Страница')),
-          );
-          await tester.pumpAndSettle();
-          await tester.ensureVisible(find.text('Без пустых мест'));
-          await tester.tap(
-            find.byKey(const ValueKey('reader-appearance-tab:Страница')),
-          );
-          await tester.pumpAndSettle();
-          await tester.tap(find.text('Без пустых мест'));
-          await tester.pumpAndSettle();
-          await tester.ensureVisible(find.text('Готово'));
-          await tester.tap(find.text('Готово'));
           await settle(tester);
           expect(find.byType(PageView), findsNothing);
           final saved = await position();

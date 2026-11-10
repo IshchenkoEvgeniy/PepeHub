@@ -18,6 +18,7 @@ import 'package:pepehub/reader/text_book.dart';
 
 import 'reader_annotations_bookmarks_test.dart' show reader, asset, document;
 import 'reader_improvements_test.dart' show settle, size;
+import 'support/reader_controls.dart';
 
 Future<void> ctrl(WidgetTester tester, LogicalKeyboardKey key) async {
   await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -165,7 +166,7 @@ void main() {
     },
   );
 
-  testWidgets('settings preview, explicit save and dismissal cancel', (
+  testWidgets('settings preview, explicit save, cancel and dismissal', (
     tester,
   ) async {
     size(tester, const Size(800, 1100));
@@ -196,7 +197,7 @@ void main() {
     }
     await tester.pump(const Duration(milliseconds: 200));
     expect(preview!.size, 30);
-    await tester.tap(find.text('Готово'));
+    await tester.tap(find.byKey(const ValueKey('reader-appearance-done')));
     await tester.pumpAndSettle();
     expect(result!.size, 30);
     await tester.tap(find.text('Settings'));
@@ -211,7 +212,8 @@ void main() {
     await tester.pumpAndSettle();
     Navigator.pop(tester.element(find.byType(BottomSheet)));
     await tester.pumpAndSettle();
-    expect(result, isNull);
+    // Closing the sheet keeps what is shown; nothing was changed this time.
+    expect(result?.toJson(), const ReaderPreferences().toJson());
   });
 
   testWidgets(
@@ -222,7 +224,7 @@ void main() {
       try {
         await tester.pumpWidget(reader(repo));
         await settle(tester);
-        await tester.tap(find.byTooltip('Сохранить закладку'));
+        await tapReaderControl(tester, find.byTooltip('Сохранить закладку'));
         await settle(tester);
         expect(
           await ReaderBookmarkStore(repo, asset.hash).list(),
