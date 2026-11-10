@@ -167,14 +167,14 @@ SQLite — рабочая копия, папка `PepeHub-library` — пере�
 |---|---|
 | Всё без сборки | `scripts\test.cmd` |
 | Только анализ | `scripts\test.cmd -AnalyzeOnly` |
+| Отформатировать код и проверить | `scripts\test.cmd -Format` |
 | Плюс нативные Android-тесты | `scripts\test.cmd -Android` |
 | Коммит с проверками | `scripts\commit.cmd "Сообщение" -Test` |
 
-CI (`.github/workflows/tests.yml`) на каждый push в `main` выполняет те же шаги: тесты скриптов, `flutter analyze`, `flutter test`.
+CI (`.github/workflows/tests.yml`) на каждый push в `main` выполняет те же шаги: тесты скриптов, проверка `dart format`, `flutter analyze`, `flutter test`.
 
 ## 13. Известные долги
 
-- Несколько файлов экранов слишком велики: `ui/library_page.dart` (около 3 400 строк), `reader/reader_page.dart`, `ui/recommendations_page.dart`, `reader/pdf_reader_page.dart`.
+- Несколько файлов экранов слишком велики: `ui/library_page.dart` (около 2 400 строк после выноса части действий в `library_page_*.dart`), `reader/reader_page.dart`, `ui/recommendations_page.dart`, `reader/pdf_reader_page.dart`.
 - Унаследованные ключи `obsidian-*` (раздел 4) ждут миграции, которая должна учитывать формат папки библиотеки.
-- Форматирование кода (`dart format`) в проверках не контролируется.
 - Часть документов в `docs/` описывает исторические этапы и не обновлялась.

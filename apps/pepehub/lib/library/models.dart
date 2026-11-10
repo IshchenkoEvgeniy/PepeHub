@@ -27,26 +27,25 @@ class LibraryItem {
     this.modifiedAt = 0,
     this.coverAsset,
   });
-  factory LibraryItem.fromJson(Map<String, dynamic> json) =>
-      LibraryItem(
-        coverAsset: json['coverAsset'] is Map
-            ? Map<String, dynamic>.from(json['coverAsset'] as Map)
-            : null,
-        id: json['id'] as String,
-        path: json['path'] as String,
-        collectionId: json['collectionId'] as String,
-        mediaType: json['mediaType'] as String,
-        modifiedAt: (json['modifiedAt'] as num?)?.toInt() ?? 0,
-        values: {
-          for (final field in json['fields'] as List)
-            (field as Map)['key'] as String: null,
-          ...Map<String, dynamic>.from(json['values'] as Map),
-        },
-        fields: [
-          for (final field in json['fields'] as List)
-            LibraryField.fromJson(Map<String, dynamic>.from(field as Map)),
-        ],
-      );
+  factory LibraryItem.fromJson(Map<String, dynamic> json) => LibraryItem(
+    coverAsset: json['coverAsset'] is Map
+        ? Map<String, dynamic>.from(json['coverAsset'] as Map)
+        : null,
+    id: json['id'] as String,
+    path: json['path'] as String,
+    collectionId: json['collectionId'] as String,
+    mediaType: json['mediaType'] as String,
+    modifiedAt: (json['modifiedAt'] as num?)?.toInt() ?? 0,
+    values: {
+      for (final field in json['fields'] as List)
+        (field as Map)['key'] as String: null,
+      ...Map<String, dynamic>.from(json['values'] as Map),
+    },
+    fields: [
+      for (final field in json['fields'] as List)
+        LibraryField.fromJson(Map<String, dynamic>.from(field as Map)),
+    ],
+  );
   dynamic value(String field) =>
       values[fields.where((f) => f.field == field).firstOrNull?.key];
   String get title => '${value('title') ?? ''}'.trim().isEmpty
@@ -67,17 +66,16 @@ class LibraryItem {
     'values': values,
     'fields': fields.map((f) => f.toJson()).toList(),
   };
-  LibraryItem withValues(Map<String, dynamic> next) =>
-      LibraryItem(
-        id: id,
-        path: path,
-        collectionId: collectionId,
-        mediaType: mediaType,
-        modifiedAt: modifiedAt,
-        coverAsset: coverAsset,
-        values: next,
-        fields: fields,
-      );
+  LibraryItem withValues(Map<String, dynamic> next) => LibraryItem(
+    id: id,
+    path: path,
+    collectionId: collectionId,
+    mediaType: mediaType,
+    modifiedAt: modifiedAt,
+    coverAsset: coverAsset,
+    values: next,
+    fields: fields,
+  );
 }
 
 class LibraryEntry {
@@ -95,9 +93,7 @@ class LibraryEntry {
     this.remote,
   });
   factory LibraryEntry.fromJson(Map<String, dynamic> json) => LibraryEntry(
-    LibraryItem.fromJson(
-      Map<String, dynamic>.from(json['item'] as Map),
-    ),
+    LibraryItem.fromJson(Map<String, dynamic>.from(json['item'] as Map)),
     state: json['state'] as String? ?? 'synced',
     sourceBookId: json['sourceBookId'] as String?,
     message: json['message'] as String?,

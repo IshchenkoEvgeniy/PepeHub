@@ -64,10 +64,7 @@ LibraryItem personalLibraryItem(
   },
 );
 
-Map<String, dynamic> personalValues(
-  LibraryItem remote, {
-  Map? collection,
-}) {
+Map<String, dynamic> personalValues(LibraryItem remote, {Map? collection}) {
   final aliases = {for (final f in remote.fields) f.key: f.field};
   final result = {
     for (final entry in remote.values.entries)

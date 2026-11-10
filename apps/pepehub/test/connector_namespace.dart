@@ -7,5 +7,6 @@ import 'package:crypto/crypto.dart';
 class LegacyConnector {
   final String url, token;
   const LegacyConnector(this.url, this.token);
-  String get namespace => sha256.convert(utf8.encode('$url\n$token')).toString();
+  String get namespace =>
+      sha256.convert(utf8.encode('$url\n$token')).toString();
 }

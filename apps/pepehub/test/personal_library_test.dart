@@ -6,7 +6,9 @@ import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/library_repository.dart';
 import 'package:pepehub/library/library_service.dart';
 import 'package:pepehub/library/models.dart';
+
 import 'connector_namespace.dart';
+
 import 'package:pepehub/recommendations/recommendation_store.dart';
 import 'package:uuid/uuid.dart';
 
@@ -113,5 +115,4 @@ void main() {
     expect((await remote.entries())[id]!.item.value('status'), 'В планах');
     expect(service.fromRecommendation(shelf.books.single).id, personalId);
   });
-
 }

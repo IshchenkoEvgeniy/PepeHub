@@ -108,13 +108,13 @@ class LibraryRepository {
       if (raw is! Map ||
           raw['id'] is! String ||
           !ids.add(raw['id'] as String)) {
-        throw const FormatException('Некорректное изменение карточки библиотеки');
+        throw const FormatException(
+          'Некорректное изменение карточки библиотеки',
+        );
       }
       final item = raw['item'] == null
           ? null
-          : LibraryItem.fromJson(
-              Map<String, dynamic>.from(raw['item'] as Map),
-            );
+          : LibraryItem.fromJson(Map<String, dynamic>.from(raw['item'] as Map));
       if (item != null && item.id != raw['id']) {
         throw const FormatException('ID карточки библиотеки не совпадает');
       }

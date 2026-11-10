@@ -111,11 +111,7 @@ class NoteStore extends ActivityStore {
         ),
       );
 
-  Map<String, dynamic> _reader(
-    ReadingNote n,
-    LibraryItem item,
-    Map? prior,
-  ) => {
+  Map<String, dynamic> _reader(ReadingNote n, LibraryItem item, Map? prior) => {
     'id': prior?['id'] ?? uuid.v5(item.id, 'reader-note:${n.id}'),
     'itemId': item.id,
     'mediaType': item.mediaType,

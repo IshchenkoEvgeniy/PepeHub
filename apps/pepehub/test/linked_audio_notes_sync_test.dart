@@ -13,7 +13,9 @@ import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/library_repository.dart';
 import 'package:pepehub/library/models.dart';
 import 'package:pepehub/library/note_store.dart';
+
 import 'connector_namespace.dart';
+
 import 'package:pepehub/media/asset_store.dart';
 
 class LinkedNoteSource extends FolderAudioFile {
@@ -167,5 +169,4 @@ void main() {
       expect(next['entry']['text'], 'Later edit');
     },
   );
-
 }

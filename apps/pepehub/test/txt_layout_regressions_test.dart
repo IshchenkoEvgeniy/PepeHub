@@ -42,19 +42,16 @@ void main() {
     },
   );
 
-  test(
-    'single-line TXT keeps its exact text after hundreds of lines',
-    () {
-      final source = [
-        'Chapter 1',
-        for (var i = 0; i < 400; i++) '  Paragraph $i with some text.',
-        '  TARGET quote at the saved position.',
-      ].join('\n');
-      final chapter = parseTextBook(bytes(source), 'book.txt').chapters.single;
-      expect(chapter.paragraphSeparator, '\n');
-      expect(chapter.text, source);
-    },
-  );
+  test('single-line TXT keeps its exact text after hundreds of lines', () {
+    final source = [
+      'Chapter 1',
+      for (var i = 0; i < 400; i++) '  Paragraph $i with some text.',
+      '  TARGET quote at the saved position.',
+    ].join('\n');
+    final chapter = parseTextBook(bytes(source), 'book.txt').chapters.single;
+    expect(chapter.paragraphSeparator, '\n');
+    expect(chapter.text, source);
+  });
 
   for (final oldSeparator in ['\n', '\n\n']) {
     for (final nextSeparator in ['\n', '\n\n']) {

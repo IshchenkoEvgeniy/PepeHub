@@ -12,8 +12,7 @@ import 'library_audio_time_sheet.dart';
 import 'library_card_actions.dart';
 import 'library_cover_search.dart';
 import 'library_groups_page.dart';
-import 'library_archive_page.dart'
-    show ShelfBookCover, metadataProgressLabel;
+import 'library_archive_page.dart' show ShelfBookCover, metadataProgressLabel;
 import 'library_metadata_editor.dart' show LibraryMetadataEditor;
 import '../diagnostics/user_message.dart';
 

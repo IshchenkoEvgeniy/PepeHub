@@ -109,8 +109,7 @@ void main() {
           throw StateError('Viewing the library must not send data');
         });
         addTearDown(client.close);
-        final service = LibraryService(repo, client)
-          ..entries = fixtures();
+        final service = LibraryService(repo, client)..entries = fixtures();
         addTearDown(service.dispose);
         final key = GlobalKey();
         await tester.runAsync(() async {

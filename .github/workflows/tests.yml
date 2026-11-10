@@ -48,6 +48,10 @@ jobs:
         working-directory: apps/pepehub
         run: flutter pub get
 
+      - name: Format
+        working-directory: apps/pepehub
+        run: dart format --output=none --set-exit-if-changed lib test integration_test tool
+
       - name: Analyze
         working-directory: apps/pepehub
         run: flutter analyze --no-pub

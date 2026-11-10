@@ -25,6 +25,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-local-build.ps1 
 
 ## Проверки и коммит без сборки
 
-`scripts\test.cmd` выполняет те же проверки, что CI, и ничего не собирает: тесты и типы скриптов обновления, `flutter analyze`, `flutter test`. Останавливается на первой ошибке, лог пишет в `.local\test.log`. Параметры: `-Android` добавляет нативные Android-тесты, `-AnalyzeOnly` оставляет только анализ, `-SkipNode` пропускает Node-часть; пути тестов относительно `apps\pepehub` ограничивают прогон, например `scripts\test.cmd test\epub_test.dart`.
+`scripts\test.cmd` выполняет те же проверки, что CI, и ничего не собирает: тесты и типы скриптов обновления, `flutter analyze`, `flutter test`. Останавливается на первой ошибке, лог пишет в `.local\test.log`. Форматирование проверяется через `dart format`; `-Format` исправляет его вместо проверки. Параметры: `-Android` добавляет нативные Android-тесты, `-AnalyzeOnly` оставляет только анализ, `-SkipNode` пропускает Node-часть; пути тестов относительно `apps\pepehub` ограничивают прогон, например `scripts\test.cmd test\epub_test.dart`.
 
 `scripts\commit.cmd` показывает изменения, спрашивает сообщение, выполняет `git add --all`, создаёт коммит и после подтверждения отправляет ветку в `origin`. `scripts\commit.cmd "Сообщение" -Test` сначала прогоняет `test.ps1` и не коммитит при ошибке; `-NoPush` оставляет коммит локальным. Версию и заметки выпуска этот скрипт не меняет — для выпуска используется `release.cmd`.

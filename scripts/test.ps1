@@ -6,9 +6,10 @@
     Те же проверки, что выполняет CI (.github/workflows/tests.yml):
       1. проверяет инструменты;
       2. тесты и типы скриптов обновления (npm test, npm run typecheck);
-      3. анализ приложения (flutter analyze);
-      4. тесты приложения (flutter test);
-      5. по запросу — нативные Android-тесты (JVM/Robolectric).
+      3. форматирование кода (dart format; с -Format — исправляет, иначе только проверяет);
+      4. анализ приложения (flutter analyze);
+      5. тесты приложения (flutter test);
+      6. по запросу — нативные Android-тесты (JVM/Robolectric).
 
     Останавливается на первой ошибке. Ничего не собирает и не меняет в git.
     Лог: .local\test.log (предыдущий — test.log.previous).
@@ -23,12 +24,20 @@
     Анализ и только указанные тесты (пути относительно apps\pepehub).
 
 .EXAMPLE
+    .\scripts\test.ps1 -Format
+    Отформатировать код (dart format) и затем выполнить остальные проверки.
+
+.EXAMPLE
     .\scripts\test.ps1 -Android
     Дополнительно прогнать нативные Android-тесты.
 #>
 param(
     # Не запускать тесты и проверку типов скриптов обновления (Node).
     [switch]$SkipNode,
+    # Отформатировать код вместо проверки форматирования.
+    [switch]$Format,
+    # Не проверять форматирование.
+    [switch]$SkipFormat,
     # Не запускать flutter analyze.
     [switch]$SkipAnalyze,
     # Только анализ: не запускать тесты приложения.
@@ -44,7 +53,9 @@ $testRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $testApp = Join-Path $testRoot 'apps\pepehub'
 $testFlutter = Join-Path $testRoot '.tools\flutter\bin\flutter.bat'
 $testStep = 0
-$testTotal = 5
+$testTotal = 6
+$testDart = Join-Path $testRoot '.tools\flutter\bin\dart.bat'
+$testFormatPaths = @('lib', 'test', 'integration_test', 'tool')
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 
 function Write-Step([string]$Title) {
@@ -56,8 +67,17 @@ function Write-Step([string]$Title) {
 function Write-Note([string]$Text, [ConsoleColor]$Color = 'Gray') { Write-Host "    $Text" -ForegroundColor $Color }
 
 function Invoke-Native([string]$Title, [string]$File, [string[]]$Arguments) {
-    & $File @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "$Title — ошибка (код $LASTEXITCODE)." }
+    # Pipe the output so the transcript (.local\test.log) records it. Windows
+    # PowerShell 5.1 turns redirected stderr into errors under 'Stop'; judge
+    # the command by its exit code instead.
+    $previous = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $global:LASTEXITCODE = 0
+        & $File @Arguments 2>&1 | ForEach-Object { Write-Host "$_" }
+        $code = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previous }
+    if ($code -ne 0) { throw "$Title — ошибка (код $code)." }
 }
 
 $testLog = $null
@@ -78,6 +98,8 @@ try {
         $found = Get-Command flutter -ErrorAction SilentlyContinue
         if (-not $found) { throw 'Не найден .tools\flutter\bin\flutter.bat, и команды flutter нет в PATH.' }
         $testFlutter = $found.Source
+        $foundDart = Get-Command dart -ErrorAction SilentlyContinue
+        if ($foundDart) { $testDart = $foundDart.Source } else { $testDart = $null }
         Write-Note "Локального Flutter нет, используется $testFlutter" Yellow
     } else {
         $env:PUB_CACHE = Join-Path $testRoot '.tools\pub-cache'
@@ -109,6 +131,22 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $testApp '.dart_tool\package_config.json'))) {
             Write-Note 'Получаю зависимости Flutter (flutter pub get)...'
             Invoke-Native 'flutter pub get' $testFlutter @('pub', 'get')
+        }
+
+        # --------------------------------------------------------------
+        Write-Step 'Форматирование кода'
+        if ($SkipFormat) {
+            Write-Note 'Пропущено (-SkipFormat).' Yellow
+        } elseif (-not $testDart) {
+            Write-Note 'Пропущено: команда dart не найдена.' Yellow
+        } elseif ($Format) {
+            Invoke-Native 'dart format' $testDart (@('format') + $testFormatPaths)
+        } else {
+            try {
+                Invoke-Native 'dart format' $testDart (@('format', '--output=none', '--set-exit-if-changed') + $testFormatPaths)
+            } catch {
+                throw 'Код не отформатирован (файлы перечислены выше). Запустите scripts\test.cmd -Format и повторите.'
+            }
         }
 
         # --------------------------------------------------------------

@@ -115,63 +115,69 @@ void main() {
     now = 1000000;
     expect(clock.milliseconds, 20000);
   });
-  test('v1 database migrates without losing a card and drops the old sync queue', () async {
-    final file = File('${root.path}/legacy.sqlite');
-    final raw = sqlite.sqlite3.open(file.path);
-    final bookId = uuid.v4(), operationId = uuid.v4();
-    final payload = jsonEncode({
-      'title': 'Старая библиотека',
-      'authors': <String>[],
-      'format': 'epub',
-      'status': 'planned',
-    });
-    final operation = jsonEncode({
-      'schemaVersion': 1,
-      'operationId': operationId,
-      'deviceId': uuid.v4(),
-      'entityType': 'book',
-      'entityId': bookId,
-      'baseRevision': 0,
-      'action': 'put',
-      'payload': jsonDecode(payload),
-    });
-    raw.execute(
-      'CREATE TABLE records(id TEXT PRIMARY KEY,type TEXT,revision INTEGER,deleted INTEGER,payload TEXT)',
-    );
-    raw.execute(
-      'CREATE TABLE remote_records(id TEXT PRIMARY KEY,type TEXT,revision INTEGER,deleted INTEGER,payload TEXT)',
-    );
-    raw.execute(
-      "CREATE TABLE outbox(sequence INTEGER PRIMARY KEY AUTOINCREMENT,operation_id TEXT UNIQUE,entity_id TEXT,operation TEXT,state TEXT DEFAULT 'pending',receipt TEXT)",
-    );
-    raw.execute('CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT)');
-    raw.execute('INSERT INTO records VALUES(?,?,?,?,?)', [
-      bookId,
-      'book',
-      1,
-      0,
-      payload,
-    ]);
-    raw.execute(
-      'INSERT INTO outbox(operation_id,entity_id,operation) VALUES(?,?,?)',
-      [operationId, bookId, operation],
-    );
-    raw.execute('PRAGMA user_version=1');
-    raw.close();
-    final upgraded = AppDatabase(NativeDatabase(file));
-    try {
-      final legacy = Repository(upgraded);
-      expect((await legacy.records('book')).single.title, 'Старая библиотека');
-      final tables = await upgraded
-          .customSelect(
-            "SELECT name FROM sqlite_master WHERE type='table' "
-            "AND name IN ('outbox','remote_records')",
-          )
-          .get();
-      expect(tables, isEmpty);
-      expect(await AssetStore(legacy, assets.directory).list(), isEmpty);
-    } finally {
-      await upgraded.close();
-    }
-  });
+  test(
+    'v1 database migrates without losing a card and drops the old sync queue',
+    () async {
+      final file = File('${root.path}/legacy.sqlite');
+      final raw = sqlite.sqlite3.open(file.path);
+      final bookId = uuid.v4(), operationId = uuid.v4();
+      final payload = jsonEncode({
+        'title': 'Старая библиотека',
+        'authors': <String>[],
+        'format': 'epub',
+        'status': 'planned',
+      });
+      final operation = jsonEncode({
+        'schemaVersion': 1,
+        'operationId': operationId,
+        'deviceId': uuid.v4(),
+        'entityType': 'book',
+        'entityId': bookId,
+        'baseRevision': 0,
+        'action': 'put',
+        'payload': jsonDecode(payload),
+      });
+      raw.execute(
+        'CREATE TABLE records(id TEXT PRIMARY KEY,type TEXT,revision INTEGER,deleted INTEGER,payload TEXT)',
+      );
+      raw.execute(
+        'CREATE TABLE remote_records(id TEXT PRIMARY KEY,type TEXT,revision INTEGER,deleted INTEGER,payload TEXT)',
+      );
+      raw.execute(
+        "CREATE TABLE outbox(sequence INTEGER PRIMARY KEY AUTOINCREMENT,operation_id TEXT UNIQUE,entity_id TEXT,operation TEXT,state TEXT DEFAULT 'pending',receipt TEXT)",
+      );
+      raw.execute('CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT)');
+      raw.execute('INSERT INTO records VALUES(?,?,?,?,?)', [
+        bookId,
+        'book',
+        1,
+        0,
+        payload,
+      ]);
+      raw.execute(
+        'INSERT INTO outbox(operation_id,entity_id,operation) VALUES(?,?,?)',
+        [operationId, bookId, operation],
+      );
+      raw.execute('PRAGMA user_version=1');
+      raw.close();
+      final upgraded = AppDatabase(NativeDatabase(file));
+      try {
+        final legacy = Repository(upgraded);
+        expect(
+          (await legacy.records('book')).single.title,
+          'Старая библиотека',
+        );
+        final tables = await upgraded
+            .customSelect(
+              "SELECT name FROM sqlite_master WHERE type='table' "
+              "AND name IN ('outbox','remote_records')",
+            )
+            .get();
+        expect(tables, isEmpty);
+        expect(await AssetStore(legacy, assets.directory).list(), isEmpty);
+      } finally {
+        await upgraded.close();
+      }
+    },
+  );
 }

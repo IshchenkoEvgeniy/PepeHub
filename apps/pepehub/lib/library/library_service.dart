@@ -1021,10 +1021,7 @@ class LibraryService extends ChangeNotifier {
     }, original: item.values);
   }
 
-  LibraryItem fromRecommendation(
-    RecommendedBook book, {
-    bool audio = false,
-  }) {
+  LibraryItem fromRecommendation(RecommendedBook book, {bool audio = false}) {
     final existing = entries
         .where(
           (e) =>

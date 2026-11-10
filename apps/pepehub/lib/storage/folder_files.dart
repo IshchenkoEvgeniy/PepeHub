@@ -103,12 +103,13 @@ class FolderFileEntry {
     'bytes': bytes,
     'clock': clock,
   };
-  factory FolderFileEntry.fromJson(Map<String, dynamic> json) => FolderFileEntry(
-    path: json['path'] as String,
-    hash: json['hash'] as String?,
-    bytes: json['bytes'] as int,
-    clock: Map<String, int>.from(json['clock'] as Map),
-  );
+  factory FolderFileEntry.fromJson(Map<String, dynamic> json) =>
+      FolderFileEntry(
+        path: json['path'] as String,
+        hash: json['hash'] as String?,
+        bytes: json['bytes'] as int,
+        clock: Map<String, int>.from(json['clock'] as Map),
+      );
 }
 
 class FolderDiskFile {
@@ -463,10 +464,8 @@ class SafFolderFiles implements FolderFileSystem {
   final void Function(String)? onWarning;
   const SafFolderFiles(this.root, {this.onWarning});
   @override
-  Future<String?> source(String path) => folderFilesChannel.invokeMethod<String>(
-    'locate',
-    {'root': root, 'path': folderPath(path)},
-  );
+  Future<String?> source(String path) => folderFilesChannel
+      .invokeMethod<String>('locate', {'root': root, 'path': folderPath(path)});
   @override
   Future<List<FolderDiskFile>> scan({
     void Function(String path, int checked)? onProgress,

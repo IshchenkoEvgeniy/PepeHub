@@ -132,10 +132,7 @@ void main() {
       }
       await tester.pageBack();
       await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('settings-entry:sync')),
-        findsNothing,
-      );
+      expect(find.byKey(const ValueKey('settings-entry:sync')), findsNothing);
       await tester.ensureVisible(
         find.byKey(const ValueKey('settings-entry:data')),
       );
