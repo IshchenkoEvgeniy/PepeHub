@@ -23,7 +23,7 @@ class LibraryMapper {
             .firstOrNull ??
         collections.where((c) => c['id'] == 'book').firstOrNull;
     if (collection == null) {
-      throw StateError('В Obsidian нет подходящей включённой коллекции.');
+      throw StateError('В библиотеке нет подходящей включённой коллекции.');
     }
     void set(String field, dynamic value) {
       final key = fields.where((f) => f.field == field).firstOrNull?.key;

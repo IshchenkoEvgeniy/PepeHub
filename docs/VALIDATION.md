@@ -28,7 +28,7 @@ Android ARM64: `0.11.0`, versionCode **2024**, min SDK 24 / target SDK 36, **31 
 
 Windows x64: EXE FileVersion/ProductVersion **0.11.0+24**, ZIP **26 776 554 байта**. Проверены версия исполняемого файла, основные DLL, AssetManifest, Lora, содержимое архива (64 записи) и инструкция 0.11.0. SHA-256: `bf46ef373a52914a061ed838bdf961918bc02a2cc38634407fff9e8c937f45d8`. Приложение из release-пакета в этом этапе вручную не запускалось; нативный PDF-тест остаётся пропущенным.
 
-[Состав выпуска](RELEASE_0110.md) · [Android APK](../dist/PepeHub-0.11.0-android-arm64-test.apk) · [Windows ZIP](../dist/PepeHub-0.11.0-windows-x64.zip). Отчёты в `apps/pepehub/build/release-011-*.log`; контрольные суммы записаны рядом с пакетами.
+[Состав выпуска](releases/RELEASE_0110.md) · [Android APK](../dist/PepeHub-0.11.0-android-arm64-test.apk) · [Windows ZIP](../dist/PepeHub-0.11.0-windows-x64.zip). Отчёты в `apps/pepehub/build/release-011-*.log`; контрольные суммы записаны рядом с пакетами.
 
 ## Исходники: организация заметок и инструменты читалки — 20 сентября 2026
 

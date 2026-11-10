@@ -110,7 +110,7 @@ class VocabularyCard {
   }
 }
 
-/// Local vocabulary stays out of the book synchronization outbox.
+/// Local-only vocabulary records.
 class VocabularyRepository {
   final Repository repository;
   const VocabularyRepository(this.repository);

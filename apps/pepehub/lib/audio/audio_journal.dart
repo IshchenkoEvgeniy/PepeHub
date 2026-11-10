@@ -12,7 +12,7 @@ class _JournalChanges extends ValueNotifier<int> {
   String? id;
 }
 
-/// Local records intentionally bypass the deferred remote outbox.
+/// Listening events, written straight to the local database.
 class AudioJournal {
   static final _changes = Expando<_JournalChanges>();
   ValueListenable<int> get changes =>

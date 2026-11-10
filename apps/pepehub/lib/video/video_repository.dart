@@ -29,7 +29,7 @@ class VideoSourceDraft {
   bool get isAudio => audio || isMusicSource(relativeName ?? source);
 }
 
-/// Local-only video records. Never enqueue them in the book sync outbox.
+/// Local-only video records.
 class VideoRepository {
   final Repository repository;
   VideoRepository(this.repository);

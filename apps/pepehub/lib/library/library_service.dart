@@ -479,7 +479,7 @@ class LibraryService extends ChangeNotifier {
     await loadCached();
     try {
       if (!_migrated) {
-        // Old connector stores and outboxes remain intact as a migration source.
+        // Stores of the old connector remain intact as a migration source.
         final cached = await ReadingLibrary(local).entries('obsidian-library:');
         final migrated = await local.meta('library-legacy-migration-v1') == '1';
         for (final ns in cached.keys.where(

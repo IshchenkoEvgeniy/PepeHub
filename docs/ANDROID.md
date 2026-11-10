@@ -2,38 +2,38 @@
 
 ## Сборка 0.18.2 — 4 октября 2026
 
-[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.18.2/PepeHub-0.18.2-android-arm64-test.apk), **33,112,592 байт**, versionCode **2048**, Android 7.0+ / target SDK 36. Исправлены сохранение журнала при прослушивании, синхронизация обложек, проверка входящих записей, статистика на границе суток, старые позиции чтения и повторные нажатия при импорте/сохранении; [состав выпуска](RELEASE_0182.md).
+[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.18.2/PepeHub-0.18.2-android-arm64-test.apk), **33,112,592 байт**, versionCode **2048**, Android 7.0+ / target SDK 36. Исправлены сохранение журнала при прослушивании, синхронизация обложек, проверка входящих записей, статистика на границе суток, старые позиции чтения и повторные нажатия при импорте/сохранении; [состав выпуска](releases/RELEASE_0182.md).
 
 205 Flutter-тестов успешно, 5 пропущены; анализ без замечаний. После окончательной защиты чтения файла обложки дополнительно прошли 16 проверок. 29 серверных тестов и проверка типов TypeScript прошли. APK проверен по подписи, версии, ABI, ZIP-выравниванию 16 KiB, ресурсам плеера и шрифтам. Подпись совпадает с прежними тестовыми APK. SHA-256: `e40da25201212d3fadf0b8148f941a5e26d478b5a72e655b97b33e87668bdc8b`. Физического Android-устройства для проверки нет.
 
 ## Сборка 0.18.1 — 4 октября 2026
 
-[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.18.1/PepeHub-0.18.1-android-arm64-test.apk), **33,112,592 байт**, versionCode **2047**, Android 7.0+ / target SDK 36. Исправлены поиск по названиям с двоеточием, повторное получение метаданных, карточки изданий, сохранение авторов и ошибки навигации; [состав выпуска](RELEASE_0181.md).
+[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.18.1/PepeHub-0.18.1-android-arm64-test.apk), **33,112,592 байт**, versionCode **2047**, Android 7.0+ / target SDK 36. Исправлены поиск по названиям с двоеточием, повторное получение метаданных, карточки изданий, сохранение авторов и ошибки навигации; [состав выпуска](releases/RELEASE_0181.md).
 
 189 Flutter-тестов успешно, 5 пропущены; анализ без замечаний. Отдельный живой тест трёх каталогов прошёл. APK проверен по подписи, версии, ABI, ZIP-выравниванию 16 KiB, ресурсам плеера и шрифтам. Подпись совпадает с прежними тестовыми APK. SHA-256: `a352a91451b9edc4691d9e328a9508480cc545425d86bdc11ab74f2f97c43a99`. Физического Android-устройства для проверки нет.
 
 ## Сборка 0.18.0 — 3 октября 2026
 
-[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.18.0/PepeHub-0.18.0-android-arm64-test.apk), **33,112,596 байт**, versionCode **2046**, Android 7.0+ / target SDK 36. Добавлены книжные рекомендации: свои категории и топы, заметки, поиск и автозаполнение из Inventaire, Open Library и Author.Today; [состав выпуска](RELEASE_0180.md), [инструкция](BOOK_RECOMMENDATIONS.md).
+[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.18.0/PepeHub-0.18.0-android-arm64-test.apk), **33,112,596 байт**, versionCode **2046**, Android 7.0+ / target SDK 36. Добавлены книжные рекомендации: свои категории и топы, заметки, поиск и автозаполнение из Inventaire, Open Library и Author.Today; [состав выпуска](releases/RELEASE_0180.md), [инструкция](BOOK_RECOMMENDATIONS.md).
 
 180 Flutter-тестов успешно, 5 пропущены; анализ без замечаний. Отдельный живой тест трёх каталогов прошёл. Подпись совпадает с прежними тестовыми APK. SHA-256: `7253eab201fcd98801e786f2b52014fd3794d8a4687eabb62a0edfb8c8a42ce3`. Физического Android-устройства для проверки нет.
 
 ## Сборка 0.17.0 — 3 октября 2026
 
-[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.17.0/PepeHub-0.17.0-android-arm64-test.apk), **32,915,416 байт**, versionCode **2045**, Android 7.0+ / target SDK 36. Добавлены автозаполнение метаданных и обложки из файла, двусторонние заметки Obsidian и исправление ввода комментария/тегов/персонажей; [состав выпуска](RELEASE_0170.md). Перезапустите Obsidian для загрузки обновлённого плагина.
+[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.17.0/PepeHub-0.17.0-android-arm64-test.apk), **32,915,416 байт**, versionCode **2045**, Android 7.0+ / target SDK 36. Добавлены автозаполнение метаданных и обложки из файла, двусторонние заметки Obsidian и исправление ввода комментария/тегов/персонажей; [состав выпуска](releases/RELEASE_0170.md). Перезапустите Obsidian для загрузки обновлённого плагина.
 
 Проверки: 154 Flutter-теста успешно, 4 пропущены; анализ без замечаний; 29 серверных тестов, TypeScript typecheck и 10 тестов моста. APK проверен по подписи, версии, ABI, ZIP-выравниванию 16 KiB, ресурсам плеера и шрифтам. SHA-256: `69ce2617ebdef5ebbfb44775df24687d116467d51c074e4bcda6eb81659b6983`. Аппаратная проверка телефона не выполнялась.
 
 
 ## Сборка 0.16.0 — 3 октября 2026
 
-[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.16.0/PepeHub-0.16.0-android-arm64-test.apk), **32,849,880 байт**, versionCode **2044**, Android 7.0+ / target SDK 36. Добавлены 10 стилей и настройки, двусторонний журнал и обложки Obsidian; [состав выпуска](RELEASE_0160.md). Прежняя подпись позволяет установить обновление поверх предыдущего APK.
+[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.16.0/PepeHub-0.16.0-android-arm64-test.apk), **32,849,880 байт**, versionCode **2044**, Android 7.0+ / target SDK 36. Добавлены 10 стилей и настройки, двусторонний журнал и обложки Obsidian; [состав выпуска](releases/RELEASE_0160.md). Прежняя подпись позволяет установить обновление поверх предыдущего APK.
 
 Проверены подпись и сертификат, версия, ABI, отсутствие режима отладки, ZIP-выравнивание 16 KiB, ресурсы аудиоуведомления и комплект шрифтов. SHA-256: `abc68ec999c49db0bc969862c42a696ea811129e9fd9872d98d6f4dbab7ff52e`. Полный Flutter suite — 142 passed, 4 skipped; анализ без замечаний. Физический Android-телефон не подключён.
 
 ## Сборка 0.15.0 — 3 октября 2026
 
-[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.15.0/PepeHub-0.15.0-android-arm64-test.apk), **32 653 156 байт**, versionCode **2043**, Android 7.0+ / target SDK 36. Обновлены дизайн и третий раздел библиотеки Obsidian; [состав выпуска](RELEASE_0150.md). Подпись совпадает с предыдущими тестовыми APK, пакет предназначен для установки обновлением.
+[APK ARM64](https://github.com/IshchenkoEvgeniy/PepeHub/releases/download/v0.15.0/PepeHub-0.15.0-android-arm64-test.apk), **32 653 156 байт**, versionCode **2043**, Android 7.0+ / target SDK 36. Обновлены дизайн и третий раздел библиотеки Obsidian; [состав выпуска](releases/RELEASE_0150.md). Подпись совпадает с предыдущими тестовыми APK, пакет предназначен для установки обновлением.
 
 Проверены подпись, версия, ABI, отсутствие режима отладки, ZIP-выравнивание 16 KiB, ресурсы аудиоуведомления и комплект шрифтов. SHA-256: `b574e7ea156d70d589a4dbfeed5a9fb835c8eaf72a7cb43b6cee4ac630c97095`. Пройден 131 Flutter-тест, 4 пропущены; анализ без замечаний. Подключённого Android-устройства нет, аппаратная проверка остаётся открытой.
 
@@ -41,13 +41,13 @@
 
 [APK ARM64](../dist/PepeHub-0.12.0-android-arm64-test.apk), **31 856 748 байт**, versionCode **2025**, Android 7.0+ / target SDK 36. Подпись совпадает с 0.11.0; zipalign 16 KiB и шесть иконок системного медиаплеера проверены. SHA-256: `85dde578cd1018f034cbafd9a892b3e8be73fa70464c95385611aeace52a6be5`.
 
-[Инструкция обновления](../dist/PepeHub-0.12.0-android-instructions.md) · [Состав выпуска](RELEASE_0120.md). 99 тестов прошли, один прежний тест пропущен; новые native PDF-проверки выполнены. Физическое Android-устройство не подключено.
+[Инструкция обновления](../dist/PepeHub-0.12.0-android-instructions.md) · [Состав выпуска](releases/RELEASE_0120.md). 99 тестов прошли, один прежний тест пропущен; новые native PDF-проверки выполнены. Физическое Android-устройство не подключено.
 
 ## Сборка 0.11.0 — 20 сентября 2026
 
 [APK ARM64](../dist/PepeHub-0.11.0-android-arm64-test.apk), versionCode 2024, min SDK 24 / target SDK 36, 31 725 728 байт. Подпись совпадает с 0.10.1; проверены zipalign 16 KiB и шесть ресурсов медиакарточки. SHA-256: `ed3c151957483d4f4e3ac99fe6ededaf824119f58287e70c52169ae346567217`.
 
-Включены автоматическая статистика чтения, полная карточка, расширенные заметки и инструменты читалки, планы чтения. [Инструкция](../dist/PepeHub-0.11.0-android-instructions.md) · [Состав выпуска](RELEASE_0110.md). ADB не обнаружил устройств; физическая проверка ещё требуется.
+Включены автоматическая статистика чтения, полная карточка, расширенные заметки и инструменты читалки, планы чтения. [Инструкция](../dist/PepeHub-0.11.0-android-instructions.md) · [Состав выпуска](releases/RELEASE_0110.md). ADB не обнаружил устройств; физическая проверка ещё требуется.
 
 ## Сборка 0.10.1 — 19 сентября 2026
 

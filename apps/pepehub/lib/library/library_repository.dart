@@ -25,7 +25,7 @@ class _CatalogCache {
   _CatalogCache(this.raw, this.entries, this.revision);
 }
 
-/// Uses the existing transactional SQLite metadata store, outside the legacy sync outbox.
+/// Catalog of library cards in the transactional SQLite metadata store.
 class LibraryRepository {
   static final _cache = Expando<Map<String, _CatalogCache>>();
   final Repository repository;
@@ -96,11 +96,11 @@ class LibraryRepository {
         (page['cursor'] as int) < (snapshot['_cursor'] as int? ?? 0) ||
         page['changes'] is! List ||
         page['schema'] is! Map) {
-      throw const FormatException('Некорректный индекс библиотеки Obsidian');
+      throw const FormatException('Некорректный индекс библиотеки');
     }
     final changes = page['changes'] as List;
     if (changes.length > 128) {
-      throw const FormatException('Слишком большая страница Obsidian');
+      throw const FormatException('Слишком большая страница библиотеки');
     }
     final decoded = <({String id, LibraryItem? item})>[];
     final ids = <String>{};
@@ -108,7 +108,7 @@ class LibraryRepository {
       if (raw is! Map ||
           raw['id'] is! String ||
           !ids.add(raw['id'] as String)) {
-        throw const FormatException('Некорректное изменение карточки Obsidian');
+        throw const FormatException('Некорректное изменение карточки библиотеки');
       }
       final item = raw['item'] == null
           ? null
@@ -116,7 +116,7 @@ class LibraryRepository {
               Map<String, dynamic>.from(raw['item'] as Map),
             );
       if (item != null && item.id != raw['id']) {
-        throw const FormatException('ID карточки Obsidian не совпадает');
+        throw const FormatException('ID карточки библиотеки не совпадает');
       }
       decoded.add((id: raw['id'] as String, item: item));
     }
@@ -141,7 +141,7 @@ class LibraryRepository {
                   old.item,
                   state: 'removed',
                   sourceBookId: old.sourceBookId,
-                  message: 'Карточка больше не входит в библиотеку Obsidian.',
+                  message: 'Карточка больше не входит в библиотеку.',
                 );
         }
       } else {
@@ -162,7 +162,7 @@ class LibraryRepository {
     if (schema['version'] != 1 ||
         schema['fields'] is! List ||
         schema['collections'] is! List) {
-      throw const FormatException('Некорректная схема Obsidian');
+      throw const FormatException('Некорректная схема библиотеки');
     }
     await repository.setMeta(
       '$_key:schema',
@@ -215,7 +215,7 @@ class LibraryRepository {
               entry.item,
               state: 'removed',
               sourceBookId: entry.sourceBookId,
-              message: 'Карточка больше не входит в библиотеку Obsidian.',
+              message: 'Карточка больше не входит в библиотеку.',
             );
           }
         }

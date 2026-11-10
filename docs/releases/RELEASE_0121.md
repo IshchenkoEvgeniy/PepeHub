@@ -4,8 +4,8 @@
 
 Артефакты:
 
-- [Исправленный Android ARM64 APK](../dist/PepeHub-0.12.1-android-arm64-test.apk) — 31 858 100 байт, SHA-256 `F609D4D7415BBCD19DC2820F45D676F0C7BB28970E66AC650E275F690A381CFE`. Внутри versionName `0.12.1`, versionCode `2026`, ABI `arm64-v8a`.
-- [Windows x64 ZIP](../dist/PepeHub-0.12.1-windows-x64.zip) — 26 690 595 байт, SHA-256 `AF0236312E144FFB6E2CD979ECD2CB9E6DE1CB146CAAE46F71514C1FA3FB7FEF`.
+- [Исправленный Android ARM64 APK](../../dist/PepeHub-0.12.1-android-arm64-test.apk) — 31 858 100 байт, SHA-256 `F609D4D7415BBCD19DC2820F45D676F0C7BB28970E66AC650E275F690A381CFE`. Внутри versionName `0.12.1`, versionCode `2026`, ABI `arm64-v8a`.
+- [Windows x64 ZIP](../../dist/PepeHub-0.12.1-windows-x64.zip) — 26 690 595 байт, SHA-256 `AF0236312E144FFB6E2CD979ECD2CB9E6DE1CB146CAAE46F71514C1FA3FB7FEF`.
 
 APK подписан отладочным Android-сертификатом, как предыдущие тестовые сборки. Перед публикацией в магазине нужна отдельная release-подпись.
 

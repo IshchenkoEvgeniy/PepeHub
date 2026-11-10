@@ -53,8 +53,8 @@ Future<void> createFeatureSchema(GeneratedDatabase db) async {
   await _exportRevisions(db);
 }
 
-/// Invalidate only the affected book's exported source metadata. Sync's own
-/// queue/baseline writes do not invalidate it, and unchanged upserts are cheap.
+/// Invalidate only the affected book's exported source metadata; unchanged
+/// upserts are cheap.
 Future<void> _exportRevisions(GeneratedDatabase db) async {
   await db.customStatement(
     'CREATE TABLE IF NOT EXISTS library_source_revisions_v1('
@@ -198,7 +198,7 @@ String _audioCounted(String row) =>
     "(${_audioField(row, 'kind')}='journal' OR ${_audioField(row, 'endMs')}>${_audioField(row, 'positionMs')})";
 
 /// Listening totals per day and book. Triggers cover native recording, edits,
-/// tombstones, restores and peer/Obsidian writes in the same transaction.
+/// tombstones, restores and library history writes in the same transaction.
 Future<void> _audioDailyTotals(GeneratedDatabase db) async {
   final fresh = !await _tableExists(db, 'audio_daily_totals_v1');
   await db.customStatement(

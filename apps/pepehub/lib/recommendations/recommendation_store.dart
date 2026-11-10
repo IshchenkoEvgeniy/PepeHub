@@ -205,7 +205,7 @@ int compareRecommendations(
 }
 
 /// The existing SQLite metadata table provides durable, transactional storage.
-/// These curated lists never enter the reading-session or Obsidian-card outbox.
+/// These curated lists are separate from reading sessions and library cards.
 class RecommendationStore {
   final Repository repository;
   static const storageKey = 'recommendations-shelf-v1';

@@ -858,7 +858,7 @@ class _AudioStatisticsPageState extends State<AudioStatisticsPage> {
                 child: Text(
                   session.timeKnown
                       ? '${_sessionTime(session.start, session.offsetMinutes)}–${_sessionTime(session.end, session.offsetMinutes)}'
-                      : 'Obsidian',
+                      : 'Без времени',
                   style: TextStyle(fontSize: 12.5, color: palette.muted),
                 ),
               ),

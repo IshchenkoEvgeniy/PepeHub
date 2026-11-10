@@ -840,7 +840,7 @@ class _ReadingStatisticsPageState extends State<ReadingStatisticsPage> {
       }
       // Tracked sessions need no label; only other sources are marked.
       final kind = session['source'] == 'obsidian'
-          ? 'Obsidian'
+          ? 'Библиотека'
           : session['source'] == 'manual'
           ? 'Вручную'
           : null;

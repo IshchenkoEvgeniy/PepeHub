@@ -135,9 +135,9 @@ class ActivityStore {
       storageKey: personal ? personalLibraryKey : null,
     ).entries();
     final rows = await ActivityStore(local, namespace).entries();
-    // A native session may arrive both directly and through its Obsidian mirror.
+    // A native session may arrive both directly and through its library mirror.
     // Only the sources these slots name are looked up, by primary key, so the
-    // cost follows the Obsidian journal rather than the whole listening history.
+    // cost follows the library journal rather than the whole listening history.
     final wanted = <String, Set<String>>{};
     for (final slot in rows) {
       final source = slot['source'];

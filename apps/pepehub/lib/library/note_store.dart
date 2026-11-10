@@ -436,7 +436,7 @@ class NoteStore extends ActivityStore {
                 ? tracks[ordinal]
                 : null);
         if (track == null) {
-          return true; // Text remains available in the Obsidian notes view.
+          return true; // Text remains available in the library notes view.
         }
         await AudioJournal(local).put('audio_note', id, {
           'bookId': book,

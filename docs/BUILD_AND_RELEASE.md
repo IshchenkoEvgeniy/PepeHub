@@ -15,7 +15,7 @@
 .\scripts\release.ps1 -NoPublish           # только собрать и подготовить dist\online\
 ```
 
-Скрипт выполняет шаги 2–9 этой инструкции по порядку. Он проверяет инструменты, ключи, вход GitHub и состояние git, поднимает версию относительно опубликованного выпуска и создаёт `docs\RELEASE_<версия>.md` из коммитов. Заметки открываются в Блокноте для правки. Затем собираются Windows и Android, пакеты упаковываются и подписываются. Перед публикацией скрипт спрашивает подтверждение, после неё сверяет скачанные файлы и `latest/update.json`, коммитит версию и заметки и отправляет ветку. Ключи: `-Build`, `-KeepVersion`, `-NotesFile`, `-SkipVerify`, `-NoSourcePush`, `-Yes` (без вопросов). Общий лог: `.local\release-<версия>-<сборка>.log`.
+Скрипт выполняет шаги 2–9 этой инструкции по порядку. Он проверяет инструменты, ключи, вход GitHub и состояние git, поднимает версию относительно опубликованного выпуска и создаёт `docs\releases\RELEASE_<версия>.md` из коммитов. Заметки открываются в Блокноте для правки. Затем собираются Windows и Android, пакеты упаковываются и подписываются. Перед публикацией скрипт спрашивает подтверждение, после неё сверяет скачанные файлы и `latest/update.json`, коммитит версию и заметки и отправляет ветку. Ключи: `-Build`, `-KeepVersion`, `-NotesFile`, `-SkipVerify`, `-NoSourcePush`, `-Yes` (без вопросов). Общий лог: `.local\release-<версия>-<сборка>.log`.
 
 Ниже — те же шаги по отдельности.
 
@@ -112,7 +112,7 @@ version: 0.30.1+81
 | GitHub tag | `v0.30.1-81` |
 | Каталог пакетов | `dist\online\0.30.1-81` |
 
-Создайте `docs\RELEASE_0301.md` с изменениями для пользователя и результатами проверок. Уже использованный пример оформления — `docs\RELEASE_0300.md`. Длина заметок для текущего издателя ограничена 8000 символами.
+Создайте `docs\releases\RELEASE_0301.md` с изменениями для пользователя и результатами проверок. Уже использованный пример оформления — `docs\releases\RELEASE_0300.md`. Длина заметок для текущего издателя ограничена 8000 символами.
 
 После изменения версии нужно собрать **обе платформы заново**. После изменения исходников после сборки также пересоберите затронутые пакеты перед упаковкой.
 
@@ -202,7 +202,7 @@ dist\PepeHub-0.30.1-android-arm64-test.apk.sha256
 Из корня проекта:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\publish-update.ps1 -NotesFile .\docs\RELEASE_0301.md
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\publish-update.ps1 -NotesFile .\docs\releases\RELEASE_0301.md
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось подготовить выпуск' }
 ```
 
@@ -253,7 +253,7 @@ Published: https://github.com/IshchenkoEvgeniy/PepeHub-Releases/releases/tag/v0.
 Если хотите заново выполнить и упаковку, и публикацию одной командой:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\publish-update.ps1 -NotesFile .\docs\RELEASE_0301.md -Publish
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\publish-update.ps1 -NotesFile .\docs\releases\RELEASE_0301.md -Publish
 if ($LASTEXITCODE -ne 0) { throw 'Подготовка или публикация не завершена' }
 ```
 

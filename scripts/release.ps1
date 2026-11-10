@@ -6,7 +6,7 @@
     Проходит весь процесс из docs/BUILD_AND_RELEASE.md:
       1. проверяет инструменты, ключи подписи и состояние git;
       2. поднимает версию в pubspec.yaml относительно последнего опубликованного выпуска;
-      3. готовит заметки docs/RELEASE_<версия>.md (черновик из коммитов) и даёт их отредактировать;
+      3. готовит заметки docs/releases/RELEASE_<версия>.md (черновик из коммитов) и даёт их отредактировать;
       4. собирает Windows и Android (с анализом и тестами, если не указан -SkipTests);
       5. упаковывает выпуск, создаёт дельты и подписывает update.json;
       6. после подтверждения публикует его в IshchenkoEvgeniy/PepeHub-Releases;
@@ -35,7 +35,7 @@ param(
     [int]$Build = 0,
     # Не менять версию в pubspec.yaml: выпустить ту, что уже указана.
     [switch]$KeepVersion,
-    # Файл заметок. По умолчанию docs\RELEASE_<версия без точек>.md.
+    # Файл заметок. По умолчанию docs\releases\RELEASE_<версия без точек>.md.
     [string]$NotesFile,
     # Не запускать Flutter-тесты и нативные Android-тесты (анализ остаётся).
     [switch]$SkipTests,
@@ -230,7 +230,7 @@ try {
 
     # ------------------------------------------------------------------
     Write-Step 'Заметки к выпуску'
-    if (-not $NotesFile) { $NotesFile = Join-Path $releaseRoot ("docs\RELEASE_" + ($newVersion -replace '\.', '') + '.md') }
+    if (-not $NotesFile) { $NotesFile = Join-Path $releaseRoot ("docs\releases\RELEASE_" + ($newVersion -replace '\.', '') + '.md') }
     $NotesFile = [IO.Path]::GetFullPath($NotesFile)
     if (-not (Test-Path -LiteralPath $NotesFile)) {
         $lastRelease = (Get-Git @('log', '--format=%H', '-n', '1', '--extended-regexp', '--grep=^Release ') -AllowFailure) -join ''

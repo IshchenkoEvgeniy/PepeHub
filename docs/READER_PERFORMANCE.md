@@ -1,6 +1,6 @@
 # Оптимизация читалки после 0.22.1
 
-25 октября 2026. Изменения включены в опубликованную [0.22.2+64](https://github.com/IshchenkoEvgeniy/PepeHub-Releases/releases/tag/v0.22.2-64) для Windows x64 и Android ARM64. [Описание выпуска](RELEASE_0222.md).
+25 октября 2026. Изменения включены в опубликованную [0.22.2+64](https://github.com/IshchenkoEvgeniy/PepeHub-Releases/releases/tag/v0.22.2-64) для Windows x64 и Android ARM64. [Описание выпуска](releases/RELEASE_0222.md).
 
 ## Изменения
 
