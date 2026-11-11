@@ -133,7 +133,7 @@ void main() {
         );
         await tapReaderControl(
           tester,
-          find.byTooltip('Вернуться к прежнему месту'),
+          find.byKey(const ValueKey('reader-footer-back')),
         );
         await settle();
         expect((await position())['textOffset'], before['textOffset']);

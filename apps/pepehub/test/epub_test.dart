@@ -173,7 +173,7 @@ void main() {
         });
         await tapReaderControl(
           tester,
-          find.byTooltip('Вернуться к прежнему месту'),
+          find.byKey(const ValueKey('reader-footer-back')),
         );
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 100)),

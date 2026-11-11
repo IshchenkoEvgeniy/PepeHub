@@ -1787,7 +1787,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
                               'fullscreen': 'Полный экран',
                               'zoomIn': 'Увеличить масштаб',
                               'zoomOut': 'Уменьшить масштаб',
-                              'keyboard': 'Горячие клавиши',
+                              if (!readerTouchOnly)
+                                'keyboard': 'Горячие клавиши',
                             }.entries)
                               PopupMenuItem(
                                 value: e.key,

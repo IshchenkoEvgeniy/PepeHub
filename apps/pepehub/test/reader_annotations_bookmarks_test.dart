@@ -514,7 +514,7 @@ void main() {
       expect(back, findsNothing);
       // The way back stays in the controls until it is used.
       await showReaderControls(tester);
-      expect(find.byTooltip('Вернуться к прежнему месту'), findsOneWidget);
+      expect(find.byKey(const ValueKey('reader-footer-back')), findsOneWidget);
       expect(tester.takeException(), isNull);
     } finally {
       await tester.pumpWidget(const SizedBox());

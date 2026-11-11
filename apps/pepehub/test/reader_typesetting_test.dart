@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pepehub/reader/reader_keep_awake.dart';
 import 'package:pepehub/reader/reader_layout.dart';
 import 'package:pepehub/reader/reader_viewport.dart';
+import 'package:pepehub/reader/reader_window.dart';
 
 import 'reader_improvements_test.dart' show settle, size;
 
@@ -14,9 +15,11 @@ Widget pagedReader(
   String text,
   ReaderPreferences preferences, {
   ValueChanged<int>? onPosition,
+  ReaderViewportController? controller,
 }) => MaterialApp(
   home: Scaffold(
     body: ReaderViewport(
+      controller: controller,
       text: text,
       style: const TextStyle(fontSize: 18, height: 1.4),
       scaler: TextScaler.noScaling,
@@ -109,37 +112,68 @@ void main() {
     expect(spanText(page.textSpan!), isNot(endsWith(justifyFillerText)));
   });
 
-  testWidgets('volume buttons turn pages only when enabled on Android', (
+  testWidgets('volume buttons turn pages through the reader window channel', (
     tester,
   ) async {
     size(tester, const Size(420, 500));
-    final text = 'A long text for reading. ' * 400;
-    for (final enabled in [false, true]) {
-      var position = 0;
-      await tester.pumpWidget(
-        pagedReader(
-          text,
-          ReaderPreferences(volumeKeys: enabled),
-          onPosition: (v) => position = v,
+    final calls = <MethodCall>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(ReaderWindow.channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(ReaderWindow.channel, null),
+    );
+    final controller = ReaderViewportController();
+    var position = 0;
+    final window = ReaderWindow(onVolumeKey: controller.turn);
+    await tester.pumpWidget(
+      pagedReader(
+        'A long text for reading. ' * 400,
+        const ReaderPreferences(volumeKeys: true),
+        onPosition: (v) => position = v,
+        controller: controller,
+      ),
+    );
+    await settle(tester);
+    window.configure(volumeKeys: true, navigationBar: true);
+    await tester.pump();
+    expect(calls.single.method, 'configure');
+    expect(calls.single.arguments, {
+      'volumeKeys': true,
+      'navigationBar': true,
+    });
+    // An unchanged configuration is not sent again.
+    window.configure(volumeKeys: true, navigationBar: true);
+    expect(calls, hasLength(1));
+
+    Future<void> press(int direction) async {
+      await messenger.handlePlatformMessage(
+        ReaderWindow.channel.name,
+        ReaderWindow.channel.codec.encodeMethodCall(
+          MethodCall('volumeKey', direction),
         ),
+        (_) {},
       );
-      await settle(tester);
-      await tester.tap(find.byType(SelectableText).first);
       await tester.pumpAndSettle();
-      position = 0;
-      await tester.sendKeyEvent(LogicalKeyboardKey.audioVolumeDown);
-      await tester.pumpAndSettle();
-      if (enabled) {
-        expect(position, greaterThan(0));
-        final prior = position;
-        await tester.sendKeyEvent(LogicalKeyboardKey.audioVolumeUp);
-        await tester.pumpAndSettle();
-        expect(position, lessThan(prior));
-      } else {
-        expect(position, 0);
-      }
-      await tester.pumpWidget(const SizedBox());
     }
+
+    await press(1);
+    expect(position, greaterThan(0));
+    final prior = position;
+    await press(-1);
+    expect(position, lessThan(prior));
+
+    window.reset();
+    await tester.pump();
+    expect(calls.last.method, 'reset');
+    // After closing, stray key messages are ignored.
+    final last = position;
+    await press(1);
+    expect(position, last);
+    await tester.pumpWidget(const SizedBox());
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 

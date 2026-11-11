@@ -75,7 +75,7 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                         if (folder) addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION) else {
                             addCategory(Intent.CATEGORY_OPENABLE)
-                            type = if (saveFrame) "image/png" else "*/*"
+                            type = if (saveFrame) (call.argument<String>("mime")?.takeIf { it.startsWith("image/") } ?: "image/png") else "*/*"
                             if (saveFrame) {
                                 val name = (call.argument<String>("name") ?: "PepeHub-frame.png").replace(Regex("[\\\\/\\x00]"), "_").take(150)
                                 putExtra(Intent.EXTRA_TITLE, name)

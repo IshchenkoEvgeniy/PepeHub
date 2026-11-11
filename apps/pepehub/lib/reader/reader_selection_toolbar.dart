@@ -1,5 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import 'reader_window.dart';
+
+/// [selectedText] is the book text under the selection. When it is given,
+/// the system actions that act on the live selection (share, look up, search,
+/// select all) are replaced with ones that use this text: the selection is
+/// gone by the time an action is picked from the "More" sheet.
 Widget readerSelectionToolbar({
   required BuildContext context,
   required double width,
@@ -7,13 +15,83 @@ Widget readerSelectionToolbar({
   required List<ContextMenuButtonItem> buttonItems,
   VoidCallback? onMore,
   Widget? palette,
-}) => _ReaderSelectionToolbar(
-  width: width,
-  anchors: anchors,
-  items: buttonItems,
-  onMore: onMore,
-  palette: palette,
-);
+  String? selectedText,
+}) {
+  final text = selectedText?.trim() ?? '';
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  Future<void> open(Uri uri) async {
+    try {
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw StateError('no handler');
+      }
+    } catch (_) {
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('Не удалось открыть браузер')),
+      );
+    }
+  }
+
+  final items = text.isEmpty
+      ? buttonItems
+      : [
+          for (final item in buttonItems)
+            if (!const {
+              ContextMenuButtonType.selectAll,
+              ContextMenuButtonType.share,
+              ContextMenuButtonType.lookUp,
+              ContextMenuButtonType.searchWeb,
+              ContextMenuButtonType.liveTextInput,
+            }.contains(item.type))
+              item,
+          if (ReaderWindow.supported)
+            ContextMenuButtonItem(
+              label: 'Поделиться',
+              onPressed: () async {
+                if (!await ReaderWindow.shareText(text)) {
+                  await Clipboard.setData(ClipboardData(text: text));
+                  messenger?.showSnackBar(
+                    const SnackBar(content: Text('Текст скопирован')),
+                  );
+                }
+              },
+            ),
+          ContextMenuButtonItem(
+            label: 'Перевести',
+            onPressed: () => open(
+              Uri.https('translate.google.com', '/', {
+                'sl': 'auto',
+                'tl': 'ru',
+                'op': 'translate',
+                'text': text.length > 4000 ? text.substring(0, 4000) : text,
+              }),
+            ),
+          ),
+          ContextMenuButtonItem(
+            label: 'Искать в интернете',
+            onPressed: () => open(
+              Uri.https('www.google.com', '/search', {
+                'q': text.length > 400 ? text.substring(0, 400) : text,
+              }),
+            ),
+          ),
+          ContextMenuButtonItem(
+            label: 'Викисловарь',
+            onPressed: () => open(
+              Uri.https(
+                'ru.wiktionary.org',
+                '/wiki/${text.split(RegExp(r'\s+')).first.replaceAll(RegExp(r'[^\p{L}\p{N}-]', unicode: true), '').toLowerCase()}',
+              ),
+            ),
+          ),
+        ];
+  return _ReaderSelectionToolbar(
+    width: width,
+    anchors: anchors,
+    items: items,
+    onMore: onMore,
+    palette: palette,
+  );
+}
 
 class _ReaderSelectionToolbar extends StatefulWidget {
   final double width;
@@ -135,7 +213,10 @@ class _ReaderSelectionToolbarState extends State<_ReaderSelectionToolbar> {
                                 ],
                               ),
                               onPressed: () async {
-                                final navigator = Navigator.of(context);
+                                final navigator = Navigator.of(
+                                  context,
+                                  rootNavigator: true,
+                                );
                                 widget.onMore?.call();
                                 final chosen =
                                     await showModalBottomSheet<

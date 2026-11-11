@@ -1,4 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+/// Phones: keyboard shortcuts are not offered in menus.
+bool get readerTouchOnly =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
 bool readerShortcutsAllowed(BuildContext context) {
   if (ModalRoute.of(context)?.isCurrent == false) return false;

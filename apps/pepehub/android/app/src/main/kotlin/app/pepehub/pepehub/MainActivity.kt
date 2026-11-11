@@ -12,6 +12,7 @@ class MainActivity : AudioServiceActivity() {
         private val folderChannels = java.util.WeakHashMap<FlutterEngine, FolderFilesChannel>()
         private val updateChannels = java.util.WeakHashMap<FlutterEngine, UpdateChannel>()
         private val reminderChannels = java.util.WeakHashMap<FlutterEngine, ReminderChannel>()
+        private val readerWindowChannels = java.util.WeakHashMap<FlutterEngine, ReaderWindowChannel>()
         private const val LEGACY_SYNC_JOB_ID = 42591
     }
     private var folders: AudioFolderChannel? = null
@@ -21,6 +22,7 @@ class MainActivity : AudioServiceActivity() {
     private var folderFiles: FolderFilesChannel? = null
     private var updates: UpdateChannel? = null
     private var reminders: ReminderChannel? = null
+    private var readerWindow: ReaderWindowChannel? = null
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState?.getBoolean("bookIntentConsumed") != true) books?.receive(intent)
@@ -93,10 +95,29 @@ class MainActivity : AudioServiceActivity() {
             })
         }
         folderFiles?.attach(this)
+        readerWindow = readerWindowChannels[flutterEngine] ?: ReaderWindowChannel(this, flutterEngine.dartExecutor.binaryMessenger).also { channel ->
+            readerWindowChannels[flutterEngine] = channel
+            flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
+                override fun onPreEngineRestart() {}
+                override fun onEngineWillDestroy() { channel.dispose(); readerWindowChannels.remove(flutterEngine) }
+            })
+        }
+        readerWindow?.attach(this)
+    }
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (readerWindow?.handleKey(event) == true) return true
+        return super.dispatchKeyEvent(event)
+    }
+    override fun onPostResume() {
+        super.onPostResume()
+        readerWindow?.reapply()
     }
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) videoWindow?.reapply()
+        if (hasFocus) {
+            videoWindow?.reapply()
+            readerWindow?.reapply()
+        }
     }
     override fun onResume() {
         super.onResume()
@@ -138,6 +159,7 @@ class MainActivity : AudioServiceActivity() {
         folderFiles?.detach(this)
         updates?.detach(this)
         reminders?.detach(this)
+        readerWindow?.detach(this)
         super.onDestroy()
     }
 }

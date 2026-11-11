@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -29,15 +28,29 @@ class ReaderViewportController {
   /// Current screen in page mode: 1-based page, total and whether the total
   /// is final. Null in scrolling modes.
   final pageInfo = ValueNotifier<({int page, int count, bool complete})?>(null);
+
+  /// Text range of the current screen in viewport coordinates (the whole-book
+  /// flow or the chapter); used to mark bookmarked pages.
+  final visibleRange = ValueNotifier<({int start, int end})?>(null);
   Object? _owner;
   bool Function(int)? _seek;
   VoidCallback? _flush;
+  ValueChanged<int>? _turn;
   bool seek(int offset) => _seek?.call(offset) ?? false;
   void flushPosition() => _flush?.call();
-  void _attach(Object owner, bool Function(int) seek, VoidCallback flush) {
+
+  /// Turns one page (or screen) as a key would: +1 forward, −1 back.
+  void turn(int direction) => _turn?.call(direction);
+  void _attach(
+    Object owner,
+    bool Function(int) seek,
+    VoidCallback flush,
+    ValueChanged<int> turn,
+  ) {
     _owner = owner;
     _seek = seek;
     _flush = flush;
+    _turn = turn;
   }
 
   void _detach(Object owner) {
@@ -45,6 +58,7 @@ class ReaderViewportController {
     _owner = null;
     _seek = null;
     _flush = null;
+    _turn = null;
   }
 }
 
@@ -325,7 +339,12 @@ class _ReaderViewportState extends State<ReaderViewport> {
     _indexMarkup();
     _indexFootnotes();
     _indexNotes();
-    widget.controller?._attach(this, _seekCached, _updateScrolledPosition);
+    widget.controller?._attach(
+      this,
+      _seekCached,
+      _updateScrolledPosition,
+      _keyStep,
+    );
     widget.onLoading?.call();
     _layout();
   }
@@ -338,7 +357,12 @@ class _ReaderViewportState extends State<ReaderViewport> {
     if (!identical(oldWidget.notes, widget.notes)) _indexNotes();
     if (!identical(oldWidget.controller, widget.controller)) {
       oldWidget.controller?._detach(this);
-      widget.controller?._attach(this, _seekCached, _updateScrolledPosition);
+      widget.controller?._attach(
+      this,
+      _seekCached,
+      _updateScrolledPosition,
+      _keyStep,
+    );
     }
   }
 
@@ -656,6 +680,12 @@ class _ReaderViewportState extends State<ReaderViewport> {
     info.value = widget.compactFlow || list == null || layoutStart > 0
         ? null
         : (page: index + 1, count: list.length, complete: layoutComplete);
+    widget.controller?.visibleRange.value = list == null || list.isEmpty
+        ? null
+        : (
+            start: list[index.clamp(0, list.length - 1)].start,
+            end: list[index.clamp(0, list.length - 1)].end,
+          );
   }
 
   Future<void> _layout() async {
@@ -1276,8 +1306,15 @@ class _ReaderViewportState extends State<ReaderViewport> {
       VoidCallback hideToolbar,
       List<ContextMenuButtonItem> items,
     ) {
+      final selectedText = savedSelection.isCollapsed
+          ? null
+          : widget.text.substring(
+              (base + savedSelection.start).clamp(0, widget.text.length),
+              (base + savedSelection.end).clamp(0, widget.text.length),
+            );
       return readerSelectionToolbar(
         onMore: hideToolbar,
+        selectedText: selectedText,
         context: context,
         width: widget.width,
         anchors: anchors,
@@ -1661,14 +1698,8 @@ class _ReaderViewportState extends State<ReaderViewport> {
         const SingleActivator(LogicalKeyboardKey.home): () =>
             _keyBoundary(false),
         const SingleActivator(LogicalKeyboardKey.end): () => _keyBoundary(true),
-        // Bound only when enabled: an unbound key keeps changing the volume.
-        if (widget.preferences?.volumeKeys == true &&
-            defaultTargetPlatform == TargetPlatform.android) ...{
-          const SingleActivator(LogicalKeyboardKey.audioVolumeDown): () =>
-              _keyStep(1),
-          const SingleActivator(LogicalKeyboardKey.audioVolumeUp): () =>
-              _keyStep(-1),
-        },
+        // Volume buttons are intercepted natively (see ReaderWindow): the
+        // key events never reach Flutter's focus tree reliably.
       },
       child: Listener(
         behavior: HitTestBehavior.opaque,

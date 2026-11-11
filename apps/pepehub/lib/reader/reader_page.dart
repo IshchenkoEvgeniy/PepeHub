@@ -35,6 +35,8 @@ import 'reader_layout_frame.dart';
 import 'reader_shortcuts.dart';
 import 'reader_progress_panel.dart';
 import 'reader_keep_awake.dart';
+import 'reader_window.dart';
+import 'reader_status_line.dart';
 import '../diagnostics/user_message.dart';
 
 class _SeamlessBook {
@@ -179,6 +181,30 @@ class _ReaderPageState extends State<ReaderPage>
 
   void _syncKeepAwake() {
     keepAwake.enabled = preferences.keepAwake && foreground && routeVisible;
+    _syncWindow();
+  }
+
+  late final readerWindow = ReaderWindow(onVolumeKey: _volumeKey);
+
+  /// Volume keys turn pages only on the open book itself: an open panel,
+  /// dialog or another screen gets the ordinary volume buttons back.
+  void _syncWindow() {
+    if (closing) return;
+    readerWindow.configure(
+      volumeKeys:
+          preferences.volumeKeys &&
+          document != null &&
+          foreground &&
+          routeVisible &&
+          panels == 0,
+      navigationBar: preferences.systemNavigation,
+    );
+  }
+
+  void _volumeKey(int direction) {
+    if (!mounted || panels > 0 || !routeVisible) return;
+    keepAwake.touch();
+    viewportController.turn(direction);
   }
 
   void _notifyPosition() {
@@ -201,6 +227,7 @@ class _ReaderPageState extends State<ReaderPage>
   ReaderDocument? _tickDocument;
   List<double> _bookTicks = const [];
   List<ReadingNote> notes = [];
+  List<ReaderBookmark> bookmarks = const [];
   ReadingActivity? activity;
   String? activityError, displayTitle;
   bool foreground = true, viewportReady = false;
@@ -269,6 +296,8 @@ class _ReaderPageState extends State<ReaderPage>
     dragProgress.dispose();
     readerRoutes.unsubscribe(this);
     jumpHintTimer?.cancel();
+    closing = true;
+    readerWindow.reset();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     WidgetsBinding.instance.removeObserver(this);
     debounce?.cancel();
@@ -400,6 +429,7 @@ class _ReaderPageState extends State<ReaderPage>
           ));
         }
       });
+      unawaited(_reloadBookmarks());
       if (widget.initialNote != null) {
         final refreshed = savedNotes.where(
           (n) => n.id == widget.initialNote!.id,
@@ -959,6 +989,74 @@ class _ReaderPageState extends State<ReaderPage>
       }
     } finally {
       _resumePanel();
+      unawaited(_reloadBookmarks());
+    }
+  }
+
+  Future<void> _reloadBookmarks() async {
+    try {
+      final list = await ReaderBookmarkStore(
+        widget.repository,
+        widget.asset.hash,
+      ).list();
+      if (mounted) setState(() => bookmarks = list);
+    } catch (_) {
+      // Marks are a convenience; the bookmarks page reports real errors.
+    }
+  }
+
+  /// The bookmark on the screen being read, if any.
+  ReaderBookmark? _bookmarkHere(ReaderDocument d) {
+    final range = viewportController.visibleRange.value;
+    if (range == null) return null;
+    final flow = preferences.mode != 'scroll' ? _flowFor(d) : null;
+    for (final bookmark in bookmarks) {
+      if (bookmark.chapter >= d.texts.length) continue;
+      if (flow == null && bookmark.chapter != chapter) continue;
+      final at = (flow?.starts[bookmark.chapter] ?? 0) + bookmark.offset;
+      if (at >= range.start && (at < range.end || range.end == range.start)) {
+        return bookmark;
+      }
+    }
+    return null;
+  }
+
+  /// Bookmarks and notes as fractions of the book, for the progress bar.
+  ({List<double> bookmarks, List<double> notes}) _marks(ReaderDocument d) {
+    double at(int chapter, int offset) => d.length == 0
+        ? 0
+        : ((d.starts[chapter] + offset) / d.length).clamp(0.0, 1.0);
+    return (
+      bookmarks: [
+        for (final b in bookmarks)
+          if (b.chapter < d.texts.length) at(b.chapter, b.offset),
+      ],
+      notes: [
+        for (final n in notes)
+          if (n.chapter < d.texts.length) at(n.chapter, n.start),
+      ],
+    );
+  }
+
+  Future<void> _removeBookmark(ReaderBookmark bookmark) async {
+    try {
+      await ReaderBookmarkStore(
+        widget.repository,
+        widget.asset.hash,
+      ).delete(bookmark.id);
+      await _reloadBookmarks();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Закладка удалена')),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Не удалось удалить закладку: ${describeError(e)}'),
+          ),
+        );
+      }
     }
   }
 
@@ -976,6 +1074,7 @@ class _ReaderPageState extends State<ReaderPage>
         chapter: savedChapter,
         offset: savedOffset,
       );
+      await _reloadBookmarks();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1042,7 +1141,10 @@ class _ReaderPageState extends State<ReaderPage>
   void _fontStep(double change) {
     if (!readerShortcutsAllowed(context)) return;
     viewportController.flushPosition();
-    final size = (preferences.size + change).clamp(12.0, 56.0);
+    final size = (preferences.size + change).clamp(
+      ReaderPreferences.minSize,
+      ReaderPreferences.maxSize,
+    );
     if (size == preferences.size) return;
     setState(() => preferences = preferences.copy(size: size));
     _save(appearance: true);
@@ -1346,7 +1448,9 @@ class _ReaderPageState extends State<ReaderPage>
                       final android =
                           Theme.of(context).platform == TargetPlatform.android;
                       final view = View.of(context);
-                      final screen = android
+                      // A visible navigation bar is a permanent inset: the
+                      // window itself is then the reading screen.
+                      final screen = android && !preferences.systemNavigation
                           ? screenGeometry.resolve(
                               display:
                                   view.display.size / view.devicePixelRatio,
@@ -1574,6 +1678,34 @@ class _ReaderPageState extends State<ReaderPage>
                                 height: statusLineHeight,
                                 child: _statusLine(d, foreground),
                               ),
+                              // A bookmarked page carries a ribbon in its
+                              // corner, as in a paper book.
+                              Positioned(
+                                top: insets.top,
+                                right: 6,
+                                child: ListenableBuilder(
+                                  listenable: viewportController.visibleRange,
+                                  builder: (context, _) {
+                                    final here = _bookmarkHere(d);
+                                    if (here == null) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return GestureDetector(
+                                      key: const ValueKey(
+                                        'reader-page-bookmark',
+                                      ),
+                                      onTap: () => _bookmarks(context),
+                                      child: Icon(
+                                        Icons.bookmark,
+                                        size: 22,
+                                        color: pepe.accent.withValues(
+                                          alpha: .85,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -1654,7 +1786,7 @@ class _ReaderPageState extends State<ReaderPage>
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 if (showJumpBack)
-                                  _jumpBack(background, foreground),
+                                  _jumpBack(d, background, foreground),
                                 ?info,
                                 if (controlsVisible)
                                   Material(
@@ -1666,7 +1798,7 @@ class _ReaderPageState extends State<ReaderPage>
                                         listenable: Listenable.merge([
                                           positionChanges,
                                           dragProgress,
-                                          viewportController.pageInfo,
+                                          viewportController.visibleRange,
                                         ]),
                                         builder: (context, _) => _footer(
                                           context,
@@ -1722,62 +1854,51 @@ class _ReaderPageState extends State<ReaderPage>
     await _pausePanel();
     if (!mounted) return;
     try {
-      await showBookIllustration(context, image);
+      final d = document!;
+      await showBookIllustration(
+        context,
+        image,
+        // Swipe through every illustration of the book.
+        gallery: preferences.mode != 'scroll'
+            ? _flowFor(d).illustrations
+            : [for (final c in d.book.chapters) ...c.illustrations],
+        bookTitle: displayTitle ?? d.book.title,
+      );
     } finally {
       _resumePanel();
     }
   }
 
-  /// One quiet line under the text: where in the book the reader is.
-  /// Tapping it brings up the controls.
-  Widget _statusLine(ReaderDocument d, Color ink) => GestureDetector(
-    behavior: HitTestBehavior.opaque,
-    onTap: _toggleControls,
-    child: ListenableBuilder(
-      listenable: Listenable.merge([
-        positionChanges,
-        viewportController.pageInfo,
-      ]),
-      builder: (context, _) {
-        final page = viewportController.pageInfo.value;
-        final progress = d.length == 0
-            ? 0.0
-            : (d.starts[chapter] + offset) / d.length;
-        final place = page != null
-            ? '${page.page} из ${page.count}${page.complete ? '' : '+'}'
-            : '${(progress * 100).floor()}%';
-        final title = d.book.chapters[chapter].title.trim();
-        return Padding(
-          padding: EdgeInsets.symmetric(horizontal: preferences.margin),
-          child: DefaultTextStyle(
-            style: TextStyle(
-              fontFamily: AppFonts.body,
-              fontSize: 11.5,
-              height: 1,
-              color: ink.withValues(alpha: .42),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title.isEmpty ? 'Глава ${chapter + 1}' : title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Text(place, key: const ValueKey('reader-status-place')),
-              ],
-            ),
-          ),
-        );
-      },
-    ),
+  /// One quiet line under the text, as in ReadEra: battery, time, book
+  /// title, progress and pages. Tapping it brings up the controls.
+  Widget _statusLine(ReaderDocument d, Color ink) => ListenableBuilder(
+    listenable: positionChanges,
+    builder: (context, _) {
+      final absolute = d.starts[chapter] + offset;
+      final progress = d.length == 0 ? 0.0 : absolute / d.length;
+      final pages = readerBookPages(d.length, absolute);
+      return ReaderStatusLine(
+        title: displayTitle ?? d.book.title,
+        percent: '${(progress * 100).toStringAsFixed(2)}%',
+        pages: '${pages.page}/${pages.count}',
+        ink: ink,
+        margin: preferences.margin,
+        onTap: _toggleControls,
+      );
+    },
   );
+
+  /// Where a return from a jump leads: page, percent and chapter.
+  String _placeLabel(ReaderDocument d, ({int chapter, int offset}) at) {
+    final absolute = d.starts[at.chapter] + at.offset;
+    final percent = d.length == 0 ? 0 : absolute * 100 ~/ d.length;
+    final page = readerBookPages(d.length, absolute).page;
+    return 'стр. $page · $percent% · гл. ${at.chapter + 1}';
+  }
 
   /// After a jump (contents, search, link, bookmark): a small way back that
   /// fades on its own and never covers more than one line of text.
-  Widget _jumpBack(Color background, Color ink) => Padding(
+  Widget _jumpBack(ReaderDocument d, Color background, Color ink) => Padding(
     padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
     child: Align(
       alignment: Alignment.centerLeft,
@@ -1795,12 +1916,16 @@ class _ReaderPageState extends State<ReaderPage>
               children: [
                 Icon(Icons.undo, size: 18, color: ink.withValues(alpha: .8)),
                 const SizedBox(width: 6),
-                Text(
-                  'Вернуться',
-                  style: TextStyle(
-                    fontFamily: AppFonts.body,
-                    fontSize: 13,
-                    color: ink.withValues(alpha: .85),
+                Flexible(
+                  child: Text(
+                    'Вернуться на ${_placeLabel(d, history.last)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: AppFonts.body,
+                      fontSize: 13,
+                      color: ink.withValues(alpha: .85),
+                    ),
                   ),
                 ),
               ],
@@ -1967,7 +2092,12 @@ class _ReaderPageState extends State<ReaderPage>
           value: 'statistics',
           child: Text('Статистика чтения и журнал'),
         ),
-        const PopupMenuItem(value: 'keyboard', child: Text('Горячие клавиши')),
+        // Android phones have no keyboard to speak of.
+        if (!readerTouchOnly)
+          const PopupMenuItem(
+            value: 'keyboard',
+            child: Text('Горячие клавиши'),
+          ),
       ],
     );
     final tools = wide
@@ -2082,14 +2212,21 @@ class _ReaderPageState extends State<ReaderPage>
         ? tracker.speedChars / (tracker.speedActiveMs / 60000)
         : null;
     final minutesLeft = perMinute == null ? null : (left / perMinute).ceil();
-    final page = viewportController.pageInfo.value;
     final dragging = dragProgress.value != null;
-    final place = page != null && !dragging
-        ? '${page.page} из ${page.count}${page.complete ? '' : '+'}'
-        : '${(value * 100).toStringAsFixed(dragging ? 1 : 0)}%';
+    // While dragging, describe the place the bar would open.
+    final target = dragging
+        ? d.locate(value)
+        : (chapter: chapter, offset: offset);
+    final pages = readerBookPages(
+      d.length,
+      d.starts[target.chapter] + target.offset,
+    );
+    final place = '${(value * 100).toStringAsFixed(dragging ? 1 : 0)}%';
+    final here = dragging ? null : _bookmarkHere(d);
+    final marks = _marks(d);
     final details = [
-      'глава ${chapter + 1} из ${d.texts.length}',
-      if (page != null && !dragging) '${(value * 100).round()}% книги',
+      'стр. ${pages.page} из ${pages.count}',
+      'глава ${target.chapter + 1} из ${d.texts.length}',
       if (minutesLeft != null && !dragging)
         minutesLeft <= 1
             ? 'до конца главы < 1 мин'
@@ -2108,7 +2245,8 @@ class _ReaderPageState extends State<ReaderPage>
                 child: history.isEmpty
                     ? null
                     : IconButton(
-                        tooltip: 'Вернуться к прежнему месту',
+                        key: const ValueKey('reader-footer-back'),
+                        tooltip: 'Вернуться на ${_placeLabel(d, history.last)}',
                         color: ink.withValues(alpha: .8),
                         onPressed: _undoJump,
                         icon: const Icon(Icons.undo),
@@ -2144,12 +2282,20 @@ class _ReaderPageState extends State<ReaderPage>
               ),
               SizedBox(
                 width: 48,
-                child: IconButton(
-                  tooltip: 'Сохранить закладку',
-                  color: ink.withValues(alpha: .8),
-                  onPressed: savingBookmark ? null : _quickBookmark,
-                  icon: const Icon(Icons.bookmark_add_outlined),
-                ),
+                child: here == null
+                    ? IconButton(
+                        tooltip: 'Сохранить закладку',
+                        color: ink.withValues(alpha: .8),
+                        onPressed: savingBookmark ? null : _quickBookmark,
+                        icon: const Icon(Icons.bookmark_add_outlined),
+                      )
+                    : IconButton(
+                        key: const ValueKey('reader-footer-bookmarked'),
+                        tooltip: 'Страница в закладках — убрать',
+                        color: PepeColors.of(context).accent,
+                        onPressed: () => _removeBookmark(here),
+                        icon: const Icon(Icons.bookmark),
+                      ),
               ),
             ],
           ),
@@ -2158,6 +2304,8 @@ class _ReaderPageState extends State<ReaderPage>
             child: ReaderProgressBar(
               value: value,
               ticks: _bookTicks,
+              bookmarks: marks.bookmarks,
+              notes: marks.notes,
               ink: ink,
               accent: PepeColors.of(context).accent,
               onChanged: (v) => dragProgress.value = v,
@@ -2421,11 +2569,13 @@ class _ReaderPageState extends State<ReaderPage>
   Future<void> _pausePanel() async {
     settledMoves.flush();
     panels++;
+    _syncWindow();
     activity?.pause('panel');
   }
 
   void _resumePanel() {
     panels = (panels - 1).clamp(0, 100);
+    _syncWindow();
     if (mounted && foreground && routeVisible && panels == 0 && viewportReady) {
       activity?.resume();
     }

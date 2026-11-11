@@ -128,10 +128,15 @@ class ReaderProgressBar extends StatelessWidget {
   final VoidCallback? onChangeCancel;
   final bool enabled;
   final double step;
+
+  /// Bookmarked places and notes, as fractions of the book.
+  final List<double> bookmarks, notes;
   const ReaderProgressBar({
     super.key,
     required this.value,
     required this.ticks,
+    this.bookmarks = const [],
+    this.notes = const [],
     required this.ink,
     required this.accent,
     required this.onChanged,
@@ -176,7 +181,15 @@ class ReaderProgressBar extends StatelessWidget {
                 thumb: true,
               ),
               child: RepaintBoundary(
-                child: CustomPaint(painter: ReaderBookTicksPainter(ticks, ink)),
+                child: CustomPaint(
+                  painter: ReaderBookTicksPainter(
+                    ticks,
+                    ink,
+                    bookmarks: bookmarks,
+                    notes: notes,
+                    accent: accent,
+                  ),
+                ),
               ),
             ),
           ),
@@ -228,9 +241,16 @@ class _BookProgressPainter extends CustomPainter {
 }
 
 class ReaderBookTicksPainter extends CustomPainter {
-  final List<double> ticks;
+  final List<double> ticks, bookmarks, notes;
   final Color ink;
-  const ReaderBookTicksPainter(this.ticks, this.ink);
+  final Color? accent;
+  const ReaderBookTicksPainter(
+    this.ticks,
+    this.ink, {
+    this.bookmarks = const [],
+    this.notes = const [],
+    this.accent,
+  });
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
@@ -240,9 +260,33 @@ class ReaderBookTicksPainter extends CustomPainter {
       final x = size.width * tick;
       canvas.drawLine(Offset(x, 6), Offset(x, 16), paint);
     }
+    // Notes: small dots under the bar.
+    final note = Paint()..color = (accent ?? ink).withValues(alpha: .7);
+    for (final at in notes) {
+      canvas.drawCircle(Offset(size.width * at, 19), 1.8, note);
+    }
+    // Bookmarks: small ribbons above the bar.
+    final mark = Paint()..color = accent ?? ink;
+    for (final at in bookmarks) {
+      final x = size.width * at;
+      canvas.drawPath(
+        Path()
+          ..moveTo(x - 3, 0)
+          ..lineTo(x + 3, 0)
+          ..lineTo(x + 3, 6)
+          ..lineTo(x, 4)
+          ..lineTo(x - 3, 6)
+          ..close(),
+        mark,
+      );
+    }
   }
 
   @override
   bool shouldRepaint(covariant ReaderBookTicksPainter old) =>
-      ink != old.ink || !listEquals(ticks, old.ticks);
+      ink != old.ink ||
+      accent != old.accent ||
+      !listEquals(ticks, old.ticks) ||
+      !listEquals(bookmarks, old.bookmarks) ||
+      !listEquals(notes, old.notes);
 }

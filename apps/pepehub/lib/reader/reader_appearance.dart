@@ -208,7 +208,7 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
         button(
           'Уменьшить размер текста',
           15,
-          value.size > 12
+          value.size > ReaderPreferences.minSize
               ? () => change(value.copy(size: value.size - 1))
               : null,
         ),
@@ -229,7 +229,7 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
         button(
           'Увеличить размер текста',
           24,
-          value.size < 56
+          value.size < ReaderPreferences.maxSize
               ? () => change(value.copy(size: value.size + 1))
               : null,
         ),
@@ -573,6 +573,17 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
             subtitle: const Text('Громкость вниз — вперёд, вверх — назад'),
             value: value.volumeKeys,
             onChanged: (v) => change(value.copy(volumeKeys: v)),
+          ),
+        if (!widget.pdf && defaultTargetPlatform == TargetPlatform.android)
+          SwitchListTile.adaptive(
+            key: const ValueKey('reader-system-navigation'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Кнопки навигации телефона'),
+            subtitle: const Text(
+              'Нижняя панель «Назад / Домой / Недавние» остаётся видна',
+            ),
+            value: value.systemNavigation,
+            onChanged: (v) => change(value.copy(systemNavigation: v)),
           ),
         SwitchListTile.adaptive(
           contentPadding: EdgeInsets.zero,

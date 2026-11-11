@@ -196,14 +196,9 @@ void main() {
             await close();
             await tapReaderControl(tester, find.byTooltip('Другие действия'));
             await tester.pumpAndSettle();
-            expectReaderWindowTheme(
-              tester,
-              find.text('Горячие клавиши'),
-              theme,
-            );
-            await tester.tap(find.text('Горячие клавиши'));
-            await tester.pumpAndSettle();
-            expectReaderWindowTheme(tester, find.byType(AlertDialog), theme);
+            expectReaderWindowTheme(tester, find.text('Закладки'), theme);
+            // Tests run as Android: phones get no keyboard shortcuts menu.
+            expect(find.text('Горячие клавиши'), findsNothing);
             await close();
             await tapReaderControl(tester, find.byTooltip('Другие действия'));
             await tester.pumpAndSettle();

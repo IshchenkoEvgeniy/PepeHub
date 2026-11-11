@@ -13,6 +13,7 @@ String readerMode(Object? value) => switch (value) {
 
 class ReaderPreferences {
   final double size, spacing, margin, pageHeightFactor, columnWidth;
+  static const double minSize = 8, maxSize = 56;
   final String font, palette, mode;
   final bool showScrollbar, showHighlights;
 
@@ -24,6 +25,10 @@ class ReaderPreferences {
 
   /// Android: hardware volume buttons turn pages.
   final bool volumeKeys;
+
+  /// Android: the phone navigation bar (back, home, recents) stays visible
+  /// in the reader; the status bar is still hidden.
+  final bool systemNavigation;
   final String highlightColor;
   static const highlightColors = ['yellow', 'green', 'blue', 'pink'];
   final String leftTap, centerTap, rightTap;
@@ -47,11 +52,12 @@ class ReaderPreferences {
     this.textAlign = 'left',
     this.keepAwake = true,
     this.volumeKeys = false,
+    this.systemNavigation = false,
   });
   factory ReaderPreferences.fromJson(
     Map<String, dynamic> data,
   ) => ReaderPreferences(
-    size: ((data['size'] as num?)?.toDouble() ?? 22).clamp(12, 56),
+    size: ((data['size'] as num?)?.toDouble() ?? 22).clamp(minSize, maxSize),
     spacing: ((data['spacing'] as num?)?.toDouble() ?? 1.35).clamp(1.2, 2.2),
     margin: ((data['margin'] as num?)?.toDouble() ?? 24).clamp(12, 48),
     pageHeightFactor: ((data['pageHeightFactor'] as num?)?.toDouble() ?? 1)
@@ -78,6 +84,7 @@ class ReaderPreferences {
     textAlign: data['textAlign'] == 'justify' ? 'justify' : 'left',
     keepAwake: data['keepAwake'] != false,
     volumeKeys: data['volumeKeys'] == true,
+    systemNavigation: data['systemNavigation'] == true,
   );
   ReaderPreferences copy({
     double? size,
@@ -98,6 +105,7 @@ class ReaderPreferences {
     String? textAlign,
     bool? keepAwake,
     bool? volumeKeys,
+    bool? systemNavigation,
   }) => ReaderPreferences(
     size: size ?? this.size,
     spacing: spacing ?? this.spacing,
@@ -117,6 +125,7 @@ class ReaderPreferences {
     textAlign: textAlign ?? this.textAlign,
     keepAwake: keepAwake ?? this.keepAwake,
     volumeKeys: volumeKeys ?? this.volumeKeys,
+    systemNavigation: systemNavigation ?? this.systemNavigation,
   );
   Map<String, dynamic> toJson() => {
     'size': size,
@@ -137,6 +146,7 @@ class ReaderPreferences {
     'textAlign': textAlign,
     'keepAwake': keepAwake,
     'volumeKeys': volumeKeys,
+    'systemNavigation': systemNavigation,
   };
   static String _tap(dynamic v, String fallback) =>
       const ['previous', 'next', 'controls', 'none'].contains(v)
