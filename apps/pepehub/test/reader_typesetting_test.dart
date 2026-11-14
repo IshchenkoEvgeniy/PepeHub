@@ -141,10 +141,7 @@ void main() {
     window.configure(volumeKeys: true, navigationBar: true);
     await tester.pump();
     expect(calls.single.method, 'configure');
-    expect(calls.single.arguments, {
-      'volumeKeys': true,
-      'navigationBar': true,
-    });
+    expect(calls.single.arguments, {'volumeKeys': true, 'navigationBar': true});
     // An unchanged configuration is not sent again.
     window.configure(volumeKeys: true, navigationBar: true);
     expect(calls, hasLength(1));

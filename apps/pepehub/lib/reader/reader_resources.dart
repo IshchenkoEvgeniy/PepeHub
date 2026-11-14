@@ -134,7 +134,10 @@ class _IllustrationViewerState extends State<_IllustrationViewer> {
 
   void _zoomBy(double factor) {
     final size = MediaQuery.sizeOf(context);
-    final scale = (transform.value.getMaxScaleOnAxis() * factor).clamp(1.0, 6.0);
+    final scale = (transform.value.getMaxScaleOnAxis() * factor).clamp(
+      1.0,
+      6.0,
+    );
     if (scale <= 1.001) {
       transform.value = Matrix4.identity();
       return;
@@ -404,9 +407,7 @@ class _IllustrationViewerState extends State<_IllustrationViewer> {
                                       'Сохранить изображение',
                                       Icons.download_outlined,
                                       saving ? null : _save,
-                                      key: const ValueKey(
-                                        'illustration-save',
-                                      ),
+                                      key: const ValueKey('illustration-save'),
                                     ),
                                     action(
                                       'Повернуть',

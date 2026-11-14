@@ -12,6 +12,7 @@ $ErrorActionPreference = 'Stop'
 $pepeBuildRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $pepeBuildApp = Join-Path $pepeBuildRoot 'apps\pepehub'
 $pepeBuildFlutter = Join-Path $pepeBuildRoot '.tools\flutter\bin\flutter.bat'
+$pepeBuildDart = Join-Path $pepeBuildRoot '.tools\flutter\bin\dart.bat'
 $pepeBuildPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $pepeBuildExe = Join-Path $pepeBuildApp 'build\windows\x64\runner\Release\pepehub.exe'
 if (-not $LogPath) { $LogPath = Join-Path $pepeBuildRoot ".local\build-$($Target.ToLowerInvariant()).log" }
@@ -131,6 +132,9 @@ try {
         Push-Location -LiteralPath $pepeBuildApp
         $pepeBuildPushed = $true
         Initialize-PepeBuildPackages
+        # The same check as the GitHub workflow (tests.yml): unformatted code
+        # stops the build here instead of failing on GitHub after a release.
+        Invoke-PepeBuildCommand 'Check formatting' $pepeBuildDart @('format', '--output=none', '--set-exit-if-changed', 'lib', 'test', 'integration_test', 'tool')
         Invoke-PepeBuildCommand 'Analyze application' $pepeBuildFlutter @('analyze', '--no-pub')
         if ($SkipTests) {
             Write-PepeBuildLine "`n== Run application tests ==`nSkipped (-SkipTests)." Yellow

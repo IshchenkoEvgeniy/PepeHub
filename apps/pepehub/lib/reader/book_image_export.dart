@@ -74,7 +74,10 @@ Future<String?> saveBookImage(Uint8List bytes, String name) async {
     ],
   );
   if (target == null) return null;
-  await XFile.fromData(bytes, mimeType: type.mime, name: name)
-      .saveTo(target.path);
+  await XFile.fromData(
+    bytes,
+    mimeType: type.mime,
+    name: name,
+  ).saveTo(target.path);
   return target.path;
 }
