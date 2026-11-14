@@ -6,12 +6,20 @@ import '../ui/app_theme.dart';
 import '../ui/pepe_widgets.dart' show pepeCharsPerPage;
 import 'reader_window.dart';
 
-/// Book pages in the same unit as the reading statistics: one page is
-/// [pepeCharsPerPage] characters, so "page 15 of 52" here and "≈ 52 pages"
-/// in the statistics describe the same book.
-({int page, int count}) readerBookPages(int length, int absolute) {
-  final count = length <= 0 ? 1 : (length / pepeCharsPerPage).ceil();
-  final page = absolute ~/ pepeCharsPerPage + 1;
+/// Book pages as screens: [charsPerScreen] is the measured text of one screen
+/// with the current font and window, so turning a page moves the number by
+/// one and «37 of 412» means screens left to turn. Until the first layout is
+/// measured, a page is [pepeCharsPerPage] characters, as in the statistics.
+({int page, int count}) readerBookPages(
+  int length,
+  int absolute, {
+  double? charsPerScreen,
+}) {
+  final size = charsPerScreen != null && charsPerScreen >= 50
+      ? charsPerScreen
+      : pepeCharsPerPage.toDouble();
+  final count = length <= 0 ? 1 : (length / size).ceil();
+  final page = (absolute / size).floor() + 1;
   return (page: page.clamp(1, count), count: count);
 }
 

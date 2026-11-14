@@ -1046,9 +1046,8 @@ class _ReaderPageState extends State<ReaderPage>
       ).delete(bookmark.id);
       await _reloadBookmarks();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Закладка удалена')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Закладка удалена')));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1872,11 +1871,14 @@ class _ReaderPageState extends State<ReaderPage>
   /// One quiet line under the text, as in ReadEra: battery, time, book
   /// title, progress and pages. Tapping it brings up the controls.
   Widget _statusLine(ReaderDocument d, Color ink) => ListenableBuilder(
-    listenable: positionChanges,
+    listenable: Listenable.merge([
+      positionChanges,
+      viewportController.charsPerScreen,
+    ]),
     builder: (context, _) {
       final absolute = d.starts[chapter] + offset;
       final progress = d.length == 0 ? 0.0 : absolute / d.length;
-      final pages = readerBookPages(d.length, absolute);
+      final pages = _bookPages(d, absolute);
       return ReaderStatusLine(
         title: displayTitle ?? d.book.title,
         percent: '${(progress * 100).toStringAsFixed(2)}%',
@@ -1888,11 +1890,19 @@ class _ReaderPageState extends State<ReaderPage>
     },
   );
 
+  /// Book pages in screens of the current layout.
+  ({int page, int count}) _bookPages(ReaderDocument d, int absolute) =>
+      readerBookPages(
+        d.length,
+        absolute,
+        charsPerScreen: viewportController.charsPerScreen.value,
+      );
+
   /// Where a return from a jump leads: page, percent and chapter.
   String _placeLabel(ReaderDocument d, ({int chapter, int offset}) at) {
     final absolute = d.starts[at.chapter] + at.offset;
     final percent = d.length == 0 ? 0 : absolute * 100 ~/ d.length;
-    final page = readerBookPages(d.length, absolute).page;
+    final page = _bookPages(d, absolute).page;
     return 'стр. $page · $percent% · гл. ${at.chapter + 1}';
   }
 
@@ -2217,10 +2227,7 @@ class _ReaderPageState extends State<ReaderPage>
     final target = dragging
         ? d.locate(value)
         : (chapter: chapter, offset: offset);
-    final pages = readerBookPages(
-      d.length,
-      d.starts[target.chapter] + target.offset,
-    );
+    final pages = _bookPages(d, d.starts[target.chapter] + target.offset);
     final place = '${(value * 100).toStringAsFixed(dragging ? 1 : 0)}%';
     final here = dragging ? null : _bookmarkHere(d);
     final marks = _marks(d);

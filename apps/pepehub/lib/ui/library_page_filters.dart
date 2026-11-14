@@ -257,14 +257,15 @@ extension _LibraryPageFilters on _LibraryPageState {
 
   Widget _viewChoices() => LayoutBuilder(
     builder: (context, size) {
-      final grid = _useCovers(size.maxWidth);
+      final series = shelfView == 'series';
+      final grid = !series && _useCovers(size.maxWidth);
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
             tooltip: 'Список',
             visualDensity: VisualDensity.compact,
-            isSelected: !grid,
+            isSelected: !grid && !series,
             onPressed: busy || savingView ? null : () => _setShelfView('list'),
             icon: const Icon(Icons.view_list_outlined),
             selectedIcon: const Icon(Icons.view_list),
@@ -278,6 +279,17 @@ extension _LibraryPageFilters on _LibraryPageState {
                 : () => _setShelfView('covers'),
             icon: const Icon(Icons.grid_view_outlined),
             selectedIcon: const Icon(Icons.grid_view),
+          ),
+          IconButton(
+            key: const ValueKey('shelf-view-series'),
+            tooltip: 'Серии',
+            visualDensity: VisualDensity.compact,
+            isSelected: series,
+            onPressed: busy || savingView
+                ? null
+                : () => _setShelfView('series'),
+            icon: const Icon(Icons.collections_bookmark_outlined),
+            selectedIcon: const Icon(Icons.collections_bookmark),
           ),
         ],
       );

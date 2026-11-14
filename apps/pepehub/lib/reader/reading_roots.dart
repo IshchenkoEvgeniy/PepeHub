@@ -43,6 +43,10 @@ class ReadingRoot {
   });
 }
 
+/// Per-folder cache of file hashes; outside the `reading-library-root:`
+/// range so [ReadingRoots.list] never reads it as a folder.
+const _hashCachePrefix = 'reading-root-hashes:';
+
 class ReadingRoots {
   final AssetStore assets;
   ReadingRoots(this.assets);
@@ -117,8 +121,11 @@ class ReadingRoots {
         reading: true,
       ).replace(root.key, null);
       await assets.repository.db.customStatement(
-        'DELETE FROM metadata WHERE key=?',
-        [root.key],
+        'DELETE FROM metadata WHERE key IN (?,?)',
+        [
+          root.key,
+          root.key.replaceFirst('reading-library-root:', _hashCachePrefix),
+        ],
       );
       final remaining = (await list()).expand((r) => r.availableIds).toSet();
       for (final id in root.bookIds) {
@@ -172,6 +179,21 @@ class ReadingRoots {
     final candidates =
         <({String name, String path, String format, String hash, int size})>[];
     final total = folder.files.length;
+    // Hashes of the previous scan by relative path and file stamp: an
+    // unchanged file is not read again, so a refresh takes seconds.
+    final cacheKey = '$_hashCachePrefix${sha256.convert(utf8.encode(path))}';
+    final cached = <String, Map<String, dynamic>>{};
+    try {
+      final raw = await assets.repository.meta(cacheKey);
+      if (raw != null) {
+        for (final e in (jsonDecode(raw) as Map).entries) {
+          if (e.value is Map) cached['${e.key}'] = (e.value as Map).cast();
+        }
+      }
+    } catch (_) {
+      // A damaged cache only costs a full re-hash.
+    }
+    final nextCache = <String, Map<String, Object>>{};
     progress?.update(
       phase: 'Проверка файлов',
       done: 0,
@@ -192,7 +214,16 @@ class ReadingRoots {
           throw StateError('Недопустимый размер: ${file.name}');
         }
         var actualBytes = 0;
-        final known = verified[file.name];
+        final stamp = await folderFileStamp(file);
+        final hit = cached[file.name];
+        final known =
+            verified[file.name] ??
+            (stamp != null &&
+                    hit?['stamp'] == stamp &&
+                    hit?['bytes'] == declaredSize &&
+                    hit?['hash'] is String
+                ? (hash: hit!['hash'] as String, bytes: declaredSize)
+                : null);
         if (known != null &&
             (known.bytes != declaredSize ||
                 !RegExp(r'^[a-f0-9]{64}$').hasMatch(known.hash))) {
@@ -217,6 +248,13 @@ class ReadingRoots {
         if (actualBytes == 0 ||
             declaredSize > 0 && actualBytes != declaredSize) {
           throw StateError('Файл изменился: ${file.name}');
+        }
+        if (stamp != null) {
+          nextCache[file.name] = {
+            'stamp': stamp,
+            'bytes': actualBytes,
+            'hash': hash,
+          };
         }
         if (!scannedHashes.add(hash)) {
           duplicates++;
@@ -336,6 +374,7 @@ class ReadingRoots {
           'presentBookIds': present.toList(),
         }),
       );
+      await assets.repository.setMeta(cacheKey, jsonEncode(nextCache));
     });
     if (restoreRemoved && present.isNotEmpty) {
       final trashed = await assets.repository.metadataPrefixes([

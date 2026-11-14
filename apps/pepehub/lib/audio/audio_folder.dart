@@ -32,7 +32,11 @@ class FolderAudioFile extends XFile {
 
 class SafAudioFile extends FolderAudioFile {
   final int bytes;
-  SafAudioFile(super.path, super.relativePath, this.bytes);
+
+  /// Milliseconds since the epoch from the document provider; null when the
+  /// provider does not report it.
+  final int? modified;
+  SafAudioFile(super.path, super.relativePath, this.bytes, {this.modified});
   @override
   Future<int> length() async => bytes;
   @override
@@ -129,6 +133,7 @@ Future<AudioFolder?> pickAudioFolder({bool books = false}) async {
             entry['uri'] as String,
             entry['name'] as String,
             entry['size'] as int,
+            modified: _modified(entry['modified']),
           ),
       ],
       root: result['root'] as String,
@@ -158,11 +163,32 @@ Future<AudioFolder> rescanAudioFolder(String root, {bool books = false}) async {
           entry['uri'] as String,
           entry['name'] as String,
           entry['size'] as int,
+          modified: _modified(entry['modified']),
         ),
     ],
     root: root,
     unsupportedFiles: (result['unsupportedFiles'] as num?)?.toInt() ?? 0,
   );
+}
+
+int? _modified(Object? value) =>
+    value is num && value > 0 ? value.toInt() : null;
+
+/// Identifies one version of a folder file without reading it: size plus
+/// modification time. Null when the time is unknown, so the file is hashed.
+Future<String?> folderFileStamp(XFile file) async {
+  try {
+    if (file is SafAudioFile) {
+      final modified = file.modified;
+      return modified == null ? null : '${file.bytes}:$modified';
+    }
+    if (file.path.startsWith('content://')) return null;
+    final stat = await File(file.path).stat();
+    if (stat.type != FileSystemEntityType.file) return null;
+    return '${stat.size}:${stat.modified.millisecondsSinceEpoch}';
+  } catch (_) {
+    return null;
+  }
 }
 
 /// A Windows path (`C:\…`, `C:/…`, `\\server\…`) is read as one on every

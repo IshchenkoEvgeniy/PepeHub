@@ -55,6 +55,47 @@ void main() {
     expect(await repo.records('book'), hasLength(1));
   });
 
+  test(
+    'refresh skips re-hashing unchanged files and re-reads changed ones',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('reading-hash-cache-');
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      addTearDown(() => dir.delete(recursive: true));
+      final repo = Repository(db);
+      final assets = AssetStore(repo, Directory('${dir.path}/managed'));
+      final roots = ReadingRoots(assets);
+      final file = await File('${dir.path}/story.txt')
+          .writeAsString('AAAA book');
+      final stamp = DateTime(2026, 1, 2, 3, 4, 5);
+      await file.setLastModified(stamp);
+      final root = await roots.connect(
+        await scanAudioFolder(dir.path, books: true),
+      );
+      final first = (await assets.list()).single.hash;
+      // Same size and time: a refresh trusts the cached hash and does not read
+      // the file, so the swapped content is not noticed.
+      await file.writeAsString('BBBB book');
+      await file.setLastModified(stamp);
+      await roots.refresh(root);
+      expect((await assets.list()).single.hash, first);
+      // A new modification time is a changed file: it is hashed again.
+      await file.setLastModified(stamp.add(const Duration(minutes: 1)));
+      await roots.refresh((await roots.list()).single);
+      final hashes = (await assets.list()).map((a) => a.hash).toSet();
+      expect(hashes, hasLength(2));
+      // The cache never shows up as a folder, and leaves with its folder.
+      expect(await roots.list(), hasLength(1));
+      await roots.disconnect((await roots.list()).single);
+      final left = await db
+          .customSelect(
+            "SELECT COUNT(*) AS n FROM metadata WHERE key LIKE 'reading-root-hashes:%'",
+          )
+          .getSingle();
+      expect(left.read<int>('n'), 0);
+    },
+  );
+
   test('invalid scan fails without a partially registered library', () async {
     final dir = await Directory.systemTemp.createTemp('reading-atomic-');
     final db = AppDatabase(NativeDatabase.memory());

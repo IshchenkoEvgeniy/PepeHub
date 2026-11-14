@@ -6,14 +6,15 @@ import 'reader_window.dart';
 
 /// [selectedText] is the book text under the selection. When it is given,
 /// the system actions that act on the live selection (share, look up, search,
-/// select all) are replaced with ones that use this text: the selection is
-/// gone by the time an action is picked from the "More" sheet.
+/// select all) are replaced with ones that use this text, so they act on
+/// exactly the book text. [onDismiss] closes the toolbar after an action
+/// picked from the expanded «Ещё» list.
 Widget readerSelectionToolbar({
   required BuildContext context,
   required double width,
   required TextSelectionToolbarAnchors anchors,
   required List<ContextMenuButtonItem> buttonItems,
-  VoidCallback? onMore,
+  VoidCallback? onDismiss,
   Widget? palette,
   String? selectedText,
 }) {
@@ -88,7 +89,7 @@ Widget readerSelectionToolbar({
     width: width,
     anchors: anchors,
     items: items,
-    onMore: onMore,
+    onDismiss: onDismiss,
     palette: palette,
   );
 }
@@ -97,13 +98,13 @@ class _ReaderSelectionToolbar extends StatefulWidget {
   final double width;
   final TextSelectionToolbarAnchors anchors;
   final List<ContextMenuButtonItem> items;
-  final VoidCallback? onMore;
+  final VoidCallback? onDismiss;
   final Widget? palette;
   const _ReaderSelectionToolbar({
     required this.width,
     required this.anchors,
     required this.items,
-    this.onMore,
+    this.onDismiss,
     this.palette,
   });
   @override
@@ -112,7 +113,7 @@ class _ReaderSelectionToolbar extends StatefulWidget {
 }
 
 class _ReaderSelectionToolbarState extends State<_ReaderSelectionToolbar> {
-  bool colors = false;
+  bool colors = false, more = false;
   bool highlight(ContextMenuButtonItem item) => item.label == 'Выделить';
   bool note(ContextMenuButtonItem item) =>
       item.label == 'Заметка' || item.label == 'Цитата / заметка';
@@ -183,7 +184,10 @@ class _ReaderSelectionToolbarState extends State<_ReaderSelectionToolbar> {
                               ),
                             ),
                             onPressed: highlight(item) && widget.palette != null
-                                ? () => setState(() => colors = !colors)
+                                ? () => setState(() {
+                                    colors = !colors;
+                                    if (colors) more = false;
+                                  })
                                 : item.onPressed,
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -204,64 +208,77 @@ class _ReaderSelectionToolbarState extends State<_ReaderSelectionToolbar> {
                           child: Tooltip(
                             message: 'Ещё',
                             child: TextButton(
-                              child: const Column(
+                              key: const ValueKey('reader-selection-more'),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                  vertical: 10,
+                                ),
+                                minimumSize: const Size(44, 56),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              // The actions open inside the toolbar: a sheet
+                              // pushed after the toolbar is gone lost the
+                              // selection and its route on real devices.
+                              onPressed: () => setState(() {
+                                more = !more;
+                                if (more) colors = false;
+                              }),
+                              child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.more_horiz, size: 19),
-                                  SizedBox(height: 5),
-                                  Text('Ещё', style: TextStyle(fontSize: 12)),
+                                  Icon(
+                                    more ? Icons.expand_less : Icons.more_horiz,
+                                    size: 19,
+                                  ),
+                                  const SizedBox(height: 5),
+                                  const Text(
+                                    'Ещё',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
                                 ],
                               ),
-                              onPressed: () async {
-                                final navigator = Navigator.of(
-                                  context,
-                                  rootNavigator: true,
-                                );
-                                widget.onMore?.call();
-                                final chosen =
-                                    await showModalBottomSheet<
-                                      ContextMenuButtonItem
-                                    >(
-                                      context: navigator.context,
-                                      useSafeArea: true,
-                                      showDragHandle: true,
-                                      constraints: const BoxConstraints(
-                                        maxWidth: 640,
-                                      ),
-                                      builder: (context) => SafeArea(
-                                        top: false,
-                                        child: SingleChildScrollView(
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const ListTile(
-                                                title: Text(
-                                                  'Действия с выделением',
-                                                ),
-                                              ),
-                                              for (final item in extras)
-                                                ListTile(
-                                                  title: Text(
-                                                    label(item, context),
-                                                  ),
-                                                  onTap: () => Navigator.pop(
-                                                    context,
-                                                    item,
-                                                  ),
-                                                ),
-                                              const SizedBox(height: 16),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                chosen?.onPressed?.call();
-                              },
                             ),
                           ),
                         ),
                     ],
                   ),
+                  if (more && extras.isNotEmpty) ...[
+                    const Divider(height: 1),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 280),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (final item in extras)
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  alignment: Alignment.centerLeft,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                onPressed: () {
+                                  // Run the action while the selection is
+                                  // still live, then close the toolbar.
+                                  item.onPressed?.call();
+                                  widget.onDismiss?.call();
+                                },
+                                child: Text(label(item, context)),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   if (colors && widget.palette != null) ...[
                     const Divider(height: 1),
                     Padding(

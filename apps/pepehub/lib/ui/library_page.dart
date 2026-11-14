@@ -88,6 +88,7 @@ part 'library_page_batch.dart';
 part 'library_page_book_menu.dart';
 part 'library_page_filters.dart';
 part 'library_page_library_actions.dart';
+part 'library_page_series.dart';
 
 class LibraryPage extends StatefulWidget {
   final Repository repository;
@@ -159,6 +160,22 @@ class _LibraryPageState extends State<LibraryPage> {
   bool busy = false, loading = true;
   bool indexing = false, favoritesOnly = false;
   final Set<String> selectedBooks = {};
+
+  /// Selection mode can be on with nothing picked yet: «Выбрать книги»
+  /// enters it empty, and a long press on a card enters it with that card.
+  bool selecting = false;
+
+  /// Series opened in the «Серии» view, by lower-case name.
+  final Set<String> expandedSeries = {};
+
+  /// Bumped when library cards change: their series feed the shelf order.
+  int _libraryRevision = 0;
+  bool get selectionMode => selecting || selectedBooks.isNotEmpty;
+  void _clearSelection() {
+    selectedBooks.clear();
+    selecting = false;
+  }
+
   String readingSort = 'title';
   String audioSort = 'title';
   bool readingSortReverse = false, audioSortReverse = false;
@@ -193,6 +210,7 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   void _libraryChanged() {
+    _libraryRevision++;
     if (mounted) setState(() {});
     if (_remoteRefresh == null &&
         !personalLibrary.loading &&
@@ -265,7 +283,7 @@ class _LibraryPageState extends State<LibraryPage> {
       statisticsSection = false;
       videoSection = false;
       reading = next;
-      selectedBooks.clear();
+      _clearSelection();
       books = [];
       containedIn = {};
       roots = [];
@@ -613,7 +631,7 @@ class _LibraryPageState extends State<LibraryPage> {
           readingSourcePaths = sourcePaths;
           readingCollections = groups;
           readingSort = order;
-          readingView = const ['list', 'covers'].contains(view)
+          readingView = const ['list', 'covers', 'series'].contains(view)
               ? view!
               : 'auto';
           if (!groups.containsKey(collectionFilter)) collectionFilter = null;
@@ -648,7 +666,9 @@ class _LibraryPageState extends State<LibraryPage> {
           audioSourcePaths = sourcePaths;
           audioSort = order;
           audioSortReverse = reverse == '1';
-          audioView = const ['list', 'covers'].contains(view) ? view! : 'auto';
+          audioView = const ['list', 'covers', 'series'].contains(view)
+              ? view!
+              : 'auto';
           audioRecent = recent;
           if (!groups.containsKey(collectionFilter)) collectionFilter = null;
         }
@@ -1144,7 +1164,7 @@ class _LibraryPageState extends State<LibraryPage> {
       recommendationsSection = false;
       statisticsSection = false;
       videoSection = false;
-      selectedBooks.clear();
+      _clearSelection();
     });
     await widget.repository.setMeta('library-section', 'metadata');
     await personalLibrary.reload();
@@ -1182,7 +1202,7 @@ class _LibraryPageState extends State<LibraryPage> {
           metadataSection = false;
           recommendationsSection = false;
           statisticsSection = false;
-          selectedBooks.clear();
+          _clearSelection();
         });
         await widget.repository.setMeta('library-section', 'video');
       case PepeSection.library:
@@ -1193,7 +1213,7 @@ class _LibraryPageState extends State<LibraryPage> {
           videoSection = false;
           metadataSection = false;
           statisticsSection = false;
-          selectedBooks.clear();
+          _clearSelection();
         });
         await widget.repository.setMeta('library-section', 'recommendations');
       case PepeSection.statistics:
@@ -1202,7 +1222,7 @@ class _LibraryPageState extends State<LibraryPage> {
           videoSection = false;
           recommendationsSection = false;
           metadataSection = false;
-          selectedBooks.clear();
+          _clearSelection();
         });
         await widget.repository.setMeta('library-section', 'statistics');
     }
@@ -1311,7 +1331,7 @@ class _LibraryPageState extends State<LibraryPage> {
       'added': 'Недавно добавленные',
       'title': 'По названию',
       'author': 'По автору',
-      if (reading) 'series': 'По серии',
+      'series': 'По серии',
       'progress': 'По прогрессу',
       'recent': reading ? 'Недавно открытые' : 'Недавняя активность',
       if (reading) 'finished': 'По дате прочтения',
@@ -1364,22 +1384,31 @@ class _LibraryPageState extends State<LibraryPage> {
           ],
         ),
         _viewChoices(),
-        if (reading)
-          IconButton(
-            tooltip: 'Все заметки',
-            visualDensity: VisualDensity.compact,
-            onPressed: _allNotes,
-            icon: const Icon(Icons.edit_note),
-          ),
         IconButton(
-          tooltip: 'Обновить список',
+          key: const ValueKey('shelf-select'),
+          tooltip: reading ? 'Выбрать книги' : 'Выбрать аудиокниги',
           visualDensity: VisualDensity.compact,
+          isSelected: selectionMode,
           onPressed: busy
               ? null
-              : reading
-              ? _refreshReadingFolders
-              : _reload,
-          icon: const Icon(Icons.refresh),
+              : () => setState(() {
+                  if (selectionMode) {
+                    _clearSelection();
+                  } else {
+                    selecting = true;
+                  }
+                }),
+          icon: const Icon(Icons.checklist),
+        ),
+        IconButton(
+          key: const ValueKey('shelf-refresh'),
+          tooltip: 'Проверить папки на новые и удалённые файлы',
+          visualDensity: VisualDensity.compact,
+          onPressed:
+              busy || widget.assets == null || activeFolderScan.value != null
+              ? null
+              : _refreshFolders,
+          icon: const Icon(Icons.sync),
         ),
       ],
     );
@@ -1423,6 +1452,7 @@ class _LibraryPageState extends State<LibraryPage> {
       shelfSources,
       deletedReadingBooks,
       statusOverrides,
+      _libraryRevision,
     ];
     if (listEquals(inputs, _visibleInputs)) return _visibleCache;
     final rootIds = selectedRoot == null
@@ -1451,7 +1481,7 @@ class _LibraryPageState extends State<LibraryPage> {
                     collectionFilter,
                   )) &&
               matchesCatalogSearch(
-                '${_title(b)} ${_authors(b)} ${reading ? _textInfo(b)['series'] ?? '' : b.payload?['series'] ?? ''}',
+                '${_title(b)} ${_authors(b)} ${_seriesOf(b)?.name ?? ''}',
                 terms,
               ),
         )
@@ -1472,10 +1502,7 @@ class _LibraryPageState extends State<LibraryPage> {
             : switch (readingSort) {
                 'added' => (b.localOrder ?? 0).compareTo(a.localOrder ?? 0),
                 'author' => naturalAudioOrder(_authors(a), _authors(b)),
-                'series' => naturalAudioOrder(
-                  '${_textInfo(a)['series'] ?? ''}',
-                  '${_textInfo(b)['series'] ?? ''}',
-                ),
+                'series' => _compareSeries(a, b),
                 'progress' => _fraction(b).compareTo(_fraction(a)),
                 'recent' => '${_textPosition(b)['updatedAt'] ?? ''}'.compareTo(
                   '${_textPosition(a)['updatedAt'] ?? ''}',
@@ -1488,18 +1515,16 @@ class _LibraryPageState extends State<LibraryPage> {
                   _readingOrderKey(b),
                 ),
               };
-        if (result == 0 && readingSort == 'series') {
-          result = (double.tryParse('${_textInfo(a)['seriesNumber']}') ?? 0)
-              .compareTo(
-                double.tryParse('${_textInfo(b)['seriesNumber']}') ?? 0,
-              );
-        }
         if (result != 0) return readingSortReverse ? -result : result;
         return naturalAudioOrder(_title(a), _title(b));
       });
     }
     if (!reading) {
       visible.sort((a, b) {
+        if (audioSort == 'series') {
+          final bySeries = _compareSeries(a, b);
+          if (bySeries != 0) return bySeries;
+        }
         if (audioSort == 'title') {
           final pathA = audioSourcePaths[a.id]?['relativePath'] as String?;
           final pathB = audioSourcePaths[b.id]?['relativePath'] as String?;
@@ -1580,14 +1605,14 @@ class _LibraryPageState extends State<LibraryPage> {
     // while no filter is set, so the shelf looked different per folder.
     final listed = visible;
     return ShelfShell(
-      title: selectedBooks.isNotEmpty
+      title: selectionMode
           ? 'Выбрано: ${selectedBooks.length}'
           : reading
           ? 'Книги'
           : 'Аудиокниги',
       navigation: _navigation,
       bottomNavigationBar: AudioMiniPlayer(controller: widget.audio),
-      actions: selectedBooks.isNotEmpty
+      actions: selectionMode
           ? [
               IconButton(
                 tooltip: 'Выбрать все видимые',
@@ -1598,6 +1623,7 @@ class _LibraryPageState extends State<LibraryPage> {
               ),
               PopupMenuButton<String>(
                 tooltip: 'Действия с выбранными',
+                enabled: selectedBooks.isNotEmpty,
                 onSelected: _batchBooks,
                 itemBuilder: (_) => [
                   if (!reading &&
@@ -1636,22 +1662,18 @@ class _LibraryPageState extends State<LibraryPage> {
               ),
               IconButton(
                 tooltip: 'Отменить выбор',
-                onPressed: () => setState(selectedBooks.clear),
+                onPressed: () => setState(_clearSelection),
                 icon: const Icon(Icons.close),
               ),
             ]
           : [
-              IconButton(
-                tooltip: 'Выбрать видимые книги',
-                onPressed: busy || visible.isEmpty
-                    ? null
-                    : () => setState(
-                        () => selectedBooks.addAll(
-                          visible.map((book) => book.id),
-                        ),
-                      ),
-                icon: const Icon(Icons.select_all),
-              ),
+              if (reading)
+                IconButton(
+                  key: const ValueKey('shelf-notes'),
+                  tooltip: 'Все заметки',
+                  onPressed: _allNotes,
+                  icon: const Icon(Icons.edit_note),
+                ),
               IconButton(
                 tooltip: 'Папки библиотеки',
                 onPressed: busy || widget.assets == null ? null : _manageRoots,
@@ -1866,6 +1888,7 @@ class _LibraryPageState extends State<LibraryPage> {
                   sliver: SliverLayoutBuilder(
                     builder: (context, constraints) {
                       final width = constraints.crossAxisExtent;
+                      if (shelfView == 'series') return _seriesSliver(listed);
                       if (!_useCovers(width)) {
                         return SliverList.builder(
                           itemCount: listed.length,
@@ -1926,15 +1949,82 @@ class _LibraryPageState extends State<LibraryPage> {
     return (audioSummaries[book.id]?.position ?? 0) > 0 ? 'active' : status;
   }
 
-  Future<void> _refreshReadingFolders() => _action(() async {
-    if (widget.assets == null) return;
-    final store = ReadingRoots(widget.assets!);
-    for (final root in await store.list()) {
-      if (selectedRoot == null || selectedRoot == root.key) {
-        await store.connect(await rescanAudioFolder(root.path, books: true));
+  /// Checks the connected folders for new, changed and removed files in the
+  /// background: the shelf stays usable, the scan panel shows progress and
+  /// can cancel, and the result is reported when it ends. Only files that
+  /// changed since the last check are read again.
+  Future<void> _refreshFolders() async {
+    final assets = widget.assets;
+    if (assets == null || activeFolderScan.value != null) return;
+    final readingSection = reading;
+    final progress = FolderScanProgress('Проверка папок');
+    activeFolderScan.value = progress;
+    FolderScanOutcome outcome;
+    try {
+      var added = 0, missing = 0, errors = 0, checked = 0;
+      if (readingSection) {
+        final store = ReadingRoots(assets);
+        final all = await store.list();
+        final list = all.where((r) => r.key == selectedRoot).toList();
+        final roots = list.isEmpty ? all : list;
+        for (final (index, root) in roots.indexed) {
+          progress.update(
+            title: roots.length == 1
+                ? 'Проверка «${root.title}»'
+                : 'Папка ${index + 1} из ${roots.length}: ${root.title}',
+          );
+          final result = await store.refresh(root, progress: progress);
+          checked++;
+          added += (result.report?['added'] as num? ?? 0).toInt();
+          missing += (result.report?['missing'] as num? ?? 0).toInt();
+          errors += result.warnings.length;
+        }
+      } else {
+        final store = AudioRoots(assets);
+        final all = await store.list();
+        final list = all.where((r) => r.key == selectedRoot).toList();
+        final roots = list.isEmpty ? all : list;
+        for (final (index, root) in roots.indexed) {
+          progress.update(
+            title: roots.length == 1
+                ? 'Проверка «${root.title}»'
+                : 'Папка ${index + 1} из ${roots.length}: ${root.title}',
+          );
+          final result = await store.refresh(root, progress: progress);
+          checked++;
+          added += result.added;
+          errors += result.warnings.length;
+        }
       }
+      final changes = [
+        if (added > 0) 'новых: $added',
+        if (missing > 0) 'пропало: $missing',
+        if (errors > 0) 'не прочитано: $errors',
+      ].join(', ');
+      outcome = FolderScanOutcome(
+        checked == 0
+            ? 'Папки не подключены. Подключите их в «Папки библиотеки».'
+            : changes.isEmpty
+            ? 'Изменений нет'
+            : 'Папки проверены: $changes',
+      );
+    } on FolderScanCancelled {
+      outcome = const FolderScanOutcome(
+        'Проверка отменена. Библиотека не изменилась.',
+      );
+    } catch (e) {
+      outcome = FolderScanOutcome(
+        'Не удалось проверить папки: ${describeError(e)}',
+        failed: true,
+      );
+    } finally {
+      activeFolderScan.value = null;
     }
-  });
+    if (!mounted) return;
+    await _reload();
+    // Reported through the shared outcome so it looks like other scans.
+    folderScanOutcome.value = outcome;
+  }
 
   void _checkBookClosed(String id) {
     if (localAssets.any(
@@ -1942,6 +2032,33 @@ class _LibraryPageState extends State<LibraryPage> {
     )) {
       throw StateError('Сначала закройте эту книгу');
     }
+  }
+
+  /// Cover of a shelf book, or a placeholder in its place.
+  Widget _shelfCover(LibraryRecord book) {
+    final audio = book.payload!['format'] == 'audio';
+    final scheme = Theme.of(context).colorScheme;
+    return audio && widget.assets != null
+        ? AudioCover(
+            key: ValueKey('${book.id}:${_coverVersions[book.id]}'),
+            assets: widget.assets!,
+            bookId: book.id,
+          )
+        : !audio && _textInfo(book)['cover'] != null
+        ? Image.file(
+            File(_textInfo(book)['cover'] as String),
+            fit: BoxFit.cover,
+            cacheWidth: 160,
+            errorBuilder: (_, _, _) => const Icon(Icons.menu_book, size: 28),
+          )
+        : ColoredBox(
+            color: scheme.surfaceContainerHighest,
+            child: Icon(
+              audio ? Icons.headphones_outlined : Icons.auto_stories_outlined,
+              size: 28,
+              color: scheme.primary,
+            ),
+          );
   }
 
   Widget _bookCard(LibraryRecord book) {
@@ -1971,7 +2088,7 @@ class _LibraryPageState extends State<LibraryPage> {
         onLongPress: busy ? null : () => _toggleBook(book.id),
         onTap: busy
             ? null
-            : selectedBooks.isNotEmpty
+            : selectionMode
             ? () => _toggleBook(book.id)
             : deleted
             ? () => _deletedBookInfo(book)
@@ -1990,35 +2107,8 @@ class _LibraryPageState extends State<LibraryPage> {
                   borderRadius: BorderRadius.circular(4),
                   child: Stack(
                     children: [
-                      Positioned.fill(
-                        child: audio && widget.assets != null
-                            ? AudioCover(
-                                key: ValueKey(
-                                  '${book.id}:${_coverVersions[book.id]}',
-                                ),
-                                assets: widget.assets!,
-                                bookId: book.id,
-                              )
-                            : !audio && _textInfo(book)['cover'] != null
-                            ? Image.file(
-                                File(_textInfo(book)['cover'] as String),
-                                fit: BoxFit.cover,
-                                cacheWidth: 160,
-                                errorBuilder: (_, _, _) =>
-                                    const Icon(Icons.menu_book, size: 28),
-                              )
-                            : ColoredBox(
-                                color: scheme.surfaceContainerHighest,
-                                child: Icon(
-                                  audio
-                                      ? Icons.headphones_outlined
-                                      : Icons.auto_stories_outlined,
-                                  size: 28,
-                                  color: scheme.primary,
-                                ),
-                              ),
-                      ),
-                      if (selectedBooks.isNotEmpty)
+                      Positioned.fill(child: _shelfCover(book)),
+                      if (selectionMode)
                         Positioned(
                           top: 0,
                           left: 0,
@@ -2058,11 +2148,12 @@ class _LibraryPageState extends State<LibraryPage> {
                           ),
                         ),
                       ),
-                    if (!audio && _textInfo(book)['series'] != null)
+                    if (_seriesLabel(book) case final series
+                        when series.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 3),
                         child: Text(
-                          '${_textInfo(book)['series']} ${_textInfo(book)['seriesNumber'] ?? ''}',
+                          series,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 10, color: scheme.primary),
@@ -2202,7 +2293,7 @@ class _LibraryPageState extends State<LibraryPage> {
                   key: ValueKey('status-tab:${entry.key}'),
                   onTap: () => setState(() {
                     statusFilter = entry.key;
-                    selectedBooks.clear();
+                    _clearSelection();
                   }),
                   child: Container(
                     height: 46,
@@ -2291,7 +2382,7 @@ class _LibraryPageState extends State<LibraryPage> {
         onLongPress: busy ? null : () => _toggleBook(book.id),
         onTap: busy
             ? null
-            : selectedBooks.isNotEmpty
+            : selectionMode
             ? () => _toggleBook(book.id)
             : deleted
             ? () => _deletedBookInfo(book)
@@ -2323,7 +2414,7 @@ class _LibraryPageState extends State<LibraryPage> {
                               _coverPlaceholder(audio, colors),
                         )
                       : _coverPlaceholder(audio, colors),
-                  if (selectedBooks.isNotEmpty)
+                  if (selectionMode)
                     Positioned(
                       top: 4,
                       left: 4,

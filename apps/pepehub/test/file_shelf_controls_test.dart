@@ -190,7 +190,12 @@ void main() {
           'Отложить': 'paused',
           'Бросить': 'abandoned',
         }.entries) {
-          await tester.tap(find.byTooltip('Выбрать видимые книги'));
+          // «Выбрать» enters an empty selection; picking all is inside it.
+          await tapVisible(tester, find.byKey(const ValueKey('shelf-select')));
+          await tester.pumpAndSettle();
+          expect(state.selectionMode, true);
+          expect(state.selectedBooks, isEmpty);
+          await tester.tap(find.byTooltip('Выбрать все видимые'));
           await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('Действия с выбранными'));
           await tester.pumpAndSettle();
@@ -202,6 +207,7 @@ void main() {
             true,
           );
           expect(state.selectedBooks, isEmpty);
+          expect(state.selectionMode, false);
         }
         expect(await repo.meta('reading-note:keep'), '{"text":"Keep quote"}');
         expect(state.personalLibrary.visibleEntries, isEmpty);
@@ -468,6 +474,122 @@ void main() {
       expect(assets.firstTrackReads, lessThan(35));
       await tapVisible(tester, find.byTooltip('Обложки'));
       expect(shelfCards().evaluate().length, lessThan(35));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    '«Серии» groups 900 books and 900 audiobooks lazily, in volume order',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final db = AppDatabase(NativeDatabase.memory()),
+          repo = _Repository(db),
+          assets = _Assets(repo);
+      addTearDown(db.close);
+      await repo.setMeta('library-section', 'reading');
+      // 300 series of three volumes, stored out of order.
+      String series(int i) => 'Цикл ${(i ~/ 3).toString().padLeft(3, '0')}';
+      int volume(int i) => 3 - i % 3;
+      await db.transaction(() async {
+        for (var i = 0; i < 900; i++) {
+          final title = 'Том ${i.toString().padLeft(4, '0')}';
+          await db.customStatement('INSERT INTO records VALUES(?,?,1,0,?)', [
+            'text-$i',
+            'book',
+            jsonEncode(payload(title)),
+          ]);
+          await db.customStatement(
+            'INSERT INTO local_assets VALUES(?,?,?,?,?,?)',
+            ['asset-$i', 'text-$i', '$i.epub', '/unopened/$i.epub', 'h-$i', 12],
+          );
+          await repo.setMeta(
+            'reading-index:h-$i',
+            jsonEncode({
+              'title': title,
+              'authors': ['Фёдор'],
+              'length': 10000,
+              'starts': [0],
+              'series': series(i),
+              'seriesNumber': volume(i),
+            }),
+          );
+          await db.customStatement('INSERT INTO records VALUES(?,?,1,0,?)', [
+            'audio-$i',
+            'book',
+            jsonEncode({
+              ...payload('Аудио ${i.toString().padLeft(4, '0')}', audio: true),
+              'series': series(i),
+              'seriesNumber': volume(i),
+            }),
+          ]);
+        }
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LibraryPage(repository: repo, assets: assets),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final dynamic state = tester.state(find.byType(LibraryPage));
+      Finder seriesRows() => find.byWidgetPredicate(
+        (widget) =>
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith('series-row:'),
+      );
+      for (final section in ['reading', 'audio']) {
+        if (section == 'audio') {
+          await tester.tap(find.byTooltip('Аудиокниги'));
+          await tester.pumpAndSettle();
+        }
+        await tapVisible(
+          tester,
+          find.byKey(const ValueKey('shelf-view-series')),
+        );
+        await tester.pumpAndSettle();
+        expect(state.shelfView, 'series');
+        // Rows are built lazily: a few headers, not 300.
+        final headers = seriesRows().evaluate().length;
+        expect(headers, greaterThan(0));
+        expect(headers, lessThan(35));
+        expect(shelfCards().evaluate().length, lessThan(35));
+        final first = seriesRows().first;
+        expect(
+          find.descendant(of: first, matching: find.text('Цикл 000')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: first,
+            matching: find.text(
+              section == 'reading' ? 'Прочитано 0 из 3' : 'Прослушано 0 из 3',
+            ),
+          ),
+          findsOneWidget,
+        );
+        // Expanding lists the volumes by number, not by stored order.
+        await tester.tap(first);
+        await tester.pumpAndSettle();
+        final prefix = section == 'reading' ? 'text' : 'audio';
+        final order = [
+          for (final element in shelfCards().evaluate())
+            (element.widget.key! as ValueKey<String>).value,
+        ].take(3).toList();
+        expect(order, [
+          'book-card:$prefix-2',
+          'book-card:$prefix-1',
+          'book-card:$prefix-0',
+        ]);
+        await tester.tap(first);
+        await tester.pumpAndSettle();
+        expect(shelfCards().evaluate().take(1), isEmpty);
+      }
+      // The series view is remembered per section and never touches tracks.
+      expect(await repo.meta('reading-shelf-view'), 'series');
+      expect(await repo.meta('audio-shelf-view'), 'series');
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },

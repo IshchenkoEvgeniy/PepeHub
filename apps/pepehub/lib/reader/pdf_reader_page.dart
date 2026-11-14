@@ -873,7 +873,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
           primaryAnchor: params.anchorA,
           secondaryAnchor: params.anchorB,
         ),
-        onMore: params.dismissContextMenu,
+        onDismiss: params.dismissContextMenu,
         palette: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

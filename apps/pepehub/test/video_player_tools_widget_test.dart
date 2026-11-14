@@ -24,7 +24,10 @@ class _Window extends VideoFullscreenHost {
 }
 
 Future<void> ready(WidgetTester tester, bool Function() condition) async {
-  for (var n = 0; n < 60 && !condition(); n++) {
+  // Up to ~5 s of real time: under a full parallel run (release builds) a
+  // simulated download or player start can take longer than 1.5 s. The loop
+  // ends as soon as the condition holds, so passing tests are not slower.
+  for (var n = 0; n < 200 && !condition(); n++) {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 25)),
     );

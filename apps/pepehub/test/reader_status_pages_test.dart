@@ -17,6 +17,23 @@ void main() {
     expect(readerBookPages(0, 0), (page: 1, count: 1));
   });
 
+  test('measured screens replace the statistics page in the reader', () {
+    // 600 characters fit on a screen: 100 000 characters are 167 screens and
+    // each page turn moves the number by one.
+    expect(readerBookPages(100000, 0, charsPerScreen: 600), (
+      page: 1,
+      count: 167,
+    ));
+    expect(readerBookPages(100000, 600, charsPerScreen: 600).page, 2);
+    expect(readerBookPages(100000, 1199, charsPerScreen: 600).page, 2);
+    expect(readerBookPages(100000, 100000, charsPerScreen: 600).page, 167);
+    // An unmeasured or broken layout falls back to the statistics page.
+    expect(
+      readerBookPages(100000, 0, charsPerScreen: 0),
+      readerBookPages(100000, 0),
+    );
+  });
+
   test('the font can be made smaller than 12', () {
     expect(ReaderPreferences.fromJson({'size': 8}).size, 8);
     expect(

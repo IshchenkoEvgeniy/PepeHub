@@ -67,7 +67,7 @@ extension _LibraryPageBatch on _LibraryPageState {
         final id = await AudioMerge(widget.assets!)
             .merge(chosen.map((book) => book.id).toList(), name);
         await widget.audio?.sidecar.update(id, force: true);
-        if (mounted) _update(selectedBooks.clear);
+        if (mounted) _update(_clearSelection);
       });
       return;
     }
@@ -83,7 +83,7 @@ extension _LibraryPageBatch on _LibraryPageState {
             : AudioBookActions(widget.assets!);
         await actions.hideMany(ids);
         if (mounted) {
-          _update(selectedBooks.clear);
+          _update(_clearSelection);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               // Flutter keeps snack bars with an action until dismissed.
@@ -126,7 +126,7 @@ extension _LibraryPageBatch on _LibraryPageState {
           }
         }
       }
-      if (mounted) _update(selectedBooks.clear);
+      if (mounted) _update(_clearSelection);
     });
   }
 
@@ -147,7 +147,7 @@ extension _LibraryPageBatch on _LibraryPageState {
                     audioSourcePaths.containsKey(book.id)),
           ),
       ], beforeDelete: _checkBookClosed);
-      if (mounted && moved.isNotEmpty) _update(selectedBooks.clear);
+      if (mounted && moved.isNotEmpty) _update(_clearSelection);
     });
     if (mounted) showMovedToTrash(context, assets, moved, onRestored: _reload);
   }

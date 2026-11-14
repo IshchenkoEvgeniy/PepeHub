@@ -585,7 +585,7 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
                 if (!visited.add(id)) continue
                 val children = Docs.buildChildDocumentsUriUsingTree(tree, id)
                 val columns = arrayOf(Docs.Document.COLUMN_DOCUMENT_ID, Docs.Document.COLUMN_DISPLAY_NAME,
-                    Docs.Document.COLUMN_MIME_TYPE, Docs.Document.COLUMN_SIZE)
+                    Docs.Document.COLUMN_MIME_TYPE, Docs.Document.COLUMN_SIZE, Docs.Document.COLUMN_LAST_MODIFIED)
                 val cursor = context.contentResolver.query(children, columns, null, null, null) ?: error("Папка недоступна: $prefix")
                 cursor.use {
                     completeFolder(it)
@@ -601,7 +601,9 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
                             }
                         } else if (name.substringAfterLast('.', "").lowercase() in (if (books) setOf("epub", "fb2", "zip", "txt", "md", "markdown", "html", "htm", "xhtml", "docx", "pdf", "rtf") else extensions)) {
                             val uri = Docs.buildDocumentUriUsingTree(tree, childId).toString()
-                            files.add(mapOf("uri" to uri, "name" to relative, "size" to if (it.isNull(3)) -1L else it.getLong(3)))
+                            // The modification time lets a refresh skip re-hashing unchanged books.
+                            files.add(mapOf("uri" to uri, "name" to relative, "size" to if (it.isNull(3)) -1L else it.getLong(3),
+                                "modified" to if (it.isNull(4)) -1L else it.getLong(4)))
                             check(files.size <= 10000) { "В выбранной папке допускается не более 10000 файлов" }
                         } else {
                             unsupportedFiles++

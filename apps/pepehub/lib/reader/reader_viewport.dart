@@ -32,6 +32,11 @@ class ReaderViewportController {
   /// Text range of the current screen in viewport coordinates (the whole-book
   /// flow or the chapter); used to mark bookmarked pages.
   final visibleRange = ValueNotifier<({int start, int end})?>(null);
+
+  /// Typical characters on one screen with the current font, margins and
+  /// window: the median of the laid-out text pages. The reader counts book
+  /// pages in these screens, so a page turn moves the number by one.
+  final charsPerScreen = ValueNotifier<double?>(null);
   Object? _owner;
   bool Function(int)? _seek;
   VoidCallback? _flush;
@@ -358,11 +363,11 @@ class _ReaderViewportState extends State<ReaderViewport> {
     if (!identical(oldWidget.controller, widget.controller)) {
       oldWidget.controller?._detach(this);
       widget.controller?._attach(
-      this,
-      _seekCached,
-      _updateScrolledPosition,
-      _keyStep,
-    );
+        this,
+        _seekCached,
+        _updateScrolledPosition,
+        _keyStep,
+      );
     }
   }
 
@@ -673,8 +678,26 @@ class _ReaderViewportState extends State<ReaderViewport> {
     widget.onReady?.call();
   }
 
+  /// Median page length of the laid-out text pages. Chapter ends, the last
+  /// page and illustrations are short by nature and left out.
+  void _measureScreen(List<ReaderSlice> list) {
+    final controller = widget.controller;
+    if (controller == null) return;
+    final chapterEnds = widget.chapterBreaks.map((at) => at - 2).toSet();
+    final lengths = <int>[
+      for (var i = 0; i < list.length - 1 && i < 400; i++)
+        if (!images.containsKey(list[i]) &&
+            !chapterEnds.contains(list[i].end) &&
+            list[i].end > list[i].start)
+          list[i].end - list[i].start,
+    ]..sort();
+    if (lengths.length < 3) return;
+    controller.charsPerScreen.value = lengths[lengths.length ~/ 2].toDouble();
+  }
+
   void _reportPage() {
     final list = pages;
+    if (list != null) _measureScreen(list);
     final info = widget.controller?.pageInfo;
     if (info == null || !mounted) return;
     info.value = widget.compactFlow || list == null || layoutStart > 0
@@ -1313,7 +1336,7 @@ class _ReaderViewportState extends State<ReaderViewport> {
               (base + savedSelection.end).clamp(0, widget.text.length),
             );
       return readerSelectionToolbar(
-        onMore: hideToolbar,
+        onDismiss: hideToolbar,
         selectedText: selectedText,
         context: context,
         width: widget.width,
