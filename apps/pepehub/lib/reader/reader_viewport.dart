@@ -37,6 +37,14 @@ class ReaderViewportController {
   /// window: the median of the laid-out text pages. The reader counts book
   /// pages in these screens, so a page turn moves the number by one.
   final charsPerScreen = ValueNotifier<double?>(null);
+
+  /// The screens laid out so far for [text] (the viewport's text, to tell a
+  /// stale chapter from the current one) and whether the layout reached its
+  /// end. Null in the compact mode, whose slices are not screens.
+  final screens =
+      ValueNotifier<({String text, List<ReaderSlice> pages, bool complete})?>(
+        null,
+      );
   Object? _owner;
   bool Function(int)? _seek;
   VoidCallback? _flush;
@@ -698,6 +706,9 @@ class _ReaderViewportState extends State<ReaderViewport> {
   void _reportPage() {
     final list = pages;
     if (list != null) _measureScreen(list);
+    widget.controller?.screens.value = widget.compactFlow || list == null
+        ? null
+        : (text: widget.text, pages: list, complete: layoutComplete);
     final info = widget.controller?.pageInfo;
     if (info == null || !mounted) return;
     info.value = widget.compactFlow || list == null || layoutStart > 0

@@ -1798,6 +1798,7 @@ class _ReaderPageState extends State<ReaderPage>
                                           positionChanges,
                                           dragProgress,
                                           viewportController.visibleRange,
+                                          viewportController.screens,
                                         ]),
                                         builder: (context, _) => _footer(
                                           context,
@@ -1874,11 +1875,12 @@ class _ReaderPageState extends State<ReaderPage>
     listenable: Listenable.merge([
       positionChanges,
       viewportController.charsPerScreen,
+      viewportController.screens,
     ]),
     builder: (context, _) {
       final absolute = d.starts[chapter] + offset;
       final progress = d.length == 0 ? 0.0 : absolute / d.length;
-      final pages = _bookPages(d, absolute);
+      final pages = _bookPages(d, chapter, offset);
       return ReaderStatusLine(
         title: displayTitle ?? d.book.title,
         percent: '${(progress * 100).toStringAsFixed(2)}%',
@@ -1890,19 +1892,76 @@ class _ReaderPageState extends State<ReaderPage>
     },
   );
 
-  /// Book pages in screens of the current layout.
-  ({int page, int count}) _bookPages(ReaderDocument d, int absolute) =>
-      readerBookPages(
-        d.length,
-        absolute,
-        charsPerScreen: viewportController.charsPerScreen.value,
+  ReaderScreens? _screens;
+  ReaderDocument? _screensDocument;
+  Object? _screensLayout;
+  double? _screensSize;
+
+  /// Book pages in screens of the current layout: exact where the viewport
+  /// has laid the text out, estimated elsewhere.
+  ({int page, int count}) _bookPages(
+    ReaderDocument d,
+    int chapter,
+    int offset,
+  ) {
+    final size = readerScreenSize(viewportController.charsPerScreen.value);
+    final layout = viewportController.screens.value;
+    if (_screens == null ||
+        !identical(_screensDocument, d) ||
+        !identical(_screensLayout, layout) ||
+        _screensSize != size) {
+      _screensDocument = d;
+      _screensLayout = layout;
+      _screensSize = size;
+      _screens = ReaderScreens(
+        [for (final text in d.texts) text.length],
+        _laidScreens(d, layout),
+        complete: layout?.complete ?? false,
+        size: size,
       );
+    }
+    return (page: _screens!.page(chapter, offset), count: _screens!.count);
+  }
+
+  /// The viewport's screens in chapter coordinates; empty when they belong
+  /// to another chapter or book.
+  List<ReaderScreen> _laidScreens(
+    ReaderDocument d,
+    ({String text, List<ReaderSlice> pages, bool complete})? layout,
+  ) {
+    if (layout == null) return const [];
+    if (preferences.mode == 'scroll') {
+      if (!identical(layout.text, d.texts[chapter])) return const [];
+      return [
+        for (final p in layout.pages)
+          (chapter: chapter, start: p.start, end: p.end),
+      ];
+    }
+    final flow = _flowFor(d);
+    if (!identical(layout.text, flow.text)) return const [];
+    final starts = flow.starts;
+    var c = 0;
+    return [
+      for (final p in layout.pages)
+        if (p.end >= p.start)
+          () {
+            while (c + 1 < starts.length && starts[c + 1] <= p.start) {
+              c++;
+            }
+            return (
+              chapter: c,
+              start: p.start - starts[c],
+              end: (p.end - starts[c]).clamp(0, d.texts[c].length),
+            );
+          }(),
+    ];
+  }
 
   /// Where a return from a jump leads: page, percent and chapter.
   String _placeLabel(ReaderDocument d, ({int chapter, int offset}) at) {
     final absolute = d.starts[at.chapter] + at.offset;
     final percent = d.length == 0 ? 0 : absolute * 100 ~/ d.length;
-    final page = _bookPages(d, absolute).page;
+    final page = _bookPages(d, at.chapter, at.offset).page;
     return 'стр. $page · $percent% · гл. ${at.chapter + 1}';
   }
 
@@ -2227,7 +2286,7 @@ class _ReaderPageState extends State<ReaderPage>
     final target = dragging
         ? d.locate(value)
         : (chapter: chapter, offset: offset);
-    final pages = _bookPages(d, d.starts[target.chapter] + target.offset);
+    final pages = _bookPages(d, target.chapter, target.offset);
     final place = '${(value * 100).toStringAsFixed(dragging ? 1 : 0)}%';
     final here = dragging ? null : _bookmarkHere(d);
     final marks = _marks(d);
