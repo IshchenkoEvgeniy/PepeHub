@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../data/database_schema.dart';
+import '../data/repository.dart';
 
 import '../audio/audio_roots.dart';
 import '../audio/audio_sidecar.dart';
@@ -86,6 +87,56 @@ Future<void> recoverAudioRoot(AssetStore assets, AudioRoot root) async {
   }
 }
 
+/// Restores what a reading log carries beyond the position: PDF page and
+/// view, the book's shelf settings, bookmarks and reader notes. Existing
+/// local values are never overwritten.
+Future<void> _restoreFileState(
+  Repository repo,
+  LocalAsset asset,
+  Map book,
+) async {
+  final hash = asset.hash;
+  Future<void> setIfAbsent(String key, String value) async {
+    if (await repo.meta(key) == null) await repo.setMeta(key, value);
+  }
+
+  if (book['pdfPage'] case final String page when int.tryParse(page) != null) {
+    await setIfAbsent('pdf:$hash', page);
+  }
+  if (book['pdfView'] case final Map view when view.isNotEmpty) {
+    await setIfAbsent('pdf-view:$hash', jsonEncode(view));
+  }
+  if (book['prefs'] case final Map prefs when prefs.isNotEmpty) {
+    // Collections are ids of this device's shelf groups; they do not exist
+    // on another device.
+    final portable = Map<String, dynamic>.from(prefs)..remove('collections');
+    final key = 'reading-book:${asset.bookId}';
+    final local = await repo.meta(key);
+    final current = local == null
+        ? const <String, dynamic>{}
+        : Map<String, dynamic>.from(jsonDecode(local) as Map);
+    await repo.setMeta(key, jsonEncode({...portable, ...current}));
+  }
+  if (book['bookmarks'] case final Map bookmarks) {
+    for (final e in bookmarks.entries) {
+      if (e.value is! Map || '${e.key}'.isEmpty || '${e.key}'.contains(':')) {
+        continue;
+      }
+      await setIfAbsent('reader-bookmark:$hash:${e.key}', jsonEncode(e.value));
+    }
+  }
+  if (book['notes'] case final List notes) {
+    for (final raw in notes) {
+      if (raw is! Map || raw['id'] is! String || raw['hash'] != hash) continue;
+      // The note follows the file; its book id is this device's.
+      await setIfAbsent(
+        'reading-note:${raw['id']}',
+        jsonEncode({...raw, 'bookId': asset.bookId}),
+      );
+    }
+  }
+}
+
 Future<void> recoverReadingRoot(
   AssetStore assets,
   String path,
@@ -99,7 +150,10 @@ Future<void> recoverReadingRoot(
     'Восстановление не завершено',
   );
   for (final file in await supportFiles(path)) {
-    if (!file.name.contains('reading-')) continue;
+    // A '.partial' file is an unfinished write left by an interrupted save.
+    if (!file.name.contains('reading-') || file.name.contains('.partial')) {
+      continue;
+    }
     try {
       final packet = jsonDecode(await file.read()) as Map<String, dynamic>;
       if (packet['format'] != 'pepehub-reading-log' || packet['version'] != 1) {
@@ -157,6 +211,14 @@ Future<void> recoverReadingRoot(
           final hash = book['hash'] as String;
           final asset = await assets.byHash(hash);
           if (asset == null || !ids.contains(asset.bookId)) continue;
+          // Bookmarks, notes and settings are restored only for a file this
+          // device has never opened: on the device that wrote the log a note
+          // deleted later must not come back from an older day's packet.
+          // Packets are read newest first, so the newest copy wins.
+          if (await repo.meta('reader:$hash') == null &&
+              await repo.meta('pdf:$hash') == null) {
+            await _restoreFileState(repo, asset, book);
+          }
           for (final prefix in [
             'reader',
             'reading-coverage',

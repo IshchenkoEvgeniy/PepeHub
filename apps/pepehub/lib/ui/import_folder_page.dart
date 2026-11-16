@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../media/asset_store.dart';
 import '../media/import_folder.dart';
+import '../reader/reading_roots.dart';
 import '../media/audio_player_scope.dart';
 import 'audio_mini_player.dart';
 import '../diagnostics/user_message.dart';
@@ -57,7 +58,17 @@ class _ImportFolderPageState extends State<ImportFolderPage> {
     final path = await (widget.pick ?? pickImportFolder)();
     if (path == null) return;
     await store.configure(path);
-    message = 'Новые текстовые книги будут сохраняться в выбранную папку.';
+    // The folder may already hold books added on another device, with their
+    // reading journals in .pepehub: connect them so the shelf, positions,
+    // bookmarks and notes come back. Known files are matched by content.
+    final selected = (await store.load())!;
+    final connected = await ReadingRoots(widget.assets)
+        .connectFromScan(selected);
+    final found = connected.availableIds.length;
+    message = found == 0
+        ? 'Новые текстовые книги будут сохраняться в выбранную папку.'
+        : 'Новые книги будут сохраняться в выбранную папку. Книг в ней: '
+              '$found — они на полке вместе с прогрессом из журналов папки.';
   });
 
   Future<void> _copy() => _run(() async {

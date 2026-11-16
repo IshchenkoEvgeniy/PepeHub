@@ -62,6 +62,9 @@ Future<List<({String name, Future<String> Function() read})>> supportFiles(
       if (result.length > 10000) throw StateError('Слишком много журналов');
     }
   }
+  // An interrupted save leaves 'x.partial' (older Android builds named it
+  // 'x.partial.json'): never read an unfinished write as data.
+  result.removeWhere((file) => file.name.contains('.partial'));
   result.sort((a, b) {
     final base = b.name
         .replaceFirst(RegExp(r'\.bak$'), '')

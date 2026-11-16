@@ -358,7 +358,10 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
                                     }
                                 }
                             }
-                            val document = Docs.createDocument(context.contentResolver, directory, if (call.method == "report") "text/csv" else "application/json", "$finalName.partial") ?: error("Не удалось создать снимок")
+                            // A neutral type: providers append an extension matching the MIME type,
+                            // which turned "x.partial" into "x.partial.json" and made a leftover
+                            // unfinished write look like a journal.
+                            val document = Docs.createDocument(context.contentResolver, directory, "application/octet-stream", "$finalName.partial") ?: error("Не удалось создать снимок")
                             try {
                                 (context.contentResolver.openOutputStream(document) ?: error("Не удалось записать снимок")).use { it.write(bytes) }
                                 existing?.let { old ->

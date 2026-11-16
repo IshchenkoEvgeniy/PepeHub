@@ -7,10 +7,20 @@ import 'package:drift/drift.dart' show Variable;
 import 'package:path/path.dart' as p;
 
 import '../audio/audio_folder.dart';
+import '../data/database_schema.dart';
 import '../data/repository.dart';
 import 'reading_activity.dart';
 import 'reading_library.dart';
 import '../diagnostics/user_message.dart';
+
+/// Per-file state exported with each day's packet.
+const _hashStatePrefixes = [
+  'reader',
+  'reading-coverage',
+  'reading-index',
+  'pdf',
+  'pdf-view',
+];
 
 // Recovery logs retain original events and index fields. Only the selected
 // root/day crosses to this worker; parsing and encoding stay off the UI.
@@ -24,6 +34,32 @@ String _encodePacket(Map<String, dynamic> packet) {
     for (final (id, raw) in packet['manual'] as List<(String, String)>)
       (id, jsonDecode(raw) as Map<String, dynamic>),
   ];
+  final bookmarks = <String, Map<String, dynamic>>{};
+  for (final (key, raw)
+      in packet['bookmarks'] as List<(String, String)>? ??
+          const <(String, String)>[]) {
+    // reader-bookmark:<hash>:<id>
+    final rest = key.substring('reader-bookmark:'.length);
+    final split = rest.indexOf(':');
+    if (split <= 0) continue;
+    try {
+      (bookmarks[rest.substring(0, split)] ??= {})[rest.substring(split + 1)] =
+          jsonDecode(raw);
+    } on FormatException {
+      // A damaged bookmark is not exported; the app keeps its copy.
+    }
+  }
+  final notes = <String, List<Object?>>{};
+  for (final raw in packet['notes'] as List<String>? ?? const <String>[]) {
+    try {
+      final note = jsonDecode(raw);
+      if (note is Map && note['hash'] is String) {
+        (notes[note['hash'] as String] ??= []).add(note);
+      }
+    } on FormatException {
+      // As above.
+    }
+  }
   final text = jsonEncode({
     'format': 'pepehub-reading-log',
     'version': 1,
@@ -35,6 +71,13 @@ String _encodePacket(Map<String, dynamic> packet) {
           for (final prefix in ['reader', 'reading-coverage', 'reading-index'])
             prefix: value('$prefix:$hash'),
           'dates': value('reading-dates:$id'),
+          // Optional fields: older versions ignore them.
+          // A plain page number (legacy key); the position is in 'reader'.
+          'pdfPage': metadata['pdf:$hash'],
+          'pdfView': value('pdf-view:$hash'),
+          'prefs': value('reading-book:$id'),
+          'bookmarks': bookmarks[hash] ?? const <String, Object?>{},
+          'notes': notes[hash] ?? const <Object?>[],
         },
     ],
     'sessions': [
@@ -138,11 +181,28 @@ class ReadingLog {
       ];
       final keys = [
         for (final (id, hash) in assets) ...[
-          for (final prefix in ['reader', 'reading-coverage', 'reading-index'])
-            '$prefix:$hash',
+          for (final prefix in _hashStatePrefixes) '$prefix:$hash',
           'reading-dates:$id',
+          'reading-book:$id',
         ],
       ];
+      final hashesJson = jsonEncode([for (final (_, hash) in assets) hash]);
+      // Bookmarks and reader notes travel with the folder too, so another
+      // device that connects it gets the whole reading state of each file.
+      final bookmarks = await repository.db
+          .customSelect(
+            "SELECT key,value FROM metadata WHERE key>='reader-bookmark:' AND key<'reader-bookmark;' "
+            'AND substr(key,17,64) IN (SELECT value FROM json_each(?))',
+            variables: [Variable(hashesJson)],
+          )
+          .get();
+      final notes = await repository.db
+          .customSelect(
+            "SELECT value FROM metadata WHERE key>='reading-note:' AND key<'reading-note;' "
+            "AND json_extract(${SchemaSql.noteJson},'\$.hash') IN (SELECT value FROM json_each(?))",
+            variables: [Variable(hashesJson)],
+          )
+          .get();
       final metadata = await repository.db
           .customSelect(
             'SELECT key,value FROM metadata WHERE key IN (SELECT value FROM json_each(?))',
@@ -161,6 +221,11 @@ class ReadingLog {
           for (final row in manual)
             (row.read<String>('id'), row.read<String>('payload')),
         ],
+        'bookmarks': [
+          for (final row in bookmarks)
+            (row.read<String>('key'), row.read<String>('value')),
+        ],
+        'notes': [for (final row in notes) row.read<String>('value')],
       };
       final text = await Isolate.run(() => _encodePacket(packet));
       final path = root['path'] as String, name = 'reading-$day.json';
