@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:path/path.dart' as p;
 
+import '../data/library_rows.dart';
 import '../data/repository.dart' show uuid;
 import '../storage/folder_files.dart';
 import 'activity_store.dart';
@@ -271,6 +272,44 @@ String mergeLibraryJournal(
   }
   return _encode(result);
 }
+
+/// Three-way merge of one card, field by field (nested maps recursively;
+/// lists and scalars as a whole). Edits of different fields on two devices
+/// are both kept. Returns null when one field was changed differently on both
+/// sides: only that needs the user's choice.
+String? mergeLibraryCard(String here, String there, String base) {
+  final missing = _cardFieldMissing;
+  // An absent field is not the same as a field set to null.
+  bool same(Object? a, Object? b) => identical(a, missing) || identical(b, missing)
+      ? identical(a, b)
+      : _encode(a) == _encode(b);
+  Object? merge(Object? h, Object? t, Object? b) {
+    if (same(h, t)) return h;
+    if (same(h, b)) return t;
+    if (same(t, b)) return h;
+    if (h is Map && t is Map && b is Map) {
+      final result = <String, dynamic>{};
+      for (final key in {...h.keys, ...t.keys, ...b.keys}) {
+        final value = merge(
+          h.containsKey(key) ? h[key] : missing,
+          t.containsKey(key) ? t[key] : missing,
+          b.containsKey(key) ? b[key] : missing,
+        );
+        if (identical(value, _cardConflict)) return _cardConflict;
+        if (!identical(value, missing)) result['$key'] = value;
+      }
+      return result;
+    }
+    return _cardConflict;
+  }
+
+  final merged = merge(jsonDecode(here), jsonDecode(there), jsonDecode(base));
+  return identical(merged, _cardConflict) ? null : _encode(merged);
+}
+
+// Distinct instances: `const Object()` would make both sentinels identical.
+final _cardConflict = Object();
+final _cardFieldMissing = Object();
 
 /// The folder is still receiving files from another device.
 class LibraryFolderPending implements Exception {
@@ -593,6 +632,13 @@ class LibraryFolderStorage extends ChangeNotifier {
         'CREATE TRIGGER IF NOT EXISTS library_folder_meta_${event.toLowerCase()}_v1 '
         'AFTER $event ON metadata WHEN ($portable OR $native) $changed BEGIN '
         'UPDATE library_folder_revision_v1 SET revision=revision+1,native=native+CASE WHEN $native THEN 1 ELSE 0 END WHERE id=1; END',
+      );
+      // Cards and journal slots stored one row each (schema 9).
+      await db.customStatement(
+        'CREATE TRIGGER IF NOT EXISTS library_folder_rows_${event.toLowerCase()}_v1 '
+        'AFTER $event ON ${LibraryRows.table} WHEN $row.store IN '
+        "('$personalLibraryKey','obsidian-activity:personal','obsidian-notes:personal') $changed BEGIN "
+        'UPDATE library_folder_revision_v1 SET revision=revision+1 WHERE id=1; END',
       );
       await db.customStatement(
         'CREATE TRIGGER IF NOT EXISTS library_folder_records_${event.toLowerCase()}_v1 '
@@ -933,10 +979,8 @@ class LibraryFolderStorage extends ChangeNotifier {
           await library.notes!.capture(includeDeleted: true);
         }
         final cards = await library.repository.entries();
-        final history =
-            await library.local.meta(library.history!.key) ?? '{"slots":{}}';
-        final notes =
-            await library.local.meta(library.notes!.key) ?? '{"slots":{}}';
+        final history = jsonEncode(await library.history!.state());
+        final notes = jsonEncode(await library.notes!.state());
         final settings = await library.local.metadataPrefixes(
           _settingsPrefixes,
         );
@@ -967,6 +1011,7 @@ class LibraryFolderStorage extends ChangeNotifier {
       final journalMerges =
           <String, ({String here, String there, String? before})>{};
       final journalDocuments = <String, String>{};
+      final cardMerges = <String, ({String there, String before})>{};
       for (final key in {
         ...hashes.keys,
         ...?remote?.documents.keys,
@@ -998,6 +1043,13 @@ class LibraryFolderStorage extends ChangeNotifier {
         } else if (journal && here != null && there != null) {
           chosen = here;
           journalMerges[key] = (here: here, there: there, before: before);
+        } else if (key.startsWith('cards/') &&
+            here != null &&
+            there != null &&
+            before != null) {
+          // Both devices edited one card: try a field-by-field merge below.
+          chosen = here;
+          cardMerges[key] = (there: there, before: before);
         } else {
           if (preference == null) conflicts.add(key);
           chosen = preference == LibraryFolderPreference.folder ? there : here;
@@ -1029,6 +1081,38 @@ class LibraryFolderStorage extends ChangeNotifier {
         );
         final digest = _digest(raw);
         merged[e.key] = digest;
+        journalDocuments[e.key] = raw;
+      }
+      // Different fields of one card edited on two devices: keep both edits.
+      // Only a field changed differently on both sides stays a conflict.
+      for (final e in cardMerges.entries) {
+        final theirs = await _read(fs, _objectPath(e.value.there), 16777216);
+        if (theirs == null) {
+          throw LibraryFolderPending(
+            'Данные ${e.key} ещё не синхронизированы. PepeHub повторит проверку.',
+          );
+        }
+        String? raw;
+        try {
+          final base = await _read(fs, _objectPath(e.value.before), 16777216);
+          if (base != null) {
+            raw = mergeLibraryCard(
+              local[e.key]!,
+              utf8.decode(theirs),
+              utf8.decode(base),
+            );
+          }
+        } on Object {
+          // The base version may be cleaned up: fall back to a choice.
+        }
+        if (raw == null) {
+          if (preference == null) conflicts.add(e.key);
+          merged[e.key] = preference == LibraryFolderPreference.folder
+              ? e.value.there
+              : hashes[e.key]!;
+          continue;
+        }
+        merged[e.key] = _digest(raw);
         journalDocuments[e.key] = raw;
       }
       // A purge on one device can race with a new note/session on another.

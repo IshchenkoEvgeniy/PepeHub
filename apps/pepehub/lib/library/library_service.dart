@@ -324,6 +324,10 @@ class LibraryService extends ChangeNotifier {
         for (final id in selected) {
           final card = cards[id];
           if (card == null || isLibraryDeleted(card.item)) continue;
+          // Service records of the file tabs (planned, active, drafts) share
+          // this store. A stale selection must never turn one into a library
+          // card: it would reach PepeHub-library and other devices.
+          if (!isSeriesCatalogItem(card.item)) continue;
           final patch = {...changes, if (reread) 'status': 'finished'};
           _completeItem(card.item, patch);
           final values = {...card.item.values, ...patch};

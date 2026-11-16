@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart' show Variable;
 
+import '../data/database_schema.dart';
 import '../data/repository.dart';
 import 'purged_books.dart';
 
@@ -118,7 +119,8 @@ class BookTrash {
   /// Deletes books for good: the record, its file registrations, folder
   /// bindings, shelf settings and the personal library's service record for
   /// the file. Cards the user added to the library, statistics and notes stay.
-  /// Reconnecting the folder later adds the files as new books.
+  /// Audio editions, tracks and positions go too, so reconnecting the folder
+  /// later adds the files as new books.
   Future<void> purge(Iterable<String> ids) async {
     final selected = ids.toSet();
     if (selected.isEmpty) return;
@@ -129,6 +131,7 @@ class BookTrash {
           'DELETE FROM local_assets WHERE book_id=?',
           [id],
         );
+        await purgeAudioEditionsWhere(repository.db, '?', [id]);
         await repository.db.customStatement(
           "DELETE FROM metadata WHERE key>='audio-folder:' AND key<'audio-folder;' AND value=?",
           [id],

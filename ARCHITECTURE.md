@@ -1,6 +1,6 @@
 # Архитектура PepeHub
 
-Описание фактического устройства проекта на ноябрь 2026 года (версия 0.31, схема базы 7). Первоначальный план с Cloudflare и Obsidian сохранён как исторический документ: [docs/ARCHITECTURE_PROPOSAL_2026-09.md](docs/ARCHITECTURE_PROPOSAL_2026-09.md).
+Описание фактического устройства проекта на ноябрь 2026 года (версия 0.31, схема базы 9). Первоначальный план с Cloudflare и Obsidian сохранён как исторический документ: [docs/ARCHITECTURE_PROPOSAL_2026-09.md](docs/ARCHITECTURE_PROPOSAL_2026-09.md).
 
 ## 1. Что это и чего здесь нет
 
@@ -62,6 +62,7 @@ docs/                    описания возможностей; docs/release
 | `metadata` | Ключ-значение; значение обычно JSON. Большая часть данных чтения и библиотеки лежит здесь. |
 | `audio_editions`, `audio_tracks`, `audio_chapters`, `audio_progress`, `audio_resources` | Состав аудиокниг и позиция прослушивания. |
 | `local_assets`, `playback_positions` | Импортированные файлы и позиции по хешу файла. |
+| `library_rows_v1` | Личный каталог библиотеки (строка на карточку) и журналы истории и заметок (строка на запись). Столбцы `store` (прежний ключ `metadata`), `id`, `value` (JSON), `seq` — порядок добавления. Заголовок журнала (`version`, `cursor`) остаётся в `metadata`. Сохранение пишет только изменённые строки. |
 | `*_v1` (`reading_shelf_v1`, `audio_daily_totals_v1`, `reading_statistics_sessions_v1` и другие) | Проекции для полок и статистики. Их можно пересчитать из исходных данных. |
 
 Типы в `records`: `book`, `session`, `audio_event`, `audio_note`, `audio_bookmark`, `video_item`, `video_lesson`, `video_interval`, `video_annotation`, `video_subtitle`, `vocabulary_card`.
@@ -78,10 +79,13 @@ docs/                    описания возможностей; docs/release
 
 ### Миграции
 
-- Версия схемы хранится в `PRAGMA user_version`; текущая — 7 (`currentDatabaseVersion`).
-- Перед обновлением схемы делается копия базы через `VACUUM INTO` (`before-v7-….sqlite`).
+- Версия схемы хранится в `PRAGMA user_version`; текущая — 9 (`currentDatabaseVersion`).
+- Перед обновлением схемы делается копия базы через `VACUUM INTO`: одна на исходную версию (`backups/before-v9-from-v<N>.sqlite`), повторные попытки неудачного обновления новых копий не создают.
 - Все шаги обновления выполняются в одной транзакции: при ошибке база остаётся на прежней версии.
 - База более новой версии, чем приложение, не открывается.
+- Версия 8: индексы `audio_tracks(asset_hash, ordinal)` и `audio_progress(track_id)`; удаление изданий аудиокниг, удалённых навсегда; единый формат `audio_progress.updated_at` (UTC ISO 8601); триггеры `guard_*`, отклоняющие NULL в ключах и `deleted` вне 0/1 (SQLite допускает NULL в текстовом `PRIMARY KEY`, а пересборка таблиц переписала бы все строки). Журнал активности (`obsidian-activity:`) увеличивает одну общую ревизию `#activity` в `library_source_revisions_v1`, а не ревизии всех книг; ревизия книги — сумма своей и общей (`sourceRevisionSql`).
+
+- Версия 9: каталог `library-catalog-v1` и журналы `obsidian-activity:personal`, `obsidian-notes:personal` перенесены из одного JSON-значения в `library_rows_v1` (`lib/data/library_rows.dart`). Каталоги и журналы старого коннектора остаются в `metadata`: их читает перенос из Obsidian. Значение в старом формате, записанное позже (восстановление, старая копия), считается новейшим и переносится при первом чтении.
 
 Новая таблица или индекс — это новый шаг в `onUpgrade`, тот же вызов в `onCreate` и проверка в `test/database_schema_test.dart`.
 

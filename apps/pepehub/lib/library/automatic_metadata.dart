@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:drift/drift.dart' show Variable;
 
 import '../audio/audio_library_repository.dart';
+import '../data/database_schema.dart';
 import '../data/repository.dart';
 import '../media/asset_store.dart';
 import '../media/audio_artwork.dart';
@@ -32,7 +33,7 @@ class AutomaticMetadata {
     final revision =
         (await local.db
                 .customSelect(
-                  'SELECT revision FROM library_source_revisions_v1 WHERE book_id=?',
+                  sourceRevisionSql,
                   variables: [Variable(book.id)],
                 )
                 .getSingleOrNull())
@@ -431,7 +432,9 @@ class AutomaticMetadata {
       try {
         if (localOnly && !isLibraryArchiveItem(entry.item)) continue;
         if (entry.sourceBookId == null || entry.state != 'synced') continue;
-        final revision = revisions[entry.sourceBookId] ?? 0;
+        final revision =
+            (revisions[entry.sourceBookId] ?? 0) +
+            (revisions[activitySourceRevision] ?? 0);
         if (localOnly &&
             entry.item.values['pepehub_source_revision_v1'] == revision) {
           continue;

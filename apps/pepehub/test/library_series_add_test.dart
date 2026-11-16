@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
 import 'package:pepehub/data/database.dart';
+import 'package:pepehub/data/library_rows.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/library/library_features.dart';
 import 'package:pepehub/library/library_service.dart';
@@ -119,7 +120,7 @@ void main() {
     expect(await library.local.records('audio_event'), isEmpty);
     expect(await library.local.records('session'), isEmpty);
     expect(await library.history!.entries(), isEmpty);
-    final raw = await library.local.meta(personalLibraryKey);
+    final raw = await LibraryRows.read(library.local.db, personalLibraryKey);
     for (final invalid in ['planned', 'active']) {
       await expectLater(
         library.addSeries([
@@ -127,7 +128,10 @@ void main() {
         ]),
         throwsArgumentError,
       );
-      expect(await library.local.meta(personalLibraryKey), raw);
+      expect(
+        await LibraryRows.read(library.local.db, personalLibraryKey),
+        raw,
+      );
     }
   });
 
@@ -195,10 +199,10 @@ void main() {
         'obsidian-activity:personal',
         jsonEncode({'version': 1, 'cursor': 0, 'slots': {}}),
       );
-      final before = await library.local.meta(personalLibraryKey);
-      final journal = await library.local.meta('obsidian-activity:personal');
+      final before = await LibraryRows.read(db, personalLibraryKey);
+      final journal = jsonEncode(await library.history!.state());
       await db.customStatement(
-        "CREATE TRIGGER fail_series BEFORE UPDATE ON metadata WHEN NEW.key='library-catalog-v1' BEGIN SELECT RAISE(ABORT,'simulated write failure'); END",
+        "CREATE TRIGGER fail_series BEFORE INSERT ON library_rows_v1 WHEN NEW.store='library-catalog-v1' BEGIN SELECT RAISE(ABORT,'simulated write failure'); END",
       );
       final next = volume(
         'two',
@@ -209,7 +213,7 @@ void main() {
         library.addSeries([next], existingSeriesKey: 'series:архипелаг'),
         throwsA(anything),
       );
-      expect(await library.local.meta(personalLibraryKey), before);
+      expect(await LibraryRows.read(db, personalLibraryKey), before);
       expect((await library.repository.entries()).length, 1);
       await db.customStatement('DROP TRIGGER fail_series');
       await library.addSeries([next], existingSeriesKey: 'series:архипелаг');
@@ -218,7 +222,7 @@ void main() {
       expect(kept.item.values['cover'], 'keep');
       expect(kept.item.values['Custom'], old.values['Custom']);
       expect(kept.item.modifiedAt, old.modifiedAt);
-      expect(await library.local.meta('obsidian-activity:personal'), journal);
+      expect(jsonEncode(await library.history!.state()), journal);
       expect(
         groupLibrarySeries(library.visibleEntries).single.key,
         'series-id:new-id',
@@ -268,7 +272,8 @@ void main() {
               'INSERT INTO series_writes VALUES(0)',
             );
             await largeDb.customStatement(
-              "CREATE TEMP TRIGGER count_series_writes AFTER UPDATE ON metadata WHEN NEW.key='library-catalog-v1' BEGIN UPDATE series_writes SET count=count+1; END",
+              // Cards are rows: existing volumes must not be rewritten.
+              "CREATE TEMP TRIGGER count_series_writes AFTER UPDATE ON library_rows_v1 WHEN NEW.store='library-catalog-v1' BEGIN UPDATE series_writes SET count=count+1; END",
             );
             log.clear();
             await large.addSeries([
@@ -290,7 +295,17 @@ void main() {
                       .customSelect('SELECT count FROM series_writes')
                       .getSingle())
                   .read<int>('count'),
-              1,
+              0,
+            );
+            // The new volumes are the only rows written.
+            expect(
+              (await largeDb
+                      .customSelect(
+                        "SELECT COUNT(*) AS c FROM library_rows_v1 WHERE store='library-catalog-v1'",
+                      )
+                      .getSingle())
+                  .read<int>('c'),
+              2000,
             );
             expect(
               log.where(

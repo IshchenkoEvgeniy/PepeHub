@@ -3,6 +3,7 @@ import 'dart:isolate';
 
 import 'package:drift/drift.dart' show Variable;
 
+import '../data/library_rows.dart';
 import '../data/repository.dart';
 import 'models.dart';
 
@@ -17,12 +18,24 @@ String _encodeCatalog(Map<String, LibraryEntry> entries) =>
     jsonEncode(entries.map((id, entry) => MapEntry(id, entry.toJson())));
 Future<T> _catalogWork<T, P>(T Function(P) task, P input) =>
     Isolate.run(() => task(input));
+String _encodeEntry(LibraryEntry entry) => jsonEncode(entry.toJson());
+Map<String, LibraryEntry> _decodeRows(Map<String, String> rows) => rows.map(
+  (id, raw) => MapEntry(
+    id,
+    LibraryEntry.fromJson(Map<String, dynamic>.from(jsonDecode(raw) as Map)),
+  ),
+);
+Map<String, String> _encodeRows(Map<String, LibraryEntry> entries) =>
+    entries.map((id, entry) => MapEntry(id, _encodeEntry(entry)));
 
 class _CatalogCache {
   final String raw;
   final Map<String, LibraryEntry> entries;
   final String revision;
-  _CatalogCache(this.raw, this.entries, this.revision);
+
+  /// Raw rows of a row-stored catalog: what the next write compares with.
+  final Map<String, String>? rows;
+  _CatalogCache(this.raw, this.entries, this.revision, {this.rows});
 }
 
 /// Catalog of library cards in the transactional SQLite metadata store.
@@ -48,7 +61,18 @@ class LibraryRepository {
     return _revision();
   }
 
+  /// The personal catalog lives one row per card (see [LibraryRows]); the
+  /// catalogs of the old connector keep their single metadata value.
+  bool get _rows => LibraryRows.catalogStores.contains(_key);
+
+  /// Whether this catalog has ever stored a card.
+  Future<bool> stored() async => _rows
+      ? await LibraryRows.hasRows(repository.db, _key) ||
+            await repository.meta(_key) != null
+      : await repository.meta(_key) != null;
+
   Future<Map<String, LibraryEntry>> entries() async {
+    if (_rows) return _rowEntries();
     final revision = await _revision();
     final cache = _cache[repository.db] ??= {};
     final hit = cache[_key];
@@ -63,10 +87,57 @@ class LibraryRepository {
     return data;
   }
 
+  Future<Map<String, LibraryEntry>> _rowEntries() async {
+    var revision = await _revision();
+    final cache = _cache[repository.db] ??= {};
+    final hit = cache[_key];
+    if (hit?.revision == revision && hit!.rows != null) {
+      return Map.of(hit.entries);
+    }
+    // A value written in the old single-value format (an older backup, a
+    // restore, a test) is the newest write: move it into rows first. Such a
+    // write changes the revision too, so a cache hit never needs this check.
+    if (await repository.meta(_key) != null) {
+      await repository.db.transaction(
+        () => LibraryRows.moveCatalog(
+          repository.db,
+          _key,
+          encode: (_, value) => _encodeEntry(
+            LibraryEntry.fromJson(Map<String, dynamic>.from(value as Map)),
+          ),
+        ),
+      );
+      revision = await _revision();
+    }
+    final rows = await LibraryRows.read(repository.db, _key);
+    final data = rows.length < 200
+        ? _decodeRows(rows)
+        : await _catalogWork(_decodeRows, rows);
+    cache[_key] = _CatalogCache('', Map.of(data), revision, rows: rows);
+    return data;
+  }
+
   Future<void> mutate(
     Future<void> Function(Map<String, LibraryEntry>) action,
   ) => repository.db.transaction(() async {
     final data = await entries();
+    if (_rows) {
+      final previous = _cache[repository.db]![_key]!.rows!;
+      await action(data);
+      final encoded = data.length < 100
+          ? _encodeRows(data)
+          : await _catalogWork(_encodeRows, data);
+      // Only changed cards are written: one edit no longer rewrites the
+      // whole catalog.
+      await LibraryRows.write(repository.db, _key, previous, encoded);
+      (_cache[repository.db] ??= {})[_key] = _CatalogCache(
+        '',
+        Map.of(data),
+        await _revision(),
+        rows: encoded,
+      );
+      return;
+    }
     final previous = _cache[repository.db]![_key]!.raw;
     await action(data);
     final encoded = data.length < 100

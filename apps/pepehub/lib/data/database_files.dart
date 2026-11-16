@@ -4,7 +4,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:uuid/uuid.dart';
 
-const currentDatabaseVersion = 7;
+const currentDatabaseVersion = 9;
 
 /// Frozen at the name introduced by schema 3: later versions migrate in place.
 const currentDatabaseFilename = 'pepehub-v3.sqlite';
@@ -50,13 +50,16 @@ String prepareDatabaseFiles(String directoryPath) {
       if (version > 0 && version < currentDatabaseVersion) {
         final backups = Directory(p.join(directory.path, 'backups'))
           ..createSync();
-        _snapshot(
-          source,
+        // One copy per source version: if the upgrade fails, every later
+        // start retries it from the same data, and a fresh full copy on each
+        // attempt would fill the phone's storage.
+        final backup = File(
           p.join(
             backups.path,
-            'before-v$currentDatabaseVersion-${const Uuid().v4()}.sqlite',
+            'before-v$currentDatabaseVersion-from-v$version.sqlite',
           ),
         );
+        if (!backup.existsSync()) _snapshot(source, backup.path);
       }
     } finally {
       source.close();

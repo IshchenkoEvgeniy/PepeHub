@@ -189,8 +189,20 @@ void main() {
       try {
         final repo = Repository(db), library = ReadingLibrary(Repository(db));
         for (final row in before.entries) {
+          if (row.key == personalLibraryKey) continue;
           expect(await repo.meta(row.key), row.value);
         }
+        // Schema 9 keeps the catalog one row per card, card for card.
+        expect(await repo.meta(personalLibraryKey), isNull);
+        final catalog = await LibraryRepository(
+          repo,
+          personalLibraryNamespace,
+          storageKey: personalLibraryKey,
+        ).entries();
+        expect(
+          jsonEncode(catalog.map((k, v) => MapEntry(k, v.toJson()))),
+          before[personalLibraryKey],
+        );
         final position = {
           'hash': <String, dynamic>{'chapter': 0, 'paragraph': 2, 'offset': 4},
         };

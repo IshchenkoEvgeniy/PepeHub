@@ -53,6 +53,16 @@ Future<void> createFeatureSchema(GeneratedDatabase db) async {
   await _exportRevisions(db);
 }
 
+/// Row of `library_source_revisions_v1` counting activity journal changes.
+/// Not a book id: book ids are UUIDs.
+const activitySourceRevision = '#activity';
+
+/// A book's effective source revision: its own counter plus the shared
+/// activity counter. Both only grow, so the sum changes whenever either does.
+const sourceRevisionSql =
+    'SELECT COALESCE((SELECT revision FROM library_source_revisions_v1 WHERE book_id=?),0)'
+    "+COALESCE((SELECT revision FROM library_source_revisions_v1 WHERE book_id='$activitySourceRevision'),0) AS revision";
+
 /// Invalidate only the affected book's exported source metadata; unchanged
 /// upserts are cheap.
 Future<void> _exportRevisions(GeneratedDatabase db) async {
@@ -91,9 +101,11 @@ Future<void> _exportRevisions(GeneratedDatabase db) async {
       "JOIN audio_editions e ON e.id=t.edition_id WHERE r.sha256=substr($row.key,16) "
       "AND substr($row.key,1,15)='audio-metadata:'",
     );
+    // The activity journal is one value for all books. It bumps a single
+    // shared counter (see [activitySourceRevision]) instead of every book row.
     selects.add(
-      "SELECT id AS book_id FROM records WHERE type='book' "
-      "AND substr($row.key,1,18)='obsidian-activity:'",
+      "SELECT '$activitySourceRevision' AS book_id "
+      "WHERE substr($row.key,1,18)='obsidian-activity:'",
     );
     return selects.join(' UNION ');
   }
@@ -305,6 +317,120 @@ Future<void> _recordIndexes(GeneratedDatabase db) async {
   );
 }
 
+/// Schema version 8: indexes for audio foreign keys, cleanup of audio
+/// manifests left by books deleted for good, a cheaper activity-journal
+/// trigger, one timestamp format for audio progress and integrity guards.
+/// Library cards and their service records are not touched. Runs inside the
+/// migration transaction; every statement is idempotent.
+Future<void> strengthenSchemaV8(GeneratedDatabase db) async {
+  await ensureSchemaV8Indexes(db);
+  // Manifests of purged audiobooks blocked importing the same files again.
+  await purgeAudioEditionsWhere(db, purgedBookIdsSql);
+  // The activity journal used to bump every book's export revision.
+  for (final event in ['insert', 'update', 'delete']) {
+    await db.customStatement('DROP TRIGGER IF EXISTS export_metadata_${event}_v1');
+  }
+  await _exportRevisions(db);
+  // Progress migrated from 0.4 kept its original timestamp text; newest-first
+  // ordering compares text, so store every value as UTC ISO 8601.
+  await db.customStatement(
+    "UPDATE audio_progress SET updated_at=strftime('%Y-%m-%dT%H:%M:%fZ',updated_at) "
+    "WHERE updated_at NOT LIKE '%Z' "
+    "AND strftime('%Y-%m-%dT%H:%M:%fZ',updated_at) IS NOT NULL",
+  );
+  await ensureIntegrityGuards(db);
+}
+
+/// Indexes for lookups by file hash and for the progress → track key.
+Future<void> ensureSchemaV8Indexes(GeneratedDatabase db) async {
+  await db.customStatement(
+    'CREATE INDEX IF NOT EXISTS audio_tracks_asset ON audio_tracks(asset_hash, ordinal)',
+  );
+  await db.customStatement(
+    'CREATE INDEX IF NOT EXISTS audio_progress_track ON audio_progress(track_id)',
+  );
+}
+
+/// SQLite accepts NULL in a non-INTEGER `PRIMARY KEY` of an ordinary table,
+/// and the tables were created without CHECKs. Rebuilding them would rewrite
+/// every row; these triggers reject the same invalid writes instead.
+Future<void> ensureIntegrityGuards(GeneratedDatabase db) async {
+  final guards = <String, String>{
+    'records':
+        "NEW.id IS NULL OR NEW.id='' OR NEW.type IS NULL OR NEW.type='' "
+        'OR NEW.deleted NOT IN (0,1) OR NEW.revision IS NULL',
+    'metadata': "NEW.key IS NULL OR NEW.key=''",
+    'local_assets':
+        "NEW.id IS NULL OR NEW.book_id IS NULL OR NEW.book_id='' OR NEW.bytes<0",
+    'audio_editions': "NEW.id IS NULL OR NEW.book_id IS NULL OR NEW.book_id=''",
+    'audio_resources': "NEW.sha256 IS NULL OR NEW.sha256=''",
+    'audio_tracks': 'NEW.id IS NULL',
+    'audio_chapters': 'NEW.id IS NULL',
+    'audio_progress': 'NEW.edition_id IS NULL',
+  };
+  for (final MapEntry(key: table, value: invalid) in guards.entries) {
+    for (final event in ['INSERT', 'UPDATE']) {
+      await db.customStatement(
+        'CREATE TRIGGER IF NOT EXISTS guard_${table}_${event.toLowerCase()}_v1 '
+        'BEFORE $event ON $table WHEN $invalid BEGIN '
+        "SELECT RAISE(ABORT,'Недопустимая запись в $table'); END",
+      );
+    }
+  }
+}
+
+/// Books whose record is a deletion marker: removed for good by the trash.
+/// A book in the trash keeps its live record, so it never matches.
+const purgedBookIdsSql =
+    "SELECT id FROM records WHERE type='book' AND deleted=1";
+
+/// Deletes the audio editions of the books selected by [bookIds] (an SQL
+/// subquery, or `?` with [variables]): progress, chapters, tracks, editions
+/// and the resources no other track uses. Without it a purged audiobook's
+/// manifest stays and blocks importing the same files as a new book.
+Future<void> purgeAudioEditionsWhere(
+  GeneratedDatabase db,
+  String bookIds, [
+  List<Object?> variables = const [],
+]) async {
+  final editions = 'SELECT id FROM audio_editions WHERE book_id IN ($bookIds)';
+  final hashes = [
+    for (final row in await db
+        .customSelect(
+          'SELECT DISTINCT asset_hash FROM audio_tracks WHERE edition_id IN ($editions)',
+          variables: [for (final v in variables) Variable(v)],
+        )
+        .get())
+      row.read<String>('asset_hash'),
+  ];
+  await db.customStatement(
+    'DELETE FROM audio_progress WHERE edition_id IN ($editions)',
+    variables,
+  );
+  await db.customStatement(
+    'DELETE FROM audio_chapters WHERE track_id IN '
+    '(SELECT id FROM audio_tracks WHERE edition_id IN ($editions))',
+    variables,
+  );
+  await db.customStatement(
+    'DELETE FROM audio_tracks WHERE edition_id IN ($editions)',
+    variables,
+  );
+  await db.customStatement(
+    'DELETE FROM audio_editions WHERE book_id IN ($bookIds)',
+    variables,
+  );
+  for (var i = 0; i < hashes.length; i += 500) {
+    final chunk = hashes.sublist(i, (i + 500).clamp(0, hashes.length));
+    await db.customStatement(
+      'DELETE FROM audio_resources WHERE sha256 IN '
+      '(${List.filled(chunk.length, '?').join(',')}) '
+      'AND NOT EXISTS(SELECT 1 FROM audio_tracks t WHERE t.asset_hash=audio_resources.sha256)',
+      chunk,
+    );
+  }
+}
+
 /// Schema version 7: built-in device synchronization was removed; the
 /// library folder is moved between devices by Syncthing instead. Book cards
 /// that only arrived through that synchronization — no file on this device and
@@ -340,7 +466,12 @@ Future<void> removeDeviceSync(GeneratedDatabase db) async {
           "JOIN records r ON r.id=a.local_id "
           "WHERE a.kind='book' AND r.type='book' AND r.deleted=0 "
           "AND json_valid(a.data) AND json_type(a.data,'\$.descriptor')='object' "
-          'AND NOT EXISTS(SELECT 1 FROM local_assets l WHERE l.book_id=r.id)',
+          'AND NOT EXISTS(SELECT 1 FROM local_assets l WHERE l.book_id=r.id) '
+          // Notes and reading sessions would be left without a visible book.
+          "AND NOT EXISTS(SELECT 1 FROM metadata m WHERE m.key>='reading-note:' AND m.key<'reading-note;' "
+          "AND json_extract(${SchemaSql.noteJson.replaceAll('value', 'm.value')},'\$.bookId')=r.id) "
+          "AND NOT EXISTS(SELECT 1 FROM metadata m WHERE m.key>='reading-session:' AND m.key<'reading-session;' "
+          "AND json_valid(m.value) AND json_extract(m.value,'\$.bookId')=r.id)",
         )
         .get();
     for (final row in remote) {

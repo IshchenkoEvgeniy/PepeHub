@@ -1,6 +1,6 @@
 # Как собрать и выпустить PepeHub
 
-Инструкция для Windows-компьютера с проектом в `L:\project\PepeHub` и подготовленной локальной средой `.tools`. Команды выполняются в PowerShell. Приложение выпускается для Windows x64 и Android ARM64.
+Инструкция для Windows-компьютера с проектом в `F:\project\PepeHub` и подготовленной локальной средой `.tools`. Команды выполняются в PowerShell. Приложение выпускается для Windows x64 и Android ARM64.
 
 Сборка создаёт приложение на компьютере. Публикация загружает готовые пакеты и подписанный манифест в отдельный репозиторий `IshchenkoEvgeniy/PepeHub-Releases`, после чего выпуск становится доступен через настройки PepeHub.
 
@@ -24,7 +24,7 @@
 Откройте PowerShell в корне проекта:
 
 ```powershell
-Set-Location L:\project\PepeHub
+Set-Location F:\project\PepeHub
 ```
 
 Для работы нужны:

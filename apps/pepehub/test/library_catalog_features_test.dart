@@ -192,7 +192,13 @@ void main() {
     'catalog cache respects transaction rollback and external replacement',
     () async {
       final id = await add('Исходное');
-      final stored = await local.meta(personalLibraryKey);
+      // Cards are stored one row each; a value written in the old format is
+      // still read as the newest version (a restore or an older backup).
+      final stored = jsonEncode(
+        (await library.repository.entries()).map(
+          (key, value) => MapEntry(key, value.toJson()),
+        ),
+      );
       await expectLater(
         local.db.transaction(() async {
           await library.repository.mutate((cards) async {
@@ -208,7 +214,7 @@ void main() {
         throwsStateError,
       );
       expect((await library.repository.entries())[id]!.item.title, 'Исходное');
-      final changed = jsonDecode(stored!) as Map<String, dynamic>;
+      final changed = jsonDecode(stored) as Map<String, dynamic>;
       ((changed[id] as Map)['item'] as Map)['values']['title'] =
           'Восстановлено';
       await local.setMeta(personalLibraryKey, jsonEncode(changed));

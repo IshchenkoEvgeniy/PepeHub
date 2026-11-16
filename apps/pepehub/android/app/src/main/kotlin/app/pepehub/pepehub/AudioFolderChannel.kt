@@ -428,7 +428,17 @@ class AudioFolderChannel(contextSource: android.content.Context, messenger: Bina
                             val tree = if (Docs.isTreeUri(document)) Docs.buildTreeDocumentUri(document.authority, Docs.getTreeDocumentId(document)) else null
                             // Previously selected reading roots must also work after restart
                             // or after scanning another root. The provider enforces ancestry.
-                            check(uri in allowed || (tree != null && context.contentResolver.persistedUriPermissions.any { it.uri == tree && it.isReadPermission })) { "Доступ к папке потерян. Подключите её заново." }
+                            // A single book picked or shared on Android arrives as a plain document
+                            // URI: its own (persisted or temporary) read grant is the access check.
+                            // Our own FileProvider is excluded so this never reads private files.
+                            val singleDocument = tree == null && document.scheme == "content" &&
+                                document.authority != "${context.packageName}.bookfiles" &&
+                                (context.contentResolver.persistedUriPermissions.any { it.uri == document && it.isReadPermission } ||
+                                    context.checkUriPermission(document, android.os.Process.myPid(), android.os.Process.myUid(),
+                                        Intent.FLAG_GRANT_READ_URI_PERMISSION) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+                            check(uri in allowed || singleDocument || (tree != null && context.contentResolver.persistedUriPermissions.any { it.uri == tree && it.isReadPermission })) {
+                                if (tree == null && uri !in allowed) "Нет доступа к файлу книги. Выберите его заново." else "Доступ к папке потерян. Подключите её заново."
+                            }
                             check(streams.size < 4) { "Слишком много открытых файлов" }
                             val input = context.contentResolver.openInputStream(document) ?: error("Не удалось открыть файл")
                             val token = UUID.randomUUID().toString()

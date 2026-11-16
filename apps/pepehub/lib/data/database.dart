@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import 'database_files.dart';
 import 'database_schema.dart';
+import 'library_rows.dart';
 import 'performance_projections.dart';
 
 class AppDatabase extends GeneratedDatabase {
@@ -45,6 +46,9 @@ class AppDatabase extends GeneratedDatabase {
       await _addEditionSchema();
       await createFeatureSchema(this);
       await ensurePerformanceProjections(this);
+      await ensureSchemaV8Indexes(this);
+      await ensureIntegrityGuards(this);
+      await LibraryRows.createSchema(this);
       await customStatement('PRAGMA user_version = $currentDatabaseVersion');
     }),
     onUpgrade: (_, from, to) async {
@@ -56,6 +60,8 @@ class AppDatabase extends GeneratedDatabase {
         if (from < 5) await ensurePerformanceProjections(this);
         if (from < 6) await ensureReadingSessionBookIndex(this);
         if (from < 7) await removeDeviceSync(this);
+        if (from < 8) await strengthenSchemaV8(this);
+        if (from < 9) await LibraryRows.migrate(this);
         await customStatement('PRAGMA user_version = $currentDatabaseVersion');
       });
     },
@@ -94,7 +100,14 @@ class AppDatabase extends GeneratedDatabase {
       "SELECT id,payload FROM records WHERE type='book'",
     ).get();
     for (final book in books) {
-      final payload = jsonDecode(book.read<String>('payload'));
+      // One damaged payload must not fail the whole upgrade and leave the
+      // app unable to open; such a record simply gets no edition.
+      Object? payload;
+      try {
+        payload = jsonDecode(book.read<String>('payload'));
+      } on FormatException {
+        continue;
+      }
       if (payload is! Map || payload['format'] != 'audio') continue;
       final bookId = book.read<String>('id');
       final editionId = const Uuid().v5(
@@ -131,7 +144,9 @@ class AppDatabase extends GeneratedDatabase {
         );
         if (ordinal == 1) {
           await customStatement(
-            'INSERT INTO audio_progress SELECT ?,?,position_ms,1,speed,updated_at FROM playback_positions WHERE asset_hash=?',
+            // Old positions were unchecked: clamp them into the new CHECKs.
+            'INSERT INTO audio_progress SELECT ?,?,MAX(position_ms,0),1,'
+            'MIN(MAX(speed,0.5),3),updated_at FROM playback_positions WHERE asset_hash=?',
             [editionId, asset.read<String>('id'), asset.read<String>('sha256')],
           );
         }

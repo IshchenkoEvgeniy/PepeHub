@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:drift/drift.dart' show Variable;
 
 import 'models.dart';
 import '../data/database_schema.dart';
+import '../data/library_rows.dart';
 import '../data/repository.dart';
 import '../reader/reading_library.dart';
 import '../audio/audio_journal.dart' show dayKey;
@@ -17,6 +19,13 @@ class _Equality {
 }
 
 const _equal = _Equality();
+
+Map<String, dynamic> _decodeSlots(Map<String, String> rows) =>
+    rows.map((id, raw) => MapEntry(id, jsonDecode(raw)));
+
+/// Top-level so the isolate receives only [rows], never the store or database.
+Future<Map<String, dynamic>> _decodeSlotsApart(Map<String, String> rows) =>
+    Isolate.run(() => _decodeSlots(rows));
 
 bool validActivityValue(dynamic value) {
   if (value is! Map) return false;
@@ -95,14 +104,65 @@ class ActivityStore {
   ActivityStore(this.local, this.namespace, {this.catalog});
   bool validEntry(dynamic value) => validActivityValue(value);
   String get key => 'obsidian-activity:$namespace';
-  Future<Map<String, dynamic>> state() async =>
-      jsonDecode(await local.meta(key) ?? '{"version":1,"cursor":0,"slots":{}}')
+  static const _empty = '{"version":1,"cursor":0,"slots":{}}';
+
+  /// Personal journals keep one row per slot (see [LibraryRows]) and only
+  /// their header in metadata; journals of the old connector stay one value.
+  bool get _rows => LibraryRows.journalStores.contains(key);
+
+  Future<Map<String, dynamic>> state() async {
+    if (!_rows) {
+      return jsonDecode(await local.meta(key) ?? _empty)
           as Map<String, dynamic>;
+    }
+    return (await _load()).data;
+  }
+
+  Future<
+    ({Map<String, dynamic> data, String? header, Map<String, String> slots})
+  >
+  _load() async {
+    var header = await local.meta(key);
+    // A value in the old format (a restore, an older backup) is the newest
+    // write: move its slots into rows first.
+    if (header != null && header.contains('"slots"')) {
+      await local.db.transaction(() => LibraryRows.moveJournal(local.db, key));
+      header = await local.meta(key);
+    }
+    final slots = await LibraryRows.read(local.db, key);
+    final data =
+        jsonDecode(header ?? '{"version":1,"cursor":0}')
+            as Map<String, dynamic>;
+    data['slots'] = slots.length < 500
+        ? _decodeSlots(slots)
+        : await _decodeSlotsApart(slots);
+    return (data: data, header: header, slots: slots);
+  }
+
+  /// Only changed slots are written, so recording one session no longer
+  /// rewrites the whole history; an unchanged journal is not written at all.
   Future<T> mutate<T>(Future<T> Function(Map<String, dynamic>) action) =>
       local.db.transaction(() async {
-        final data = await state();
+        if (!_rows) {
+          final raw = await local.meta(key);
+          final data = jsonDecode(raw ?? _empty) as Map<String, dynamic>;
+          final result = await action(data);
+          final encoded = jsonEncode(data);
+          if (encoded != raw) await local.setMeta(key, encoded);
+          return result;
+        }
+        final loaded = await _load();
+        final data = loaded.data;
         final result = await action(data);
-        await local.setMeta(key, jsonEncode(data));
+        final slots = Map<String, dynamic>.from(data['slots'] as Map);
+        final header = Map<String, dynamic>.from(data)..remove('slots');
+        final encodedHeader = jsonEncode(header);
+        if (encodedHeader != loaded.header) {
+          await local.setMeta(key, encodedHeader);
+        }
+        await LibraryRows.write(local.db, key, loaded.slots, {
+          for (final e in slots.entries) e.key: jsonEncode(e.value),
+        });
         return result;
       });
   Future<List<Map<String, dynamic>>> entries({String? itemId}) async {
@@ -124,7 +184,11 @@ class ActivityStore {
     Repository local,
     String mediaType,
   ) async {
-    final personal = await local.meta(personalLibraryKey) != null;
+    final personal = await LibraryRepository(
+      local,
+      personalLibraryNamespace,
+      storageKey: personalLibraryKey,
+    ).stored();
     final namespace = personal
         ? personalLibraryNamespace
         : await local.meta('obsidian-active-namespace');
