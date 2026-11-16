@@ -30,14 +30,16 @@ void _audioEdition(sqlite.Database raw, String bookId, String prefix) {
       'Track $i',
     ]);
   }
-  raw.execute(
-    'INSERT INTO audio_chapters VALUES(?,?,?,0,500)',
-    ['$prefix-c', '$prefix-t0', 'Chapter'],
-  );
-  raw.execute(
-    'INSERT INTO audio_progress VALUES(?,?,100,1,1.0,?)',
-    ['$prefix-e', '$prefix-t1', '2026-01-02 03:04:05'],
-  );
+  raw.execute('INSERT INTO audio_chapters VALUES(?,?,?,0,500)', [
+    '$prefix-c',
+    '$prefix-t0',
+    'Chapter',
+  ]);
+  raw.execute('INSERT INTO audio_progress VALUES(?,?,100,1,1.0,?)', [
+    '$prefix-e',
+    '$prefix-t1',
+    '2026-01-02 03:04:05',
+  ]);
 }
 
 int _count(sqlite.Database raw, String sql) =>
@@ -76,9 +78,7 @@ void main() {
     test('removes manifests of purged audiobooks and keeps live ones', () async {
       await createVersion7();
       final raw = sqlite.sqlite3.open(file.path);
-      raw.execute(
-        "INSERT INTO records VALUES('purged','book',2,1,'null')",
-      );
+      raw.execute("INSERT INTO records VALUES('purged','book',2,1,'null')");
       raw.execute(
         "INSERT INTO records VALUES('live','book',1,0,'{\"title\":\"A\",\"format\":\"audio\"}')",
       );
@@ -101,18 +101,60 @@ void main() {
           currentDatabaseVersion,
         );
         expect(
-          _count(check, "SELECT COUNT(*) FROM audio_editions WHERE book_id='purged'"),
+          _count(
+            check,
+            "SELECT COUNT(*) FROM audio_editions WHERE book_id='purged'",
+          ),
           0,
         );
-        expect(_count(check, "SELECT COUNT(*) FROM audio_tracks WHERE edition_id='p-e'"), 0);
-        expect(_count(check, "SELECT COUNT(*) FROM audio_chapters WHERE id='p-c'"), 0);
-        expect(_count(check, "SELECT COUNT(*) FROM audio_progress WHERE edition_id='p-e'"), 0);
-        expect(_count(check, "SELECT COUNT(*) FROM audio_resources WHERE sha256 LIKE 'p-%'"), 0);
-        expect(_count(check, "SELECT COUNT(*) FROM audio_resources WHERE sha256 LIKE 'l-%'"), 2);
-        expect(_count(check, "SELECT COUNT(*) FROM audio_tracks WHERE edition_id='l-e'"), 2);
+        expect(
+          _count(
+            check,
+            "SELECT COUNT(*) FROM audio_tracks WHERE edition_id='p-e'",
+          ),
+          0,
+        );
+        expect(
+          _count(check, "SELECT COUNT(*) FROM audio_chapters WHERE id='p-c'"),
+          0,
+        );
+        expect(
+          _count(
+            check,
+            "SELECT COUNT(*) FROM audio_progress WHERE edition_id='p-e'",
+          ),
+          0,
+        );
+        expect(
+          _count(
+            check,
+            "SELECT COUNT(*) FROM audio_resources WHERE sha256 LIKE 'p-%'",
+          ),
+          0,
+        );
+        expect(
+          _count(
+            check,
+            "SELECT COUNT(*) FROM audio_resources WHERE sha256 LIKE 'l-%'",
+          ),
+          2,
+        );
+        expect(
+          _count(
+            check,
+            "SELECT COUNT(*) FROM audio_tracks WHERE edition_id='l-e'",
+          ),
+          2,
+        );
         // The old timestamp now sorts with new UTC values.
         expect(
-          check.select("SELECT updated_at FROM audio_progress WHERE edition_id='l-e'").single.values.first,
+          check
+              .select(
+                "SELECT updated_at FROM audio_progress WHERE edition_id='l-e'",
+              )
+              .single
+              .values
+              .first,
           '2026-01-02T03:04:05.000Z',
         );
         final plan = check
@@ -124,7 +166,9 @@ void main() {
         expect(plan, contains('audio_tracks_asset'));
         // One backup per source version, however many attempts.
         expect(
-          File('${root.path}/backups/before-v$currentDatabaseVersion-from-v7.sqlite').existsSync(),
+          File(
+            '${root.path}/backups/before-v$currentDatabaseVersion-from-v7.sqlite',
+          ).existsSync(),
           isTrue,
         );
       } finally {
@@ -160,9 +204,7 @@ void main() {
 
     test('reject NULL keys and invalid deletion flags', () async {
       await expectLater(
-        db.customStatement(
-          "INSERT INTO records VALUES(NULL,'book',1,0,'{}')",
-        ),
+        db.customStatement("INSERT INTO records VALUES(NULL,'book',1,0,'{}')"),
         throwsA(anything),
       );
       await expectLater(
@@ -179,64 +221,79 @@ void main() {
     });
   });
 
-  test('purging an audiobook removes its manifest so the files can return', () async {
-    final db = AppDatabase(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = Repository(db);
-    await repo.addBook('Аудио', 'Автор', 'audio');
-    final id = (await repo.records('book')).single.id;
-    await db.customStatement("INSERT INTO audio_editions VALUES('e',?,1)", [id]);
-    await db.customStatement(
-      "INSERT INTO audio_resources VALUES('h','/a.mp3',1)",
-    );
-    await db.customStatement(
-      "INSERT INTO audio_tracks VALUES('t','e','h',0,'T',NULL)",
-    );
-    await db.customStatement(
-      "INSERT INTO audio_progress VALUES('e','t',0,1,1.0,'2026-01-01T00:00:00Z')",
-    );
-    final trash = BookTrash(repo);
-    await trash.move([id]);
-    await trash.purge([id]);
-    for (final table in [
-      'audio_editions',
-      'audio_tracks',
-      'audio_progress',
-      'audio_resources',
-    ]) {
-      final rows = await db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle();
-      expect(rows.read<int>('c'), 0, reason: table);
-    }
-  });
+  test(
+    'purging an audiobook removes its manifest so the files can return',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = Repository(db);
+      await repo.addBook('Аудио', 'Автор', 'audio');
+      final id = (await repo.records('book')).single.id;
+      await db.customStatement("INSERT INTO audio_editions VALUES('e',?,1)", [
+        id,
+      ]);
+      await db.customStatement(
+        "INSERT INTO audio_resources VALUES('h','/a.mp3',1)",
+      );
+      await db.customStatement(
+        "INSERT INTO audio_tracks VALUES('t','e','h',0,'T',NULL)",
+      );
+      await db.customStatement(
+        "INSERT INTO audio_progress VALUES('e','t',0,1,1.0,'2026-01-01T00:00:00Z')",
+      );
+      final trash = BookTrash(repo);
+      await trash.move([id]);
+      await trash.purge([id]);
+      for (final table in [
+        'audio_editions',
+        'audio_tracks',
+        'audio_progress',
+        'audio_resources',
+      ]) {
+        final rows = await db
+            .customSelect('SELECT COUNT(*) AS c FROM $table')
+            .getSingle();
+        expect(rows.read<int>('c'), 0, reason: table);
+      }
+    },
+  );
 
-  test('an activity journal write leaves book export revisions alone', () async {
-    final db = AppDatabase(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = Repository(db);
-    for (var i = 0; i < 5; i++) {
-      await repo.addBook('Книга $i', 'Автор', 'epub');
-    }
-    Future<Map<String, int>> revisions() async => {
-      for (final row in await db
-          .customSelect('SELECT book_id,revision FROM library_source_revisions_v1')
-          .get())
-        row.read<String>('book_id'): row.read<int>('revision'),
-    };
-    final before = await revisions();
-    await repo.setMeta('obsidian-activity:personal', '{"slots":{}}');
-    final after = await revisions();
-    expect(after['#activity'], (before['#activity'] ?? 0) + 1);
-    after.remove('#activity');
-    before.remove('#activity');
-    expect(after, before);
-  });
+  test(
+    'an activity journal write leaves book export revisions alone',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = Repository(db);
+      for (var i = 0; i < 5; i++) {
+        await repo.addBook('Книга $i', 'Автор', 'epub');
+      }
+      Future<Map<String, int>> revisions() async => {
+        for (final row
+            in await db
+                .customSelect(
+                  'SELECT book_id,revision FROM library_source_revisions_v1',
+                )
+                .get())
+          row.read<String>('book_id'): row.read<int>('revision'),
+      };
+      final before = await revisions();
+      await repo.setMeta('obsidian-activity:personal', '{"slots":{}}');
+      final after = await revisions();
+      expect(after['#activity'], (before['#activity'] ?? 0) + 1);
+      after.remove('#activity');
+      before.remove('#activity');
+      expect(after, before);
+    },
+  );
 
   test('an unchanged activity journal is not rewritten', () async {
     final db = AppDatabase(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = Repository(db);
     final store = ActivityStore(repo, 'personal');
-    await store.mutate((data) async => (data['slots'] as Map)['a'] = {'value': {}});
+    await store.mutate(
+      (data) async => (data['slots'] as Map)['a'] = {'value': {}},
+    );
     final revision = await db
         .customSelect(
           "SELECT revision FROM library_source_revisions_v1 WHERE book_id='#activity'",

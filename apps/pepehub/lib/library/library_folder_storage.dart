@@ -280,7 +280,8 @@ String mergeLibraryJournal(
 String? mergeLibraryCard(String here, String there, String base) {
   final missing = _cardFieldMissing;
   // An absent field is not the same as a field set to null.
-  bool same(Object? a, Object? b) => identical(a, missing) || identical(b, missing)
+  bool same(Object? a, Object? b) =>
+      identical(a, missing) || identical(b, missing)
       ? identical(a, b)
       : _encode(a) == _encode(b);
   Object? merge(Object? h, Object? t, Object? b) {

@@ -128,10 +128,7 @@ void main() {
         ]),
         throwsArgumentError,
       );
-      expect(
-        await LibraryRows.read(library.local.db, personalLibraryKey),
-        raw,
-      );
+      expect(await LibraryRows.read(library.local.db, personalLibraryKey), raw);
     }
   });
 

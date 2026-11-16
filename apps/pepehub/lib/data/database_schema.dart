@@ -328,7 +328,9 @@ Future<void> strengthenSchemaV8(GeneratedDatabase db) async {
   await purgeAudioEditionsWhere(db, purgedBookIdsSql);
   // The activity journal used to bump every book's export revision.
   for (final event in ['insert', 'update', 'delete']) {
-    await db.customStatement('DROP TRIGGER IF EXISTS export_metadata_${event}_v1');
+    await db.customStatement(
+      'DROP TRIGGER IF EXISTS export_metadata_${event}_v1',
+    );
   }
   await _exportRevisions(db);
   // Progress migrated from 0.4 kept its original timestamp text; newest-first
@@ -360,8 +362,7 @@ Future<void> ensureIntegrityGuards(GeneratedDatabase db) async {
         "NEW.id IS NULL OR NEW.id='' OR NEW.type IS NULL OR NEW.type='' "
         'OR NEW.deleted NOT IN (0,1) OR NEW.revision IS NULL',
     'metadata': "NEW.key IS NULL OR NEW.key=''",
-    'local_assets':
-        "NEW.id IS NULL OR NEW.book_id IS NULL OR NEW.book_id='' OR NEW.bytes<0",
+    'local_assets': "NEW.id IS NULL OR NEW.book_id IS NULL OR NEW.book_id='' OR NEW.bytes<0",
     'audio_editions': "NEW.id IS NULL OR NEW.book_id IS NULL OR NEW.book_id=''",
     'audio_resources': "NEW.sha256 IS NULL OR NEW.sha256=''",
     'audio_tracks': 'NEW.id IS NULL',
@@ -395,12 +396,13 @@ Future<void> purgeAudioEditionsWhere(
 ]) async {
   final editions = 'SELECT id FROM audio_editions WHERE book_id IN ($bookIds)';
   final hashes = [
-    for (final row in await db
-        .customSelect(
-          'SELECT DISTINCT asset_hash FROM audio_tracks WHERE edition_id IN ($editions)',
-          variables: [for (final v in variables) Variable(v)],
-        )
-        .get())
+    for (final row
+        in await db
+            .customSelect(
+              'SELECT DISTINCT asset_hash FROM audio_tracks WHERE edition_id IN ($editions)',
+              variables: [for (final v in variables) Variable(v)],
+            )
+            .get())
       row.read<String>('asset_hash'),
   ];
   await db.customStatement(

@@ -64,12 +64,13 @@ abstract final class LibraryRows {
     GeneratedDatabase db,
     String store,
   ) async => {
-    for (final row in await db
-        .customSelect(
-          'SELECT id,value FROM $table WHERE store=? ORDER BY seq',
-          variables: [Variable(store)],
-        )
-        .get())
+    for (final row
+        in await db
+            .customSelect(
+              'SELECT id,value FROM $table WHERE store=? ORDER BY seq',
+              variables: [Variable(store)],
+            )
+            .get())
       row.read<String>('id'): row.read<String>('value'),
   };
 

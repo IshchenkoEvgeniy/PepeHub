@@ -122,24 +122,27 @@ void main() {
     }
   });
 
-  test('a journal value in the old format is read as the newest write', () async {
-    final store = ActivityStore(repo, personalLibraryNamespace);
-    await store.mutate((state) async {
-      (state['slots'] as Map)['old'] = _slot('old');
-    });
-    await repo.setMeta(
-      store.key,
-      jsonEncode({
-        'version': 1,
-        'cursor': 4,
-        'slots': {'restored': _slot('restored')},
-      }),
-    );
-    final state = await store.state();
-    expect((state['slots'] as Map).keys, ['restored']);
-    expect(state['cursor'], 4);
-    expect(await repo.meta(store.key), isNot(contains('slots')));
-  });
+  test(
+    'a journal value in the old format is read as the newest write',
+    () async {
+      final store = ActivityStore(repo, personalLibraryNamespace);
+      await store.mutate((state) async {
+        (state['slots'] as Map)['old'] = _slot('old');
+      });
+      await repo.setMeta(
+        store.key,
+        jsonEncode({
+          'version': 1,
+          'cursor': 4,
+          'slots': {'restored': _slot('restored')},
+        }),
+      );
+      final state = await store.state();
+      expect((state['slots'] as Map).keys, ['restored']);
+      expect(state['cursor'], 4);
+      expect(await repo.meta(store.key), isNot(contains('slots')));
+    },
+  );
 
   test('schema 9 moves the catalog and journals without losing data', () async {
     final root = await Directory.systemTemp.createTemp('pepehub-v9');
@@ -158,9 +161,7 @@ void main() {
     final seedRepo = Repository(seed);
     await seedRepo.meta('open');
     await seed.close();
-    final raw = sqlite.sqlite3.open(
-      '${root.path}/$currentDatabaseFilename',
-    );
+    final raw = sqlite.sqlite3.open('${root.path}/$currentDatabaseFilename');
     raw.execute('DELETE FROM library_rows_v1');
     for (final (key, value) in [
       (personalLibraryKey, cards),
@@ -183,10 +184,7 @@ void main() {
         personalLibraryNamespace,
         storageKey: personalLibraryKey,
       ).entries();
-      expect(
-        catalog.map((k, v) => MapEntry(k, v.toJson())),
-        cards,
-      );
+      expect(catalog.map((k, v) => MapEntry(k, v.toJson())), cards);
       // Insertion order survives, as in the JSON object it replaces.
       expect(catalog.keys.toList(), cards.keys.toList());
       expect(

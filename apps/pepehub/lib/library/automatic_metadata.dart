@@ -32,10 +32,7 @@ class AutomaticMetadata {
   }) async {
     final revision =
         (await local.db
-                .customSelect(
-                  sourceRevisionSql,
-                  variables: [Variable(book.id)],
-                )
+                .customSelect(sourceRevisionSql, variables: [Variable(book.id)])
                 .getSingleOrNull())
             ?.read<int>('revision') ??
         0;

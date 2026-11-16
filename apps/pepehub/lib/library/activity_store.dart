@@ -130,9 +130,9 @@ class ActivityStore {
       header = await local.meta(key);
     }
     final slots = await LibraryRows.read(local.db, key);
-    final data =
-        jsonDecode(header ?? '{"version":1,"cursor":0}')
-            as Map<String, dynamic>;
+    final data = jsonDecode(
+      header ?? '{"version":1,"cursor":0}',
+    ) as Map<String, dynamic>;
     data['slots'] = slots.length < 500
         ? _decodeSlots(slots)
         : await _decodeSlotsApart(slots);
