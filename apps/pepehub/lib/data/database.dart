@@ -7,6 +7,7 @@ import 'package:drift/native.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../pets/pets_schema.dart';
 import 'database_files.dart';
 import 'database_schema.dart';
 import 'library_rows.dart';
@@ -49,6 +50,8 @@ class AppDatabase extends GeneratedDatabase {
       await ensureSchemaV8Indexes(this);
       await ensureIntegrityGuards(this);
       await LibraryRows.createSchema(this);
+      await createPetsSchema(this);
+      await upgradePetsSchemaV11(this);
       await customStatement('PRAGMA user_version = $currentDatabaseVersion');
     }),
     onUpgrade: (_, from, to) async {
@@ -62,6 +65,8 @@ class AppDatabase extends GeneratedDatabase {
         if (from < 7) await removeDeviceSync(this);
         if (from < 8) await strengthenSchemaV8(this);
         if (from < 9) await LibraryRows.migrate(this);
+        if (from < 10) await createPetsSchema(this);
+        if (from < 11) await upgradePetsSchemaV11(this);
         await customStatement('PRAGMA user_version = $currentDatabaseVersion');
       });
     },

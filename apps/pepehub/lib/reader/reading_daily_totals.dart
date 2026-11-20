@@ -107,18 +107,17 @@ class ReadingDailyTotals {
     }
   }
 
-  Future<int> day(DateTime date) async {
+  Future<int> day(DateTime date) => range(
+    DateTime(date.year, date.month, date.day),
+    DateTime(date.year, date.month, date.day + 1),
+  );
+
+  /// Active reading milliseconds inside `[from, to)`; spans crossing a bound
+  /// are prorated.
+  Future<int> range(DateTime from, DateTime to) async {
     await refresh();
-    final start = DateTime(
-      date.year,
-      date.month,
-      date.day,
-    ).microsecondsSinceEpoch;
-    final end = DateTime(
-      date.year,
-      date.month,
-      date.day + 1,
-    ).microsecondsSinceEpoch;
+    final start = from.microsecondsSinceEpoch;
+    final end = to.microsecondsSinceEpoch;
     final row = await repository.db
         .customSelect(
           'SELECT CAST(COALESCE(SUM(ROUND(active_ms*1.0*'
