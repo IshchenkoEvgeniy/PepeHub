@@ -18,6 +18,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
+  // 3D scene of the pets section (flutter_scene) renders through Flutter GPU.
+  project.set_enable_flutter_gpu(true);
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
