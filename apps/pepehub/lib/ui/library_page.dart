@@ -12,6 +12,7 @@ import 'folder_scan_panel.dart';
 import 'shelf_book_details.dart';
 import 'recommendations_page.dart';
 import 'statistics_hub_page.dart';
+import '../pets/ui/pets_section.dart';
 import '../video/video_library_page.dart';
 import '../video/video_repository.dart';
 import '../recommendations/recommendation_store.dart';
@@ -138,6 +139,7 @@ class _LibraryPageState extends State<LibraryPage> {
   bool metadataSection = false;
   bool recommendationsSection = false;
   bool statisticsSection = false;
+  bool petsSection = false;
   bool videoSection = false;
   late final videoLibrary = VideoRepository(widget.repository);
   late final recommendations = RecommendationStore(widget.repository);
@@ -204,6 +206,7 @@ class _LibraryPageState extends State<LibraryPage> {
     super.initState();
     widget.repository.externalChanges.addListener(_remoteChanged);
     activeFolderScan.addListener(_folderScanChanged);
+    PepeSection.hidden.addListener(_sectionsChanged);
     folderScanOutcome.addListener(_folderScanFinished);
     personalLibrary.addListener(_libraryChanged);
     _initialize();
@@ -218,6 +221,7 @@ class _LibraryPageState extends State<LibraryPage> {
         !metadataSection &&
         !recommendationsSection &&
         !statisticsSection &&
+        !petsSection &&
         !videoSection) {
       unawaited(_reload());
     }
@@ -239,12 +243,19 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   Future<void> _initialize() async {
-    final section = await startupSection(widget.repository);
+    var section = await startupSection(widget.repository);
+    PepeSection.hidden.value = await petsSectionHidden(widget.repository)
+        ? {PepeSection.pets}
+        : {};
     if (!mounted) return;
+    if (section == 'pets' && PepeSection.hidden.value.isNotEmpty) {
+      section = 'reading';
+    }
     reading = section == 'reading';
     metadataSection = section == 'metadata';
     recommendationsSection = section == 'recommendations';
     statisticsSection = section == 'statistics';
+    petsSection = section == 'pets';
     videoSection = section == 'video';
     unawaited(_loadPersonalLibrary());
     await _reload(restoreDefault: true);
@@ -273,6 +284,7 @@ class _LibraryPageState extends State<LibraryPage> {
         (!metadataSection &&
             !recommendationsSection &&
             !statisticsSection &&
+            !petsSection &&
             !videoSection &&
             reading == next)) {
       return;
@@ -281,6 +293,7 @@ class _LibraryPageState extends State<LibraryPage> {
       metadataSection = false;
       recommendationsSection = false;
       statisticsSection = false;
+      petsSection = false;
       videoSection = false;
       reading = next;
       _clearSelection();
@@ -302,8 +315,18 @@ class _LibraryPageState extends State<LibraryPage> {
     await _reload(restoreDefault: true);
   }
 
+  /// Hiding «Питомник» while it is open moves to the books.
+  void _sectionsChanged() {
+    if (mounted &&
+        petsSection &&
+        PepeSection.hidden.value.contains(PepeSection.pets)) {
+      unawaited(_selectSection(PepeSection.books));
+    }
+  }
+
   @override
   void dispose() {
+    PepeSection.hidden.removeListener(_sectionsChanged);
     widget.repository.externalChanges.removeListener(_remoteChanged);
     activeFolderScan.removeListener(_folderScanChanged);
     folderScanOutcome.removeListener(_folderScanFinished);
@@ -397,6 +420,7 @@ class _LibraryPageState extends State<LibraryPage> {
       metadataSection = false;
       recommendationsSection = false;
       statisticsSection = false;
+      petsSection = false;
       videoSection = false;
       selectedRoot = collectionFilter = null;
       favoritesOnly = false;
@@ -1163,6 +1187,7 @@ class _LibraryPageState extends State<LibraryPage> {
       metadataSection = true;
       recommendationsSection = false;
       statisticsSection = false;
+      petsSection = false;
       videoSection = false;
       _clearSelection();
     });
@@ -1170,7 +1195,9 @@ class _LibraryPageState extends State<LibraryPage> {
     await personalLibrary.reload();
   }
 
-  PepeSection get _section => videoSection
+  PepeSection get _section => petsSection
+      ? PepeSection.pets
+      : videoSection
       ? PepeSection.video
       : statisticsSection
       ? PepeSection.statistics
@@ -1202,6 +1229,7 @@ class _LibraryPageState extends State<LibraryPage> {
           metadataSection = false;
           recommendationsSection = false;
           statisticsSection = false;
+          petsSection = false;
           _clearSelection();
         });
         await widget.repository.setMeta('library-section', 'video');
@@ -1213,18 +1241,30 @@ class _LibraryPageState extends State<LibraryPage> {
           videoSection = false;
           metadataSection = false;
           statisticsSection = false;
+          petsSection = false;
           _clearSelection();
         });
         await widget.repository.setMeta('library-section', 'recommendations');
       case PepeSection.statistics:
         setState(() {
           statisticsSection = true;
+          petsSection = false;
           videoSection = false;
           recommendationsSection = false;
           metadataSection = false;
           _clearSelection();
         });
         await widget.repository.setMeta('library-section', 'statistics');
+      case PepeSection.pets:
+        setState(() {
+          petsSection = true;
+          statisticsSection = false;
+          videoSection = false;
+          recommendationsSection = false;
+          metadataSection = false;
+          _clearSelection();
+        });
+        await widget.repository.setMeta('library-section', 'pets');
     }
   }
 
@@ -1265,6 +1305,7 @@ class _LibraryPageState extends State<LibraryPage> {
           !metadataSection &&
           !recommendationsSection &&
           !statisticsSection &&
+          !petsSection &&
           !videoSection) {
         setState(() => query = value);
       }
@@ -1555,6 +1596,12 @@ class _LibraryPageState extends State<LibraryPage> {
   @override
   Widget build(BuildContext context) {
     PepeRoot.navigation = _navigation;
+    if (petsSection) {
+      return PetsSection(
+        repository: widget.repository,
+        navigation: _navigation,
+      );
+    }
     if (videoSection) {
       return VideoLibraryPage(
         repository: videoLibrary,

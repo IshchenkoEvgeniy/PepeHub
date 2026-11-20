@@ -18,7 +18,14 @@ const startupSections = {
   'recommendations': 'Рекомендации',
   'statistics': 'Статистика',
   'video': 'Видео',
+  'pets': 'Питомник',
 };
+
+/// «Питомник» can be hidden from the navigation; game data stays intact.
+const petsSectionHiddenKey = 'pets-section-hidden';
+
+Future<bool> petsSectionHidden(Repository repository) async =>
+    await repository.meta(petsSectionHiddenKey) == '1';
 
 Future<String?> startupSection(Repository repository) async {
   final preferred = await repository.meta('startup-section');

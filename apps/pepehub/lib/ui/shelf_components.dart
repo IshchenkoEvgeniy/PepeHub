@@ -56,11 +56,19 @@ enum PepeSection {
   video('Медиа', Icons.perm_media_outlined, Icons.perm_media),
   library('Библиотека', Icons.local_library_outlined, Icons.local_library),
   recommendations('Рекомендации', Icons.star_outline, Icons.star_rounded),
-  statistics('Статистика', Icons.bar_chart_outlined, Icons.bar_chart_rounded);
+  statistics('Статистика', Icons.bar_chart_outlined, Icons.bar_chart_rounded),
+  pets('Питомник', Icons.pets_outlined, Icons.pets);
 
   final String label;
   final IconData icon, selectedIcon;
   const PepeSection(this.label, this.icon, this.selectedIcon);
+
+  /// Sections the user hid in the settings (only «Питомник» can be hidden).
+  static final hidden = ValueNotifier<Set<PepeSection>>({});
+
+  /// Sections shown in the rail and the bottom bar, in order.
+  static List<PepeSection> get visible =>
+      values.where((s) => !hidden.value.contains(s)).toList();
 }
 
 class ShelfNavigation {
@@ -179,7 +187,12 @@ class ShelfBottomBar extends StatelessWidget {
   final ShelfNavigation navigation;
   const ShelfBottomBar({super.key, required this.navigation});
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ValueListenableBuilder(
+    valueListenable: PepeSection.hidden,
+    builder: (context, _, _) => _bar(context),
+  );
+
+  Widget _bar(BuildContext context) {
     final palette = ShelfPalette.of(context);
     return Material(
       color: palette.sidebar,
@@ -193,7 +206,7 @@ class ShelfBottomBar extends StatelessWidget {
             height: 64,
             child: Row(
               children: [
-                for (final section in PepeSection.values)
+                for (final section in PepeSection.visible)
                   Expanded(
                     child: _NavigationItem(
                       section: section,
@@ -214,7 +227,12 @@ class ShelfRail extends StatelessWidget {
   final ShelfNavigation navigation;
   const ShelfRail({super.key, required this.navigation});
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ValueListenableBuilder(
+    valueListenable: PepeSection.hidden,
+    builder: (context, _, _) => _rail(context),
+  );
+
+  Widget _rail(BuildContext context) {
     final palette = ShelfPalette.of(context);
     return Material(
       color: palette.sidebar,
@@ -236,7 +254,7 @@ class ShelfRail extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 22),
-            for (final section in PepeSection.values)
+            for (final section in PepeSection.visible)
               SizedBox(
                 height: 76,
                 child: _NavigationItem(

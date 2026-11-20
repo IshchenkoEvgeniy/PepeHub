@@ -50,6 +50,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/pets/
     - assets/reminders/windows-reminder.ps1
     - assets/fonts/Lora-OFL.txt
     - assets/fonts/Manrope-OFL.txt
