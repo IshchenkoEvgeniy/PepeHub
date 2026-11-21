@@ -1,9 +1,12 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/pets/pet_catalog.dart';
+import 'package:pepehub/pets/pet_progress.dart';
 import 'package:pepehub/pets/pets_service.dart';
 import 'package:pepehub/pets/ui/pets_section.dart';
 import 'package:pepehub/ui/shelf_components.dart';
@@ -40,7 +43,7 @@ void main() {
     home: PetsSection(
       repository: repo,
       clock: () => now,
-      sceneBuilder: (c, p, o, s) => _fakeScene(c, p, o, s),
+      sceneBuilder: (c, p, o, e, s) => _fakeScene(c, p, o, s),
       navigation: ShelfNavigation(
         current: PepeSection.pets,
         onSelect: (_) {},
@@ -127,6 +130,101 @@ void main() {
     expect(find.text('Питомник'), findsNothing);
     expect(find.text('Статистика'), findsOneWidget);
     PepeSection.hidden.value = {};
+  });
+
+  testWidgets('incubator, path, talents and achievements', (tester) async {
+    tester.view.physicalSize = const Size(1280, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var day = now;
+    await tester.runAsync(() async {
+      final service = PetsService(repo, clock: () => day);
+      await service.enable(species: PetSpecies.cat);
+      // 14 days of 4 hours: level 25+, coins for an egg.
+      for (var i = 0; i < 14; i++) {
+        await service.addTestMinutes(240);
+        await service.sync();
+        day = day.add(const Duration(days: 1));
+      }
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PetsSection(
+          repository: repo,
+          clock: () => day,
+          sceneBuilder: (c, p, o, e, s) => _fakeScene(c, p, o, s),
+          navigation: ShelfNavigation(
+            current: PepeSection.pets,
+            onSelect: (_) {},
+            onSettings: () {},
+          ),
+        ),
+      ),
+    );
+    await _settle(tester, () => find.text('scene:cat:0').evaluate().isNotEmpty);
+    expect(find.text('Питомцы •'), findsOneWidget, reason: 'path pending');
+
+    await tester.tap(find.text('Инкубатор'));
+    await tester.pumpAndSettle();
+    expect(find.text('Свободный слот'), findsOneWidget);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('offer-fox')),
+        matching: find.byType(FilledButton),
+      ),
+    );
+    await _settle(
+      tester,
+      () => find.text('0:00 из 10:00').evaluate().isNotEmpty,
+    );
+    expect(find.text('Свободный слот'), findsNothing);
+    expect(find.text('0:00 из 10:00'), findsOneWidget);
+
+    await tester.tap(find.text('Питомцы •'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('path-catBookish')), findsOneWidget);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('path-catBookish')),
+        matching: find.byType(FilledButton),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Выбрать').last);
+    await _settle(
+      tester,
+      () => find.textContaining('Книжная:').evaluate().isNotEmpty,
+    );
+    await tester.tap(find.byKey(const ValueKey('talent-greet')));
+    await _settle(
+      tester,
+      () => find.byKey(const ValueKey('talent-greet')).evaluate().isEmpty,
+    );
+
+    await tester.tap(find.text('Достижения'));
+    await tester.pumpAndSettle();
+    expect(find.text('Свой путь'), findsOneWidget);
+    expect(find.text('Неделя чтения'), findsOneWidget, reason: 'honor chip');
+    expect(tester.takeException(), isNull);
+  });
+
+  test('every model the scene may load is bundled', () {
+    final assets = <String>{
+      for (final s in PetSpecies.values) ...[
+        for (final level in [1, 10, 25, 45, 70, 90, 100])
+          for (final path in [null, ...PetPath.of(s.name).map((p) => p.name)])
+            PetGrowth.modelAsset(s.name, level, path),
+      ],
+      for (final i in shopItems)
+        if (i.model != null) i.model!,
+      'assets/pets/egg.glb',
+      'assets/pets/fx_rank.glb',
+      'assets/pets/room_bedroom.glb',
+    };
+    expect(assets.length, greaterThan(15));
+    for (final a in assets) {
+      expect(File(a).existsSync(), isTrue, reason: a);
+    }
   });
 
   test('every decor item has a node name in the room', () {

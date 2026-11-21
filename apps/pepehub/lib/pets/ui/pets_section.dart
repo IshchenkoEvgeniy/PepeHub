@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -8,15 +9,19 @@ import '../../diagnostics/error_log.dart';
 import '../../diagnostics/user_message.dart';
 import '../../ui/shelf_components.dart';
 import '../pet_catalog.dart';
+import '../pet_progress.dart';
 import '../pet_rules.dart';
 import '../pets_service.dart';
 import 'pet_scene.dart';
+
+part 'pets_tabs.dart';
 
 /// Builds the 3D home; tests replace it (Flutter GPU is not available there).
 typedef PetSceneBuilder = Widget Function(
   BuildContext context,
   Pet pet,
   Set<String> owned,
+  List<PetEgg> eggs,
   PetSceneController controller,
 );
 
@@ -24,8 +29,9 @@ Widget _defaultScene(
   BuildContext context,
   Pet pet,
   Set<String> owned,
+  List<PetEgg> eggs,
   PetSceneController controller,
-) => PetHomeScene(pet: pet, owned: owned, controller: controller);
+) => PetHomeScene(pet: pet, owned: owned, eggs: eggs, controller: controller);
 
 /// The «Питомник» section: home with the 3D room, the pets, the shop and the
 /// journal. Recounts reading when opened and when the app returns to front.
@@ -49,7 +55,7 @@ class PetsSection extends StatefulWidget {
 class _PetsSectionState extends State<PetsSection>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   late final service = PetsService(widget.repository, clock: widget.clock);
-  late final tabs = TabController(length: 4, vsync: this);
+  late final tabs = TabController(length: 6, vsync: this);
   final scene = PetSceneController();
   PetsOverview? overview;
   String? error;
@@ -162,12 +168,17 @@ class _PetsSectionState extends State<PetsSection>
         _Summary(overview: o, now: service.clock()),
         TabBar(
           controller: tabs,
-          isScrollable: false,
-          tabs: const [
-            Tab(text: 'Дом'),
-            Tab(text: 'Питомцы'),
-            Tab(text: 'Магазин'),
-            Tab(text: 'Журнал'),
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          tabs: [
+            const Tab(text: 'Дом'),
+            Tab(
+              text: o.pets.any((p) => p.pathPending) ? 'Питомцы •' : 'Питомцы',
+            ),
+            Tab(text: o.eggs.any((e) => e.ready) ? 'Инкубатор •' : 'Инкубатор'),
+            const Tab(text: 'Магазин'),
+            const Tab(text: 'Достижения'),
+            const Tab(text: 'Журнал'),
           ],
         ),
         Expanded(
@@ -179,18 +190,29 @@ class _PetsSectionState extends State<PetsSection>
               _home(o),
               _PetsTab(
                 overview: o,
+                service: service,
                 now: service.clock(),
                 busy: busy,
-                onRename: (pet, name) =>
-                    _act(() => service.rename(pet.id, name)),
-                onColor: (pet, color) =>
-                    _act(() => service.setColor(pet.id, color)),
-                onAccessory: (pet, socket, item) =>
-                    _act(() => service.setAccessory(pet.id, socket, item)),
+                act: _act,
+              ),
+              _IncubatorTab(
+                overview: o,
+                service: service,
+                busy: busy,
+                act: _act,
+                say: _say,
               ),
               _ShopTab(
                 overview: o,
+                service: service,
                 busy: busy,
+                onBuyEgg: (offer) async {
+                  final done = await _act(() async {
+                    await service.buyEgg(offer.species);
+                    return true;
+                  });
+                  if (done == true) _say('Яйцо в инкубаторе');
+                },
                 onBuy: (item) async {
                   final done = await _act(() async {
                     await service.buy(item.id);
@@ -198,6 +220,12 @@ class _PetsSectionState extends State<PetsSection>
                   });
                   if (done == true) _say('Куплено: ${item.title}');
                 },
+              ),
+              _AchievementsTab(
+                overview: o,
+                service: service,
+                busy: busy,
+                act: _act,
               ),
               _JournalTab(
                 service: service,
@@ -233,7 +261,7 @@ class _PetsSectionState extends State<PetsSection>
                     ? null
                     : Border.all(color: palette.accent, width: 3),
               ),
-              child: widget.sceneBuilder(context, pet, o.owned, scene),
+              child: widget.sceneBuilder(context, pet, o.owned, o.eggs, scene),
             ),
           ),
         ),
@@ -476,231 +504,6 @@ class _StarterPicker extends StatelessWidget {
               ),
           ],
         ),
-      ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------- pets tab
-
-class _PetsTab extends StatelessWidget {
-  final PetsOverview overview;
-  final DateTime now;
-  final bool busy;
-  final void Function(Pet pet, String name) onRename;
-  final void Function(Pet pet, String? color) onColor;
-  final void Function(Pet pet, PetSocket socket, String? item) onAccessory;
-  const _PetsTab({
-    required this.overview,
-    required this.now,
-    required this.busy,
-    required this.onRename,
-    required this.onColor,
-    required this.onAccessory,
-  });
-
-  Future<void> _rename(BuildContext context, Pet pet) async {
-    final controller = TextEditingController(text: pet.name);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Имя питомца'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 24,
-          onSubmitted: (v) => Navigator.pop(context, v),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (name != null) onRename(pet, name);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pet = overview.companion!;
-    final palette = ShelfPalette.of(context);
-    final species = PetSpecies.byId(pet.species);
-    final colors = shopItems.where(
-      (i) => i.kind == ShopKind.color && overview.owned.contains(i.id),
-    );
-    final satiety = pet.satiety(now);
-    Widget row(String label, String value) => ListTile(
-      dense: true,
-      title: Text(label),
-      trailing: Text(
-        value,
-        style: const TextStyle(fontWeight: FontWeight.w600),
-      ),
-    );
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                pet.name,
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-            ),
-            IconButton(
-              tooltip: 'Переименовать',
-              onPressed: busy ? null : () => _rename(context, pet),
-              icon: const Icon(Icons.edit_outlined),
-            ),
-          ],
-        ),
-        Text(
-          '${species?.label ?? pet.species} · компаньон: получает весь опыт',
-          style: TextStyle(color: palette.muted),
-        ),
-        row('Уровень', '${pet.level}'),
-        row('Стадия', pet.stage.label),
-        row('Возраст', PetRules.ageForLevel(pet.level)),
-        row(
-          'Сытость',
-          satiety <= 0 ? 'голоден' : '${(satiety * 100).round()}%',
-        ),
-        const Divider(),
-        Text('Окрас', style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            ChoiceChip(
-              label: const Text('Природный'),
-              selected: pet.color == null,
-              onSelected: busy ? null : (_) => onColor(pet, null),
-            ),
-            for (final c in colors)
-              ChoiceChip(
-                avatar: CircleAvatar(backgroundColor: c.tint),
-                label: Text(c.title),
-                selected: pet.color == c.id,
-                onSelected: busy ? null : (_) => onColor(pet, c.id),
-              ),
-          ],
-        ),
-        if (colors.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              'Новые окрасы — в магазине.',
-              style: TextStyle(color: palette.muted),
-            ),
-          ),
-        const SizedBox(height: 16),
-        Text('Аксессуары', style: Theme.of(context).textTheme.titleSmall),
-        for (final item in shopItems.where(
-          (i) => i.kind == ShopKind.accessory && overview.owned.contains(i.id),
-        ))
-          SwitchListTile(
-            title: Text(item.title),
-            value: pet.accessories[item.socket] == item.id,
-            onChanged: busy
-                ? null
-                : (on) => onAccessory(pet, item.socket!, on ? item.id : null),
-          ),
-        if (!shopItems.any(
-          (i) => i.kind == ShopKind.accessory && overview.owned.contains(i.id),
-        ))
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              'Шарф и шапочка — в магазине.',
-              style: TextStyle(color: palette.muted),
-            ),
-          ),
-        const Divider(height: 32),
-        Text('Скоро', style: Theme.of(context).textTheme.titleSmall),
-        for (final other in PetSpecies.values.where((s) => s != species))
-          ListTile(
-            leading: const Icon(Icons.egg_outlined),
-            title: Text(other.label),
-            subtitle: const Text('Появится яйцом в следующем обновлении'),
-          ),
-      ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------- shop tab
-
-class _ShopTab extends StatelessWidget {
-  final PetsOverview overview;
-  final bool busy;
-  final ValueChanged<ShopItem> onBuy;
-  const _ShopTab({
-    required this.overview,
-    required this.busy,
-    required this.onBuy,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = ShelfPalette.of(context);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-      children: [
-        for (final kind in ShopKind.values) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
-            child: Text(
-              kind.label,
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-          ),
-          for (final item in shopItems.where((i) => i.kind == kind))
-            Builder(
-              builder: (context) {
-                final owned =
-                    !kind.consumable && overview.owned.contains(item.id);
-                final have = overview.inventory[item.id] ?? 0;
-                final frozenFull =
-                    kind == ShopKind.freeze &&
-                    overview.streak.freezes >= PetRules.maxFreezes;
-                final affordable = overview.balance >= item.price;
-                return Card(
-                  child: ListTile(
-                    key: ValueKey('shop-${item.id}'),
-                    title: Text(item.title),
-                    subtitle: Text(
-                      [
-                        item.description,
-                        if (kind == ShopKind.food && have > 0) 'Есть: $have',
-                        if (kind == ShopKind.freeze)
-                          'В запасе: ${overview.streak.freezes}',
-                      ].join(' · '),
-                    ),
-                    trailing: owned
-                        ? Text(
-                            'Куплено',
-                            style: TextStyle(color: palette.muted),
-                          )
-                        : FilledButton.tonal(
-                            onPressed: busy || !affordable || frozenFull
-                                ? null
-                                : () => onBuy(item),
-                            child: Text('${item.price}'),
-                          ),
-                  ),
-                );
-              },
-            ),
-        ],
       ],
     );
   }

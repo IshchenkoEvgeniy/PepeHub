@@ -54,13 +54,15 @@ Future<void> _listen(
 void main() {
   group('rules', () {
     test('experience curve, levels and stages', () {
-      expect(PetRules.xpForLevel(1), 33);
+      expect(PetRules.xpForLevel(1), 27);
       expect(PetRules.levelForXp(0), 1);
-      expect(PetRules.levelForXp(32), 1);
-      expect(PetRules.levelForXp(33), 2);
+      expect(PetRules.levelForXp(26), 1);
+      expect(PetRules.levelForXp(27), 2);
       final toMax = PetRules.totalXpForLevel(100);
-      // Concept: about 101 726 experience to level 100.
-      expect(toMax, closeTo(101726, 60));
+      // About 3.5 years at an hour a day (~65 experience with books).
+      expect(toMax, 81473);
+      expect(toMax / 65 / 365, closeTo(3.5, 0.1));
+      expect(PetRules.totalXpForLevel(70) / 65 / 365, closeTo(1.5, 0.1));
       expect(PetRules.levelForXp(toMax), 100);
       expect(PetRules.levelForXp(toMax * 10), 100);
       expect(PetRules.stageForLevel(1), PetStage.baby);
@@ -389,6 +391,8 @@ void main() {
         'pets_finish_queue_v1',
         'pets_inventory_v1',
         'pets_owned_v1',
+        'pets_eggs_v1',
+        'pets_reserve_v1',
       });
       final meta = await db
           .customSelect("SELECT key FROM metadata WHERE key LIKE 'pets:%'")

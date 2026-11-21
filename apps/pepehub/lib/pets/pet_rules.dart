@@ -41,8 +41,15 @@ abstract final class PetRules {
     return math.min(bonus, 300);
   }
 
-  /// Experience needed to go from [level] to the next one.
-  static int xpForLevel(int level) => (30 + 2.5 * math.pow(level, 1.5)).round();
+  /// Level of the growth path choice.
+  static const pathLevel = 25;
+
+  /// One talent point per this many levels (20 points by level 100).
+  static const talentEvery = 5;
+
+  /// Experience needed to go from [level] to the next one. About 81 000 to
+  /// level 100: some 3.5 years at an hour a day, level 70 in about 1.5.
+  static int xpForLevel(int level) => (25 + 2 * math.pow(level, 1.5)).round();
 
   /// Total experience needed to reach [level] (level 1 needs 0).
   static int totalXpForLevel(int level) {

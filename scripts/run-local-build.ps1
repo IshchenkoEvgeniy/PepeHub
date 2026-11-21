@@ -106,7 +106,13 @@ try {
     foreach ($pepeAssetMatch in [regex]::Matches($pepeBuildPubspec, '(?m)^\s*-\s*(?:asset:\s*)?(assets/[^\r\n#]+)')) {
         $pepeAsset = $pepeAssetMatch.Groups[1].Value.Trim()
         $pepeAssetPath = Join-Path $pepeBuildApp $pepeAsset
-        if (-not (Test-Path -LiteralPath $pepeAssetPath -PathType Leaf) -or (Get-Item -LiteralPath $pepeAssetPath).Length -eq 0) {
+        if ($pepeAsset.EndsWith('/')) {
+            # Flutter folder entry: bundles the files directly inside it (not subfolders).
+            $pepeAssetFiles = @(Get-ChildItem -LiteralPath $pepeAssetPath -File -ErrorAction SilentlyContinue)
+            if ($pepeAssetFiles.Count -eq 0) { throw "Required asset folder is missing or empty: $pepeAsset. Restore the project assets before building." }
+            $pepeEmptyAsset = $pepeAssetFiles | Where-Object { $_.Length -eq 0 } | Select-Object -First 1
+            if ($pepeEmptyAsset) { throw "Required asset is empty: $pepeAsset$($pepeEmptyAsset.Name). Restore the project asset before building." }
+        } elseif (-not (Test-Path -LiteralPath $pepeAssetPath -PathType Leaf) -or (Get-Item -LiteralPath $pepeAssetPath).Length -eq 0) {
             throw "Required asset is missing or empty: $pepeAsset. Restore the project asset before building."
         }
     }

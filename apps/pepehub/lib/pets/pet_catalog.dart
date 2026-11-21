@@ -13,7 +13,7 @@ enum PetSpecies {
       values.where((s) => s.name == id).firstOrNull;
 }
 
-enum ShopKind { food, color, decor, accessory, freeze }
+enum ShopKind { food, color, decor, accessory, freeze, upgrade }
 
 extension ShopKindLabel on ShopKind {
   String get label => switch (this) {
@@ -22,6 +22,7 @@ extension ShopKindLabel on ShopKind {
     ShopKind.decor => 'Декор комнаты',
     ShopKind.accessory => 'Аксессуары',
     ShopKind.freeze => 'Серия дней',
+    ShopKind.upgrade => 'Инкубатор',
   };
 
   /// Food and freezes are spent; everything else is bought once.
@@ -29,7 +30,7 @@ extension ShopKindLabel on ShopKind {
 }
 
 /// Accessory sockets shared by every model (bones `Socket_*`).
-enum PetSocket { head, neck, back }
+enum PetSocket { head, face, neck, back }
 
 class ShopItem {
   final String id, title, description;
@@ -48,6 +49,9 @@ class ShopItem {
   /// Accessories: socket and model.
   final PetSocket? socket;
   final String? model;
+
+  /// Not sold: unlocked by an achievement.
+  final bool rewardOnly;
   const ShopItem({
     required this.id,
     required this.title,
@@ -59,6 +63,7 @@ class ShopItem {
     this.tint,
     this.socket,
     this.model,
+    this.rewardOnly = false,
   });
 
   /// Node name of a decor item inside `room_bedroom.glb`.
@@ -171,6 +176,51 @@ const shopItems = <ShopItem>[
     price: 400,
     socket: PetSocket.head,
     model: 'assets/pets/acc_beanie.glb',
+  ),
+  ShopItem(
+    id: 'incubator_slot',
+    title: 'Второй слот инкубатора',
+    description: 'Высиживать два яйца одновременно.',
+    kind: ShopKind.upgrade,
+    price: 3000,
+  ),
+  // Achievement rewards: never sold.
+  ShopItem(
+    id: 'color_amber',
+    title: 'Янтарный',
+    description: 'За 10 книг дня.',
+    kind: ShopKind.color,
+    price: 0,
+    tint: Color(0xFFE0A040),
+    rewardOnly: true,
+  ),
+  ShopItem(
+    id: 'color_sunset',
+    title: 'Закат',
+    description: 'За серию 30 дней.',
+    kind: ShopKind.color,
+    price: 0,
+    tint: Color(0xFFE07A6A),
+    rewardOnly: true,
+  ),
+  ShopItem(
+    id: 'color_aurora',
+    title: 'Сияние',
+    description: 'За 100 часов чтения.',
+    kind: ShopKind.color,
+    price: 0,
+    tint: Color(0xFF7FA8E8),
+    rewardOnly: true,
+  ),
+  ShopItem(
+    id: 'acc_glasses',
+    title: 'Очки для чтения',
+    description: 'За 10 часов чтения.',
+    kind: ShopKind.accessory,
+    price: 0,
+    socket: PetSocket.face,
+    model: 'assets/pets/acc_glasses.glb',
+    rewardOnly: true,
   ),
   ShopItem(
     id: 'freeze',

@@ -35,6 +35,30 @@ import 'package:pepehub/ui/recommendations_page.dart';
 import 'package:pepehub/ui/settings_page.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 import 'package:pepehub/ui/statistics_hub_page.dart';
+import 'package:pepehub/ui/library_work_page.dart';
+import 'package:pepehub/ui/reading_statistics_page.dart';
+import 'package:pepehub/ui/audio_statistics_page.dart';
+import 'package:pepehub/video/video_statistics_page.dart';
+import 'package:pepehub/video/video_library_page.dart';
+import 'package:pepehub/ui/statistics_management_page.dart';
+import 'package:pepehub/ui/goal_settings_page.dart';
+import 'package:pepehub/ui/reading_plan_page.dart';
+import 'package:pepehub/ui/library_data_page.dart';
+import 'package:pepehub/ui/storage_settings_page.dart';
+import 'package:pepehub/ui/playback_settings_page.dart';
+import 'package:pepehub/ui/reading_roots_page.dart';
+import 'package:pepehub/ui/audio_roots_page.dart';
+import 'package:pepehub/ui/hidden_deleted_page.dart';
+import 'package:pepehub/ui/library_trash_page.dart';
+import 'package:pepehub/ui/activity_page.dart';
+import 'package:pepehub/ui/library_series_editor_page.dart';
+import 'package:pepehub/ui/library_notes_page.dart';
+import 'package:pepehub/vocabulary/vocabulary_page.dart';
+import 'package:pepehub/ui/statistics_exchange_page.dart';
+import 'package:pepehub/diagnostics/error_log_page.dart';
+import 'package:pepehub/ui/import_folder_page.dart';
+import 'package:pepehub/video/video_repository.dart';
+import 'package:pepehub/vocabulary/vocabulary_repository.dart';
 
 class DocumentationPlayer extends ChangeNotifier implements AudioController {
   @override
@@ -259,7 +283,10 @@ void main() {
       );
       final service = LibraryService(repo, client, assets: assets);
       final key = GlobalKey();
-      final output = Directory('../../docs/screenshots');
+      final output = Directory(
+        Platform.environment['PEPEHUB_SCREENSHOT_OUT'] ??
+            '../../docs/screenshots',
+      );
       await tester.runAsync(() => output.create(recursive: true));
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -649,6 +676,157 @@ void main() {
           SettingsPage(library: service),
           size: const Size(1200, 1000),
         );
+        // Extra windows for the FigCraft design file (design/figcraft). Only
+        // rendered when named in PEPEHUB_SCREENSHOT_FILTER, so the README
+        // gallery stays as it was.
+        final extras = <String, (Widget, Size, bool)>{
+          'audio-desktop': (
+            PepeHubApp(repository: repo, assets: assets),
+            const Size(1440, 1000),
+            true,
+          ),
+          'video-desktop': (
+            VideoLibraryPage(
+              repository: VideoRepository(repo),
+              navigation: nav(PepeSection.video),
+            ),
+            const Size(1440, 1000),
+            false,
+          ),
+          'library-mobile': (
+            LibraryArchivePage(
+              service: service,
+              navigation: nav(PepeSection.library),
+              onSettings: () {},
+            ),
+            const Size(430, 932),
+            false,
+          ),
+          'work': (
+            LibraryWorkPage(
+              library: service,
+              itemId: service.entries.first.item.id,
+            ),
+            const Size(1200, 1000),
+            false,
+          ),
+          'reading-statistics': (
+            ReadingStatisticsPage(repository: repo),
+            const Size(1200, 1000),
+            false,
+          ),
+          'audio-statistics': (
+            AudioStatisticsPage(repository: repo),
+            const Size(1200, 1000),
+            false,
+          ),
+          'video-statistics': (
+            VideoStatisticsPage(repository: VideoRepository(repo)),
+            const Size(1200, 1000),
+            false,
+          ),
+          'statistics-management': (
+            StatisticsManagementPage(repository: repo),
+            const Size(1200, 1000),
+            false,
+          ),
+          'goals': (
+            GoalSettingsPage(repository: repo),
+            const Size(1200, 1000),
+            false,
+          ),
+          'reading-plan': (
+            ReadingPlanPage(repository: repo, bookId: books[0].bookId),
+            const Size(1200, 1000),
+            false,
+          ),
+          'library-data': (
+            LibraryDataPage(library: service),
+            const Size(1200, 1000),
+            false,
+          ),
+          'storage': (
+            StorageSettingsPage(assets: assets),
+            const Size(1200, 1000),
+            false,
+          ),
+          'playback': (
+            const PlaybackSettingsPage(),
+            const Size(1200, 1000),
+            false,
+          ),
+          'reading-roots': (
+            ReadingRootsPage(assets: assets),
+            const Size(1200, 1000),
+            false,
+          ),
+          'audio-roots': (
+            AudioRootsPage(assets: assets),
+            const Size(1200, 1000),
+            false,
+          ),
+          'hidden-deleted': (
+            HiddenDeletedPage(library: service),
+            const Size(1200, 1000),
+            false,
+          ),
+          'trash': (
+            LibraryTrashPage(service: service),
+            const Size(1200, 1000),
+            false,
+          ),
+          'activity': (
+            ActivityPage(library: service),
+            const Size(1200, 1000),
+            false,
+          ),
+          'series-editor': (
+            LibrarySeriesEditorPage(library: service),
+            const Size(1200, 1000),
+            false,
+          ),
+          'library-notes': (
+            LibraryNotesPage(library: service),
+            const Size(1200, 1000),
+            false,
+          ),
+          'vocabulary': (
+            VocabularyPage(repository: VocabularyRepository(repo)),
+            const Size(1200, 1000),
+            false,
+          ),
+          'statistics-exchange': (
+            StatisticsExchangePage(repository: repo),
+            const Size(1200, 1000),
+            false,
+          ),
+          'error-log': (const ErrorLogPage(), const Size(1200, 1000), false),
+          'import-folder': (
+            ImportFolderPage(assets: assets),
+            const Size(1200, 1000),
+            false,
+          ),
+        };
+        final filter = Platform.environment['PEPEHUB_SCREENSHOT_FILTER'];
+        for (final entry in extras.entries) {
+          if (filter == null || !filter.split(',').contains(entry.key)) {
+            continue;
+          }
+          if (entry.key == 'audio-desktop') {
+            await repo.setMeta('library-section', 'audio');
+          }
+          try {
+            await capture(
+              entry.key,
+              entry.value.$1,
+              size: entry.value.$2,
+              app: entry.value.$3,
+            );
+          } catch (error) {
+            debugPrintSynchronously('Skipped ${entry.key}: $error');
+            await tester.pumpWidget(const SizedBox());
+          }
+        }
       } finally {
         await tester.pumpWidget(const SizedBox());
         await tester.runAsync(
@@ -674,6 +852,6 @@ void main() {
       }
     },
     skip: Platform.environment['PEPEHUB_README_SCREENSHOTS'] != '1',
-    timeout: const Timeout(Duration(minutes: 3)),
+    timeout: const Timeout(Duration(minutes: 10)),
   );
 }

@@ -1,5 +1,39 @@
 import 'package:drift/drift.dart';
 
+/// Schema version 12: growth paths, talents, eggs and the reserve of copies.
+Future<void> upgradePetsSchemaV12(GeneratedDatabase db) async {
+  final columns = {
+    for (final row in await db.customSelect('PRAGMA table_info(pets_v1)').get())
+      row.read<String>('name'),
+  };
+  for (final (name, type) in [
+    ('path', 'TEXT'),
+    ('talents', "TEXT NOT NULL DEFAULT '[]'"),
+  ]) {
+    if (!columns.contains(name)) {
+      await db.customStatement('ALTER TABLE pets_v1 ADD COLUMN $name $type');
+    }
+  }
+  // Eggs in the incubator. Progress = credited minutes of 'time' ledger
+  // entries with id > [start_ledger]; a hatched egg keeps its row.
+  await db.customStatement(
+    'CREATE TABLE IF NOT EXISTS pets_eggs_v1('
+    'id TEXT PRIMARY KEY,'
+    'species TEXT NOT NULL,'
+    'copy INTEGER NOT NULL DEFAULT 0,'
+    'minutes INTEGER NOT NULL,'
+    'start_ledger INTEGER NOT NULL,'
+    'created_at TEXT NOT NULL,'
+    'hatched_at TEXT)',
+  );
+  // Hatched copies waiting to be merged, per species.
+  await db.customStatement(
+    'CREATE TABLE IF NOT EXISTS pets_reserve_v1('
+    'species TEXT PRIMARY KEY,'
+    'count INTEGER NOT NULL CHECK(count>=0))',
+  );
+}
+
 /// Schema version 11: shop inventory, permanent items, and pet looks.
 Future<void> upgradePetsSchemaV11(GeneratedDatabase db) async {
   // Consumables: food and freezes.

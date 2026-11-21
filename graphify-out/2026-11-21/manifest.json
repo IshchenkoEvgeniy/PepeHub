@@ -1,0 +1,4580 @@
+{
+  ".codex/hooks.json": {
+    "mtime": 1795159311.1215656,
+    "seen": 1795159690.6285293,
+    "ast_hash": "5ebef3dd159986e465ab65e4014107ec",
+    "semantic_hash": ""
+  },
+  ".github/workflows/tests.yml": {
+    "mtime": 1794298488.0675871,
+    "seen": 1795159690.6285393,
+    "ast_hash": "c96853f95b7a21ceab94afbab67fd428",
+    "semantic_hash": ""
+  },
+  ".github/workflows/windows-release.yml": {
+    "mtime": 1794259156.6764944,
+    "seen": 1795159690.6285446,
+    "ast_hash": "72d8b567124bb36eb4f8fe2c5d88a30d",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/analysis_options.yaml": {
+    "mtime": 1789150593.661826,
+    "seen": 1795159690.6285467,
+    "ast_hash": "4e7e9048925c3df1fdb9eb340a863bff",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/build.gradle.kts": {
+    "mtime": 1793904321.3842921,
+    "seen": 1795159690.628549,
+    "ast_hash": "a5d4cc265c18f7c9732b3c0538edfde9",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/AudioFolderChannel.kt": {
+    "mtime": 1794833207.6342373,
+    "seen": 1795159690.6285503,
+    "ast_hash": "70f437c37604d625a8e1483bbefd1034",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/AudioPlaybackProvider.kt": {
+    "mtime": 1793904158.9965005,
+    "seen": 1795159690.6285522,
+    "ast_hash": "37754bedb81949459472f2f5d4bb4503",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/BookFileAccess.kt": {
+    "mtime": 1793345616.1892698,
+    "seen": 1795159690.6285532,
+    "ast_hash": "d87f5b5557e7462a9c95fcc9d005aba2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/BookFileChannel.kt": {
+    "mtime": 1794043368.3938794,
+    "seen": 1795159690.6285543,
+    "ast_hash": "1c4f01b32083b723d7c67fa2bc20f0ca",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/BookFileProvider.kt": {
+    "mtime": 1790001939.377528,
+    "seen": 1795159690.6285555,
+    "ast_hash": "81abbb4ad7a1ad20bb260a3a6af4fd03",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/FolderFilesChannel.kt": {
+    "mtime": 1794259121.1413765,
+    "seen": 1795159690.6285565,
+    "ast_hash": "5667dcb64f4f7a24ac7c101ba0c98de3",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/MainActivity.kt": {
+    "mtime": 1794394097.7697234,
+    "seen": 1795159690.6285586,
+    "ast_hash": "3a9688f9bd8bb754edd596fd2648f6c1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/Mp3AudioBounds.kt": {
+    "mtime": 1793904158.9965005,
+    "seen": 1795159690.62856,
+    "ast_hash": "7072fcc27d6091a8bfc8407c9049ab6e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/PdfPreview.kt": {
+    "mtime": 1793445266.77254,
+    "seen": 1795159690.6285615,
+    "ast_hash": "11d521b8f58f7f0f4a112e55f14b2ec3",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/ReaderWindowChannel.kt": {
+    "mtime": 1794394353.6874647,
+    "seen": 1795159690.6285627,
+    "ast_hash": "f48c3ad48ca2978e4097ddf008baf34a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/ReminderChannel.kt": {
+    "mtime": 1793885070.3126602,
+    "seen": 1795159690.6285636,
+    "ast_hash": "7c1440fdb0323cf31faf54f6b4ebb614",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/UpdateChannel.kt": {
+    "mtime": 1794143147.7073147,
+    "seen": 1795159690.628565,
+    "ast_hash": "7701b357b5d2a7d8f3c2a5c978a76651",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/UpdateFileProvider.kt": {
+    "mtime": 1792248309.8178594,
+    "seen": 1795159690.6285663,
+    "ast_hash": "2c8e0bbf92a548afb2fdbeb1e2be7c0f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/VideoFilesChannel.kt": {
+    "mtime": 1794394378.1353786,
+    "seen": 1795159690.6285677,
+    "ast_hash": "6966e3a2f52416b44094b70e6d96ffbb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/VideoWindowChannel.kt": {
+    "mtime": 1794075116.875748,
+    "seen": 1795159690.6285691,
+    "ast_hash": "3ef816c16d6bc72850f917a033752c78",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/test/kotlin/app/pepehub/pepehub/BookFileAccessTest.kt": {
+    "mtime": 1793346955.0214868,
+    "seen": 1795159690.6285706,
+    "ast_hash": "a61c3212c05ce6c3f244d803a5c0a37a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/test/kotlin/app/pepehub/pepehub/FolderFilesHistoryTest.kt": {
+    "mtime": 1794259121.576965,
+    "seen": 1795159690.6285715,
+    "ast_hash": "4410a3aa45c4a48c464b5a9469da2dbe",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/test/kotlin/app/pepehub/pepehub/Mp3AudioBoundsTest.kt": {
+    "mtime": 1793904321.3842921,
+    "seen": 1795159690.6285732,
+    "ast_hash": "dbc2a50a44bba4f4a7e1d6446785edc8",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/test/kotlin/app/pepehub/pepehub/PdfPreviewTest.kt": {
+    "mtime": 1793445389.8554497,
+    "seen": 1795159690.6285744,
+    "ast_hash": "8ee3341079c4a9277154352e0ba94102",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/test/kotlin/app/pepehub/pepehub/ReminderReceiverTest.kt": {
+    "mtime": 1793884891.6245475,
+    "seen": 1795159690.6285758,
+    "ast_hash": "acadb792700c40a8bd668328bdba4fbd",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/test/kotlin/app/pepehub/pepehub/UpdateChannelTest.kt": {
+    "mtime": 1794257280.4002328,
+    "seen": 1795159690.628577,
+    "ast_hash": "5f52475acbe10d160d1defbdfcedb20c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/test/kotlin/app/pepehub/pepehub/VideoFilesChannelTest.kt": {
+    "mtime": 1792604473.4171674,
+    "seen": 1795159690.6285782,
+    "ast_hash": "7b72392df0d515b16ed8e31be99ba0b6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/build.gradle.kts": {
+    "mtime": 1789150593.6838343,
+    "seen": 1795159690.6285796,
+    "ast_hash": "803fe22651fbe96ed401eb0b66a492d1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/settings.gradle.kts": {
+    "mtime": 1789150593.799969,
+    "seen": 1795159690.6285808,
+    "ast_hash": "a34513cd87cef855195771f6a457a218",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/reader-fonts.json": {
+    "mtime": 1793185505.7132964,
+    "seen": 1795159690.628582,
+    "ast_hash": "fde0e87f38564e9b4f23afcba38a502e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/reminders/windows-reminder.ps1": {
+    "mtime": 1793884449.815594,
+    "seen": 1795159690.6285834,
+    "ast_hash": "a1c427fdfbe043cfe0d201d7877484ba",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/integration_test/audio_transport_regressions_test.dart": {
+    "mtime": 1792307084.5577345,
+    "seen": 1795159690.6285846,
+    "ast_hash": "9017dd268b7d9db25601be24afc13cc2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/integration_test/native_audio_test.dart": {
+    "mtime": 1789664522.8510356,
+    "seen": 1795159690.628586,
+    "ast_hash": "4f2d4c64a2425bc5aae216cca98fea13",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/integration_test/native_pdf_test.dart": {
+    "mtime": 1789315429.0488155,
+    "seen": 1795159690.6285872,
+    "ast_hash": "a7c2d347a3a210a2ab034ae9274cea63",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_book_actions.dart": {
+    "mtime": 1794042262.2544534,
+    "seen": 1795159690.6285882,
+    "ast_hash": "793add6bfc1904a764ae94a04ab62fa3",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_catalog.dart": {
+    "mtime": 1794125004.1354947,
+    "seen": 1795159690.6285896,
+    "ast_hash": "1afb35c9a23d14970c33a008d7330a88",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_daily_totals.dart": {
+    "mtime": 1793860493.1993635,
+    "seen": 1795159690.6285906,
+    "ast_hash": "71a35318ea76510a57e933f1c310d5c7",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_folder.dart": {
+    "mtime": 1794662240.2058697,
+    "seen": 1795159690.628592,
+    "ast_hash": "29d066623d25b8f526bcb5fecace4b8b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_import.dart": {
+    "mtime": 1794125004.063701,
+    "seen": 1795159690.6285934,
+    "ast_hash": "da9a561801899db10bbda49c98558dc5",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_journal.dart": {
+    "mtime": 1794297346.1628122,
+    "seen": 1795159690.6285946,
+    "ast_hash": "02dc99692ee1514eee8ea9e15b2e3d25",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_library_repository.dart": {
+    "mtime": 1794226934.9336784,
+    "seen": 1795159690.6285958,
+    "ast_hash": "2ecc3aad10dc7a13f136427339710e32",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_library_sort.dart": {
+    "mtime": 1794125003.9624598,
+    "seen": 1795159690.628597,
+    "ast_hash": "9040935d342667e3684e0995a586436c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_link.dart": {
+    "mtime": 1794045035.6000044,
+    "seen": 1795159690.6285982,
+    "ast_hash": "eecc0d3c9f1cf5cc8c9e7da7974b5ba6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_merge.dart": {
+    "mtime": 1790501086.0798395,
+    "seen": 1795159690.6286004,
+    "ast_hash": "7c43f47baf89772e9ff0fb991991af32",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_resume.dart": {
+    "mtime": 1792245807.169475,
+    "seen": 1795159690.6286016,
+    "ast_hash": "47431d8a056b7716e8cb51ba4f0f8e6e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_roots.dart": {
+    "mtime": 1794142354.0304093,
+    "seen": 1795159690.628603,
+    "ast_hash": "1f31177025fa07934af959dc1f7928d1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_sidecar.dart": {
+    "mtime": 1794125003.9904609,
+    "seen": 1795159690.6286044,
+    "ast_hash": "fb9e75dd28d892b0c2cc5d742c19332e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/audio_statistics_history.dart": {
+    "mtime": 1793884628.4402504,
+    "seen": 1795159690.6286051,
+    "ast_hash": "766ad594e1e04558497b4e159ce8204d",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/book_folder_operations.dart": {
+    "mtime": 1794142354.0478168,
+    "seen": 1795159690.6286068,
+    "ast_hash": "6ae74f291310af2951ebfbce14db8d44",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/book_timeline.dart": {
+    "mtime": 1794125004.0879037,
+    "seen": 1795159690.628608,
+    "ast_hash": "014b67c404046f410c770a58bdf639ee",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/listening_analytics.dart": {
+    "mtime": 1794125004.0147495,
+    "seen": 1795159690.6286092,
+    "ast_hash": "3ac0273deb370696f344408df86bf564",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/listening_worker.dart": {
+    "mtime": 1793440919.7858949,
+    "seen": 1795159690.6286106,
+    "ast_hash": "76e1a36808e99c5cee94bebaa6a976f2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/m4b_chapters.dart": {
+    "mtime": 1794125004.1106627,
+    "seen": 1795159690.6286118,
+    "ast_hash": "c2d58fc02bbdca7a716db099fe8411d3",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/manual_audio_progress.dart": {
+    "mtime": 1793805291.871574,
+    "seen": 1795159690.6286132,
+    "ast_hash": "0855e90f90c591a2f1dc8eb3f5b4766c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/models.dart": {
+    "mtime": 1794160568.470177,
+    "seen": 1795159690.6286142,
+    "ast_hash": "a773b0ea3931d0548d1cb4b6ee12ebe4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/statistics_export.dart": {
+    "mtime": 1794125003.9148688,
+    "seen": 1795159690.6286154,
+    "ast_hash": "22f96b0b937bd02716efa4b5e4994b19",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/data/database.dart": {
+    "mtime": 1795211934.8386858,
+    "seen": 1795213571.8323898,
+    "ast_hash": "71a9600d48dd7d4eb04b1c391f1821eb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/data/database_files.dart": {
+    "mtime": 1795211934.865595,
+    "seen": 1795213571.8323927,
+    "ast_hash": "a859413649f6b3c2a04aac8aac6380c3",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/data/database_schema.dart": {
+    "mtime": 1794830173.4189904,
+    "seen": 1795159690.6286194,
+    "ast_hash": "ce9eb6282fa8e432836c5d224776d53e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/data/library_rows.dart": {
+    "mtime": 1794830173.422537,
+    "seen": 1795159690.6286206,
+    "ast_hash": "0e6d5caa3a8c111e14212819dd948932",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/data/performance_projections.dart": {
+    "mtime": 1793446492.8796563,
+    "seen": 1795159690.6286218,
+    "ast_hash": "97c7b9e0559d6d8ba3d8614f9f8c1786",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/data/repository.dart": {
+    "mtime": 1794239226.2835119,
+    "seen": 1795159690.6286225,
+    "ast_hash": "054f2fb1f852b82ca73d2a9863758e15",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/diagnostics/error_log.dart": {
+    "mtime": 1794160568.756346,
+    "seen": 1795159690.628624,
+    "ast_hash": "e8722535851152b32a7a60db9b20800f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/diagnostics/error_log_page.dart": {
+    "mtime": 1794142355.5518436,
+    "seen": 1795159690.628625,
+    "ast_hash": "3b1607809c6024c4e6eaee09e0edd3fe",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/diagnostics/user_message.dart": {
+    "mtime": 1794142355.5313716,
+    "seen": 1795159690.628626,
+    "ast_hash": "44e5bd135610172e18ec7bf6adfbb515",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/export/markdown.dart": {
+    "mtime": 1789151479.9878807,
+    "seen": 1795159690.6286275,
+    "ast_hash": "1c7456c06d79d1c781d5f5cea4f342ea",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/activity_store.dart": {
+    "mtime": 1794830173.4696376,
+    "seen": 1795159690.6286285,
+    "ast_hash": "ba4d44016d61766495cf804e341abe73",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/automatic_metadata.dart": {
+    "mtime": 1794830173.5621445,
+    "seen": 1795159690.6286294,
+    "ast_hash": "43ff583e0faf104320f0ae3bfd46eef6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/book_calendar_data.dart": {
+    "mtime": 1793884462.3643143,
+    "seen": 1795159690.6286306,
+    "ast_hash": "3c120c51e1146f43ddd58249b4f505ae",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/book_trash.dart": {
+    "mtime": 1794827909.2986195,
+    "seen": 1795159690.6286318,
+    "ast_hash": "ad29e74bfb1f328c6bb4c767cf30dd32",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/cover_sync.dart": {
+    "mtime": 1794239226.302604,
+    "seen": 1795159690.6286328,
+    "ast_hash": "003687dece806da705eb82322833bdec",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/hidden_files.dart": {
+    "mtime": 1794125005.3684025,
+    "seen": 1795159690.6286342,
+    "ast_hash": "755d68144b3004604e145af0c52a3c46",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/journal_days.dart": {
+    "mtime": 1793863637.9220755,
+    "seen": 1795159690.628635,
+    "ast_hash": "eda8fcda885fabe8716650899925d351",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/library_backup.dart": {
+    "mtime": 1794153254.9092677,
+    "seen": 1795159690.6286361,
+    "ast_hash": "f5ef5581baa017e738f95efc83af2cea",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/library_dates.dart": {
+    "mtime": 1793860330.3786497,
+    "seen": 1795159690.628637,
+    "ast_hash": "88d473c1abf45d389f9699eb145900c9",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/library_exchange.dart": {
+    "mtime": 1794259116.982762,
+    "seen": 1795159690.6286385,
+    "ast_hash": "d57a61ddb4870207c5425d0157a35105",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/library_features.dart": {
+    "mtime": 1794259117.0041568,
+    "seen": 1795159690.6286395,
+    "ast_hash": "7efb932ecc6ac127c5e76c9a79abf763",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/library_folder_storage.dart": {
+    "mtime": 1794830173.6130495,
+    "seen": 1795159690.6286402,
+    "ast_hash": "978c15560cc457da59b1e7973eb780a4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/library_mapper.dart": {
+    "mtime": 1794297346.0946984,
+    "seen": 1795159690.6286416,
+    "ast_hash": "d6729fe4b1e646cfd7784d1a07da2366",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/library_repository.dart": {
+    "mtime": 1794829229.793877,
+    "seen": 1795159690.6286426,
+    "ast_hash": "3d9766dd2fc5615f708cbbc0cc949a7b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/library_service.dart": {
+    "mtime": 1794827873.121058,
+    "seen": 1795159690.6286435,
+    "ast_hash": "80524f564282e49d78c5848d0399b317",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/metadata_values.dart": {
+    "mtime": 1794259117.142056,
+    "seen": 1795159690.6286447,
+    "ast_hash": "d90fcf69377b517c863e80a324e6cb7f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/models.dart": {
+    "mtime": 1794298612.2398643,
+    "seen": 1795159690.628646,
+    "ast_hash": "363ad8f15aac68a551faa71d39279aed",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/note_store.dart": {
+    "mtime": 1794298612.2558668,
+    "seen": 1795159690.628647,
+    "ast_hash": "0d7835ec99a907cf33d8faae1e412175",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/personal_library.dart": {
+    "mtime": 1794298612.2583702,
+    "seen": 1795159690.6286483,
+    "ast_hash": "c5233d36aeee2c11f93094c1221a090c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/purged_books.dart": {
+    "mtime": 1794256018.3128386,
+    "seen": 1795159690.6286492,
+    "ast_hash": "27a8630878847ab6448113c5a4cda1c9",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/reading_insights.dart": {
+    "mtime": 1794259117.2438142,
+    "seen": 1795159690.6286519,
+    "ast_hash": "7aa7ae660461ca2fa635ac86f1ea1311",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/library/series_draft.dart": {
+    "mtime": 1794259117.265007,
+    "seen": 1795159690.6286528,
+    "ast_hash": "62db812b6836d5ce3df416351fcae758",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/main.dart": {
+    "mtime": 1794330405.8383808,
+    "seen": 1795159690.6286538,
+    "ast_hash": "c1b78ee6f6ce984f6c140a709665af87",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/android_book_files.dart": {
+    "mtime": 1794125004.9796789,
+    "seen": 1795159690.628655,
+    "ast_hash": "47eec8374a5baa04803e9c7500cb2fe7",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/asset_store.dart": {
+    "mtime": 1794259117.3101044,
+    "seen": 1795159690.6286561,
+    "ast_hash": "381b25141a09e49f36e66145d2775474",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/audio_artwork.dart": {
+    "mtime": 1794125005.0497909,
+    "seen": 1795159690.6286569,
+    "ast_hash": "6d7d340594e714898b422982ba1b1e3e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/audio_controller.dart": {
+    "mtime": 1794160569.4326432,
+    "seen": 1795159690.6286583,
+    "ast_hash": "2512ea946fbc83bd38336fcfa564b2fb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/audio_focus.dart": {
+    "mtime": 1792922287.539832,
+    "seen": 1795159690.6286592,
+    "ast_hash": "c01caa1831669ef0b9fefaf357ba53cf",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/audio_player_scope.dart": {
+    "mtime": 1792071083.3952417,
+    "seen": 1795159690.6286602,
+    "ast_hash": "c7bb133ee84f671d62bba2550d08636e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/audio_source.dart": {
+    "mtime": 1793904386.5945368,
+    "seen": 1795159690.6286614,
+    "ast_hash": "3ad8d0b31d94faecd5145d9ed7c56793",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/embedded_artwork.dart": {
+    "mtime": 1794125005.0270913,
+    "seen": 1795159690.6286871,
+    "ast_hash": "43842f57971e5114c493a42f26babcf4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/folder_scan_progress.dart": {
+    "mtime": 1794122263.7245183,
+    "seen": 1795159690.6286902,
+    "ast_hash": "43886da72862e5c8fe712f78e34fb229",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/import_folder.dart": {
+    "mtime": 1794259117.411984,
+    "seen": 1795159690.6286917,
+    "ast_hash": "36870ad9b4fbe32960cb7a826452e147",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/library_folder_preference.dart": {
+    "mtime": 1792071083.3967464,
+    "seen": 1795159690.6286936,
+    "ast_hash": "e74cf7229036bbc000d875dc64ee3724",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/library_recovery.dart": {
+    "mtime": 1794833196.212816,
+    "seen": 1795159690.6286948,
+    "ast_hash": "f0642f2529c73e36786971b09af6db42",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/listening_clock.dart": {
+    "mtime": 1789239016.9841154,
+    "seen": 1795159690.6286957,
+    "ast_hash": "346cb16b4182264449dcebe25a6a8d9b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/shared_media_handler.dart": {
+    "mtime": 1792743497.10906,
+    "seen": 1795159690.6286972,
+    "ast_hash": "a4d537c3397da8fdb7b12397216da85e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/storage_usage.dart": {
+    "mtime": 1794171948.6085994,
+    "seen": 1795159690.6286983,
+    "ast_hash": "88337b347607e99671666cdc06ce97b5",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/support_files.dart": {
+    "mtime": 1794833216.2011433,
+    "seen": 1795159690.6286993,
+    "ast_hash": "de48ca9c6901f2193ec2d7c55f79c14e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/media/verified_stream_copy.dart": {
+    "mtime": 1793446304.1400113,
+    "seen": 1795159690.6287005,
+    "ast_hash": "a70f4a06c7c2be4aa3af657eff073e8c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/music/music_artwork.dart": {
+    "mtime": 1792743496.740604,
+    "seen": 1795159690.6287017,
+    "ast_hash": "6855b8a4dcf9a542eafc6a193177ff2f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/music/music_metadata.dart": {
+    "mtime": 1792743496.7425196,
+    "seen": 1795159690.6287029,
+    "ast_hash": "5a92ae598afc0310b59999b8ea274252",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/music/music_player_view.dart": {
+    "mtime": 1793011951.5095012,
+    "seen": 1795159690.6287043,
+    "ast_hash": "b778282e18dca8c67e18d7805dfde9be",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/music/music_statistics_page.dart": {
+    "mtime": 1794142354.1668687,
+    "seen": 1795159690.6287053,
+    "ast_hash": "f4788369806b99c98f0bf47d6d99d86a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/notifications/reminder_scheduler.dart": {
+    "mtime": 1793884649.4224646,
+    "seen": 1795159690.6287065,
+    "ast_hash": "b1aab85c93938ad1e8b9f653d4244210",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/book_archive.dart": {
+    "mtime": 1789314928.9336002,
+    "seen": 1795159690.6287076,
+    "ast_hash": "aa0f6180a4a379c1f0942697ac33c6bd",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/book_formats.dart": {
+    "mtime": 1793104893.728042,
+    "seen": 1795159690.6287088,
+    "ast_hash": "d3e636009982c8e8956cea42ac321913",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/book_image_export.dart": {
+    "mtime": 1794670790.2826514,
+    "seen": 1795159690.6287098,
+    "ast_hash": "cf86c51612c5370d9e29a8088d63c3f2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/book_markup.dart": {
+    "mtime": 1794125005.5381863,
+    "seen": 1795159690.6287112,
+    "ast_hash": "4d4ea736944a0d7c26cd7462301ee0da",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/epub.dart": {
+    "mtime": 1794125005.5649078,
+    "seen": 1795159690.6287122,
+    "ast_hash": "ffb9f341209c7e8d9ade479de97cd1bd",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/image_size.dart": {
+    "mtime": 1794330405.8443835,
+    "seen": 1795159690.6287131,
+    "ast_hash": "e74423f188dc3781535dde323b16e404",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/pdf_file_source.dart": {
+    "mtime": 1794125005.3948815,
+    "seen": 1795159690.6287146,
+    "ast_hash": "1674f5214c85168ee0beadecb89c9e66",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/pdf_image_regions.dart": {
+    "mtime": 1792949665.8543015,
+    "seen": 1795159690.6287155,
+    "ast_hash": "07444e8181e0b1196404b4e79382a987",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/pdf_page_tools.dart": {
+    "mtime": 1793183370.287632,
+    "seen": 1795159690.6287167,
+    "ast_hash": "bec379a0efb8a45429ecbb3124d09793",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/pdf_reader_page.dart": {
+    "mtime": 1794662104.3300972,
+    "seen": 1795159690.6287181,
+    "ast_hash": "0ff77b7c6114eed919f94fbe00019732",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/pdf_search_page.dart": {
+    "mtime": 1794142354.2038689,
+    "seen": 1795159690.6287193,
+    "ast_hash": "d8a47a073ddf7a734629eb607bc24a03",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/pdf_support.dart": {
+    "mtime": 1794125005.5889788,
+    "seen": 1795159690.6287205,
+    "ast_hash": "fd5d851e5f9da7562687679bf35d75a3",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/pdf_view_limits.dart": {
+    "mtime": 1794125005.6136386,
+    "seen": 1795159690.628722,
+    "ast_hash": "1cee1e418fb22add980b52dcc843f049",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_appearance.dart": {
+    "mtime": 1794394142.8093643,
+    "seen": 1795159690.628723,
+    "ast_hash": "16fd8ebe0b3985242007994db224c5ed",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_bookmarks.dart": {
+    "mtime": 1791964102.7815526,
+    "seen": 1795159690.6287243,
+    "ast_hash": "3401128c8eb24faa90dbf31ca6e6ced4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_bookmarks_page.dart": {
+    "mtime": 1794330405.864201,
+    "seen": 1795159690.6287253,
+    "ast_hash": "696f2213c457c1f447771b41f8a5d6a4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_contents.dart": {
+    "mtime": 1792945829.5088348,
+    "seen": 1795159690.6287262,
+    "ast_hash": "0d888897c4cf2a23443c5eb116533070",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_controls.dart": {
+    "mtime": 1794142354.2338717,
+    "seen": 1795159690.6287272,
+    "ast_hash": "7c724464eb48e4b28a7780c3c70ffff3",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_fonts.dart": {
+    "mtime": 1793185665.2814991,
+    "seen": 1795159690.6287284,
+    "ast_hash": "1a0d195cee78b4ea975d9eea801e19eb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_keep_awake.dart": {
+    "mtime": 1794075117.277591,
+    "seen": 1795159690.6287296,
+    "ast_hash": "05aab0ebf902c0182dc4a2fa7b40681f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_layout.dart": {
+    "mtime": 1794394142.7973158,
+    "seen": 1795159690.6287305,
+    "ast_hash": "6ce2e547a36dccaa3d8061126a2ed294",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_layout_frame.dart": {
+    "mtime": 1793126937.9341528,
+    "seen": 1795159690.628732,
+    "ast_hash": "fa657d3cc940ff3181879ff05dc387b7",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_page.dart": {
+    "mtime": 1794669546.7150867,
+    "seen": 1795159690.628733,
+    "ast_hash": "69b97ca47e87301d699897b34d1e4355",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_progress_panel.dart": {
+    "mtime": 1794394313.6775842,
+    "seen": 1795159690.6287339,
+    "ast_hash": "3fb8bba07357735b6b27b4da1a77d4b2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_ranges.dart": {
+    "mtime": 1792933092.7366886,
+    "seen": 1795159690.628735,
+    "ast_hash": "d6edf1b84d8509213377e2a93c6089ca",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_rebase.dart": {
+    "mtime": 1793449086.2642176,
+    "seen": 1795159690.6287365,
+    "ast_hash": "8051de73d73a122d7d6e9a32bec29bfe",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_resources.dart": {
+    "mtime": 1794670790.3077135,
+    "seen": 1795159690.6287374,
+    "ast_hash": "fcf0f7657d53e8f31d05f1da8f31d1c1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_routes.dart": {
+    "mtime": 1790001334.6562326,
+    "seen": 1795159690.6287386,
+    "ast_hash": "394bab5090ca6f37e1032e5e54d7fabc",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_search.dart": {
+    "mtime": 1791962554.3133893,
+    "seen": 1795159690.6287396,
+    "ast_hash": "bea92218c717d7c7ae89b61bead2b16e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_selectable_paragraph.dart": {
+    "mtime": 1792942910.304394,
+    "seen": 1795159690.6287408,
+    "ast_hash": "5fe618db759016e5d05b532d82959a05",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_selection_toolbar.dart": {
+    "mtime": 1794662111.7388034,
+    "seen": 1795159690.628742,
+    "ast_hash": "b128b00b0054bafefc4944d2d76bb550",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_shortcuts.dart": {
+    "mtime": 1794394077.9080584,
+    "seen": 1795159690.628743,
+    "ast_hash": "bdf133ecdb5429c1c78a352477b23ede",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_status_line.dart": {
+    "mtime": 1794669418.4975464,
+    "seen": 1795159690.6287441,
+    "ast_hash": "c6301c3fc5e29df5993df97bf774400a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_viewport.dart": {
+    "mtime": 1794669387.4366071,
+    "seen": 1795159690.6287453,
+    "ast_hash": "9108c012632867a07ea85e9e6ab20749",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reader_window.dart": {
+    "mtime": 1794394353.6990993,
+    "seen": 1795159690.6287463,
+    "ast_hash": "4ce3d11441657a9cb3c66b3d999decfb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_activity.dart": {
+    "mtime": 1794125005.6388292,
+    "seen": 1795159690.6287472,
+    "ast_hash": "dbac3e69dfd00919930004a7ddbaf587",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_book_actions.dart": {
+    "mtime": 1794042020.8211837,
+    "seen": 1795159690.6287482,
+    "ast_hash": "5755590c6d9ad65535225eb5695ed70e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_book_visibility.dart": {
+    "mtime": 1792332589.9732585,
+    "seen": 1795159690.6287496,
+    "ast_hash": "a495ca4b0aae1734201473ac42196208",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_collections.dart": {
+    "mtime": 1794142354.2937627,
+    "seen": 1795159690.6287506,
+    "ast_hash": "feacc984f944baeb0e30841882b89313",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_daily_totals.dart": {
+    "mtime": 1795189146.4784262,
+    "seen": 1795189708.44737,
+    "ast_hash": "d1a7b6f4a64e633075c883823199a90f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_library.dart": {
+    "mtime": 1794142354.3107681,
+    "seen": 1795159690.6287527,
+    "ast_hash": "c2ee2a8e3642c5c1fd3825de57b1f229",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_log.dart": {
+    "mtime": 1794833291.7516212,
+    "seen": 1795159690.628754,
+    "ast_hash": "58dd0c08351d0b78bdb78d9262bc1fd1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_notes_export.dart": {
+    "mtime": 1789887128.127044,
+    "seen": 1795159690.6287549,
+    "ast_hash": "460d1fd844c7505ed820dbfb7144967a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_notes_page.dart": {
+    "mtime": 1794239226.4081082,
+    "seen": 1795159690.628756,
+    "ast_hash": "e09823abee13857cba7df8b17813a004",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_plan.dart": {
+    "mtime": 1793884462.356508,
+    "seen": 1795159690.628757,
+    "ast_hash": "d1577bb13c24c2ac6f09e297d0659cb0",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_roots.dart": {
+    "mtime": 1794662372.3447618,
+    "seen": 1795159690.6287582,
+    "ast_hash": "f5ed87d90aba85705f1ef68b1345cc9f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_shelf_sources.dart": {
+    "mtime": 1794239226.4170125,
+    "seen": 1795159690.6287594,
+    "ast_hash": "6b3867b11b3ec1ea6cf69cec7943749e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_statistics_data.dart": {
+    "mtime": 1793884244.07477,
+    "seen": 1795159690.6287603,
+    "ast_hash": "77e8b6e5136b902e53a4255b19e0de1a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/reading_statistics_history.dart": {
+    "mtime": 1793884628.45376,
+    "seen": 1795159690.6287615,
+    "ast_hash": "07ef22faa2c2639df8d5737711f3996e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/rtf.dart": {
+    "mtime": 1793445300.2613354,
+    "seen": 1795159690.6287627,
+    "ast_hash": "ef23f76a644c75ddd2f40f78c10708c4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/statistics_history.dart": {
+    "mtime": 1793861051.5511742,
+    "seen": 1795159690.6287637,
+    "ast_hash": "a86c8ee3e4aed7e1a958d50d5937d4c2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/reader/text_book.dart": {
+    "mtime": 1794125005.4243126,
+    "seen": 1795159690.6287646,
+    "ast_hash": "97d368c0affe1fb5b1fd549dc3aaecd2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/recommendations/book_catalog.dart": {
+    "mtime": 1791915697.2290502,
+    "seen": 1795159690.628766,
+    "ast_hash": "3ccf18feb887a412f172d3cc43c0cde8",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/recommendations/recommendation_store.dart": {
+    "mtime": 1794297346.1788113,
+    "seen": 1795159690.628767,
+    "ast_hash": "587999f53fd5202a6294428bc33e15c1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/statistics/activity_streak.dart": {
+    "mtime": 1793860330.381657,
+    "seen": 1795159690.628768,
+    "ast_hash": "fb6330e6ded1af7abbfbfba9f35ef7a8",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/statistics/annual_summary.dart": {
+    "mtime": 1794171948.899747,
+    "seen": 1795159690.628769,
+    "ast_hash": "bbb0766ef53237a4237eb5247e641e29",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/statistics/portable_history.dart": {
+    "mtime": 1793885338.0634303,
+    "seen": 1795159690.6287704,
+    "ast_hash": "940e9736b613f0af8861b34a5fbbbbdc",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/statistics/statistics_exchange.dart": {
+    "mtime": 1793885554.4776337,
+    "seen": 1795159690.6287715,
+    "ast_hash": "d58cab2c6c038d297168419cfecf0f9c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/statistics/statistics_period.dart": {
+    "mtime": 1793861339.7265818,
+    "seen": 1795159690.6287725,
+    "ast_hash": "1455f87c6fdb7407fd00fa05ebda1549",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/statistics/year_progress.dart": {
+    "mtime": 1794167401.994974,
+    "seen": 1795159690.628774,
+    "ast_hash": "c2a1662997e9d81815d8484b6ed52016",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/storage/folder_files.dart": {
+    "mtime": 1794298613.064437,
+    "seen": 1795159690.6287773,
+    "ast_hash": "282374306cb8f6cc1bce8972e02e4d6f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/activity_page.dart": {
+    "mtime": 1794330405.931913,
+    "seen": 1795159690.6287785,
+    "ast_hash": "31543cfb4efeada1a277051f022f66e5",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/annual_book_statistics.dart": {
+    "mtime": 1794259118.2098212,
+    "seen": 1795159690.62878,
+    "ast_hash": "6ac57bb216d91926146458f82dab2163",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/app_preferences.dart": {
+    "mtime": 1795191214.3806162,
+    "seen": 1795191785.1031516,
+    "ast_hash": "9ceb980058da4d5ee79a837e47fa0029",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/app_theme.dart": {
+    "mtime": 1794160570.4350538,
+    "seen": 1795159690.6287818,
+    "ast_hash": "f1ac9ab3a131def18c20d9485beb6996",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/audio_catalog_dialog.dart": {
+    "mtime": 1794142354.5350788,
+    "seen": 1795159690.628783,
+    "ast_hash": "71a0b45360f599708db2ea564e15f6ff",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/audio_cover.dart": {
+    "mtime": 1794125004.7037191,
+    "seen": 1795159690.6287844,
+    "ast_hash": "673c08266496d559b63290f271e1c18a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/audio_import_dialog.dart": {
+    "mtime": 1794142354.5502114,
+    "seen": 1795159690.6287854,
+    "ast_hash": "92976f51eddd90d0403921b375f056b6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/audio_mini_player.dart": {
+    "mtime": 1793440553.6611142,
+    "seen": 1795159690.6287868,
+    "ast_hash": "5303389bfb4453ccc37d087ba828b301",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/audio_notes_page.dart": {
+    "mtime": 1794239226.462478,
+    "seen": 1795159690.6287878,
+    "ast_hash": "3ca04fea8224e088ccc90176e73bf0b2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/audio_page.dart": {
+    "mtime": 1794330405.9459183,
+    "seen": 1795159690.6287887,
+    "ast_hash": "f719451c882f53b15a4c3b3c163fc4ae",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/audio_recovery_page.dart": {
+    "mtime": 1794142354.6009023,
+    "seen": 1795159690.62879,
+    "ast_hash": "e2d694cda52daea1148530fd5d5f6b83",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/audio_rewind_options.dart": {
+    "mtime": 1792246159.2909222,
+    "seen": 1795159690.6287909,
+    "ast_hash": "cd9667670516b12d6019eb7641595347",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/audio_roots_page.dart": {
+    "mtime": 1794142354.6200018,
+    "seen": 1795159690.628792,
+    "ast_hash": "f1e2fd4ccd16fc0bf48a413f1b2b05b6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/audio_statistics_page.dart": {
+    "mtime": 1794297346.1272676,
+    "seen": 1795159690.628793,
+    "ast_hash": "c803e7a0e54797312f7540b13747ddc6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/book_action_menu.dart": {
+    "mtime": 1794125004.3286374,
+    "seen": 1795159690.6287942,
+    "ast_hash": "ed1664bc06e5c3ace05f45f78c72804b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/book_activity_summary.dart": {
+    "mtime": 1793860826.2523682,
+    "seen": 1795159690.6287954,
+    "ast_hash": "b48b67cf5eb2c1dc1b158c6b14ffd98f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/book_calendar.dart": {
+    "mtime": 1794259118.3437624,
+    "seen": 1795159690.6287963,
+    "ast_hash": "9a96342cc9ecd641cf23977129adba2f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/book_delete_dialog.dart": {
+    "mtime": 1794330448.4696617,
+    "seen": 1795159690.6287978,
+    "ast_hash": "f2163a02b49afae93e702aa14b8f10ae",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/book_folder_dialog.dart": {
+    "mtime": 1794142354.656352,
+    "seen": 1795159690.6287987,
+    "ast_hash": "526629bb09df5d1969ca722085151beb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/book_picker.dart": {
+    "mtime": 1793526797.1412373,
+    "seen": 1795159690.6287997,
+    "ast_hash": "676d4cdc050f38209d1ee30d0f2be9ba",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/catalog_search.dart": {
+    "mtime": 1793872999.355987,
+    "seen": 1795159690.6288009,
+    "ast_hash": "816868ff12cfaa36facf764d138c8bb0",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/dialogs.dart": {
+    "mtime": 1794239226.4931502,
+    "seen": 1795159690.6288018,
+    "ast_hash": "ce9668b27b92523bd64799f2f1451a4e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/folder_scan_panel.dart": {
+    "mtime": 1794121956.9911344,
+    "seen": 1795159690.6288028,
+    "ast_hash": "f54daf1df34691735f42fc047e0b5bc4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/folder_scan_summary.dart": {
+    "mtime": 1794125004.281811,
+    "seen": 1795159690.6288042,
+    "ast_hash": "fc4d1bdff62d7d58b5e43dcdf1d8cd65",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/goal_reminders.dart": {
+    "mtime": 1794160571.0862944,
+    "seen": 1795159690.6288052,
+    "ast_hash": "3db458885d64561be4ab6957db8d8581",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/goal_settings_page.dart": {
+    "mtime": 1794160571.3908775,
+    "seen": 1795159690.6288059,
+    "ast_hash": "b39f9ceef4bd0f07ae8e6cf14c5f52ba",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/hidden_deleted_page.dart": {
+    "mtime": 1794239226.5031521,
+    "seen": 1795159690.628807,
+    "ast_hash": "b730136144b76f3e65364380a5df8d62",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/hotkeys_settings.dart": {
+    "mtime": 1794160577.1516683,
+    "seen": 1795159690.6288083,
+    "ast_hash": "36ebe6b768c76444a3e2320399ff5d3f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/import_folder_page.dart": {
+    "mtime": 1794833272.328094,
+    "seen": 1795159690.6288092,
+    "ast_hash": "cdded4d31e53328d80c0e9ea9e7cec40",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/interface_settings.dart": {
+    "mtime": 1795191226.8424053,
+    "seen": 1795191785.1031919,
+    "ast_hash": "930a01a08687b4f9b67cbb4e6adf74cc",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_archive_page.dart": {
+    "mtime": 1794259118.688318,
+    "seen": 1795159690.6288116,
+    "ast_hash": "d91d1b344b382ef4302834a53abf5341",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_audio_time_sheet.dart": {
+    "mtime": 1794142354.7495086,
+    "seen": 1795159690.6288126,
+    "ast_hash": "4a49008e985d7b0d00e47b50be74dcca",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_batch_actions.dart": {
+    "mtime": 1794253797.3949463,
+    "seen": 1795159690.6288137,
+    "ast_hash": "a3c4966f115ce5d7a00600671e9ac936",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_card_actions.dart": {
+    "mtime": 1794330405.961915,
+    "seen": 1795159690.628815,
+    "ast_hash": "49a13d989c765d2cb265370b4dc67368",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_card_link.dart": {
+    "mtime": 1794168916.9283385,
+    "seen": 1795159690.628816,
+    "ast_hash": "91d95832c484cb2fcb4d63fc8ea60858",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_cover_search.dart": {
+    "mtime": 1794259118.4987495,
+    "seen": 1795159690.6288168,
+    "ast_hash": "eca1f5c3b918a89330e04b65d7b91ced",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_data_page.dart": {
+    "mtime": 1794259118.5200024,
+    "seen": 1795159690.628818,
+    "ast_hash": "f43a649e78f397ffec1fd370c79c93ec",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_duration_input.dart": {
+    "mtime": 1793256740.8791535,
+    "seen": 1795159690.628819,
+    "ast_hash": "adf22d833043d1d3fec5034d0d2ea161",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_groups_page.dart": {
+    "mtime": 1794259118.5467303,
+    "seen": 1795159690.6288202,
+    "ast_hash": "40b3dc112853a514b1007a494584b2e0",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_link_review.dart": {
+    "mtime": 1794259118.5608625,
+    "seen": 1795159690.6288211,
+    "ast_hash": "40eb3ebeaf50e7556583a00203f94eb0",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_metadata_editor.dart": {
+    "mtime": 1794259118.712047,
+    "seen": 1795159690.6288223,
+    "ast_hash": "89f320695d131d33e3ad3df809225958",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_notes_page.dart": {
+    "mtime": 1794259118.7298942,
+    "seen": 1795159690.6288233,
+    "ast_hash": "2194451c2a5af0c81b18651a1486ae27",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_page.dart": {
+    "mtime": 1795191240.9349785,
+    "seen": 1795191785.1032088,
+    "ast_hash": "ad79ee26cc5d259a35ad4d06ee584781",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_page_batch.dart": {
+    "mtime": 1794662325.8387413,
+    "seen": 1795159690.6288257,
+    "ast_hash": "349d7649936a5e2d89d542fca3605b32",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_page_book_menu.dart": {
+    "mtime": 1794330406.0008504,
+    "seen": 1795159690.6288266,
+    "ast_hash": "d08f94699ee069920888b70112767574",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_page_filters.dart": {
+    "mtime": 1794662619.5277884,
+    "seen": 1795159690.6288276,
+    "ast_hash": "c97dccf348f01b1e7d96cb1dded33753",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_page_library_actions.dart": {
+    "mtime": 1794298461.7491834,
+    "seen": 1795159690.6288288,
+    "ast_hash": "4c794221d32e3f2d71938735a7943b4a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_page_series.dart": {
+    "mtime": 1794662641.6053095,
+    "seen": 1795159690.6288297,
+    "ast_hash": "f88268963cb6387906d9f9bc80090966",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_series_editor_page.dart": {
+    "mtime": 1794259118.6218376,
+    "seen": 1795159690.6288307,
+    "ast_hash": "a6b3ef6685db21864aaa116ba298fde1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_trash_page.dart": {
+    "mtime": 1794125004.2576585,
+    "seen": 1795159690.6288316,
+    "ast_hash": "1261105940d92b8c79bb937a3832f0d4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/library_work_page.dart": {
+    "mtime": 1794298613.860464,
+    "seen": 1795159690.6288328,
+    "ast_hash": "59d63a6605455af5768f7faa3a66f245",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/metadata_input.dart": {
+    "mtime": 1793785017.9341033,
+    "seen": 1795159690.628834,
+    "ast_hash": "eada8e1146ee51d55fbca2d5c1b61099",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/pepe_widgets.dart": {
+    "mtime": 1794080709.76439,
+    "seen": 1795159690.6288354,
+    "ast_hash": "dc2002cd1da7dd51efe0f2f2f73b3362",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/playback_settings_page.dart": {
+    "mtime": 1794160572.6033597,
+    "seen": 1795159690.6288364,
+    "ast_hash": "df6838393ae3945bb00b8fdc78c0052a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/reading_book_page.dart": {
+    "mtime": 1794142354.9618902,
+    "seen": 1795159690.6288373,
+    "ast_hash": "20e43797b280eca78afecc45f1c03f8a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/reading_hidden_books_page.dart": {
+    "mtime": 1794125004.305437,
+    "seen": 1795159690.6288383,
+    "ast_hash": "a75c1bb050ce6d1eb0c381da7543edcf",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/reading_plan_page.dart": {
+    "mtime": 1794330406.0118499,
+    "seen": 1795159690.6288395,
+    "ast_hash": "e16225a975df66c6766d372b4734b79d",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/reading_roots_page.dart": {
+    "mtime": 1794215772.3852708,
+    "seen": 1795159690.6288404,
+    "ast_hash": "84c5dc1f0869ca1761291529d0555b14",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/reading_statistics_page.dart": {
+    "mtime": 1794297346.1447828,
+    "seen": 1795159690.6288416,
+    "ast_hash": "0af0ad1d68b07242590aa6d276f74987",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/recommendations_page.dart": {
+    "mtime": 1794253798.4655716,
+    "seen": 1795159690.628843,
+    "ast_hash": "a31b80089c25a6b2aa89680c7852cdf5",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/settings_components.dart": {
+    "mtime": 1794160572.9332628,
+    "seen": 1795159690.628844,
+    "ast_hash": "32186d20a42aebb0b9f307fbfba08673",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/settings_page.dart": {
+    "mtime": 1795191313.703963,
+    "seen": 1795191785.1032343,
+    "ast_hash": "ece4d412f2757d9de475e952900c8760",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/shelf_book_details.dart": {
+    "mtime": 1794075117.3016467,
+    "seen": 1795159690.6288466,
+    "ast_hash": "8d8c1a0286bd274ead2f54b09a36219a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/shelf_components.dart": {
+    "mtime": 1795191206.8608181,
+    "seen": 1795191785.1032367,
+    "ast_hash": "e0fd713e747a36db1a9c225a6582cdab",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/statistics_exchange_page.dart": {
+    "mtime": 1794142355.0780659,
+    "seen": 1795159690.6288488,
+    "ast_hash": "35b6ab4965d7f0cf09787763a6f0bfa4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/statistics_hub_page.dart": {
+    "mtime": 1794253799.047019,
+    "seen": 1795159690.6288502,
+    "ast_hash": "9861695317d9aba050f06ba5cb9b38ec",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/statistics_management_page.dart": {
+    "mtime": 1794239226.631164,
+    "seen": 1795159690.6288512,
+    "ast_hash": "7154825444ea3682354a2d5f00489e92",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/statistics_range.dart": {
+    "mtime": 1789750210.1455176,
+    "seen": 1795159690.6288521,
+    "ast_hash": "cd68f3535a3762f9146128a13ae3fd5c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/storage_settings_page.dart": {
+    "mtime": 1794160573.8753617,
+    "seen": 1795159690.6288536,
+    "ast_hash": "9450e4a1bb19434db810795be5f9905f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/updates/update_delta.dart": {
+    "mtime": 1793256740.8937764,
+    "seen": 1795159690.6288545,
+    "ast_hash": "b66577f2d6b07d19a830ed77b997f4ea",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/updates/update_installer.dart": {
+    "mtime": 1794309185.412704,
+    "seen": 1795159690.6288557,
+    "ast_hash": "744973af1e950b0fc9aab21cb14d0f50",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/updates/update_installer_app.dart": {
+    "mtime": 1794308950.921508,
+    "seen": 1795159690.628857,
+    "ast_hash": "2e65f193bdece7de77f18eb230b49370",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/updates/update_manifest.dart": {
+    "mtime": 1793256740.8937764,
+    "seen": 1795159690.6288576,
+    "ast_hash": "ec6924028d16767fb9526803390808c7",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/updates/update_package.dart": {
+    "mtime": 1792249039.6109152,
+    "seen": 1795159690.6288588,
+    "ast_hash": "479938de6dbcc472c2cab191ed751387",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/updates/update_page.dart": {
+    "mtime": 1794160574.20238,
+    "seen": 1795159690.62886,
+    "ast_hash": "20778e90ebea808ac2de6a8fd137d088",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/updates/update_service.dart": {
+    "mtime": 1794308943.9150326,
+    "seen": 1795159690.6288614,
+    "ast_hash": "d630a55e212f7a8f6be80dd01a1c8a4a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/updates/update_trust.dart": {
+    "mtime": 1792248349.713907,
+    "seen": 1795159690.6288624,
+    "ast_hash": "b3bf6016b6f978c164616118eec5afaa",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/media_formats.dart": {
+    "mtime": 1792604637.3806665,
+    "seen": 1795159690.6288636,
+    "ast_hash": "d5e349d177b56fc0524902c4d9a999b5",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/models.dart": {
+    "mtime": 1792743629.5566149,
+    "seen": 1795159690.6288645,
+    "ast_hash": "53f1ab31b704e50d5a8c026f77d30733",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_activity.dart": {
+    "mtime": 1791981594.1276958,
+    "seen": 1795159690.6288657,
+    "ast_hash": "63f40feca04bab78dc5b95bf9136b321",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_activity_calendar.dart": {
+    "mtime": 1791980885.6822438,
+    "seen": 1795159690.628867,
+    "ast_hash": "4642886e0cca0f16b94c2cbe7d50f008",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_annotation_editor.dart": {
+    "mtime": 1794142355.1864386,
+    "seen": 1795159690.628868,
+    "ast_hash": "27e0e42d199b2905e80fc9ca8e7b4a50",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_annotations.dart": {
+    "mtime": 1791983688.3054874,
+    "seen": 1795159690.628869,
+    "ast_hash": "4835a2db229c87de3799d607d0aee504",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_annotations_panel.dart": {
+    "mtime": 1794330406.02085,
+    "seen": 1795159690.6288705,
+    "ast_hash": "646fc91b816fb17347885a9d1faeaefa",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_caption_settings_dialog.dart": {
+    "mtime": 1794142355.2185285,
+    "seen": 1795159690.6288714,
+    "ast_hash": "91f31b59432f2f01bc80ff90a90602ed",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_captions_controller.dart": {
+    "mtime": 1794142355.2335317,
+    "seen": 1795159690.6288724,
+    "ast_hash": "9f80ab58b78d83d819deb4f941c89d7a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_compact_controls.dart": {
+    "mtime": 1793011951.5095012,
+    "seen": 1795159690.6288738,
+    "ast_hash": "045cade7c817a9978ee08be161060809",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_controller.dart": {
+    "mtime": 1794142355.2515533,
+    "seen": 1795159690.6288748,
+    "ast_hash": "8770e50ba4a0462bbdb950cffae61d7b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_course_editor.dart": {
+    "mtime": 1794142355.2675383,
+    "seen": 1795159690.6288757,
+    "ast_hash": "4fd4bb7b9d93a8c26217578e6af2657e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_engine.dart": {
+    "mtime": 1792745459.4732342,
+    "seen": 1795159690.6288774,
+    "ast_hash": "3c339cca4c3231c5ba9650ac487911f6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_fingerprint.dart": {
+    "mtime": 1792003885.3600545,
+    "seen": 1795159690.6288784,
+    "ast_hash": "675ca96707791619593c7b1f77fecc33",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_folder_dialog.dart": {
+    "mtime": 1794142355.2835388,
+    "seen": 1795159690.6288793,
+    "ast_hash": "c53728d3ae91f32f54c41c5934618b37",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_folder_sync.dart": {
+    "mtime": 1792003885.361055,
+    "seen": 1795159690.6288807,
+    "ast_hash": "436f9b22887787d135fa446d6da2e867",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_frame_export.dart": {
+    "mtime": 1792003885.361055,
+    "seen": 1795159690.628882,
+    "ast_hash": "24362a9d1c4703cb10371e0b5b6937cf",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_fullscreen.dart": {
+    "mtime": 1792003885.3620555,
+    "seen": 1795159690.628883,
+    "ast_hash": "b337736c141d24ab3e6c4425498af469",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_import.dart": {
+    "mtime": 1792604203.0542598,
+    "seen": 1795159690.6288843,
+    "ast_hash": "bb206dd6e6763ece163f2eea3c0b0fde",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_library_page.dart": {
+    "mtime": 1794330406.0351107,
+    "seen": 1795159690.628885,
+    "ast_hash": "8812796ee0af6f9eb0071ea328083148",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_mini_player.dart": {
+    "mtime": 1794142355.3205447,
+    "seen": 1795159690.6288862,
+    "ast_hash": "e3e3e0359968431a80790d979e6ea065",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_player_page.dart": {
+    "mtime": 1794142355.3420649,
+    "seen": 1795159690.6288874,
+    "ast_hash": "9977c4c6a75d7c45808e43a9bc7b95dc",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_progress_widgets.dart": {
+    "mtime": 1791980584.3708577,
+    "seen": 1795159690.6288884,
+    "ast_hash": "1822bcdeb61d57f25e25e8f28c74b082",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_repository.dart": {
+    "mtime": 1794297346.199332,
+    "seen": 1795159690.6288893,
+    "ast_hash": "5a7499417d5c315f25ec23b6255c1050",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_seek_previews.dart": {
+    "mtime": 1792004024.9358077,
+    "seen": 1795159690.6288905,
+    "ast_hash": "c4b3e74076cb1fba54c871b9793e199f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_session.dart": {
+    "mtime": 1792923038.9990363,
+    "seen": 1795159690.6288917,
+    "ast_hash": "367e32add50669980e4be167bbdfd7c8",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_statistics_page.dart": {
+    "mtime": 1794142355.3597398,
+    "seen": 1795159690.6288927,
+    "ast_hash": "cbf1a89dffeca4b4b9078e266a4b03a7",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_subtitle_import.dart": {
+    "mtime": 1791988564.0018013,
+    "seen": 1795159690.6288936,
+    "ast_hash": "1adf35f2123170c2006104d9ba7fdff5",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_subtitles.dart": {
+    "mtime": 1791988584.3044603,
+    "seen": 1795159690.6288948,
+    "ast_hash": "771d6264ac658bd56f58e6da5c6dadf7",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_tools.dart": {
+    "mtime": 1791983856.3013961,
+    "seen": 1795159690.628896,
+    "ast_hash": "c20d1d261fa52cb1df60ab16064904fe",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_tools_dialogs.dart": {
+    "mtime": 1794142355.3747396,
+    "seen": 1795159690.628897,
+    "ast_hash": "561e696e2a4181b2ce9d0016c4d5515c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_transcript_panel.dart": {
+    "mtime": 1792071083.800174,
+    "seen": 1795159690.6288981,
+    "ast_hash": "6d6e64c7b210dcc2b15e1e1af24b9d28",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/vocabulary/anki_export.dart": {
+    "mtime": 1792071256.3024364,
+    "seen": 1795159690.6288993,
+    "ast_hash": "34cf95f8975aed7bb0d4f8f4efa7bf82",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/vocabulary/vocabulary_editor.dart": {
+    "mtime": 1794142355.39074,
+    "seen": 1795159690.6289003,
+    "ast_hash": "d0c7178106de03e17c6157863d16bbb8",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/vocabulary/vocabulary_page.dart": {
+    "mtime": 1794330406.0469658,
+    "seen": 1795159690.6289015,
+    "ast_hash": "caefd1f48b1f6cfb0d0b11ae4eb7ecd0",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/vocabulary/vocabulary_repository.dart": {
+    "mtime": 1794297346.2124212,
+    "seen": 1795159690.6289027,
+    "ast_hash": "829bd85667ad60c4dbaecdac036280cf",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/pubspec.yaml": {
+    "mtime": 1795187820.4380243,
+    "seen": 1795189708.4475355,
+    "ast_hash": "3b4aff34b4f0e4997fdff0cecf65a913",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/android_book_files_test.dart": {
+    "mtime": 1794043268.8639352,
+    "seen": 1795159690.6289048,
+    "ast_hash": "d48341f3deee0c27f0e59da51bd1a245",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/application_navigation_regression_test.dart": {
+    "mtime": 1794259119.32208,
+    "seen": 1795159690.628906,
+    "ast_hash": "b48e765393fe415c82a614a9b6d213eb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/application_regression_test.dart": {
+    "mtime": 1794259119.3384485,
+    "seen": 1795159690.6289072,
+    "ast_hash": "18d70d57a03ad193153d32a716f1628e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_artwork_test.dart": {
+    "mtime": 1794125006.6990485,
+    "seen": 1795159690.6289086,
+    "ast_hash": "e67ef7f0310e26216ecc5da583d56697",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_book_actions_test.dart": {
+    "mtime": 1794259119.3680315,
+    "seen": 1795159690.6289098,
+    "ast_hash": "0677717c88ce1b61489fa333a686f3ab",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_catalog_test.dart": {
+    "mtime": 1794224869.0937574,
+    "seen": 1795159690.6289108,
+    "ast_hash": "7aac31af26e4b18640c6f2b99480255e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_convenience_test.dart": {
+    "mtime": 1794125006.1826663,
+    "seen": 1795159690.628912,
+    "ast_hash": "392bca729e0598a7a339e4a216124497",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_data_test.dart": {
+    "mtime": 1794298614.5849774,
+    "seen": 1795159690.6289132,
+    "ast_hash": "d90c838c2222337e906908acf556ad77",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_duplicate_parts_test.dart": {
+    "mtime": 1794240926.5220013,
+    "seen": 1795159690.6289146,
+    "ast_hash": "ab3d9c4b1f4c0628bc004241fd5c506d",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_folder_test.dart": {
+    "mtime": 1789455423.4282026,
+    "seen": 1795159690.6289158,
+    "ast_hash": "688d959dc8302161037d05814480f72a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_import_test.dart": {
+    "mtime": 1794239226.6762102,
+    "seen": 1795159690.6289167,
+    "ast_hash": "c69ba6f4e4b663bcea81b597eb0755c3",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_journal_recovery_test.dart": {
+    "mtime": 1791898485.021857,
+    "seen": 1795159690.628918,
+    "ast_hash": "2ac04cbdec4e9b31ad7baa7c94b47434",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_journal_test.dart": {
+    "mtime": 1794125006.2536075,
+    "seen": 1795159690.6289194,
+    "ast_hash": "abd622d48234d29109becf0f21e3f5f0",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_link_test.dart": {
+    "mtime": 1794239278.2964232,
+    "seen": 1795159690.6289206,
+    "ast_hash": "fa35a8a4d66cb530f01a1c33f4df7219",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_metadata_statistics_test.dart": {
+    "mtime": 1794254764.134069,
+    "seen": 1795159690.6289217,
+    "ast_hash": "a3c594fc4e9d85664469a2aed786e59f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_migration_test.dart": {
+    "mtime": 1794239278.5834608,
+    "seen": 1795159690.6289232,
+    "ast_hash": "972ab4c7acfa2064c9b4503eb8803c51",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_mini_player_navigation_test.dart": {
+    "mtime": 1794239278.8841543,
+    "seen": 1795159690.6289244,
+    "ast_hash": "63acd722a43070e4ce5f7198d2cb38d7",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_organization_test.dart": {
+    "mtime": 1794213113.3659203,
+    "seen": 1795159690.628925,
+    "ast_hash": "2bc7d4e9ff1944c128d80f31ad86dfd2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_player_regressions_test.dart": {
+    "mtime": 1793904387.0915818,
+    "seen": 1795159690.6289265,
+    "ast_hash": "2178adec603e508bdefdfc0c64a61c41",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_resume_controller_test.dart": {
+    "mtime": 1794160575.161122,
+    "seen": 1795159690.6289275,
+    "ast_hash": "6047c163affe39c49750f59907c5d16a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_rewind_options_test.dart": {
+    "mtime": 1792245703.9653947,
+    "seen": 1795159690.6289287,
+    "ast_hash": "41bcbd05339fc77718eace7b4baa7c7c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_roots_page_test.dart": {
+    "mtime": 1794127233.4683635,
+    "seen": 1795159690.6289299,
+    "ast_hash": "a16ceaf4b4ef5f0d817a03e868abf7f2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_roots_test.dart": {
+    "mtime": 1792071344.84246,
+    "seen": 1795159690.628931,
+    "ast_hash": "12a1b39a01ed437ef5ab03edba319517",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_sidecar_test.dart": {
+    "mtime": 1794125006.2767696,
+    "seen": 1795159690.6289322,
+    "ast_hash": "8f686da5823c12fb3f34d2287c9b1550",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_source_test.dart": {
+    "mtime": 1793904234.2033668,
+    "seen": 1795159690.6289334,
+    "ast_hash": "d2dbf96cf25118f438d3ec1a3a0b1ccd",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_statistics_layout_test.dart": {
+    "mtime": 1794121957.9085345,
+    "seen": 1795159690.6289346,
+    "ast_hash": "b0dc7e2a8cdd4286a71aa5fcfb84a2f8",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/audio_statistics_widget_test.dart": {
+    "mtime": 1794215772.70095,
+    "seen": 1795159690.628936,
+    "ast_hash": "b69f459b67d5cccc6b0716f7a585f4bf",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/automatic_metadata_test.dart": {
+    "mtime": 1794259119.5420365,
+    "seen": 1795159690.628937,
+    "ast_hash": "f9943af841384feb933a9b134afaf9d8",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/book_action_menu_test.dart": {
+    "mtime": 1794215773.003469,
+    "seen": 1795159690.628938,
+    "ast_hash": "e7aee165a5e7035817490c6ae0cf938c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/book_folder_operations_test.dart": {
+    "mtime": 1794125006.5586042,
+    "seen": 1795159690.6289392,
+    "ast_hash": "b77846afb6105ee624f788a15498a3f2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/book_trash_test.dart": {
+    "mtime": 1794122995.2529652,
+    "seen": 1795159690.6289406,
+    "ast_hash": "a94bc1f588575e36536e19be80af45b2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/compact_journal_test.dart": {
+    "mtime": 1789650781.3629885,
+    "seen": 1795159690.6289415,
+    "ast_hash": "aa5a29fb39dcb8e02b1ac4a7a76d164a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/connector_namespace.dart": {
+    "mtime": 1794298614.6971693,
+    "seen": 1795159690.6289432,
+    "ast_hash": "02221310f6adcdc6d719c865aed5e4e4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/database_schema_test.dart": {
+    "mtime": 1794239279.1883268,
+    "seen": 1795159690.6289444,
+    "ast_hash": "ca78b02bfe5edfd3182ae37e08667155",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/database_v8_test.dart": {
+    "mtime": 1794830176.0590312,
+    "seen": 1795159690.6289454,
+    "ast_hash": "e69810de0870927cc2ac2f7d83647e46",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/diagnostics_test.dart": {
+    "mtime": 1794142355.5664613,
+    "seen": 1795159690.6289468,
+    "ast_hash": "ac395715a171c40f0297b3e4088b8b35",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/embedded_artwork_test.dart": {
+    "mtime": 1794125005.972712,
+    "seen": 1795159690.628948,
+    "ast_hash": "ed242a2af7f209f3cc8f72c17dd6adba",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/epub_test.dart": {
+    "mtime": 1794394571.104707,
+    "seen": 1795159690.6289492,
+    "ast_hash": "6df07a957259224d9facc548d074c0a4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/file_shelf_controls_test.dart": {
+    "mtime": 1794662688.9843762,
+    "seen": 1795159690.6289506,
+    "ast_hash": "94250dadddee920f8ff1b21713ee637b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/folder_and_trash_regressions_test.dart": {
+    "mtime": 1794125006.160028,
+    "seen": 1795159690.6289513,
+    "ast_hash": "8fb8a7e69cd7992f921d0559e69d59eb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/folder_fixture.dart": {
+    "mtime": 1794239226.7062252,
+    "seen": 1795159690.6289525,
+    "ast_hash": "f384ffab5344601185449099b9bceb67",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/formats_test.dart": {
+    "mtime": 1794239226.7157488,
+    "seen": 1795159690.6289542,
+    "ast_hash": "ae07db0fbaf7b02860615c3cba446274",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/import_folder_test.dart": {
+    "mtime": 1794259119.6607344,
+    "seen": 1795159690.628955,
+    "ast_hash": "94cc83a86e79ae7c9632d77bdbc50a93",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_activity_test.dart": {
+    "mtime": 1794259120.011917,
+    "seen": 1795159690.6289558,
+    "ast_hash": "39adbe03acd79d4e77571683436f58e4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_archive_test.dart": {
+    "mtime": 1794298614.7582724,
+    "seen": 1795159690.6289573,
+    "ast_hash": "ce227f4b03ee3a67d10a0060dd7b4290",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_archive_widget_test.dart": {
+    "mtime": 1794259120.047128,
+    "seen": 1795159690.6289582,
+    "ast_hash": "ccf889c53756ea7daa146ec0648953f1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_backup_test.dart": {
+    "mtime": 1794153256.2878911,
+    "seen": 1795159690.6289594,
+    "ast_hash": "94bf2b37b4f7035cd94758a85ab58a2b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_catalog_features_test.dart": {
+    "mtime": 1794829218.7738101,
+    "seen": 1795159690.6289608,
+    "ast_hash": "540c43fbb50aed0d757e1f7dbe5961a7",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_dashboard_filters_test.dart": {
+    "mtime": 1794259119.7160308,
+    "seen": 1795159690.6289618,
+    "ast_hash": "dedecca9d1ac4701700df7d7801ed4d5",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_design_test.dart": {
+    "mtime": 1794259119.7323587,
+    "seen": 1795159690.628963,
+    "ast_hash": "c17763c810cc2b55974e43e0da8c56f1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_export_metadata_test.dart": {
+    "mtime": 1794259119.745894,
+    "seen": 1795159690.6289644,
+    "ast_hash": "d319e664ac11ed7e6fef54910c72f867",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_folder_preference_test.dart": {
+    "mtime": 1794075117.1837378,
+    "seen": 1795159690.6289654,
+    "ast_hash": "a06103ed832d740e02dbf383c4cca951",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_folder_storage_test.dart": {
+    "mtime": 1794259119.7726755,
+    "seen": 1795159690.6289663,
+    "ast_hash": "4a75d80420192ffb959f3f8d46ef1622",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_incremental_test.dart": {
+    "mtime": 1794298614.832564,
+    "seen": 1795159690.6289678,
+    "ast_hash": "b129b90167c119bb01dfa996d9b569f7",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_management_test.dart": {
+    "mtime": 1794259119.785193,
+    "seen": 1795159690.628969,
+    "ast_hash": "976b7b446e4c41d3a7eefe4bb04212a1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_notes_test.dart": {
+    "mtime": 1794259120.0611923,
+    "seen": 1795159690.62897,
+    "ast_hash": "f41d40940e08e88b4d6ff2b982ea974d",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_panel_improvements_test.dart": {
+    "mtime": 1794259119.7998588,
+    "seen": 1795159690.6289752,
+    "ast_hash": "0478d1b39a480827e065a4395a101a85",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_recovery_test.dart": {
+    "mtime": 1794833273.717427,
+    "seen": 1795159690.6289763,
+    "ast_hash": "c2e13948c6468e17ca1beaf2c2ce8f14",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_review_regressions_test.dart": {
+    "mtime": 1794259119.8241017,
+    "seen": 1795159690.6289773,
+    "ast_hash": "5d0726fb0987fd8548e5e5055133b9fb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_rows_test.dart": {
+    "mtime": 1794830176.2116184,
+    "seen": 1795159690.6289787,
+    "ast_hash": "f632c5cda5e1939b49a54aa2edeba203",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_scale_test.dart": {
+    "mtime": 1794259119.8408804,
+    "seen": 1795159690.6289797,
+    "ast_hash": "30081a79cedef7ff796dd5b2278802c5",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_sections_test.dart": {
+    "mtime": 1794142355.4722545,
+    "seen": 1795159690.6289806,
+    "ast_hash": "10542ccf642d489ea2843e85d126b47b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_series_add_test.dart": {
+    "mtime": 1794830176.2478876,
+    "seen": 1795159690.628982,
+    "ast_hash": "8d87430ad3cfa8afc1080064d482eb72",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_series_binding_test.dart": {
+    "mtime": 1794259119.8801992,
+    "seen": 1795159690.6289833,
+    "ast_hash": "4136e8b4f47e26ddc168cf523892d78c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_series_editor_test.dart": {
+    "mtime": 1794259119.8953607,
+    "seen": 1795159690.6289842,
+    "ast_hash": "f698d3afaad62a9a9d9701e8e1ec2bc4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_series_unread_test.dart": {
+    "mtime": 1794259119.9098797,
+    "seen": 1795159690.6289856,
+    "ast_hash": "dd76a23a7518f23622c96bb29427fe6d",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_shelf_improvements_test.dart": {
+    "mtime": 1794213113.0791903,
+    "seen": 1795159690.6289868,
+    "ast_hash": "92f1cad5d7f000106bd4e73e7b4281d0",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_source_add_test.dart": {
+    "mtime": 1794259119.9322355,
+    "seen": 1795159690.6289878,
+    "ast_hash": "68b3a4b65d9d3100648b220eeb4c4436",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/library_statistics_performance_test.dart": {
+    "mtime": 1794829236.0776248,
+    "seen": 1795159690.6289895,
+    "ast_hash": "d8cde23569dccc34d0ac7b4c6533195e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/linked_audio_notes_sync_test.dart": {
+    "mtime": 1794298614.941501,
+    "seen": 1795159690.6289907,
+    "ast_hash": "c9a82ce41f30a9ee8cff0c9bef2e0d2b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/listening_analytics_test.dart": {
+    "mtime": 1794125006.5104136,
+    "seen": 1795159690.6289918,
+    "ast_hash": "a69f091c58c33201c4e39ad9f1e7f280",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/m4b_chapters_test.dart": {
+    "mtime": 1794125005.8785243,
+    "seen": 1795159690.628993,
+    "ast_hash": "9b11a28a779799646965a43617dd0274",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/media_music_test.dart": {
+    "mtime": 1794239226.7639148,
+    "seen": 1795159690.6289942,
+    "ast_hash": "36f2232e5c338abe5d349432f4acedf9",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/media_shuffle_test.dart": {
+    "mtime": 1794239226.771915,
+    "seen": 1795159690.6289954,
+    "ast_hash": "53e7abad231f4c2eec7570b2ee8a9132",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/music_native_metadata_test.dart": {
+    "mtime": 1792745460.0910864,
+    "seen": 1795159690.6289966,
+    "ast_hash": "b9542215cb4319f5a6c261a4d7811fe0",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/music_sync_performance_test.dart": {
+    "mtime": 1794239226.7808094,
+    "seen": 1795159690.6289978,
+    "ast_hash": "08f48d07a2324dcdd3a0d310afd8f0f1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/pdf_dark_images_test.dart": {
+    "mtime": 1792949666.045369,
+    "seen": 1795159690.6289992,
+    "ast_hash": "63a4724ec46850d9d4644fc3c37554d5",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/pdf_file_source_test.dart": {
+    "mtime": 1793527210.2077582,
+    "seen": 1795159690.6290002,
+    "ast_hash": "2b63bf6840ee48803e52fd149a467d28",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/pdf_index_progress_test.dart": {
+    "mtime": 1792934194.6083856,
+    "seen": 1795159690.6290011,
+    "ast_hash": "5460b4086e89b364147082b0daf0b956",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/pdf_position_performance_test.dart": {
+    "mtime": 1793445977.6240363,
+    "seen": 1795159690.6290026,
+    "ast_hash": "73d7591726102311f3e774d10d16fe7f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/pdf_reader_test.dart": {
+    "mtime": 1794215776.544734,
+    "seen": 1795159690.6290035,
+    "ast_hash": "c9769512703f1994aacfbaeb6948363e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/pdf_startup_regression_test.dart": {
+    "mtime": 1794125005.6643991,
+    "seen": 1795159690.6290047,
+    "ast_hash": "e8b58efa863321e4ef4a34fad634c0a7",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/pdf_view_limits_test.dart": {
+    "mtime": 1793445977.6250367,
+    "seen": 1795159690.6290061,
+    "ast_hash": "2274354d3a688ad7a27c9c50b095b5e9",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/performance_regressions_test.dart": {
+    "mtime": 1794121957.8658917,
+    "seen": 1795159690.629007,
+    "ast_hash": "5aa86f6b48e950685deb1c974b0cedef",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/personal_library_test.dart": {
+    "mtime": 1794298615.019658,
+    "seen": 1795159690.6290083,
+    "ast_hash": "1c3e3668c27f19a8480639cfb8458252",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/preview_test.dart": {
+    "mtime": 1789239274.2936697,
+    "seen": 1795159690.6290095,
+    "ast_hash": "ec5d40211022e47586387a5878d5f33d",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/purged_books_test.dart": {
+    "mtime": 1794256019.2138226,
+    "seen": 1795159690.6290104,
+    "ast_hash": "858d12c95452c2156ba39e30c3bf6781",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_annotations_bookmarks_test.dart": {
+    "mtime": 1794394571.1227071,
+    "seen": 1795159690.6290116,
+    "ast_hash": "cd7fd604f97bae4320c913b9e6e148f3",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_appearance_ui_test.dart": {
+    "mtime": 1794330406.071502,
+    "seen": 1795159690.629013,
+    "ast_hash": "c07b8d578cb1e5630639ef1ed774e0b6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_convenience_test.dart": {
+    "mtime": 1794330406.0805056,
+    "seen": 1795159690.6290143,
+    "ast_hash": "f6122f173d689229fe6f2ea8d2950dab",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_fonts_test.dart": {
+    "mtime": 1793186703.2293015,
+    "seen": 1795159690.629015,
+    "ast_hash": "b795077665302cf4b20fdbca7e23705f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_format_matrix_test.dart": {
+    "mtime": 1794394571.140707,
+    "seen": 1795159690.6290164,
+    "ast_hash": "22ba2e2212017810a636609c0ae51c62",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_illustrations_test.dart": {
+    "mtime": 1794330406.0964785,
+    "seen": 1795159690.6290174,
+    "ast_hash": "96f41d3718478b937145da3708fdbc3e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_improvements_test.dart": {
+    "mtime": 1794330448.8626034,
+    "seen": 1795159690.6290185,
+    "ast_hash": "13f8ecdcdc466caed44be5ada7370aac",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_io_performance_test.dart": {
+    "mtime": 1793446491.959479,
+    "seen": 1795159690.62902,
+    "ast_hash": "9c3ff8c68fffdbfb9a7d23fc69d2e939",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_layout_fixes_test.dart": {
+    "mtime": 1793449625.6857855,
+    "seen": 1795159690.629021,
+    "ast_hash": "d8af7c6185028b24737415db1ed48c94",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_layout_test.dart": {
+    "mtime": 1789807582.1527233,
+    "seen": 1795159690.6290221,
+    "ast_hash": "74bc27dfa12fd290d2e82a64cadb83f0",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_legacy_footnotes_test.dart": {
+    "mtime": 1793181218.971315,
+    "seen": 1795159690.6290233,
+    "ast_hash": "eb52fad6af6a771636a54c5d046b999f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_notes_tools_test.dart": {
+    "mtime": 1794330448.9517012,
+    "seen": 1795159690.6290245,
+    "ast_hash": "d693d064d372492b4302832a58f82e9b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_open_performance_test.dart": {
+    "mtime": 1794395642.7885306,
+    "seen": 1795159690.6290255,
+    "ast_hash": "840cb655b52e51de74bac9784661f2bf",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_performance_test.dart": {
+    "mtime": 1794330449.1333094,
+    "seen": 1795159690.629027,
+    "ast_hash": "d5b5fac8bcd0fb2ae9e2ed2569a72193",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_progress_panel_test.dart": {
+    "mtime": 1794330406.1343772,
+    "seen": 1795159690.629028,
+    "ast_hash": "be1ced522a0cb4be98cd99372fe75bdc",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_rebase_test.dart": {
+    "mtime": 1790082822.2482047,
+    "seen": 1795159690.629029,
+    "ast_hash": "a49edce851a6ceacf054fed316ed88b8",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_review_regressions_test.dart": {
+    "mtime": 1794330406.1433797,
+    "seen": 1795159690.6290302,
+    "ast_hash": "e3d42f141e7f49896cecba6a64ef765a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_screen_pages_test.dart": {
+    "mtime": 1794670899.8416545,
+    "seen": 1795159690.6290314,
+    "ast_hash": "6523836c9fbf3c28a7692c2d6718e8db",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_screen_test.dart": {
+    "mtime": 1794394571.1557326,
+    "seen": 1795159690.6290324,
+    "ast_hash": "6c6e503cafb08ee470666975d82b1876",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_selection_more_test.dart": {
+    "mtime": 1794662626.7961538,
+    "seen": 1795159690.6290338,
+    "ast_hash": "3651491845b7ab4a694ff873f50af153",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_stable_pages_test.dart": {
+    "mtime": 1794330406.159414,
+    "seen": 1795159690.629035,
+    "ast_hash": "095684947367f172905e8335d062090d",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_status_pages_test.dart": {
+    "mtime": 1794669432.3992176,
+    "seen": 1795159690.6290357,
+    "ast_hash": "79d582ff39d814432a4280b91ad8ec65",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_typesetting_test.dart": {
+    "mtime": 1794670790.3150418,
+    "seen": 1795159690.629037,
+    "ast_hash": "3337328f458b2466fa90b6b4e80a47ed",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reader_window_theme_test.dart": {
+    "mtime": 1794394571.1848166,
+    "seen": 1795159690.6290379,
+    "ast_hash": "94e4ee49d0405e5ad5d27d39da093fc3",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reading_activity_test.dart": {
+    "mtime": 1794215778.2148395,
+    "seen": 1795159690.629039,
+    "ast_hash": "80fec4877b32a67e083e872101390a41",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reading_book_actions_test.dart": {
+    "mtime": 1794239226.819834,
+    "seen": 1795159690.6290402,
+    "ast_hash": "dd38eb3b285097f31630808103a4e6bb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reading_deleted_books_test.dart": {
+    "mtime": 1794239226.828185,
+    "seen": 1795159690.6290412,
+    "ast_hash": "f8de1427872901839eada56a26e6cf0b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reading_insights_test.dart": {
+    "mtime": 1794171949.462769,
+    "seen": 1795159690.6290421,
+    "ast_hash": "8249cdee6711a2f7171927348c600a3b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reading_library_test.dart": {
+    "mtime": 1794330449.334378,
+    "seen": 1795159690.6290433,
+    "ast_hash": "942c046bf7e9d513d37e3f1a514eb7b9",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reading_plan_test.dart": {
+    "mtime": 1794215778.5080345,
+    "seen": 1795159690.6290445,
+    "ast_hash": "a44575ace3bc4f8019bbb5b1441eaaa8",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reading_roots_page_test.dart": {
+    "mtime": 1794122995.232509,
+    "seen": 1795159690.6290455,
+    "ast_hash": "c74f3c8333e8df72b951cfc25b730029",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reading_roots_test.dart": {
+    "mtime": 1794662626.7984421,
+    "seen": 1795159690.6290464,
+    "ast_hash": "4fdf6fc1eca379993c1cbe6bd45689b8",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reading_source_integrity_test.dart": {
+    "mtime": 1791900267.5674157,
+    "seen": 1795159690.629048,
+    "ast_hash": "660d96d954a4ecd3635acbdd604360e0",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/reading_statistics_page_test.dart": {
+    "mtime": 1794240927.129588,
+    "seen": 1795159690.629049,
+    "ast_hash": "86b54bb87b60a7454724557ab48076c7",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/readme_screenshots_test.dart": {
+    "mtime": 1794840193.8311777,
+    "seen": 1795159690.6290503,
+    "ast_hash": "02c495ba05d957febee8e2e913e08a40",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/recommendations_actions_test.dart": {
+    "mtime": 1791915860.4864662,
+    "seen": 1795159690.6290514,
+    "ast_hash": "fc5c5d894cd2b43e20b4d3fbd0906935",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/recommendations_regression_test.dart": {
+    "mtime": 1791103644.9347942,
+    "seen": 1795159690.6290526,
+    "ast_hash": "9668e399170b6a586e4f016cf1e23463",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/recommendations_test.dart": {
+    "mtime": 1794239226.8472016,
+    "seen": 1795159690.6290536,
+    "ast_hash": "c1ee6604b2878d7cc56653ffbc15720a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/recommendations_widget_test.dart": {
+    "mtime": 1791914937.2803168,
+    "seen": 1795159690.629055,
+    "ast_hash": "ccf3dedaff8ed93019d21725738d8f90",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/repository_test.dart": {
+    "mtime": 1794239226.8542016,
+    "seen": 1795159690.6290562,
+    "ast_hash": "f305a497ed281608235cf345d3c9f084",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/rich_reader_test.dart": {
+    "mtime": 1794330406.185614,
+    "seen": 1795159690.6290572,
+    "ast_hash": "b1e350395d870a3e70abf66e92704343",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/settings_catalog_test.dart": {
+    "mtime": 1794239226.8622985,
+    "seen": 1795159690.6290588,
+    "ast_hash": "a709678b20dbb27818f236caa80d5b42",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/settings_preferences_test.dart": {
+    "mtime": 1794171950.039964,
+    "seen": 1795159690.6290598,
+    "ast_hash": "7fbb85d710f9096f33e1a42bb4def6ec",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/settings_test.dart": {
+    "mtime": 1794298615.3195293,
+    "seen": 1795159690.6290612,
+    "ast_hash": "e26f494d09e65aa1ba760dafd3d04928",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/shelf_dashboard_test.dart": {
+    "mtime": 1794298615.3255315,
+    "seen": 1795159690.6290622,
+    "ast_hash": "4fd99b18e25ebb7689a7446780034568",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/snack_bar_persist_test.dart": {
+    "mtime": 1794330406.191622,
+    "seen": 1795159690.6290634,
+    "ast_hash": "4b0f7a068e471da7a55e42ea01888149",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/statistics_catalog_widget_test.dart": {
+    "mtime": 1793861441.3959315,
+    "seen": 1795159690.6290648,
+    "ast_hash": "0865dcff1825685c378eb071684ce7be",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/statistics_consistency_test.dart": {
+    "mtime": 1793863436.1405299,
+    "seen": 1795159690.6290658,
+    "ast_hash": "2685cc2fbb17ad5044178aeb318d81f6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/statistics_extensions_test.dart": {
+    "mtime": 1794171949.754658,
+    "seen": 1795159690.6290667,
+    "ast_hash": "91f72932a79613aad66ddf1cb733fa22",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/statistics_followup_regressions_test.dart": {
+    "mtime": 1793863698.9036977,
+    "seen": 1795159690.6290677,
+    "ast_hash": "692c00dfacb855871e6191e6ed18980f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/statistics_management_regressions_test.dart": {
+    "mtime": 1794125006.0677414,
+    "seen": 1795159690.6290689,
+    "ast_hash": "8b01445bd8d21d8c580803ac5391074f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/statistics_year_progress_test.dart": {
+    "mtime": 1794167402.5541785,
+    "seen": 1795159690.6290698,
+    "ast_hash": "9824ab5ba54b3c02314bcc80c889efad",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/support/flutter_fonts.dart": {
+    "mtime": 1794215782.9353902,
+    "seen": 1795159690.629071,
+    "ast_hash": "2e4fb968ccd1c964c45f8e8c1199aabc",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/support/pdf_fixture.dart": {
+    "mtime": 1793183370.400956,
+    "seen": 1795159690.6290722,
+    "ast_hash": "80b375441d7b43972ed6a2474785461c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/support/reader_controls.dart": {
+    "mtime": 1794330406.2026143,
+    "seen": 1795159690.6290734,
+    "ast_hash": "524a687c1ca12a6421d2efb340d9ebf4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/support/video_engine.dart": {
+    "mtime": 1791977917.303254,
+    "seen": 1795159690.6290743,
+    "ast_hash": "ef0043f75d05c918e9caf1bd59e0a6fa",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/theme_selection_contrast_test.dart": {
+    "mtime": 1793012169.2950196,
+    "seen": 1795159690.6290755,
+    "ast_hash": "3d59098e79d8f231947e347cea94a591",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/txt_layout_regressions_test.dart": {
+    "mtime": 1794298615.3750446,
+    "seen": 1795159690.6290767,
+    "ast_hash": "b8d82db08882188769aa7b193f39e52b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/update_delivery_test.dart": {
+    "mtime": 1793280912.138353,
+    "seen": 1795159690.6290777,
+    "ast_hash": "9d19567b650bef8d7f9d4311d9e830c2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/update_delta_test.dart": {
+    "mtime": 1793257574.7081234,
+    "seen": 1795159690.629079,
+    "ast_hash": "7187c6468150b0fc698a353121fc005c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/update_installer_test.dart": {
+    "mtime": 1794309185.43549,
+    "seen": 1795159690.62908,
+    "ast_hash": "f398c19e2e8ccff1b0bf537ef7032473",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/update_page_test.dart": {
+    "mtime": 1794125005.9513562,
+    "seen": 1795159690.629081,
+    "ast_hash": "d8187ca6193ad7c3f52d8f505f7454b6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/update_public_acceptance_test.dart": {
+    "mtime": 1794309069.3359518,
+    "seen": 1795159690.6290822,
+    "ast_hash": "5d5e217f307fac26cf9495bc08eccbeb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/update_test.dart": {
+    "mtime": 1794309185.4248092,
+    "seen": 1795159690.6290834,
+    "ast_hash": "b649138e9d046a965b259419e8af81a5",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_activity_test.dart": {
+    "mtime": 1791977917.2872536,
+    "seen": 1795159690.6290846,
+    "ast_hash": "078a3c8fbe40c4bc866dbea129eb7442",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_analysis_details_test.dart": {
+    "mtime": 1791981312.9184601,
+    "seen": 1795159690.6290858,
+    "ast_hash": "d18312c891ae3ace1e789e64d2c31645",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_annotation_editor_widget_test.dart": {
+    "mtime": 1794215779.4929752,
+    "seen": 1795159690.629087,
+    "ast_hash": "22de54aab861b6e65410444737451c45",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_compact_session_widget_test.dart": {
+    "mtime": 1792004808.8626535,
+    "seen": 1795159690.6290882,
+    "ast_hash": "3a5f667bccfb1faebe64db4d543d450b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_controller_test.dart": {
+    "mtime": 1791981312.9304647,
+    "seen": 1795159690.6290894,
+    "ast_hash": "e91e5a6f2f4ae4583a6e6de5d44dffae",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_folder_sync_test.dart": {
+    "mtime": 1792004024.937683,
+    "seen": 1795159690.6290903,
+    "ast_hash": "34a617aef837623111d4bfd34a24ed3b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_history_learning_test.dart": {
+    "mtime": 1794239226.904701,
+    "seen": 1795159690.6290915,
+    "ast_hash": "951ccd3f4035e94405d65a6952698604",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_media_session_test.dart": {
+    "mtime": 1794239226.913918,
+    "seen": 1795159690.629093,
+    "ast_hash": "b02e19f3e94129caf7e33f8b83d0cf01",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_native_test.dart": {
+    "mtime": 1792003899.7550921,
+    "seen": 1795159690.629094,
+    "ast_hash": "9ebe15a8a4acc19963eac66acd57edc0",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_player_tools_widget_test.dart": {
+    "mtime": 1794663730.7947867,
+    "seen": 1795159690.629095,
+    "ast_hash": "9298bc34e19651f913cdfdad8b7903eb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_repository_test.dart": {
+    "mtime": 1794239280.0679193,
+    "seen": 1795159690.6290963,
+    "ast_hash": "251dfb5be16743c8ee1556bb5a330ef2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_seek_previews_test.dart": {
+    "mtime": 1792004056.6332295,
+    "seen": 1795159690.6290972,
+    "ast_hash": "29ac71ba1ae1c2d49c210631432b1698",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_statistics_details_widget_test.dart": {
+    "mtime": 1794215780.134831,
+    "seen": 1795159690.6290984,
+    "ast_hash": "0ed122aa4ba2e616453894e51c12b136",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_subtitle_native_test.dart": {
+    "mtime": 1791990777.52539,
+    "seen": 1795159690.6290996,
+    "ast_hash": "9b8312a5735fdcad5dc4e6d76b7d0910",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_subtitle_widget_test.dart": {
+    "mtime": 1794215780.4311392,
+    "seen": 1795159690.6291006,
+    "ast_hash": "fb19074f988ce7199f96d08b3275f44a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_subtitles_test.dart": {
+    "mtime": 1794239226.9227073,
+    "seen": 1795159690.6291015,
+    "ast_hash": "8d15ac752318425458e0f18ded2f963f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_tools_test.dart": {
+    "mtime": 1794239226.9297128,
+    "seen": 1795159690.6291027,
+    "ast_hash": "46666192523e19b8a4866793458f430a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_widget_test.dart": {
+    "mtime": 1794239226.9389746,
+    "seen": 1795159690.6291037,
+    "ast_hash": "05bba03ed22f2207afc20a6477bed954",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/vocabulary_test.dart": {
+    "mtime": 1794239226.9454715,
+    "seen": 1795159690.6291046,
+    "ast_hash": "ef09fb44176514b06249feedcb3fcb10",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/vocabulary_widget_test.dart": {
+    "mtime": 1794215782.6545942,
+    "seen": 1795159690.6291056,
+    "ast_hash": "52b04e004d51e6d007280c7ff6ba6649",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/widget_test.dart": {
+    "mtime": 1794121957.8238423,
+    "seen": 1795159690.6291068,
+    "ast_hash": "153c3de17b825831c08d0f70c2c035cf",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/tool/verify_update_delta.dart": {
+    "mtime": 1793256740.8977768,
+    "seen": 1795159690.629108,
+    "ast_hash": "abc8266a6f21f9d89bc1d18c240f16d9",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/web-concepts/library.js": {
+    "mtime": 1791229947.3813376,
+    "seen": 1795159690.629109,
+    "ast_hash": "69c436d49c263773aea58457c20bb0b0",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/web-concepts/prototype.js": {
+    "mtime": 1791229631.3054168,
+    "seen": 1795159690.6291103,
+    "ast_hash": "333008d146a43efb87f344cdab649e25",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/windows/flutter/generated_plugin_registrant.cc": {
+    "mtime": 1794239226.954987,
+    "seen": 1795159690.6291113,
+    "ast_hash": "06f4e6eb9ca1e87f08227a5a0a53d3bb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/windows/flutter/generated_plugin_registrant.h": {
+    "mtime": 1789150597.0034666,
+    "seen": 1795159690.6291122,
+    "ast_hash": "0ea33875f9f8e118f9c2ded03e2e2835",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/windows/runner/flutter_window.cpp": {
+    "mtime": 1794075117.2287912,
+    "seen": 1795159690.6291134,
+    "ast_hash": "c8367b710d8d034aca380b8cf36556ec",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/windows/runner/flutter_window.h": {
+    "mtime": 1794075117.2529004,
+    "seen": 1795159690.6291144,
+    "ast_hash": "b3b26658fa71c18da82661735b43751a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/windows/runner/main.cpp": {
+    "mtime": 1795187764.7754087,
+    "seen": 1795189708.4477646,
+    "ast_hash": "d3cf2529daeb241fc3e22f0418eb8341",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/windows/runner/resource.h": {
+    "mtime": 1789150257.3338814,
+    "seen": 1795159690.6291168,
+    "ast_hash": "1ade5dd15e613479a15e8832ed276f2b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/windows/runner/utils.cpp": {
+    "mtime": 1789150257.3348825,
+    "seen": 1795159690.6291182,
+    "ast_hash": "e18900a4c2c2962ad732d3b83f0396b9",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/windows/runner/utils.h": {
+    "mtime": 1789150257.3348825,
+    "seen": 1795159690.629119,
+    "ast_hash": "fd81e143f5614eb6fd75efe539002853",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/windows/runner/win32_window.cpp": {
+    "mtime": 1789150257.3348825,
+    "seen": 1795159690.6291203,
+    "ast_hash": "571eb8234dbc2661be03aa5f2a4d2fca",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/windows/runner/win32_window.h": {
+    "mtime": 1789150257.335882,
+    "seen": 1795159690.6291213,
+    "ast_hash": "7569387d58711ab975940f4df3b4bcda",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-11-01-taste/.taste-skill/direction.json": {
+    "mtime": 1793547886.9596143,
+    "seen": 1795159690.6291225,
+    "ast_hash": "a42d0532e1cde9b6f0b36d7147166549",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-11-01-taste/app.js": {
+    "mtime": 1793549667.4435897,
+    "seen": 1795159690.6291237,
+    "ast_hash": "fb0ff3af5f96c9411e6a757e2b88f268",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-11-01-taste/inspection.json": {
+    "mtime": 1793549871.7204874,
+    "seen": 1795159690.6291246,
+    "ast_hash": "306fb948484952160da54463bde76719",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-11-01-taste/serve.mjs": {
+    "mtime": 1793548532.744964,
+    "seen": 1795159690.6291256,
+    "ast_hash": "342467ba98fd3016e3e9858b68b2f7cc",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-11-01-taste/verification.json": {
+    "mtime": 1793549402.3564813,
+    "seen": 1795159690.6291265,
+    "ast_hash": "c989c56da14a3e00d50340d5850f0290",
+    "semantic_hash": ""
+  },
+  "design/figcraft/build.js": {
+    "mtime": 1794840185.3104482,
+    "seen": 1795159690.6291277,
+    "ast_hash": "399c66cea676d639b357baf280316eee",
+    "semantic_hash": ""
+  },
+  "design/figcraft/components.js": {
+    "mtime": 1794840134.4779308,
+    "seen": 1795159690.629129,
+    "ast_hash": "717dae06d3fc3ffa1f9a8b31ba226ed7",
+    "semantic_hash": ""
+  },
+  "design/figcraft/extract-icons.js": {
+    "mtime": 1794840207.3648372,
+    "seen": 1795159690.62913,
+    "ast_hash": "323f36fa17bef78e534b010faa5d99cf",
+    "semantic_hash": ""
+  },
+  "design/figcraft/icons.json": {
+    "mtime": 1794839591.6888027,
+    "seen": 1795159690.629131,
+    "ast_hash": "89f2a77f0b5306d4e00d515291e39bfa",
+    "semantic_hash": ""
+  },
+  "design/figcraft/lib.js": {
+    "mtime": 1794839672.6224005,
+    "seen": 1795159690.6291323,
+    "ast_hash": "c8154a84abe548440141f84352d0a8a3",
+    "semantic_hash": ""
+  },
+  "design/figcraft/package.json": {
+    "mtime": 1794839557.6191523,
+    "seen": 1795159690.6291332,
+    "ast_hash": "d0f7eb051692448312da9f76fb2e78d7",
+    "semantic_hash": ""
+  },
+  "design/figcraft/screens/audio.js": {
+    "mtime": 1794840126.9095848,
+    "seen": 1795159690.6291344,
+    "ast_hash": "f961d928bc745a024486f68a9bf265c2",
+    "semantic_hash": ""
+  },
+  "design/figcraft/screens/books.js": {
+    "mtime": 1794839553.765796,
+    "seen": 1795159690.6291354,
+    "ast_hash": "86ab3860150a4a17cc2ea74892076057",
+    "semantic_hash": ""
+  },
+  "design/figcraft/screens/library.js": {
+    "mtime": 1794839742.457104,
+    "seen": 1795159690.6291363,
+    "ast_hash": "a98464f8ea44980e17067baa597e601d",
+    "semantic_hash": ""
+  },
+  "design/figcraft/screens/media.js": {
+    "mtime": 1794839791.153143,
+    "seen": 1795159690.6291375,
+    "ast_hash": "53c31fcee5886273839a11f772cf7dcf",
+    "semantic_hash": ""
+  },
+  "design/figcraft/screens/reader.js": {
+    "mtime": 1794840148.7603273,
+    "seen": 1795159690.6291387,
+    "ast_hash": "0ae6d3fca1ea4b4cc73ec659afa52d10",
+    "semantic_hash": ""
+  },
+  "design/figcraft/screens/recommendations.js": {
+    "mtime": 1794839834.4192662,
+    "seen": 1795159690.6291397,
+    "ast_hash": "6c45b64319cfe9882817c9a470e9fe62",
+    "semantic_hash": ""
+  },
+  "design/figcraft/screens/service.js": {
+    "mtime": 1794840088.4905305,
+    "seen": 1795159690.6291409,
+    "ast_hash": "acc03e73f47a3469ba3b078e49f3f99b",
+    "semantic_hash": ""
+  },
+  "design/figcraft/screens/settings.js": {
+    "mtime": 1794840033.7137585,
+    "seen": 1795159690.629142,
+    "ast_hash": "2cc8135f775c6f2ddc08690aaaa3adeb",
+    "semantic_hash": ""
+  },
+  "design/figcraft/screens/statistics.js": {
+    "mtime": 1794839931.084987,
+    "seen": 1795159690.629143,
+    "ast_hash": "87d7fcb161f09451c9d685df5c2efc6f",
+    "semantic_hash": ""
+  },
+  "package.json": {
+    "mtime": 1794237730.308843,
+    "seen": 1795159690.629144,
+    "ast_hash": "fca3e82624fd5d4050ec19bebd3ad5f2",
+    "semantic_hash": ""
+  },
+  "scripts/adb-bridge.ps1": {
+    "mtime": 1794125066.8576446,
+    "seen": 1795159690.6291451,
+    "ast_hash": "f6f693c0388ab7c8d39b4a17246c1429",
+    "semantic_hash": ""
+  },
+  "scripts/android-diagnostics.ps1": {
+    "mtime": 1794121212.2551272,
+    "seen": 1795159690.6291463,
+    "ast_hash": "7dd992c8e7ac692feb014b7ea966a787",
+    "semantic_hash": ""
+  },
+  "scripts/android-env.ps1": {
+    "mtime": 1789371830.2238235,
+    "seen": 1795159690.6291473,
+    "ast_hash": "ce4be227896ee66c47c5e51960e62457",
+    "semantic_hash": ""
+  },
+  "scripts/android-signing.ps1": {
+    "mtime": 1794143147.7306106,
+    "seen": 1795159690.6291485,
+    "ast_hash": "f7eee2263cf89ae43d32865a53483873",
+    "semantic_hash": ""
+  },
+  "scripts/build-android.ps1": {
+    "mtime": 1794143147.7360613,
+    "seen": 1795159690.6291497,
+    "ast_hash": "e171cc7f0209c4ed4efd64bd05263b15",
+    "semantic_hash": ""
+  },
+  "scripts/clean-project.ps1": {
+    "mtime": 1793301725.6725006,
+    "seen": 1795159690.6291506,
+    "ast_hash": "f17c1d9612d2b31b933f8db68435b66f",
+    "semantic_hash": ""
+  },
+  "scripts/commit.ps1": {
+    "mtime": 1794259862.6803906,
+    "seen": 1795159690.629152,
+    "ast_hash": "d801df7bde9130836fa579a755858973",
+    "semantic_hash": ""
+  },
+  "scripts/delta-package.ts": {
+    "mtime": 1793256472.4576638,
+    "seen": 1795159690.629153,
+    "ast_hash": "2d4bdb0a839ce48554c49111ab4c3d5c",
+    "semantic_hash": ""
+  },
+  "scripts/fetch-reader-fonts.py": {
+    "mtime": 1793185808.7756932,
+    "seen": 1795159690.6291537,
+    "ast_hash": "0bd9d0ff4b3d688f1d36ec2fed071880",
+    "semantic_hash": ""
+  },
+  "scripts/prepare-update-deltas.ts": {
+    "mtime": 1793257570.3234408,
+    "seen": 1795159690.6291552,
+    "ast_hash": "551e4553967b70b720d68ec8f337e2be",
+    "semantic_hash": ""
+  },
+  "scripts/prepare-update.ps1": {
+    "mtime": 1794143147.7400644,
+    "seen": 1795159690.629156,
+    "ast_hash": "cfd506130a9a88e64d87edab8bb99b00",
+    "semantic_hash": ""
+  },
+  "scripts/prepare-windows.ps1": {
+    "mtime": 1791994765.761522,
+    "seen": 1795159690.6291573,
+    "ast_hash": "8b36c1b5582b97be48dcc46472f9b818",
+    "semantic_hash": ""
+  },
+  "scripts/publish-update.ps1": {
+    "mtime": 1792248533.3743055,
+    "seen": 1795159690.6291587,
+    "ast_hash": "d714c5544913b978c173bae8b65bee5b",
+    "semantic_hash": ""
+  },
+  "scripts/publish-update.ts": {
+    "mtime": 1794161127.3195295,
+    "seen": 1795159690.6291597,
+    "ast_hash": "b701491429cb819f89397b2cc0df9149",
+    "semantic_hash": ""
+  },
+  "scripts/release.ps1": {
+    "mtime": 1794670907.7577624,
+    "seen": 1795159690.6291606,
+    "ast_hash": "976fcbf20b7405caee7717834a44edab",
+    "semantic_hash": ""
+  },
+  "scripts/run-local-build.ps1": {
+    "mtime": 1794670868.3248317,
+    "seen": 1795159690.629162,
+    "ast_hash": "a89db35be6adf7ef93bccd101e1d4732",
+    "semantic_hash": ""
+  },
+  "scripts/test.ps1": {
+    "mtime": 1794298488.0598936,
+    "seen": 1795159690.629163,
+    "ast_hash": "0c252b411a8c31c798136143d8528fb0",
+    "semantic_hash": ""
+  },
+  "scripts/update-key.ts": {
+    "mtime": 1792248370.9993374,
+    "seen": 1795159690.629164,
+    "ast_hash": "abcc60b9d99634ddc2c6bc0e693fc125",
+    "semantic_hash": ""
+  },
+  "tests/update-publisher.test.ts": {
+    "mtime": 1792248776.5636635,
+    "seen": 1795159690.6291654,
+    "ast_hash": "2107a90a2a6bc805b37afbbf87dbae19",
+    "semantic_hash": ""
+  },
+  "tsconfig.json": {
+    "mtime": 1794237730.3143542,
+    "seen": 1795159690.6291664,
+    "ast_hash": "e36fbc670bf1c0d17232871f84849e6d",
+    "semantic_hash": ""
+  },
+  ".claude/agents/database-architect.md": {
+    "mtime": 1794826590.9981942,
+    "seen": 1795159690.6291676,
+    "ast_hash": "6ec815ff54e4668b6cc24dc85243569b",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1795159311.1200538,
+    "seen": 1795159690.6291687,
+    "ast_hash": "60c370bd034509a67dfcdc4b6dbb238a",
+    "semantic_hash": ""
+  },
+  "ARCHITECTURE.md": {
+    "mtime": 1794829887.738997,
+    "seen": 1795159690.960085,
+    "ast_hash": "d2e35d2bc7e42202583e3ee73841473e",
+    "semantic_hash": "d2e35d2bc7e42202583e3ee73841473e"
+  },
+  "README.md": {
+    "mtime": 1794329510.2663546,
+    "seen": 1795159690.629171,
+    "ast_hash": "d0faaeada1ac77e713e39ef5e058319f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/README.md": {
+    "mtime": 1789150593.8325267,
+    "seen": 1795159690.6291723,
+    "ast_hash": "013fe06e4eafdbcb06f4d7ad11d18e4c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/README.md": {
+    "mtime": 1793185665.283504,
+    "seen": 1795159690.6291733,
+    "ast_hash": "f095196620ae0e1d549f19b6383c07e9",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-10-30/PROMPTS.md": {
+    "mtime": 1793452907.54069,
+    "seen": 1795159690.6291742,
+    "ast_hash": "202132f794e2ed4707e5abac4004c26f",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-10-30/README.md": {
+    "mtime": 1793452907.54169,
+    "seen": 1795159690.6291757,
+    "ast_hash": "c0b757ad9c952acb61207936f3cbe8b5",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-11-01-taste/README.md": {
+    "mtime": 1793549739.6294727,
+    "seen": 1795159690.6291769,
+    "ast_hash": "850cfd2082eabc806a9fd7e7c466de06",
+    "semantic_hash": ""
+  },
+  "design/figcraft/README.md": {
+    "mtime": 1794840219.8162189,
+    "seen": 1795159690.6291778,
+    "ast_hash": "44c4cf256f0fea0270e1945d15a3eaa7",
+    "semantic_hash": ""
+  },
+  "docs/ANDROID.md": {
+    "mtime": 1794297198.3193917,
+    "seen": 1795159690.6291788,
+    "ast_hash": "ae81de443a607a4c71d2dec3938fd825",
+    "semantic_hash": ""
+  },
+  "docs/ANDROID_BACKGROUND_FIX.md": {
+    "mtime": 1789500521.8732932,
+    "seen": 1795159690.62918,
+    "ast_hash": "d6c6c172c623e4d815aedbc92a0865c6",
+    "semantic_hash": ""
+  },
+  "docs/ANDROID_BOOK_DELETE_ACCESS.md": {
+    "mtime": 1792332210.71594,
+    "seen": 1795159690.629181,
+    "ast_hash": "ddcee3699d0e23b51ec932cfbc6f3b4d",
+    "semantic_hash": ""
+  },
+  "docs/ANDROID_MEDIA_CONTROLS.md": {
+    "mtime": 1789500559.8024607,
+    "seen": 1795159690.6291819,
+    "ast_hash": "d505773e633d68e065f2773862f923d0",
+    "semantic_hash": ""
+  },
+  "docs/ANDROID_UPDATE_CERTIFICATES.md": {
+    "mtime": 1792309380.4415908,
+    "seen": 1795159690.629183,
+    "ast_hash": "3b71aff7cdb10e9a38cb46edc04988bd",
+    "semantic_hash": ""
+  },
+  "docs/ANKI_AND_LIBRARY_DEFAULTS.md": {
+    "mtime": 1792072428.2937224,
+    "seen": 1795159690.629184,
+    "ast_hash": "caf39f5f5206e77382dbf1479695edd6",
+    "semantic_hash": ""
+  },
+  "docs/APP_UPDATES.md": {
+    "mtime": 1794309305.0465899,
+    "seen": 1795159690.6291852,
+    "ast_hash": "852e253d20b15518e3bec2cfbda77763",
+    "semantic_hash": ""
+  },
+  "docs/ARCHITECTURE_PROPOSAL_2026-09.md": {
+    "mtime": 1794297284.9790368,
+    "seen": 1795159690.9600937,
+    "ast_hash": "dc36a9356cc4acfefbc9a927bbd0f378",
+    "semantic_hash": "dc36a9356cc4acfefbc9a927bbd0f378"
+  },
+  "docs/AUDIOBOOK_CATALOG.md": {
+    "mtime": 1789481644.005483,
+    "seen": 1795159690.6291876,
+    "ast_hash": "a4fb68a6bd7b8b45fa65db3d4751e043",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_COMPACT_LOGS_092.md": {
+    "mtime": 1791898781.1807024,
+    "seen": 1795159690.6291888,
+    "ast_hash": "bbe78a2f8ac071fd8112bad48f46ab81",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_COVERS_BACKUPS.md": {
+    "mtime": 1789503621.890608,
+    "seen": 1795159690.6291902,
+    "ast_hash": "0a39c43ef978287884cde20c600eb470",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_FOLDERS.md": {
+    "mtime": 1789456697.2263286,
+    "seen": 1795159690.6291914,
+    "ast_hash": "cdfb1fe93b4bfae0a85f428c98afa158",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_IMPLEMENTATION_PLAN.md": {
+    "mtime": 1794297198.3729153,
+    "seen": 1795159690.9601002,
+    "ast_hash": "6bcea14b98c4c0cd4698e803fac83179",
+    "semantic_hash": "6bcea14b98c4c0cd4698e803fac83179"
+  },
+  "docs/AUDIOBOOK_LINKED_FOLDERS.md": {
+    "mtime": 1789474256.166659,
+    "seen": 1795159690.6291938,
+    "ast_hash": "2a25cdab04ae8ef3eb99f4a17c0082b1",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_MULTITRACK.md": {
+    "mtime": 1789413012.2472913,
+    "seen": 1795159690.6291945,
+    "ast_hash": "850da510f4bbc3e463a57fd533807b29",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_NOTES_MINIPLAYER_093.md": {
+    "mtime": 1789664457.0129936,
+    "seen": 1795159690.6291957,
+    "ast_hash": "cb928d935eb558ca03eec19e2f1ce9fb",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_ORGANIZATION.md": {
+    "mtime": 1794297198.3864267,
+    "seen": 1795159690.6291971,
+    "ast_hash": "25f75e1cd9baf406ad8b08ae444dac45",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_PLAYER_091.md": {
+    "mtime": 1789644943.1035788,
+    "seen": 1795159690.629198,
+    "ast_hash": "d623e868c8e59742ae6bffafa42effb9",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_PROGRESS.md": {
+    "mtime": 1789401080.3474452,
+    "seen": 1795159690.629199,
+    "ast_hash": "d51dbacb8aa27300fa89eabde01d37b6",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_PROGRESS_STATISTICS_080.md": {
+    "mtime": 1789569252.9406188,
+    "seen": 1795159690.6292002,
+    "ast_hash": "a2efc2192ffbd3b2adad8a29e4eebb38",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_RESUME_TIMER.md": {
+    "mtime": 1792246159.2919219,
+    "seen": 1795159690.6292012,
+    "ast_hash": "39fc53e8862139203dc31f400ca3d81f",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_ROOTS.md": {
+    "mtime": 1789483454.7746894,
+    "seen": 1795159690.6292021,
+    "ast_hash": "a3453af747cb7a0f3facc80cdb1c60a8",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_TZ.md": {
+    "mtime": 1792246159.2939208,
+    "seen": 1795159690.629203,
+    "ast_hash": "4631c0371aa6296017fc3229b949888f",
+    "semantic_hash": ""
+  },
+  "docs/AUDIOBOOK_USABILITY_090.md": {
+    "mtime": 1789588643.5487041,
+    "seen": 1795159690.6292043,
+    "ast_hash": "f93e7e3fea0766169e94155c849c97ed",
+    "semantic_hash": ""
+  },
+  "docs/AUDIO_NOTIFICATION_FOCUS.md": {
+    "mtime": 1792927975.6555994,
+    "seen": 1795159690.6292055,
+    "ast_hash": "eb3eda6f3a7b9211404684e99395954d",
+    "semantic_hash": ""
+  },
+  "docs/AUDIO_PLAYER_AUDIT.md": {
+    "mtime": 1792308176.319796,
+    "seen": 1795159690.6292064,
+    "ast_hash": "0b414e51fea18cdd96552a3349065467",
+    "semantic_hash": ""
+  },
+  "docs/AUDIO_PLAYER_RESPONSIVENESS.md": {
+    "mtime": 1792308176.3208034,
+    "seen": 1795159690.6292076,
+    "ast_hash": "f2ec361e3eb0ae1024e12b3bc7e17c15",
+    "semantic_hash": ""
+  },
+  "docs/AUDIO_STATISTICS_ANALYSIS.md": {
+    "mtime": 1789569374.987327,
+    "seen": 1795159690.6292086,
+    "ast_hash": "c948e2d8df2c2cbdf41ddbbab32b5d18",
+    "semantic_hash": ""
+  },
+  "docs/BOOK_RECOMMENDATIONS.md": {
+    "mtime": 1791915642.801661,
+    "seen": 1795159690.6292095,
+    "ast_hash": "9dd954103e8ec8816ebd699c0f445c6f",
+    "semantic_hash": ""
+  },
+  "docs/BOOK_RECOMMENDATIONS_SOURCES.md": {
+    "mtime": 1791057240.1867557,
+    "seen": 1795159690.6292107,
+    "ast_hash": "7e46dd609dca00ab510ccdf9f28da740",
+    "semantic_hash": ""
+  },
+  "docs/BUILD_AND_RELEASE.md": {
+    "mtime": 1794770878.5895457,
+    "seen": 1795159690.629212,
+    "ast_hash": "bf67c59737f86ca4ebfd6f3a24256725",
+    "semantic_hash": ""
+  },
+  "docs/DATABASE_SCHEMA_V4.md": {
+    "mtime": 1793204007.898832,
+    "seen": 1795159690.6292129,
+    "ast_hash": "55845765ceb0bb4b1045586366ca2088",
+    "semantic_hash": ""
+  },
+  "docs/DELTA_UPDATES.md": {
+    "mtime": 1793281640.97516,
+    "seen": 1795159690.629214,
+    "ast_hash": "c1951cd47e5497845f54411700b3e866",
+    "semantic_hash": ""
+  },
+  "docs/EPUB_IMPLEMENTATION.md": {
+    "mtime": 1789311803.171449,
+    "seen": 1795159690.629215,
+    "ast_hash": "caca9f1ea329c2e1826b82584d561623",
+    "semantic_hash": ""
+  },
+  "docs/FORMATS.md": {
+    "mtime": 1789984177.2998626,
+    "seen": 1795159690.629216,
+    "ast_hash": "b50f2084794b2768c9df13bbeee53902",
+    "semantic_hash": ""
+  },
+  "docs/GETTING_STARTED.md": {
+    "mtime": 1794297198.4574978,
+    "seen": 1795159690.629217,
+    "ast_hash": "f935ff884e17922330cdbcb2841bf504",
+    "semantic_hash": ""
+  },
+  "docs/LIBRARY_PERFORMANCE.md": {
+    "mtime": 1793298390.6311178,
+    "seen": 1795159690.960104,
+    "ast_hash": "a7bc18aa80efe8c9f3bc7b57ce8cacc8",
+    "semantic_hash": "a7bc18aa80efe8c9f3bc7b57ce8cacc8"
+  },
+  "docs/LIBRARY_SECTIONS_094.md": {
+    "mtime": 1789844161.1849887,
+    "seen": 1795159690.629219,
+    "ast_hash": "898a6d3be6187638f663c6b5d7ec9877",
+    "semantic_hash": ""
+  },
+  "docs/LOCAL_BUILDS.md": {
+    "mtime": 1794298497.3236744,
+    "seen": 1795159690.62922,
+    "ast_hash": "a01ac91743acb5948b13ea9a29d1e04d",
+    "semantic_hash": ""
+  },
+  "docs/MANUAL_SERIES.md": {
+    "mtime": 1793818942.942877,
+    "seen": 1795159690.6292214,
+    "ast_hash": "154258f0c39be74bf566c88a40d610b2",
+    "semantic_hash": ""
+  },
+  "docs/MEDIA_MUSIC.md": {
+    "mtime": 1794297198.4850075,
+    "seen": 1795159690.9601073,
+    "ast_hash": "4fca6f590469094bc9a56ff903ede034",
+    "semantic_hash": "4fca6f590469094bc9a56ff903ede034"
+  },
+  "docs/MUSIC_SYNC_PERFORMANCE_VALIDATION.md": {
+    "mtime": 1794297198.49201,
+    "seen": 1795159690.6292233,
+    "ast_hash": "66742b2ce158413f4de3d66f21099369",
+    "semantic_hash": ""
+  },
+  "docs/PDF_ANDROID_FILES.md": {
+    "mtime": 1790002298.072253,
+    "seen": 1795159690.6292248,
+    "ast_hash": "9945b376abcdcb375f53741533e1589d",
+    "semantic_hash": ""
+  },
+  "docs/PDF_READER_PARITY.md": {
+    "mtime": 1794297198.5030882,
+    "seen": 1795159690.6292255,
+    "ast_hash": "ac7cc1ac6f85208e70e8c86b085ea95c",
+    "semantic_hash": ""
+  },
+  "docs/PERFORMANCE_READ_MODELS.md": {
+    "mtime": 1792744918.659856,
+    "seen": 1795159690.6292264,
+    "ast_hash": "17b6c1e64e006a3b747e932fe797226d",
+    "semantic_hash": ""
+  },
+  "docs/PERFORMANCE_REVIEW.md": {
+    "mtime": 1793441323.3455791,
+    "seen": 1795159690.6292279,
+    "ast_hash": "5c3351f24e2640b42ad9822af160cfe4",
+    "semantic_hash": ""
+  },
+  "docs/PERFORMANCE_REVIEW_2.md": {
+    "mtime": 1793443637.0742254,
+    "seen": 1795159690.6292288,
+    "ast_hash": "a4e3fa66d6b90ad151dde05b37d2c485",
+    "semantic_hash": ""
+  },
+  "docs/PERFORMANCE_REVIEW_3.md": {
+    "mtime": 1793446560.2846713,
+    "seen": 1795159690.6292298,
+    "ast_hash": "21d4b596cc49f706a1aebc57424dde1e",
+    "semantic_hash": ""
+  },
+  "docs/PERSONAL_LIBRARY.md": {
+    "mtime": 1793297101.9953747,
+    "seen": 1795159690.9601111,
+    "ast_hash": "80f90741b966e4cd4b6b50a18e4954b5",
+    "semantic_hash": "80f90741b966e4cd4b6b50a18e4954b5"
+  },
+  "docs/PROJECT_CLEANUP.md": {
+    "mtime": 1793301685.4236293,
+    "seen": 1795159690.629232,
+    "ast_hash": "ebd6f8d890f08b182b2d1eafc37e93e5",
+    "semantic_hash": ""
+  },
+  "docs/READER_010.md": {
+    "mtime": 1789976520.409029,
+    "seen": 1795159690.629233,
+    "ast_hash": "b344ea68ce68d4797adb537dd6686af6",
+    "semantic_hash": ""
+  },
+  "docs/READER_CONVENIENCE.md": {
+    "mtime": 1794329510.2748017,
+    "seen": 1795159690.6292338,
+    "ast_hash": "8ba7119e34213dcefda6650098055803",
+    "semantic_hash": ""
+  },
+  "docs/READER_FORMAT_VALIDATION_0221.md": {
+    "mtime": 1792930616.0634117,
+    "seen": 1795159690.6292353,
+    "ast_hash": "093f0e9c7744e8955b205e9cfa9ff911",
+    "semantic_hash": ""
+  },
+  "docs/READER_NAVIGATION_AND_SEARCH.md": {
+    "mtime": 1791964191.7632048,
+    "seen": 1795159690.9601135,
+    "ast_hash": "2457619cff288e0aea18629f5f007830",
+    "semantic_hash": "2457619cff288e0aea18629f5f007830"
+  },
+  "docs/READER_PERFORMANCE.md": {
+    "mtime": 1794297198.5506623,
+    "seen": 1795159690.6292372,
+    "ast_hash": "cd3cf1c8f3ac1302c5f68603443d3c11",
+    "semantic_hash": ""
+  },
+  "docs/READER_RICH_LAYOUT.md": {
+    "mtime": 1790083094.3999572,
+    "seen": 1795159690.6292384,
+    "ast_hash": "ee2fe22ea62c77733aee792697a0f2dd",
+    "semantic_hash": ""
+  },
+  "docs/READING_ACTIVITY_0101.md": {
+    "mtime": 1789976584.655871,
+    "seen": 1795159690.6292393,
+    "ast_hash": "5bafbce5318d4066c880062ed73c55f2",
+    "semantic_hash": ""
+  },
+  "docs/READING_DELETED_BOOKS.md": {
+    "mtime": 1792333716.2866485,
+    "seen": 1795159690.6292405,
+    "ast_hash": "2522663d95c2d7d80aeabcd31ab92535",
+    "semantic_hash": ""
+  },
+  "docs/READING_LIBRARY_010.md": {
+    "mtime": 1791900437.4267838,
+    "seen": 1795159690.6292417,
+    "ast_hash": "2f62cd78e16408219f934b3c4d4341fa",
+    "semantic_hash": ""
+  },
+  "docs/READING_NOTES_TOOLS_0101.md": {
+    "mtime": 1789976585.6927488,
+    "seen": 1795159690.6292427,
+    "ast_hash": "1bfc967396fba50ef8a4c57f29ce21ed",
+    "semantic_hash": ""
+  },
+  "docs/READING_PLANS_0101.md": {
+    "mtime": 1794297198.5741801,
+    "seen": 1795159690.6292436,
+    "ast_hash": "148ff1743075c42d472949c6e0fcac0f",
+    "semantic_hash": ""
+  },
+  "docs/RECOVERY_AND_PDF_FIXES.md": {
+    "mtime": 1794833618.9229038,
+    "seen": 1795159690.629245,
+    "ast_hash": "f269def9182fd379c20c71d8b9ba4d78",
+    "semantic_hash": ""
+  },
+  "docs/SMART_AUDIOBOOK_ANALYSIS.md": {
+    "mtime": 1789395214.3814614,
+    "seen": 1795159690.629246,
+    "ast_hash": "45e391bb8d2ac6bb3baea755b5485ac7",
+    "semantic_hash": ""
+  },
+  "docs/STATISTICS_CONSISTENCY.md": {
+    "mtime": 1793885463.51649,
+    "seen": 1795159690.9601157,
+    "ast_hash": "258dfa0be216c699876cb1bf41f1f671",
+    "semantic_hash": "258dfa0be216c699876cb1bf41f1f671"
+  },
+  "docs/STATISTICS_EXTENSIONS.md": {
+    "mtime": 1793885463.5134888,
+    "seen": 1795159690.6292481,
+    "ast_hash": "aff63cf299255d75b3630e45a653eeeb",
+    "semantic_hash": ""
+  },
+  "docs/TZ.md": {
+    "mtime": 1789825844.5707712,
+    "seen": 1795159690.6292493,
+    "ast_hash": "79bee0054f99c2e6fe633c90fcd81e11",
+    "semantic_hash": ""
+  },
+  "docs/VALIDATION.md": {
+    "mtime": 1794297198.6051826,
+    "seen": 1795159690.6292508,
+    "ast_hash": "4226ddb24249c932bbdb46586dcbfa2d",
+    "semantic_hash": ""
+  },
+  "docs/VIDEO_IMPLEMENTATION_PLAN.md": {
+    "mtime": 1794297198.6181817,
+    "seen": 1795159690.960118,
+    "ast_hash": "d07044e8800181cbc461abc56fbf0326",
+    "semantic_hash": "d07044e8800181cbc461abc56fbf0326"
+  },
+  "docs/VIDEO_SPECIFICATION.md": {
+    "mtime": 1792072138.7820218,
+    "seen": 1795159690.629253,
+    "ast_hash": "5f06c0c464a10de21c621ad4359ea4de",
+    "semantic_hash": ""
+  },
+  "docs/library-folder.md": {
+    "mtime": 1794828422.315387,
+    "seen": 1795159690.9601197,
+    "ast_hash": "a635bf560ad032f4e54a664e05400c4c",
+    "semantic_hash": "a635bf560ad032f4e54a664e05400c4c"
+  },
+  "docs/releases/RELEASE_0110.md": {
+    "mtime": 1794297197.548444,
+    "seen": 1795159690.6292548,
+    "ast_hash": "f2fa846b3bf03aba4fcd09a8a89b72e3",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0120.md": {
+    "mtime": 1794297197.560958,
+    "seen": 1795159690.629256,
+    "ast_hash": "34c5bd9715683e4a9ac48901c9d85cf6",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0121.md": {
+    "mtime": 1794297197.574466,
+    "seen": 1795159690.6292572,
+    "ast_hash": "92f0d42fe52e5ab091e4695cf3564f2b",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0140.md": {
+    "mtime": 1790327864.514228,
+    "seen": 1795159690.6292582,
+    "ast_hash": "1668a8ce633e9ab661b42c4812e1f5a7",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0141.md": {
+    "mtime": 1790331132.8564246,
+    "seen": 1795159690.6292596,
+    "ast_hash": "4642d58cc7271897c50474d8635ba3f5",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0142.md": {
+    "mtime": 1790500499.0893922,
+    "seen": 1795159690.6292605,
+    "ast_hash": "c851ed9af7354a7223231af3a558bed3",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0150.md": {
+    "mtime": 1794297197.616467,
+    "seen": 1795159690.6292617,
+    "ast_hash": "78c9e47e349c23f235e4ff30bd256e84",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0160.md": {
+    "mtime": 1794297197.6284666,
+    "seen": 1795159690.629263,
+    "ast_hash": "8af2c8d498507b901205607380595295",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0170.md": {
+    "mtime": 1794297197.641508,
+    "seen": 1795159690.6292639,
+    "ast_hash": "c5bb15ae9294cdd1f19090b0822b6e07",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0180.md": {
+    "mtime": 1794297197.6545467,
+    "seen": 1795159690.6292648,
+    "ast_hash": "84c92f24022be76d9cc0b578ac803916",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0181.md": {
+    "mtime": 1794297197.6685648,
+    "seen": 1795159690.6292663,
+    "ast_hash": "0046c55d92c312c56247087f5d267937",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0182.md": {
+    "mtime": 1791106093.6733918,
+    "seen": 1795159690.6292672,
+    "ast_hash": "fd936590085cd126699811972b7ee078",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0190.md": {
+    "mtime": 1791901619.2191446,
+    "seen": 1795159690.6292682,
+    "ast_hash": "271ae43e6f1a54a511ecd03ef0862e85",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0200.md": {
+    "mtime": 1794297197.6995666,
+    "seen": 1795159690.6292694,
+    "ast_hash": "a224ca0a1537f9a7be5378910bc18ab2",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0210_UPDATES.md": {
+    "mtime": 1792249325.4841099,
+    "seen": 1795159690.6292703,
+    "ast_hash": "136d64f38feb6774886a00732afd4d29",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0211.md": {
+    "mtime": 1792265391.7768762,
+    "seen": 1795159690.6292713,
+    "ast_hash": "19488c665615045d0f1c18930167aae8",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0212.md": {
+    "mtime": 1792266731.3895392,
+    "seen": 1795159690.6292722,
+    "ast_hash": "3c044f45388417e89f387910805b0fe7",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0213.md": {
+    "mtime": 1792307768.253144,
+    "seen": 1795159690.6292734,
+    "ast_hash": "fb02652cbe2dc7ebaf8b8093ae323d2e",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0214.md": {
+    "mtime": 1792308939.1294067,
+    "seen": 1795159690.6292744,
+    "ast_hash": "aeb3158e722b101894ce3d04e729a609",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0215.md": {
+    "mtime": 1792326137.645511,
+    "seen": 1795159690.6292753,
+    "ast_hash": "05096970173959ef607443ff7e7f0802",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0216.md": {
+    "mtime": 1792327942.0181162,
+    "seen": 1795159690.6292765,
+    "ast_hash": "551758da6c0f351e863979db1ad150af",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0217.md": {
+    "mtime": 1792331683.2708292,
+    "seen": 1795159690.6292775,
+    "ast_hash": "083a579342df866c4f9b10642e9f32ce",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0218.md": {
+    "mtime": 1792332947.6652956,
+    "seen": 1795159690.6292784,
+    "ast_hash": "fcde14d53838b243446827898cbfeccb",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0219.md": {
+    "mtime": 1792605930.0926695,
+    "seen": 1795159690.6292799,
+    "ast_hash": "9945d6b261e558674fbaa128bfd3a6cb",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0220.md": {
+    "mtime": 1792761162.8692942,
+    "seen": 1795159690.6292808,
+    "ast_hash": "cffef459c84055cea81bdefb4f8157da",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0221.md": {
+    "mtime": 1794297197.821597,
+    "seen": 1795159690.6292818,
+    "ast_hash": "a5993f4c7f3eaaa24581a6deef8c0593",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0222.md": {
+    "mtime": 1792935315.8338861,
+    "seen": 1795159690.6292827,
+    "ast_hash": "d3a41bf7f61e83a13b63b19ef5071f33",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0230.md": {
+    "mtime": 1792948011.7718427,
+    "seen": 1795159690.629284,
+    "ast_hash": "8ffb51ba073e98c0217cdbbd5e276931",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0231.md": {
+    "mtime": 1792950206.4341795,
+    "seen": 1795159690.629285,
+    "ast_hash": "b351ee489d737d67c300471fb01e251f",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0240.md": {
+    "mtime": 1794297197.867115,
+    "seen": 1795159690.6292858,
+    "ast_hash": "bbf0dc8a0fd3002c2c7d31275e5faa68",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0241.md": {
+    "mtime": 1793012684.9500284,
+    "seen": 1795159690.629287,
+    "ast_hash": "5089deb7bedeefad35f20c9120e39017",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0242.md": {
+    "mtime": 1793113747.7529197,
+    "seen": 1795159690.629288,
+    "ast_hash": "a7e2049320d00a5d57736c9232ce0b6e",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0243.md": {
+    "mtime": 1793122988.163614,
+    "seen": 1795159690.629289,
+    "ast_hash": "872d7a73943d64d784bd6655de2db80d",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0244.md": {
+    "mtime": 1793127127.027225,
+    "seen": 1795159690.6292899,
+    "ast_hash": "7b2f72fb599dc568d1a065110b2f8194",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0250.md": {
+    "mtime": 1793184127.6524317,
+    "seen": 1795159690.629291,
+    "ast_hash": "1647d9c42a300aa7a79486c9febb5add",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0251.md": {
+    "mtime": 1793187130.6204746,
+    "seen": 1795159690.6292922,
+    "ast_hash": "c3785cfd37ff7ad980caffaa4b243615",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0260.md": {
+    "mtime": 1793206000.6230524,
+    "seen": 1795159690.6292932,
+    "ast_hash": "797755653aa1a36834aaabdf13072a56",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0270.md": {
+    "mtime": 1793223861.0609508,
+    "seen": 1795159690.6292944,
+    "ast_hash": "576125eb70102b307b26f480e534283f",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0300.md": {
+    "mtime": 1793347536.0429182,
+    "seen": 1795159690.629295,
+    "ast_hash": "43ec369feb965d496ea9608d40983e09",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0301.md": {
+    "mtime": 1793451810.347797,
+    "seen": 1795159690.6292963,
+    "ast_hash": "a0cde98cffc803613254ed63f31bf690",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03010.md": {
+    "mtime": 1793864021.2038858,
+    "seen": 1795159690.6292975,
+    "ast_hash": "d7a41556597bc8fe988e0eb82be77b9e",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03011.md": {
+    "mtime": 1793874072.646314,
+    "seen": 1795159690.6292984,
+    "ast_hash": "bd844961850e8629c7c6d39b2a25fc33",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03012.md": {
+    "mtime": 1793885674.2710361,
+    "seen": 1795159690.6292994,
+    "ast_hash": "906231ac3c41b2973f3c739ebee0f15f",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03013.md": {
+    "mtime": 1793893838.291178,
+    "seen": 1795159690.6293006,
+    "ast_hash": "a8a4834379a52eacc288cd8aec0061c4",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03014.md": {
+    "mtime": 1793896033.5619829,
+    "seen": 1795159690.6293015,
+    "ast_hash": "0d77e2c57a4505c72cfe3876e47df731",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03015.md": {
+    "mtime": 1793903213.0388484,
+    "seen": 1795159690.6293025,
+    "ast_hash": "bfe16108c16ca7bf7d0f8c07fc17b6e8",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03016.md": {
+    "mtime": 1793904520.2961166,
+    "seen": 1795159690.6293037,
+    "ast_hash": "f3a9c834b10eb9874a09d7ddefd2ab62",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03017.md": {
+    "mtime": 1793994074.2483041,
+    "seen": 1795159690.629305,
+    "ast_hash": "ec1a94e1dca18118c3d49081844569c8",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03018.md": {
+    "mtime": 1794043792.611227,
+    "seen": 1795159690.6293058,
+    "ast_hash": "c33b621f81b40c03de940eab75cf733c",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03019.md": {
+    "mtime": 1794045521.0138192,
+    "seen": 1795159690.6293068,
+    "ast_hash": "e8d0c61ad2c9237fd8896dbf2fe1f17b",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0302.md": {
+    "mtime": 1793453275.7701614,
+    "seen": 1795159690.629308,
+    "ast_hash": "f07d3fd2c2ab4b8d0386ba10ad786b91",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03020.md": {
+    "mtime": 1794076740.4733913,
+    "seen": 1795159690.6293092,
+    "ast_hash": "7947eaa62edaf5e430e5bafd714f8e47",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03021.md": {
+    "mtime": 1794078684.010681,
+    "seen": 1795159690.6293101,
+    "ast_hash": "0b16503c1ac493e7aa9ca3cbf21598e6",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03022.md": {
+    "mtime": 1794081984.962207,
+    "seen": 1795159690.629311,
+    "ast_hash": "bacaec0d8a69465f4ce9214273c859b7",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03023.md": {
+    "mtime": 1794125772.8888755,
+    "seen": 1795159690.629312,
+    "ast_hash": "324c7bc98afaa4a03c1bb9f1fffe1e8c",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03024.md": {
+    "mtime": 1794130989.7483513,
+    "seen": 1795159690.6293132,
+    "ast_hash": "bd83d9bdfd58cd69bbb5acdd1a6500da",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03025.md": {
+    "mtime": 1794133704.185599,
+    "seen": 1795159690.6293144,
+    "ast_hash": "98e14068578a165290d03f1ab2b5f543",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03026.md": {
+    "mtime": 1794147505.7080107,
+    "seen": 1795159690.6293154,
+    "ast_hash": "64c00f872432e61bce7a05497ab018da",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03027.md": {
+    "mtime": 1794153401.8577363,
+    "seen": 1795159690.6293163,
+    "ast_hash": "91d04426db2e7c33d5a8bdb89b8b50a8",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03028.md": {
+    "mtime": 1794155674.0568464,
+    "seen": 1795159690.6293173,
+    "ast_hash": "9f8378821f4da4df9f3da93b846fd05f",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03029.md": {
+    "mtime": 1794161622.1238525,
+    "seen": 1795159690.6293185,
+    "ast_hash": "3e15e4d4d80b0bf1a9396fcac2f5dc33",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0303.md": {
+    "mtime": 1793481195.5463288,
+    "seen": 1795159690.6293194,
+    "ast_hash": "acfe4b33c4fd323ad16e25471eddb0e8",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03030.md": {
+    "mtime": 1794162143.5459478,
+    "seen": 1795159690.6293206,
+    "ast_hash": "4dc6b97f47389420879b877d991cebab",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03031.md": {
+    "mtime": 1794171973.261626,
+    "seen": 1795159690.629322,
+    "ast_hash": "9c3bfca2c8c1a4ce7855738542d5e9cc",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03032.md": {
+    "mtime": 1794213149.9885223,
+    "seen": 1795159690.629323,
+    "ast_hash": "2316bb4a82789aed4bb9df48724a2df8",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03033.md": {
+    "mtime": 1794213150.0060563,
+    "seen": 1795159690.629324,
+    "ast_hash": "162fd4be77d82ac2b812f51c1081fec3",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03034.md": {
+    "mtime": 1794227709.4829495,
+    "seen": 1795159690.6293252,
+    "ast_hash": "6627475f6d27cb9fc356eeb047ebd52b",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0304.md": {
+    "mtime": 1793533344.5730262,
+    "seen": 1795159690.629326,
+    "ast_hash": "0ccca271ad6785bdff346f09a860710b",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0305.md": {
+    "mtime": 1793789111.3745399,
+    "seen": 1795159690.6293273,
+    "ast_hash": "ad94b6670965b1c70686073b6d30eac4",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0306.md": {
+    "mtime": 1793790247.6546812,
+    "seen": 1795159690.629329,
+    "ast_hash": "7f03e4bedf1175c106c911156296e6ab",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0307.md": {
+    "mtime": 1793810799.817236,
+    "seen": 1795159690.62933,
+    "ast_hash": "d54dd736131bbb5a3c49b0bb0e273e48",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0308.md": {
+    "mtime": 1793812914.237143,
+    "seen": 1795159690.6293309,
+    "ast_hash": "47c677be468032b2f990277808110a72",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0309.md": {
+    "mtime": 1793818942.942877,
+    "seen": 1795159690.629332,
+    "ast_hash": "0c8982cfb5cce1d8a19e4f8729880fd9",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0310.md": {
+    "mtime": 1794240481.4131715,
+    "seen": 1795159690.6293333,
+    "ast_hash": "df3719ed9e8047395ca1f9f28181e2c0",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0311.md": {
+    "mtime": 1794254004.0884066,
+    "seen": 1795159690.6293342,
+    "ast_hash": "fcc10b53be93fc0f61aba078f3298f35",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03110.md": {
+    "mtime": 1794830218.098251,
+    "seen": 1795159690.6293354,
+    "ast_hash": "61664f0a84787e04fd96e55693157291",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03111.md": {
+    "mtime": 1794834036.4378922,
+    "seen": 1795159690.6293364,
+    "ast_hash": "ccb70d216c78faf5220c93e936c4bacd",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0312.md": {
+    "mtime": 1794255287.7739906,
+    "seen": 1795159690.6293373,
+    "ast_hash": "912bb74c8be00e77ae4d27c8e1c72a97",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0313.md": {
+    "mtime": 1794257336.3372757,
+    "seen": 1795159690.6293387,
+    "ast_hash": "645ad31cc569bf11240d339a5625097c",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0314.md": {
+    "mtime": 1794309402.579788,
+    "seen": 1795159690.6293397,
+    "ast_hash": "a8cea4b1140657381e50d44384d023dd",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0315.md": {
+    "mtime": 1794327519.9382708,
+    "seen": 1795159690.6293406,
+    "ast_hash": "a396a8126318962fa14147faf2f76af7",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0316.md": {
+    "mtime": 1794331589.3878212,
+    "seen": 1795159690.6293418,
+    "ast_hash": "bf5a81cd273417722b8be4bc98bfa3b2",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0317.md": {
+    "mtime": 1794399293.3928883,
+    "seen": 1795159690.629343,
+    "ast_hash": "c5b92d0dc72e9da505abc8e24604f7a0",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0318.md": {
+    "mtime": 1794663150.3978987,
+    "seen": 1795159690.629344,
+    "ast_hash": "c61b113bc310babde9fd1c93249b7fd3",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_0319.md": {
+    "mtime": 1794670077.0322034,
+    "seen": 1795159690.629345,
+    "ast_hash": "e38e6ebc09c447c8b34e8b517c898eeb",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/res/mipmap-hdpi/ic_launcher.png": {
+    "mtime": 1789150257.310979,
+    "seen": 1795189708.4480484,
+    "ast_hash": "13e9c72ec37fac220397aa819fa1ef2d",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/res/mipmap-mdpi/ic_launcher.png": {
+    "mtime": 1789150257.310979,
+    "seen": 1795189708.44805,
+    "ast_hash": "6270344430679711b81476e29878caa7",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png": {
+    "mtime": 1789150257.310979,
+    "seen": 1795189708.448051,
+    "ast_hash": "a0a8db5985280b3679d99a820ae2db79",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png": {
+    "mtime": 1789150257.3119788,
+    "seen": 1795189708.4480522,
+    "ast_hash": "afe1b655b9f32da22f9a4301bb8e6ba8",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png": {
+    "mtime": 1789150257.3119788,
+    "seen": 1795189708.448053,
+    "ast_hash": "57838d52c318faff743130c3fcfae0c6",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-10-30-statistics/statistics-concepts-v2.png": {
+    "mtime": 1793366266.7242362,
+    "seen": 1795189708.4480543,
+    "ast_hash": "064cf0f38c409b9612289085a3edade3",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-10-30-statistics/statistics-concepts-v3.png": {
+    "mtime": 1793366873.1375706,
+    "seen": 1795189708.4480555,
+    "ast_hash": "c8ad46cbd40ccb1e7b89849a32ac49a5",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-10-30-statistics/statistics-concepts.png": {
+    "mtime": 1793366064.3244953,
+    "seen": 1795189708.4480565,
+    "ast_hash": "76a915d6cf70458c974b1acbdbdc6060",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-10-30/concept-01-book-club.png": {
+    "mtime": 1793360250.7606003,
+    "seen": 1795189708.4480577,
+    "ast_hash": "7816124296a9ca72c574c4ca3b3779da",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-10-30/concept-02-focus.png": {
+    "mtime": 1793360373.1337733,
+    "seen": 1795189708.4480586,
+    "ast_hash": "0c2171c792a86c58f9f0def5bf13f923",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-11-01-taste/preview-books.png": {
+    "mtime": 1793549399.3340201,
+    "seen": 1795189708.4480598,
+    "ast_hash": "753fe9386c15c9ece212ee94be81312a",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-11-01-taste/preview-desktop.png": {
+    "mtime": 1793549402.355481,
+    "seen": 1795189708.4480612,
+    "ast_hash": "dbacb436d7f84741b1a698d08e0c4658",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-11-01-taste/preview-media.png": {
+    "mtime": 1793549400.046641,
+    "seen": 1795189708.4480624,
+    "ast_hash": "aa07891fbb87e1fc903a7ee57a060d9c",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-11-01-taste/preview-mobile.png": {
+    "mtime": 1793549399.200375,
+    "seen": 1795189708.4480639,
+    "ast_hash": "a64cfcc7ee11f613a1fee4ad75b3edc0",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-11-01-taste/preview-statistics.png": {
+    "mtime": 1793549399.6314807,
+    "seen": 1795189708.4480653,
+    "ast_hash": "75972baf2361b03c801ca6a481d1d60d",
+    "semantic_hash": ""
+  },
+  "design/pets/pet_hero.png": {
+    "mtime": 1795119208.3987374,
+    "seen": 1795189708.4480662,
+    "ast_hash": "328292556761e2566d1794faada0b91b",
+    "semantic_hash": ""
+  },
+  "design/pets/room_cozy.png": {
+    "mtime": 1795118151.590037,
+    "seen": 1795189708.4480677,
+    "ast_hash": "d159d289a5f30162d4457dfbc3ad61b5",
+    "semantic_hash": ""
+  },
+  "design/pets/room_detailed.png": {
+    "mtime": 1795119221.759837,
+    "seen": 1795189708.4480686,
+    "ast_hash": "2c8040dfb395bb6a071201a9d932f36e",
+    "semantic_hash": ""
+  },
+  "design/pets/room_night.png": {
+    "mtime": 1795118156.0557299,
+    "seen": 1795189708.4480696,
+    "ast_hash": "3400cd7350e79c117ff3e2d838983d26",
+    "semantic_hash": ""
+  },
+  "design/pets/room_pastel.png": {
+    "mtime": 1795118215.3072567,
+    "seen": 1795189708.4480708,
+    "ast_hash": "87339e9736b9b3b5d8eb452dd0f4b1f3",
+    "semantic_hash": ""
+  },
+  "design/pets/room_smooth.png": {
+    "mtime": 1795118376.2877507,
+    "seen": 1795189708.4480717,
+    "ast_hash": "7c21aa8cd704630133b3c84f99c5b49b",
+    "semantic_hash": ""
+  },
+  "design/pets/rooms_all.png": {
+    "mtime": 1795119239.4892745,
+    "seen": 1795189708.4480731,
+    "ast_hash": "a6dca5d80efc26bb5a4a09e3e0c21aba",
+    "semantic_hash": ""
+  },
+  "design/pets/shots/01_inside_wide.png": {
+    "mtime": 1795119330.599463,
+    "seen": 1795189708.4480743,
+    "ast_hash": "e9cee34aa03b5a49d6672132be3555c0",
+    "semantic_hash": ""
+  },
+  "design/pets/shots/02_window_seat.png": {
+    "mtime": 1795119335.2709074,
+    "seen": 1795189708.4480753,
+    "ast_hash": "16fa42a0a5ba08f2b02dd3310bf21b85",
+    "semantic_hash": ""
+  },
+  "design/pets/shots/03_top_down.png": {
+    "mtime": 1795119339.831396,
+    "seen": 1795189708.4480762,
+    "ast_hash": "1c36ad37c81fa6c5b568499b981fffbe",
+    "semantic_hash": ""
+  },
+  "design/pets/shots/04_reading_corner.png": {
+    "mtime": 1795119344.3323407,
+    "seen": 1795189708.4480777,
+    "ast_hash": "8c305343261847f11f71ac3d6c406a15",
+    "semantic_hash": ""
+  },
+  "design/pets/shots/05_pet_low.png": {
+    "mtime": 1795119369.7021446,
+    "seen": 1795189708.4480786,
+    "ast_hash": "4204754d10cc8260d8e98a31d425381a",
+    "semantic_hash": ""
+  },
+  "design/pets/shots/06_window_detail.png": {
+    "mtime": 1795119353.5435274,
+    "seen": 1795189708.4480798,
+    "ast_hash": "6ade4ad660772d2e08e6c80d0d46d48c",
+    "semantic_hash": ""
+  },
+  "docs/library-preview.png": {
+    "mtime": 1789315408.9499104,
+    "seen": 1795189708.4480808,
+    "ast_hash": "c4c3118b3efd7ee8634904a88252124f",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/books-desktop.png": {
+    "mtime": 1792782264.2559702,
+    "seen": 1795189708.448082,
+    "ast_hash": "fe0f54a5748c937ea4f735b5f0ecc4c4",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/books-mobile.png": {
+    "mtime": 1792782268.7792397,
+    "seen": 1795189708.448083,
+    "ast_hash": "2d531ab865f2b3e8262e2294181dec20",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/devices.png": {
+    "mtime": 1792782322.359568,
+    "seen": 1795189708.448084,
+    "ast_hash": "0c5ca84fcdb6d2740e390ef65fa0bf15",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/media.png": {
+    "mtime": 1792782321.0932505,
+    "seen": 1795189708.448085,
+    "ast_hash": "a8c7c6490921e30e01d19653fdf52cec",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/music-mobile.png": {
+    "mtime": 1792782318.431002,
+    "seen": 1795189708.4480863,
+    "ast_hash": "803340f8ae11fcbdedb76cc1ad56f7ba",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/music-statistics.png": {
+    "mtime": 1792782319.6722221,
+    "seen": 1795189708.4480872,
+    "ast_hash": "b5742063fdbc354ea1e1fbb464b952c8",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/music.png": {
+    "mtime": 1792782317.2893512,
+    "seen": 1795189708.4480884,
+    "ast_hash": "caf91d731ffa5a484fa9d948c37ebb23",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/notes.png": {
+    "mtime": 1792782277.153198,
+    "seen": 1795189708.4480891,
+    "ast_hash": "e87884998dbe9a8c35236d44f238f9a3",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/obsidian.png": {
+    "mtime": 1792782293.6437328,
+    "seen": 1795189708.4480903,
+    "ast_hash": "361d827fd1dd3b6b9f9d70da79c9464a",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/player.png": {
+    "mtime": 1792782289.421322,
+    "seen": 1795189708.4480915,
+    "ast_hash": "5b997ef3b4f9d013d9e6ae222ab2ed1a",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/reader.png": {
+    "mtime": 1792782273.1139421,
+    "seen": 1795189708.4480927,
+    "ast_hash": "d5d8888621dcf711dee8230d42eef537",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/recommendations.png": {
+    "mtime": 1792782285.4458778,
+    "seen": 1795189708.4480937,
+    "ast_hash": "4724886ca2a113e048300f45ce714011",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/settings-catalog-desktop.png": {
+    "mtime": 1792964225.739655,
+    "seen": 1795189708.448095,
+    "ast_hash": "5a4d60f1c093773da372d3ae84f575d3",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/settings-catalog-phone.png": {
+    "mtime": 1792964224.8258438,
+    "seen": 1795189708.4480965,
+    "ast_hash": "e0fc300a04d32e6e644d43b05b3ec7f5",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/settings.png": {
+    "mtime": 1792782297.642577,
+    "seen": 1795189708.4480975,
+    "ast_hash": "98559a5da961d95253171aae7c177b5b",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/statistics.png": {
+    "mtime": 1792782281.4609382,
+    "seen": 1795189708.448099,
+    "ast_hash": "200b00b9b256f7bce967fd70f1bd47d4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/pets/pet_rules.dart": {
+    "mtime": 1795211924.2299047,
+    "seen": 1795213571.832491,
+    "ast_hash": "4eda70dd91717bd0a3c196f90960d6f6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/pets/pets_schema.dart": {
+    "mtime": 1795211934.8111894,
+    "seen": 1795213571.8324952,
+    "ast_hash": "ded7a50be6fa586f815b292d5dfb71d4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/pets/pets_service.dart": {
+    "mtime": 1795212027.3312893,
+    "seen": 1795213571.8324974,
+    "ast_hash": "1be76c620b80ddef72f44661859600d8",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/pets_core_test.dart": {
+    "mtime": 1795212741.7408454,
+    "seen": 1795213571.8329918,
+    "ast_hash": "a1720cec45fcbbb54877efa245cc1352",
+    "semantic_hash": ""
+  },
+  "design/pets/scripts/lib.py": {
+    "mtime": 1795186605.1582203,
+    "seen": 1795189708.4477956,
+    "ast_hash": "b55b1858824178fd74174289d32dc9b2",
+    "semantic_hash": ""
+  },
+  "design/pets/scripts/pets.py": {
+    "mtime": 1795186901.6464555,
+    "seen": 1795189708.4477973,
+    "ast_hash": "b975815435582cf80f98ce104d7e32fa",
+    "semantic_hash": ""
+  },
+  "design/pets/scripts/rig_pet.py": {
+    "mtime": 1795190847.0376382,
+    "seen": 1795191785.103594,
+    "ast_hash": "381138e83ef8587fe676c1446e0ad686",
+    "semantic_hash": ""
+  },
+  "design/pets/scripts/rooms.py": {
+    "mtime": 1795186740.13487,
+    "seen": 1795189708.4477992,
+    "ast_hash": "e1631389a889496dee4d80ab0a9e7820",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/CormorantGaramond-OFL.txt": {
+    "mtime": 1791398977.3195078,
+    "seen": 1795189708.447833,
+    "ast_hash": "6085761d4b4b031541e48038b5701c6f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/Literata-OFL.txt": {
+    "mtime": 1793185502.9895182,
+    "seen": 1795189708.4478343,
+    "ast_hash": "1f2ee7e8e16f36be12810c782647fa9b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/Lora-OFL.txt": {
+    "mtime": 1789806272.4977958,
+    "seen": 1795189708.4478354,
+    "ast_hash": "804cefa2a9ec3f1ff5a9af3882c18fab",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/Manrope-FONTLOG.txt": {
+    "mtime": 1791023395.2958992,
+    "seen": 1795189708.4478364,
+    "ast_hash": "d46145468bbc4f8dcdad3eb81c7ca2fc",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/Manrope-OFL.txt": {
+    "mtime": 1791023394.9974716,
+    "seen": 1795189708.4478374,
+    "ast_hash": "a216ac8723e9b95b204d3bc619ebcabd",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/Merriweather-FONTLOG.txt": {
+    "mtime": 1793185505.188344,
+    "seen": 1795189708.4478388,
+    "ast_hash": "edccd68f541b2d7a1e5f7d70c2922c1b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/Merriweather-OFL.txt": {
+    "mtime": 1793185504.8297439,
+    "seen": 1795189708.44784,
+    "ast_hash": "45fdbbf9040d6c064b8c4cc47feb7a5e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/NotoSerif-OFL.txt": {
+    "mtime": 1793185503.614248,
+    "seen": 1795189708.4478407,
+    "ast_hash": "ead60c8cdf357c455cf69725c35c3b2d",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/Onest-OFL.txt": {
+    "mtime": 1791398978.173085,
+    "seen": 1795189708.4478421,
+    "ast_hash": "5665311666de96f24323e61b4fab9eb6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/OpenSans-OFL.txt": {
+    "mtime": 1793185505.4328122,
+    "seen": 1795189708.4478433,
+    "ast_hash": "2f74ec5e0b1fbcd6869e9224d7b4d600",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/Oswald-OFL.txt": {
+    "mtime": 1791398976.1696737,
+    "seen": 1795189708.447844,
+    "ast_hash": "c0fc6149908f11bdb440d51d4c916323",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/PTSans-OFL.txt": {
+    "mtime": 1793185505.711297,
+    "seen": 1795189708.447845,
+    "ast_hash": "3bcbea1434eb6ca2d4e75c5631950dab",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/PTSerif-OFL.txt": {
+    "mtime": 1793185503.732479,
+    "seen": 1795189708.447846,
+    "ast_hash": "71731de7fdc7b9268b653ba916989fb9",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/fonts/Roboto-OFL.txt": {
+    "mtime": 1793185505.5126922,
+    "seen": 1795189708.447848,
+    "ast_hash": "d0d30e4860cc10440e095be065c2b0e3",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/web-concepts/index.html": {
+    "mtime": 1791229231.3467422,
+    "seen": 1795189708.4478493,
+    "ast_hash": "46c6e7e7c38bf01254f5ab3a3999e2dc",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/windows/CMakeLists.txt": {
+    "mtime": 1789150593.8470776,
+    "seen": 1795189708.4478505,
+    "ast_hash": "0eb1587ffc39a672f62ea6bd7a6c6ea9",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/windows/flutter/CMakeLists.txt": {
+    "mtime": 1789150257.3328815,
+    "seen": 1795189708.4478514,
+    "ast_hash": "bbf66fed5180bd9ae8198b8d7c4a0001",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/windows/runner/CMakeLists.txt": {
+    "mtime": 1789150257.3328815,
+    "seen": 1795189708.4478526,
+    "ast_hash": "028602ab9754bffe716659ada7590d29",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-10-30-statistics/statistics-concepts-v2.html": {
+    "mtime": 1793366266.1001205,
+    "seen": 1795189708.4478533,
+    "ast_hash": "0bde7fd2d3817ad0057d47e2bf5daeca",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-10-30-statistics/statistics-concepts-v3.html": {
+    "mtime": 1793366872.061157,
+    "seen": 1795189708.4478543,
+    "ast_hash": "5d9b66113e66492b01b4d6ccb2b22972",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-10-30-statistics/statistics-concepts.html": {
+    "mtime": 1793366063.7371874,
+    "seen": 1795189708.447855,
+    "ast_hash": "3e665eb7502573af1364fbdf57584ce3",
+    "semantic_hash": ""
+  },
+  "design/concepts/2026-11-01-taste/index.html": {
+    "mtime": 1793549062.9408317,
+    "seen": 1795189708.4478602,
+    "ast_hash": "155c6f9e349aa0443b3de4fad353280b",
+    "semantic_hash": ""
+  },
+  "\u041a\u041e\u041c\u0410\u041d\u0414\u042b.txt": {
+    "mtime": 1794770753.058577,
+    "seen": 1795189708.448047,
+    "ast_hash": "41ac6e9288f767030969a3c9d767e9c3",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/pets/pet_catalog.dart": {
+    "mtime": 1795211924.2399392,
+    "seen": 1795213571.832486,
+    "ast_hash": "2222344afa932ecebe6a589f2ee5b26f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/pets/ui/pet_scene.dart": {
+    "mtime": 1795213494.4925086,
+    "seen": 1795213571.8324995,
+    "ast_hash": "daceb16cc82b51dcecc84257ae84cbda",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/pets/ui/pets_section.dart": {
+    "mtime": 1795212763.9027128,
+    "seen": 1795213571.8325021,
+    "ast_hash": "023f65bf7a22b614497b5b2e4f32b15c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/pets_section_test.dart": {
+    "mtime": 1795212762.5419936,
+    "seen": 1795213571.8329964,
+    "ast_hash": "c675c16ae8e79faceba16359f0494618",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/pets/pet_progress.dart": {
+    "mtime": 1795212763.8480752,
+    "seen": 1795213571.8324883,
+    "ast_hash": "1b58b9378a9b9d3f9a7170b8c38b5a41",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/pets/pets_progress_service.dart": {
+    "mtime": 1795212763.8618784,
+    "seen": 1795213571.832493,
+    "ast_hash": "bddbe9da55042ced066f59fa0be9f5e5",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/pets/ui/pets_tabs.dart": {
+    "mtime": 1795213155.8912835,
+    "seen": 1795213571.832505,
+    "ast_hash": "05d95ddaff551f6f11df6de9d93849aa",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/pets_growth_test.dart": {
+    "mtime": 1795212763.9369588,
+    "seen": 1795213571.832994,
+    "ast_hash": "e00bc3ec4a3d1f38583b9f365faa70cc",
+    "semantic_hash": ""
+  },
+  "design/pets/scripts/stage4.py": {
+    "mtime": 1795212488.1969435,
+    "seen": 1795213571.8332043,
+    "ast_hash": "6f1c18f319852e050717b7636effa8ee",
+    "semantic_hash": ""
+  },
+  "package-lock.json": {
+    "mtime": 1794771078.5666482,
+    "seen": 1795189708.4480996,
+    "ast_hash": "78ef70f59d6c3fdc15f5e009d9732790",
+    "semantic_hash": ""
+  }
+}
