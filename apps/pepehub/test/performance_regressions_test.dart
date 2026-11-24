@@ -73,7 +73,7 @@ void main() {
         if (width >= 860) {
           var panelReady = false;
           final dynamic state = tester.state(find.byType(AudioPage));
-          (state.seekRows as Future).then((_) => panelReady = true);
+          (state.bookmarkRows as Future).then((_) => panelReady = true);
           await ready(tester, () => panelReady);
         }
         if (width < 860) {

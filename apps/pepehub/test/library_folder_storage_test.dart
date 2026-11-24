@@ -139,7 +139,17 @@ void main() {
     }
     services.clear();
     databases.clear();
-    await root.delete(recursive: true);
+    // An automatic save started just before dispose may still be moving its
+    // staged file; Windows then refuses to delete a non-empty folder.
+    for (var attempt = 0; ; attempt++) {
+      try {
+        await root.delete(recursive: true);
+        break;
+      } on FileSystemException {
+        if (attempt >= 20) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    }
   });
 
   for (final type in ['book', 'audiobook']) {

@@ -105,7 +105,10 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
     super.dispose();
   }
 
-  bool get changed => !mapEquals(value.toJson(), widget.initial.toJson());
+  /// PDF zoom and crop live outside the preferences, so a PDF can always
+  /// be put back.
+  bool get changed =>
+      widget.pdf || !mapEquals(value.toJson(), widget.initial.toJson());
 
   void change(ReaderPreferences next) {
     setState(() => value = next);
@@ -565,7 +568,7 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
           value: value.keepAwake,
           onChanged: (v) => change(value.copy(keepAwake: v)),
         ),
-        if (!widget.pdf && defaultTargetPlatform == TargetPlatform.android)
+        if (defaultTargetPlatform == TargetPlatform.android)
           SwitchListTile.adaptive(
             key: const ValueKey('reader-volume-keys'),
             contentPadding: EdgeInsets.zero,
@@ -574,7 +577,7 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
             value: value.volumeKeys,
             onChanged: (v) => change(value.copy(volumeKeys: v)),
           ),
-        if (!widget.pdf && defaultTargetPlatform == TargetPlatform.android)
+        if (defaultTargetPlatform == TargetPlatform.android)
           SwitchListTile.adaptive(
             key: const ValueKey('reader-system-navigation'),
             contentPadding: EdgeInsets.zero,
@@ -733,10 +736,7 @@ class _AppearanceSheetState extends State<_AppearanceSheet> {
                     section('Цвет страницы', palettes()),
                     section('Листать страницы', readingMode()),
                     if (widget.pdf && widget.pdfPageTools != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 18),
-                        child: widget.pdfPageTools!,
-                      ),
+                      section('Страница PDF', widget.pdfPageTools!),
                     if (!widget.pdf)
                       section(
                         'Текст на странице',

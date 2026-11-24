@@ -480,7 +480,7 @@ void main() {
   );
 
   testWidgets(
-    '«Серии» groups 900 books and 900 audiobooks lazily, in volume order',
+    'Grouping by series: 900 books and 900 audiobooks lazily, in volume order',
     (tester) async {
       tester.view.physicalSize = const Size(390, 1000);
       tester.view.devicePixelRatio = 1;
@@ -547,10 +547,10 @@ void main() {
         }
         await tapVisible(
           tester,
-          find.byKey(const ValueKey('shelf-view-series')),
+          find.byKey(const ValueKey('shelf-group-series')),
         );
         await tester.pumpAndSettle();
-        expect(state.shelfView, 'series');
+        expect(state.groupSeries, isTrue);
         // Rows are built lazily: a few headers, not 300.
         final headers = seriesRows().evaluate().length;
         expect(headers, greaterThan(0));
@@ -587,9 +587,14 @@ void main() {
         await tester.pumpAndSettle();
         expect(shelfCards().evaluate().take(1), isEmpty);
       }
-      // The series view is remembered per section and never touches tracks.
-      expect(await repo.meta('reading-shelf-view'), 'series');
-      expect(await repo.meta('audio-shelf-view'), 'series');
+      // Grouping is remembered per section and never touches tracks.
+      expect(await repo.meta('reading-shelf-group-series'), '1');
+      expect(await repo.meta('audio-shelf-group-series'), '1');
+      // Over the covers the series stay one tile each, still built lazily.
+      await tapVisible(tester, find.byTooltip('Обложки'));
+      await tester.pumpAndSettle();
+      expect(seriesRows().evaluate().length, inInclusiveRange(1, 35));
+      expect(state.groupSeries, isTrue);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },

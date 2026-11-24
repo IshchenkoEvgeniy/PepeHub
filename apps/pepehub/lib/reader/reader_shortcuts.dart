@@ -34,11 +34,12 @@ Future<void> showReaderShortcuts(
                 : '↑ / ↓ — прокрутка; ← / → — страница',
           ),
           Text(pdf ? 'Ctrl+ + / − — масштаб' : 'Ctrl+ + / − — размер шрифта'),
+          const Text('Ctrl+D — сохранить закладку'),
           Text(
-            pdf ? 'Ctrl+D — заметка к странице' : 'Ctrl+D — сохранить закладку',
+            pdf
+                ? 'Ctrl+B — список закладок'
+                : 'Ctrl+B — список закладок; F3 / Shift+F3 — совпадения',
           ),
-          if (!pdf)
-            const Text('Ctrl+B — список закладок; F3 / Shift+F3 — совпадения'),
           const Text('F11 — показать или скрыть панели; Esc — скрыть панели'),
         ],
       ),

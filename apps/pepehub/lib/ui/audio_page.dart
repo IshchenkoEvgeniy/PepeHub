@@ -4,6 +4,7 @@ import 'audio_notes_page.dart';
 import 'dart:io';
 
 import 'audio_rewind_options.dart';
+import 'audio_timeline.dart';
 
 import 'package:flutter/material.dart';
 
@@ -353,54 +354,27 @@ class _AudioPageState extends State<AudioPage> {
   }
 
   Future<void> _showHistory() async {
-    final book = controller.current?.bookId;
-    if (book == null) return;
-    await controller.flushJournal();
-    final rows = (await controller.journal.list(
-      'audio_event',
-      bookId: book,
-      kind: 'seek',
-      limit: 100,
-    )).where((r) => r.payload?['kind'] == 'seek').take(100).toList();
-    if (!mounted) return;
+    if (controller.current?.bookId == null) return;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => SafeArea(
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
         child: SizedBox(
-          height: MediaQuery.sizeOf(context).height * .7,
+          height: MediaQuery.sizeOf(sheet).height * .8,
           child: Column(
             children: [
               const ListTile(
-                title: Text('История перемоток'),
-                subtitle: Text('Нажмите, чтобы вернуться к исходной позиции'),
+                title: Text('История прослушивания'),
+                subtitle: Text(
+                  'Нажмите на отрезок — продолжить, где остановились. '
+                  'Нажмите на переход — вернуться туда, откуда перешли.',
+                ),
               ),
               Expanded(
-                child: ListView.builder(
-                  itemCount: rows.isEmpty ? 1 : rows.length,
-                  itemBuilder: (context, index) {
-                    if (rows.isEmpty) {
-                      return const ListTile(title: Text('Перемоток пока нет'));
-                    }
-                    final row = rows[index];
-                    return ListTile(
-                      leading: const Icon(Icons.undo),
-                      title: Text(
-                        '${audioTime(Duration(milliseconds: row.payload!['fromMs'] as int))} → ${audioTime(Duration(milliseconds: row.payload!['positionMs'] as int))}',
-                      ),
-                      subtitle: Text(
-                        '${row.payload!['at']} · ${audioSeekReasonLabel(row.payload!['reason'])}',
-                      ),
-                      onTap: () {
-                        Navigator.pop(context);
-                        controller.goToLocation(
-                          row.payload!['fromTrackId'] as String,
-                          row.payload!['fromMs'] as int,
-                          reason: 'history',
-                        );
-                      },
-                    );
-                  },
+                child: AudioTimeline(
+                  controller: controller,
+                  onMoved: () => Navigator.pop(sheet),
                 ),
               ),
             ],
@@ -537,7 +511,7 @@ class _AudioPageState extends State<AudioPage> {
                   TextButton.icon(
                     onPressed: _showHistory,
                     icon: const Icon(Icons.history),
-                    label: const Text('Перемотки'),
+                    label: const Text('История'),
                   ),
                 ],
               ),
@@ -574,7 +548,7 @@ class _AudioPageState extends State<AudioPage> {
 
   String? panelBook;
   int panelVersion = 0;
-  Future<List<LibraryRecord>>? bookmarkRows, seekRows;
+  Future<List<LibraryRecord>>? bookmarkRows;
 
   void _panelData() {
     final book = controller.current?.bookId;
@@ -582,19 +556,10 @@ class _AudioPageState extends State<AudioPage> {
     if (key == panelBook) return;
     panelBook = key;
     if (book == null) {
-      bookmarkRows = seekRows = null;
+      bookmarkRows = null;
       return;
     }
     bookmarkRows = controller.journal.list('audio_bookmark', bookId: book);
-    seekRows = () async {
-      await controller.flushJournal();
-      return (await controller.journal.list(
-        'audio_event',
-        bookId: book,
-        kind: 'seek',
-        limit: 100,
-      )).where((r) => r.payload?['kind'] == 'seek').take(100).toList();
-    }();
   }
 
   void _refreshPanel() {
@@ -745,7 +710,7 @@ class _AudioPageState extends State<AudioPage> {
         icon: const Icon(Icons.bookmarks_outlined),
       ),
       IconButton(
-        tooltip: 'Перемотки',
+        tooltip: 'История прослушивания',
         onPressed: _showHistory,
         icon: const Icon(Icons.history),
       ),
@@ -1052,7 +1017,7 @@ class _AudioPageState extends State<AudioPage> {
               tabs: [
                 Tab(text: 'Главы · ${controller.tracks.length}'),
                 const Tab(text: 'Закладки'),
-                const Tab(text: 'Перемотки'),
+                const Tab(text: 'История'),
               ],
             ),
             Expanded(
@@ -1101,40 +1066,7 @@ class _AudioPageState extends State<AudioPage> {
                       ),
                     ],
                   ),
-                  Column(
-                    children: [
-                      Expanded(
-                        child: _rows(
-                          palette,
-                          seekRows,
-                          'Перемоток пока нет',
-                          (row) => ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.undo),
-                            title: Text(
-                              '${audioTime(Duration(milliseconds: row.payload!['fromMs'] as int))} → ${audioTime(Duration(milliseconds: row.payload!['positionMs'] as int))}',
-                            ),
-                            subtitle: Text(
-                              audioSeekReasonLabel(row.payload!['reason']),
-                            ),
-                            onTap: () => controller.goToLocation(
-                              row.payload!['fromTrackId'] as String,
-                              row.payload!['fromMs'] as int,
-                              reason: 'history',
-                            ),
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: TextButton.icon(
-                          onPressed: _refreshPanel,
-                          icon: const Icon(Icons.refresh, size: 18),
-                          label: const Text('Обновить'),
-                        ),
-                      ),
-                    ],
-                  ),
+                  AudioTimeline(controller: controller),
                 ],
               ),
             ),

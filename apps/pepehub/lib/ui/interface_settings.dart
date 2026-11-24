@@ -375,25 +375,19 @@ class _InterfaceSettingsState extends State<InterfaceSettings> {
               repository: widget.repository,
             ),
             ValueListenableBuilder(
-              valueListenable: PepeSection.hidden,
-              builder: (context, hidden, _) => SwitchListTile(
-                key: const ValueKey('pets-section-visible'),
-                title: const Text('Раздел «Питомник»'),
-                subtitle: const Text(
-                  'Питомцы за чтение. Если скрыть, монеты и питомцы сохранятся',
+              valueListenable: PepeNavLayout.current,
+              builder: (context, layout, _) => ListTile(
+                key: const ValueKey('navigation-layout'),
+                leading: const Icon(Icons.dashboard_customize_outlined),
+                title: const Text('Нижняя панель'),
+                subtitle: Text(
+                  'Порядок разделов, что стоит в панели и что в «Ещё»: '
+                  '${layout.bar.map((i) => i.label).join(', ')}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                value: !hidden.contains(PepeSection.pets),
-                onChanged: saving
-                    ? null
-                    : (show) async {
-                        await widget.repository.setMeta(
-                          petsSectionHiddenKey,
-                          show ? '0' : '1',
-                        );
-                        PepeSection.hidden.value = show
-                            ? {}
-                            : {PepeSection.pets};
-                      },
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => openNavigationLayout(context),
               ),
             ),
           ],

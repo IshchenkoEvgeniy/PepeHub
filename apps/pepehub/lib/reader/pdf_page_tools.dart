@@ -67,6 +67,9 @@ class PdfPageTools extends StatefulWidget {
   final bool locked, initialCrop;
   final int page;
   final Future<void> Function(bool) onCrop;
+
+  /// Turns the scale and horizontal lock on or off, saved at once.
+  final Future<bool> Function()? onToggleLock;
   const PdfPageTools({
     super.key,
     required this.controller,
@@ -74,6 +77,7 @@ class PdfPageTools extends StatefulWidget {
     required this.page,
     required this.initialCrop,
     required this.onCrop,
+    this.onToggleLock,
   });
   @override
   State<PdfPageTools> createState() => _PdfPageToolsState();
@@ -81,6 +85,7 @@ class PdfPageTools extends StatefulWidget {
 
 class _PdfPageToolsState extends State<PdfPageTools> {
   late bool cropped = widget.initialCrop;
+  late bool locked = widget.locked;
   bool busy = false;
   String? error;
   @override
@@ -119,7 +124,7 @@ class _PdfPageToolsState extends State<PdfPageTools> {
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
-    final enabled = controller.isReady && !widget.locked && !busy;
+    final enabled = controller.isReady && !locked && !busy;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -167,11 +172,27 @@ class _PdfPageToolsState extends State<PdfPageTools> {
           value: cropped,
           onChanged: enabled ? crop : null,
         ),
-        if (widget.locked)
+        if (widget.onToggleLock != null)
+          SwitchListTile.adaptive(
+            key: const ValueKey('pdf-lock'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Зафиксировать масштаб'),
+            subtitle: const Text(
+              'Листать только вниз, без случайного сдвига и увеличения',
+            ),
+            value: locked,
+            onChanged: controller.isReady && !busy
+                ? (_) async {
+                    final next = await widget.onToggleLock!();
+                    if (mounted) setState(() => locked = next);
+                  }
+                : null,
+          )
+        else if (locked)
           const Padding(
             padding: EdgeInsets.only(bottom: 12),
             child: Text(
-              'Для изменения масштаба отключите фиксацию ширины в меню PDF.',
+              'Для изменения масштаба отключите фиксацию в меню PDF.',
             ),
           ),
         if (error != null)

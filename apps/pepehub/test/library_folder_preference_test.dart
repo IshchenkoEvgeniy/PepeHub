@@ -15,12 +15,18 @@ import 'package:pepehub/ui/shelf_components.dart';
 import 'video_player_tools_widget_test.dart' show ready;
 
 Future<void> section(WidgetTester tester, PepeSection next) async {
-  await tester.tap(
-    find.descendant(
-      of: find.byType(ShelfBottomBar),
-      matching: find.text(next.label),
-    ),
+  final inBar = find.descendant(
+    of: find.byType(ShelfBottomBar),
+    matching: find.text(next.label),
   );
+  if (inBar.evaluate().isNotEmpty) {
+    await tester.tap(inBar);
+  } else {
+    // A narrow bar keeps the rest of the sections behind «Ещё».
+    await tester.tap(find.byKey(const ValueKey('nav:more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('nav-more:${next.name}')));
+  }
   await ready(tester, () {
     final bar = tester.widget<ShelfBottomBar>(find.byType(ShelfBottomBar));
     return bar.navigation.current == next &&

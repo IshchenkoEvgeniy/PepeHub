@@ -9,6 +9,9 @@ class ReaderBookmarksPage extends StatefulWidget {
   final List<String> chapterTitles;
   final int chapter, offset;
   final ReaderDocument? document;
+
+  /// Place line of a bookmark; by default the chapter and percent.
+  final String Function(ReaderBookmark)? describe;
   const ReaderBookmarksPage({
     super.key,
     required this.store,
@@ -16,6 +19,7 @@ class ReaderBookmarksPage extends StatefulWidget {
     required this.chapter,
     required this.offset,
     this.document,
+    this.describe,
   });
 
   @override
@@ -210,7 +214,9 @@ class _ReaderBookmarksPageState extends State<ReaderBookmarksPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              valid
+                              valid && widget.describe != null
+                                  ? widget.describe!(bookmark)
+                                  : valid
                                   ? '${bookmark.chapter + 1}. ${widget.chapterTitles[bookmark.chapter]}'
                                         '${place == null || document!.length == 0 ? '' : ' · ${(place * 100 / document.length).toStringAsFixed(1)}%'}'
                                   : 'Глава недоступна',

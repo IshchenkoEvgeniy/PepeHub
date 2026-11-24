@@ -714,15 +714,15 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/reader/pdf_page_tools.dart": {
-    "mtime": 1793183370.287632,
-    "seen": 1795159690.6287167,
-    "ast_hash": "bec379a0efb8a45429ecbb3124d09793",
+    "mtime": 1795554828.5208395,
+    "seen": 1795555803.1515439,
+    "ast_hash": "71192b27676308357ab29501151160f4",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/reader/pdf_reader_page.dart": {
-    "mtime": 1794662104.3300972,
-    "seen": 1795159690.6287181,
-    "ast_hash": "0ff77b7c6114eed919f94fbe00019732",
+    "mtime": 1795555424.447293,
+    "seen": 1795555803.151545,
+    "ast_hash": "2feb7b5041ff78d83fa5e1f479ac0d33",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/reader/pdf_search_page.dart": {
@@ -744,9 +744,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/reader/reader_appearance.dart": {
-    "mtime": 1794394142.8093643,
-    "seen": 1795159690.628723,
-    "ast_hash": "16fd8ebe0b3985242007994db224c5ed",
+    "mtime": 1795555060.3564618,
+    "seen": 1795555803.1515503,
+    "ast_hash": "ea5753ab02deaafae1b1ba19b1f026e5",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/reader/reader_bookmarks.dart": {
@@ -756,9 +756,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/reader/reader_bookmarks_page.dart": {
-    "mtime": 1794330405.864201,
-    "seen": 1795159690.6287253,
-    "ast_hash": "696f2213c457c1f447771b41f8a5d6a4",
+    "mtime": 1795554601.604133,
+    "seen": 1795555803.1515524,
+    "ast_hash": "d02c41c46b773fc6f8889bc6b900ecfd",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/reader/reader_contents.dart": {
@@ -852,9 +852,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/reader/reader_shortcuts.dart": {
-    "mtime": 1794394077.9080584,
-    "seen": 1795159690.628743,
-    "ast_hash": "bdf133ecdb5429c1c78a352477b23ede",
+    "mtime": 1795554853.660765,
+    "seen": 1795555803.1515732,
+    "ast_hash": "b03bd9a9bd76bcc3a3bff27d30aa196b",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/reader/reader_status_line.dart": {
@@ -1086,9 +1086,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/audio_page.dart": {
-    "mtime": 1794330405.9459183,
-    "seen": 1795159690.6287887,
-    "ast_hash": "f719451c882f53b15a4c3b3c163fc4ae",
+    "mtime": 1795554357.925675,
+    "seen": 1795555803.1516206,
+    "ast_hash": "a3790299781a0704a248412f738d939c",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/audio_recovery_page.dart": {
@@ -1206,9 +1206,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/interface_settings.dart": {
-    "mtime": 1795191226.8424053,
-    "seen": 1795191785.1031919,
-    "ast_hash": "930a01a08687b4f9b67cbb4e6adf74cc",
+    "mtime": 1795554118.005887,
+    "seen": 1795555803.1516507,
+    "ast_hash": "d1f20f631fa7ec231ad9864ed3a43472",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/library_archive_page.dart": {
@@ -1284,9 +1284,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/library_page.dart": {
-    "mtime": 1795191240.9349785,
-    "seen": 1795191785.1032088,
-    "ast_hash": "ad79ee26cc5d259a35ad4d06ee584781",
+    "mtime": 1795554382.57248,
+    "seen": 1795555803.1516657,
+    "ast_hash": "118d145f460eb4973938d3982184ab5d",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/library_page_batch.dart": {
@@ -1302,9 +1302,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/library_page_filters.dart": {
-    "mtime": 1794662619.5277884,
-    "seen": 1795159690.6288276,
-    "ast_hash": "c97dccf348f01b1e7d96cb1dded33753",
+    "mtime": 1795553771.9739091,
+    "seen": 1795555803.151669,
+    "ast_hash": "6b22a8068a6f72e46b36e7b7ca649d98",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/library_page_library_actions.dart": {
@@ -1314,9 +1314,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/library_page_series.dart": {
-    "mtime": 1794662641.6053095,
-    "seen": 1795159690.6288297,
-    "ast_hash": "f88268963cb6387906d9f9bc80090966",
+    "mtime": 1795554382.585547,
+    "seen": 1795555803.1516714,
+    "ast_hash": "86019c95b6e68e68778369a6b97ee873",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/library_series_editor_page.dart": {
@@ -1344,9 +1344,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/pepe_widgets.dart": {
-    "mtime": 1794080709.76439,
-    "seen": 1795159690.6288354,
-    "ast_hash": "dc2002cd1da7dd51efe0f2f2f73b3362",
+    "mtime": 1795554117.8163328,
+    "seen": 1795555803.1516802,
+    "ast_hash": "ea42f9766d39f7c09403c8ce4e6d96e1",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/playback_settings_page.dart": {
@@ -1410,9 +1410,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/shelf_components.dart": {
-    "mtime": 1795191206.8608181,
-    "seen": 1795191785.1032367,
-    "ast_hash": "e0fd713e747a36db1a9c225a6582cdab",
+    "mtime": 1795554086.9334702,
+    "seen": 1795555803.1516938,
+    "ast_hash": "d67191b0527e53064ee9145667929871",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/statistics_exchange_page.dart": {
@@ -1944,9 +1944,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/test/file_shelf_controls_test.dart": {
-    "mtime": 1794662688.9843762,
-    "seen": 1795159690.6289506,
-    "ast_hash": "94250dadddee920f8ff1b21713ee637b",
+    "mtime": 1795553825.6999738,
+    "seen": 1795555803.1518023,
+    "ast_hash": "fc1220202056d28edd3c2eff51095523",
     "semantic_hash": ""
   },
   "apps/pepehub/test/folder_and_trash_regressions_test.dart": {
@@ -2022,9 +2022,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/test/library_folder_preference_test.dart": {
-    "mtime": 1794075117.1837378,
-    "seen": 1795159690.6289654,
-    "ast_hash": "a06103ed832d740e02dbf383c4cca951",
+    "mtime": 1795555688.9675174,
+    "seen": 1795555803.1518283,
+    "ast_hash": "b0acc6ab91f2d7507e62b5a7466e5231",
     "semantic_hash": ""
   },
   "apps/pepehub/test/library_folder_storage_test.dart": {
@@ -2196,15 +2196,15 @@
     "semantic_hash": ""
   },
   "apps/pepehub/test/pdf_reader_test.dart": {
-    "mtime": 1794215776.544734,
-    "seen": 1795159690.6290035,
-    "ast_hash": "c9769512703f1994aacfbaeb6948363e",
+    "mtime": 1795555155.7501445,
+    "seen": 1795555803.151866,
+    "ast_hash": "832ad96f7be2996af6b2e4a2d65970d6",
     "semantic_hash": ""
   },
   "apps/pepehub/test/pdf_startup_regression_test.dart": {
-    "mtime": 1794125005.6643991,
-    "seen": 1795159690.6290047,
-    "ast_hash": "e8b58efa863321e4ef4a34fad634c0a7",
+    "mtime": 1795555689.6455948,
+    "seen": 1795555803.151867,
+    "ast_hash": "ebf42c63fd415c6bcf3211cd24663b25",
     "semantic_hash": ""
   },
   "apps/pepehub/test/pdf_view_limits_test.dart": {
@@ -2214,9 +2214,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/test/performance_regressions_test.dart": {
-    "mtime": 1794121957.8658917,
-    "seen": 1795159690.629007,
-    "ast_hash": "5aa86f6b48e950685deb1c974b0cedef",
+    "mtime": 1795555689.66515,
+    "seen": 1795555803.1518695,
+    "ast_hash": "e79e95c41eaa15940b1f6a1dc280543d",
     "semantic_hash": ""
   },
   "apps/pepehub/test/personal_library_test.dart": {
@@ -2466,9 +2466,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/test/recommendations_widget_test.dart": {
-    "mtime": 1791914937.2803168,
-    "seen": 1795159690.629055,
-    "ast_hash": "ccf3dedaff8ed93019d21725738d8f90",
+    "mtime": 1795555689.6252267,
+    "seen": 1795555803.1519268,
+    "ast_hash": "538f703b26955a2057a8bb7fe4a9f837",
     "semantic_hash": ""
   },
   "apps/pepehub/test/repository_test.dart": {
@@ -3390,9 +3390,9 @@
     "semantic_hash": ""
   },
   "docs/PDF_READER_PARITY.md": {
-    "mtime": 1794297198.5030882,
-    "seen": 1795159690.6292255,
-    "ast_hash": "ac7cc1ac6f85208e70e8c86b085ea95c",
+    "mtime": 1795555459.0946405,
+    "seen": 1795555803.1521559,
+    "ast_hash": "246999e74071c5665160e8a87ab54692",
     "semantic_hash": ""
   },
   "docs/PERFORMANCE_READ_MODELS.md": {
@@ -3438,9 +3438,9 @@
     "semantic_hash": ""
   },
   "docs/READER_CONVENIENCE.md": {
-    "mtime": 1794329510.2748017,
-    "seen": 1795159690.6292338,
-    "ast_hash": "8ba7119e34213dcefda6650098055803",
+    "mtime": 1795555437.773155,
+    "seen": 1795555803.1521652,
+    "ast_hash": "beab1fbed7330ef6b5df660854c64fc5",
     "semantic_hash": ""
   },
   "docs/READER_FORMAT_VALIDATION_0221.md": {
@@ -4536,9 +4536,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/test/pets_section_test.dart": {
-    "mtime": 1795212762.5419936,
-    "seen": 1795213571.8329964,
-    "ast_hash": "c675c16ae8e79faceba16359f0494618",
+    "mtime": 1795554167.1226876,
+    "seen": 1795555803.151875,
+    "ast_hash": "0d934fc715302094249bbc7073295e08",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/pet_progress.dart": {
@@ -4572,9 +4572,33 @@
     "semantic_hash": ""
   },
   "docs/releases/RELEASE_03112.md": {
-    "mtime": 1795278752.915464,
-    "seen": 1795278829.8007321,
+    "mtime": 1795278859.3761578,
+    "seen": 1795555803.1522837,
     "ast_hash": "1b1f4844975b7cdad601c7b40d4364a2",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/audio/listening_timeline.dart": {
+    "mtime": 1795554274.6927052,
+    "seen": 1795555803.151438,
+    "ast_hash": "3c8a38cb69862ca14b6701228f183ab1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/audio_timeline.dart": {
+    "mtime": 1795555468.6930747,
+    "seen": 1795555803.1516266,
+    "ast_hash": "3559bc989c588f687f3fe9c40bda49d8",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/ui/navigation_layout.dart": {
+    "mtime": 1795554382.4879417,
+    "seen": 1795555803.1516788,
+    "ast_hash": "cd1044cbfb52670089898d3387bfa9ea",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/listening_timeline_test.dart": {
+    "mtime": 1795554382.6896951,
+    "seen": 1795555803.1518533,
+    "ast_hash": "bf31779e745d3019839332d67b573edc",
     "semantic_hash": ""
   },
   "package-lock.json": {

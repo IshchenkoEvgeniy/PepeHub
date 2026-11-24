@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
 import 'audio_mini_player.dart';
+import 'navigation_layout.dart';
+
+export 'navigation_layout.dart'
+    show NavigationLayoutPage, PepeNavItem, PepeNavLayout, openNavigationLayout;
 
 /// Older name for the palette tokens, kept so existing screens read the
 /// active palette without change.
@@ -62,13 +66,6 @@ enum PepeSection {
   final String label;
   final IconData icon, selectedIcon;
   const PepeSection(this.label, this.icon, this.selectedIcon);
-
-  /// Sections the user hid in the settings (only «Питомник» can be hidden).
-  static final hidden = ValueNotifier<Set<PepeSection>>({});
-
-  /// Sections shown in the rail and the bottom bar, in order.
-  static List<PepeSection> get visible =>
-      values.where((s) => !hidden.value.contains(s)).toList();
 }
 
 class ShelfNavigation {
@@ -76,6 +73,9 @@ class ShelfNavigation {
   final PepeSection? current;
   final ValueChanged<PepeSection> onSelect;
   final VoidCallback onSettings;
+
+  /// Opens a page entry of the bar («Заметки», «Словарь»).
+  final ValueChanged<PepeNavItem>? onOpen;
   final bool enabled;
 
   /// Highlights the settings entry of the rail.
@@ -88,10 +88,26 @@ class ShelfNavigation {
     required this.current,
     required this.onSelect,
     required this.onSettings,
+    this.onOpen,
     this.enabled = true,
     this.settingsSelected = false,
     this.subpage = false,
   });
+
+  bool isSelected(PepeNavItem item) => item == PepeNavItem.settings
+      ? settingsSelected
+      : item.section != null && item.section == current;
+
+  void open(PepeNavItem item) {
+    final section = item.section;
+    if (section != null) {
+      onSelect(section);
+    } else if (item == PepeNavItem.settings) {
+      onSettings();
+    } else {
+      onOpen?.call(item);
+    }
+  }
 }
 
 /// Page frame: large section title, the bottom bar on phones and a rail on
@@ -162,11 +178,21 @@ class ShelfShell extends StatelessWidget {
                             ),
                           ),
                           ...actions,
+                          // No second settings button when the bar has one.
                           if (!wide)
-                            IconButton(
-                              tooltip: 'Настройки',
-                              onPressed: navigation.onSettings,
-                              icon: const Icon(Icons.tune_rounded),
+                            ValueListenableBuilder(
+                              valueListenable: PepeNavLayout.current,
+                              builder: (context, layout, _) =>
+                                  layout
+                                      .split(constraints.maxWidth)
+                                      .bar
+                                      .contains(PepeNavItem.settings)
+                                  ? const SizedBox.shrink()
+                                  : IconButton(
+                                      tooltip: 'Настройки',
+                                      onPressed: navigation.onSettings,
+                                      icon: const Icon(Icons.tune_rounded),
+                                    ),
                             ),
                         ],
                       ),
@@ -183,16 +209,21 @@ class ShelfShell extends StatelessWidget {
   );
 }
 
+/// The phone bar: the entries chosen in «Нижняя панель», as many as fit,
+/// then «Ещё» with the rest. [layout] overrides the saved one (preview).
 class ShelfBottomBar extends StatelessWidget {
   final ShelfNavigation navigation;
-  const ShelfBottomBar({super.key, required this.navigation});
+  final PepeNavLayout? layout;
+  const ShelfBottomBar({super.key, required this.navigation, this.layout});
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder(
-    valueListenable: PepeSection.hidden,
-    builder: (context, _, _) => _bar(context),
-  );
+  Widget build(BuildContext context) => layout != null
+      ? _bar(context, layout!)
+      : ValueListenableBuilder(
+          valueListenable: PepeNavLayout.current,
+          builder: (context, value, _) => _bar(context, value),
+        );
 
-  Widget _bar(BuildContext context) {
+  Widget _bar(BuildContext context, PepeNavLayout layout) {
     final palette = ShelfPalette.of(context);
     return Material(
       color: palette.sidebar,
@@ -204,17 +235,28 @@ class ShelfBottomBar extends StatelessWidget {
           top: false,
           child: SizedBox(
             height: 64,
-            child: Row(
-              children: [
-                for (final section in PepeSection.visible)
-                  Expanded(
-                    child: _NavigationItem(
-                      section: section,
-                      navigation: navigation,
-                      vertical: true,
-                    ),
-                  ),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final split = layout.split(constraints.maxWidth);
+                return Row(
+                  children: [
+                    for (final item in split.bar)
+                      Expanded(
+                        child: _NavigationItem(
+                          item: item,
+                          navigation: navigation,
+                        ),
+                      ),
+                    if (split.more.isNotEmpty)
+                      Expanded(
+                        child: _MoreItem(
+                          items: split.more,
+                          navigation: navigation,
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -228,12 +270,13 @@ class ShelfRail extends StatelessWidget {
   const ShelfRail({super.key, required this.navigation});
   @override
   Widget build(BuildContext context) => ValueListenableBuilder(
-    valueListenable: PepeSection.hidden,
-    builder: (context, _, _) => _rail(context),
+    valueListenable: PepeNavLayout.current,
+    builder: (context, layout, _) => _rail(context, layout),
   );
 
-  Widget _rail(BuildContext context) {
+  Widget _rail(BuildContext context, PepeNavLayout layout) {
     final palette = ShelfPalette.of(context);
+    final rail = layout.rail;
     return Material(
       color: palette.sidebar,
       child: Container(
@@ -254,48 +297,37 @@ class ShelfRail extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 22),
-            for (final section in PepeSection.visible)
-              SizedBox(
-                height: 76,
-                child: _NavigationItem(
-                  section: section,
-                  navigation: navigation,
-                  vertical: true,
-                ),
-              ),
-            const Spacer(),
-            Tooltip(
-              message: 'Настройки',
-              child: InkWell(
-                onTap: navigation.onSettings,
-                child: SizedBox(
-                  height: 64,
-                  width: double.infinity,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.tune_rounded,
-                        color: navigation.settingsSelected
-                            ? palette.accent
-                            : palette.muted,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Настройки',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: navigation.settingsSelected
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                          color: navigation.settingsSelected
-                              ? palette.accent
-                              : palette.muted,
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    for (final item in rail.bar)
+                      SizedBox(
+                        height: 76,
+                        child: _NavigationItem(
+                          item: item,
+                          navigation: navigation,
                         ),
                       ),
-                    ],
-                  ),
+                    if (rail.more.isNotEmpty)
+                      SizedBox(
+                        height: 76,
+                        child: _MoreItem(
+                          items: rail.more,
+                          navigation: navigation,
+                        ),
+                      ),
+                  ],
                 ),
+              ),
+            ),
+            SizedBox(
+              height: 64,
+              width: double.infinity,
+              child: _NavigationItem(
+                item: PepeNavItem.settings,
+                navigation: navigation,
+                marker: false,
               ),
             ),
             const SizedBox(height: 12),
@@ -306,36 +338,43 @@ class ShelfRail extends StatelessWidget {
   }
 }
 
-class _NavigationItem extends StatelessWidget {
-  final PepeSection section;
-  final ShelfNavigation navigation;
-  final bool vertical;
-  const _NavigationItem({
-    required this.section,
-    required this.navigation,
-    required this.vertical,
+/// Icon over a label with the accent marker on top, shared by the bar, the
+/// rail and «Ещё».
+class _NavigationTile extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected, marker;
+  final VoidCallback? onTap, onLongPress;
+  const _NavigationTile({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+    this.onLongPress,
+    this.marker = true,
   });
   @override
   Widget build(BuildContext context) {
     final palette = ShelfPalette.of(context);
-    final selected = navigation.current == section;
     final color = selected ? palette.accent : palette.muted;
     return Tooltip(
-      message: section.label,
+      message: label,
       child: Semantics(
         selected: selected,
         button: true,
         child: InkWell(
-          onTap: navigation.enabled && (!selected || navigation.subpage)
-              ? () => navigation.onSelect(section)
-              : null,
+          onTap: onTap,
+          onLongPress: onLongPress,
           child: Column(
             children: [
               Container(
                 height: 3,
                 margin: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
-                  color: selected ? palette.accent : Colors.transparent,
+                  color: selected && marker
+                      ? palette.accent
+                      : Colors.transparent,
                   borderRadius: const BorderRadius.vertical(
                     bottom: Radius.circular(3),
                   ),
@@ -347,16 +386,12 @@ class _NavigationItem extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        selected ? section.selectedIcon : section.icon,
-                        size: 22,
-                        color: color,
-                      ),
+                      Icon(icon, size: 22, color: color),
                       const SizedBox(height: 4),
                       FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
-                          section.label,
+                          label,
                           maxLines: 1,
                           style: TextStyle(
                             fontSize: 11,
@@ -376,6 +411,101 @@ class _NavigationItem extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _NavigationItem extends StatelessWidget {
+  final PepeNavItem item;
+  final ShelfNavigation navigation;
+  final bool marker;
+  const _NavigationItem({
+    required this.item,
+    required this.navigation,
+    this.marker = true,
+  });
+  @override
+  Widget build(BuildContext context) {
+    final selected = navigation.isSelected(item);
+    return _NavigationTile(
+      key: ValueKey('nav:${item.name}'),
+      label: item.label,
+      icon: selected ? item.selectedIcon : item.icon,
+      selected: selected,
+      marker: marker,
+      onTap: navigation.enabled && (!selected || navigation.subpage)
+          ? () => navigation.open(item)
+          : null,
+      onLongPress: navigation.enabled
+          ? () => openNavigationLayout(context)
+          : null,
+    );
+  }
+}
+
+/// «Ещё»: the entries left out of the bar, and a way to arrange it.
+class _MoreItem extends StatelessWidget {
+  final List<PepeNavItem> items;
+  final ShelfNavigation navigation;
+  const _MoreItem({required this.items, required this.navigation});
+  @override
+  Widget build(BuildContext context) {
+    final selected = items.any(navigation.isSelected);
+    return _NavigationTile(
+      key: const ValueKey('nav:more'),
+      label: 'Ещё',
+      icon: selected ? Icons.more_horiz_rounded : Icons.more_horiz,
+      selected: selected,
+      onTap: navigation.enabled ? () => _sheet(context) : null,
+      onLongPress: navigation.enabled
+          ? () => openNavigationLayout(context)
+          : null,
+    );
+  }
+
+  Future<void> _sheet(BuildContext context) async {
+    final palette = ShelfPalette.of(context);
+    final chosen = await showModalBottomSheet<Object>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheet) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final item in items)
+                ListTile(
+                  key: ValueKey('nav-more:${item.name}'),
+                  leading: Icon(
+                    navigation.isSelected(item) ? item.selectedIcon : item.icon,
+                    color: navigation.isSelected(item)
+                        ? palette.accent
+                        : palette.muted,
+                  ),
+                  title: Text(item.label),
+                  selected: navigation.isSelected(item),
+                  onTap: () => Navigator.pop(sheet, item),
+                ),
+              const Divider(height: 1),
+              ListTile(
+                key: const ValueKey('nav-more:customize'),
+                leading: const Icon(Icons.dashboard_customize_outlined),
+                title: const Text('Настроить панель'),
+                onTap: () => Navigator.pop(sheet, 'customize'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!context.mounted) return;
+    if (chosen is PepeNavItem) {
+      if (!navigation.isSelected(chosen) || navigation.subpage) {
+        navigation.open(chosen);
+      }
+    } else if (chosen == 'customize') {
+      await openNavigationLayout(context);
+    }
   }
 }
 

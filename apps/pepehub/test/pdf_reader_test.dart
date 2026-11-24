@@ -15,8 +15,9 @@ import 'package:pepehub/media/asset_store.dart';
 import 'package:pepehub/audio/audio_folder.dart';
 import 'package:pepehub/reader/pdf_support.dart';
 import 'package:pepehub/reader/pdf_reader_page.dart';
-import 'package:pepehub/reader/reader_viewport.dart';
+import 'package:pepehub/reader/reader_bookmarks.dart';
 import 'package:pepehub/reader/reader_progress_panel.dart';
+import 'package:pepehub/reader/reader_status_line.dart';
 import 'package:pepehub/reader/reading_library.dart';
 import 'package:pepehub/vocabulary/vocabulary_editor.dart';
 import 'package:pepehub/ui/app_theme.dart';
@@ -257,12 +258,33 @@ void main() {
         final viewer = tester.widget<PdfViewer>(find.byType(PdfViewer));
         final controller = viewer.controller!;
         Future<void> appearance() async {
-          await tester.tap(find.byType(PopupMenuButton<String>));
-          await pumpIo();
-          await tester.tap(find.text('Оформление'));
+          // Header and footer float over the page; the status line shows them.
+          if (find.byKey(const ValueKey('reader-footer')).evaluate().isEmpty) {
+            await tester.tap(find.byType(ReaderStatusLine));
+            await pumpIo();
+          }
+          await tester.tap(find.byTooltip('Оформление чтения'));
           await pumpIo();
           expectReaderWindowTheme(tester, find.text('Оформление PDF'), theme);
         }
+
+        Future<void> done() async {
+          await tester.tap(
+            find.byKey(const ValueKey('reader-appearance-done')),
+          );
+          await pumpIo();
+        }
+
+        Future<void> tapInSheet(String text) async {
+          await tester.ensureVisible(find.text(text));
+          await pumpIo();
+          await tester.tap(find.text(text));
+          await pumpIo();
+        }
+
+        String place() => tester
+            .widget<Text>(find.byKey(const ValueKey('reader-status-place')))
+            .data!;
 
         void sameMatrix(Matrix4 expected) {
           for (var i = 0; i < 16; i++) {
@@ -278,7 +300,16 @@ void main() {
         // Compact is a text-reader mode; PDF shows it as vertical scrolling
         // and saving PDF appearance keeps the text reader's own mode.
         expect(tester.takeException(), isNull);
-        expect(find.text('Вертикальная прокрутка'), findsWidgets);
+        expect(
+          tester
+              .widget<SegmentedButton<String>>(
+                find.byKey(const ValueKey('reader-mode')),
+              )
+              .selected,
+          {'scroll'},
+        );
+        await tester.ensureVisible(find.byTooltip('Увеличить масштаб PDF'));
+        await pumpIo();
         await tester.tap(find.byTooltip('Увеличить масштаб PDF'));
         await pumpIo();
         expect(controller.currentZoom, greaterThan(original.storage[0]));
@@ -286,13 +317,12 @@ void main() {
         await pumpIo();
         sameMatrix(original);
         await appearance();
+        await tester.ensureVisible(find.byTooltip('Увеличить масштаб PDF'));
+        await pumpIo();
         await tester.tap(find.byTooltip('Увеличить масштаб PDF'));
         await pumpIo();
         final selectedZoom = controller.currentZoom;
-        await tester.ensureVisible(find.text('Готово'));
-        await pumpIo();
-        await tester.tap(find.text('Готово'));
-        await pumpIo();
+        await done();
         expect(controller.currentZoom, closeTo(selectedZoom, .001));
         final stored = await tester.runAsync(
           () => repo.meta('reader:appearance'),
@@ -311,28 +341,25 @@ void main() {
         Future<void> followAndReturn() async {
           for (final link in links) {
             final origin = controller.value.clone();
-            final originLabel = tester
-                .widget<Text>(find.textContaining(' / 2'))
-                .data;
+            final originLabel = place();
             viewer.params.linkHandlerParams!.onLinkTap(link);
             await pumpIo();
             expect(controller.currentZoom, closeTo(2, .001));
-            await tester.tap(find.byTooltip('Вернуться на прежнее место'));
+            // After a jump a small «Вернуться» appears over the page.
+            await tester.tap(find.byKey(const ValueKey('reader-jump-back')));
             await pumpIo();
             sameMatrix(origin);
-            expect(find.text(originLabel!), findsOneWidget);
+            expect(place(), originLabel);
           }
         }
 
         await followAndReturn();
         await appearance();
         final beforeCrop = controller.currentZoom;
-        await tester.tap(find.text('Обрезать белые поля'));
-        await pumpIo();
+        await tapInSheet('Обрезать белые поля');
         expect(controller.currentZoom, isNot(closeTo(beforeCrop, .001)));
         final croppedMatrix = controller.value.clone();
-        await tester.tap(find.text('Готово'));
-        await pumpIo();
+        await done();
         sameMatrix(croppedMatrix);
         await followAndReturn();
         expect(
@@ -352,8 +379,7 @@ void main() {
               .value,
           isTrue,
         );
-        await tester.tap(find.text('Обрезать белые поля'));
-        await pumpIo();
+        await tapInSheet('Обрезать белые поля');
         await tester.tap(find.text('Отменить'));
         await pumpIo();
         sameMatrix(croppedMatrix);
@@ -418,14 +444,28 @@ void main() {
         }
       }
       expect(interactive, isTrue);
-      expect(find.textContaining('/ 1500'), findsOneWidget);
+      expect(find.textContaining('/1500'), findsOneWidget);
+      Future<void> lockMenu() async {
+        if (find.byKey(const ValueKey('reader-footer')).evaluate().isEmpty) {
+          await tester.tap(find.byType(ReaderStatusLine));
+          for (var i = 0; i < 3; i++) {
+            await settle();
+          }
+        }
+        await tester.tap(find.byKey(const ValueKey('pdf-more')));
+        for (var i = 0; i < 3; i++) {
+          await settle();
+        }
+        await tester.tap(find.text('Зафиксировать масштаб'));
+      }
+
       await tester.runAsync(() async {
         final index = await ReadingLibrary(repo)
             .value('reading-index:large-test');
         expect(index['pdfPages'], 1500);
         expect(index['starts'], isNull); // viewer did not wait for all text
       });
-      await tester.tap(find.byTooltip('Зафиксировать масштаб и горизонталь'));
+      await lockMenu();
       for (var i = 0; i < 8; i++) {
         await settle();
       }
@@ -439,7 +479,7 @@ void main() {
           isTrue,
         );
       });
-      await tester.tap(find.byTooltip('Разблокировать масштаб и движение'));
+      await lockMenu();
       await settle();
       expect(
         tester.widget<PdfViewer>(find.byType(PdfViewer)).params.scaleEnabled,
@@ -459,7 +499,7 @@ void main() {
   }, skip: pdfium == null);
 
   testWidgets(
-    'PDF restores position, searches, returns, saves a page note and opens reflow',
+    'PDF restores position, searches, returns, saves notes and bookmarks',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1;
@@ -541,15 +581,33 @@ void main() {
         // viewer is interactive. Do not tap a still-disabled navigation button.
         for (var i = 0; i < 20; i++) {
           await settle();
-          final previous = find.byWidgetPredicate(
-            (w) => w is IconButton && w.tooltip == 'Предыдущая страница',
+          final search = find.byWidgetPredicate(
+            (w) => w is IconButton && w.tooltip == 'Поиск по книге',
           );
-          if (previous.evaluate().isNotEmpty &&
-              tester.widget<IconButton>(previous).onPressed != null) {
+          if (search.evaluate().isNotEmpty &&
+              tester.widget<IconButton>(search).onPressed != null) {
             return;
           }
         }
         fail('PDF viewer did not become interactive');
+      }
+
+      void expectPage(int page) =>
+          expect(find.text('$page/2'), findsOneWidget, reason: 'page $page');
+
+      Future<void> showControls() async {
+        if (find.byKey(const ValueKey('reader-footer')).evaluate().isEmpty) {
+          // F11, like a tap on the status line; a snack bar may cover it.
+          await tester.sendKeyEvent(LogicalKeyboardKey.f11);
+          await settle();
+        }
+      }
+
+      Future<void> hideControls() async {
+        if (find.byKey(const ValueKey('reader-footer')).evaluate().isNotEmpty) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await settle();
+        }
       }
 
       Future<T> readDatabase<T>(Future<T> Function() read) async {
@@ -578,28 +636,20 @@ void main() {
       }
 
       Future<void> menu(String title) async {
-        await tester.tap(find.byType(PopupMenuButton<String>));
+        await showControls();
+        await tester.tap(find.byKey(const ValueKey('pdf-more')));
         await settle();
         await tester.tap(find.text(title));
         await settle();
       }
 
-      Future<void> palette(String name) async {
-        await menu('Оформление');
-        await tester.tap(
-          find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
-        );
+      Future<void> palette(String id) async {
+        await showControls();
+        await tester.tap(find.byTooltip('Оформление чтения'));
         await settle();
-        final label = switch (name) {
-          'Системная' => 'Как в системе',
-          'Тёмная (инверсия страниц)' => 'Тёмная',
-          _ => name,
-        };
-        await tester.tap(find.text(label).last);
+        await tester.tap(find.byKey(ValueKey('reader-palette:$id')));
         await settle();
-        await tester.ensureVisible(find.text('Готово'));
-        await settle();
-        await tester.tap(find.text('Готово'));
+        await tester.tap(find.byKey(const ValueKey('reader-appearance-done')));
         await settle();
       }
 
@@ -622,42 +672,46 @@ void main() {
         );
         await waitForViewer();
         trace('viewer ready');
-        expect(find.textContaining('Страница 2 / 2'), findsOneWidget);
-        await tester.tap(find.byTooltip('Предыдущая страница'));
+        expectPage(2);
+        // As in the text reader: no app bar, the page fills the screen and
+        // the controls come up over it.
+        expect(find.byType(AppBar), findsNothing);
+        expect(find.byType(ReaderProgressBar), findsNothing);
+        await tester.sendKeyEvent(LogicalKeyboardKey.pageUp);
         await settle();
-        expect(find.textContaining('Страница 1 / 2'), findsOneWidget);
+        expectPage(1);
+        // A tap on the quiet line under the page brings up the controls.
+        await tester.tap(find.byType(ReaderStatusLine));
+        await settle();
         expect(find.byType(ReaderProgressBar), findsOneWidget);
         expect(find.byType(Slider), findsNothing);
+        expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('pdf-footer-details')))
+              .data,
+          startsWith('стр. 1 из 2'),
+        );
         await screenshot('pdf-reader-controls');
-        await tester.drag(
-          find.textContaining('Страница 1 / 2'),
-          const Offset(0, 60),
-        );
-        await settle();
+        await hideControls();
         expect(find.byType(ReaderProgressBar), findsNothing);
-        await tester.drag(
-          find.byTooltip('Показать нижнюю панель'),
-          const Offset(0, -60),
-        );
-        await settle();
-        expect(find.byType(ReaderProgressBar), findsOneWidget);
         trace('navigation works');
         // Exercise the real viewer's focused key handler, not only callbacks.
         await tester.sendKeyEvent(LogicalKeyboardKey.end);
         await settle();
-        expect(find.textContaining('Страница 2 / 2'), findsOneWidget);
+        expectPage(2);
         await tester.sendKeyEvent(LogicalKeyboardKey.home);
         await settle();
-        expect(find.textContaining('Страница 1 / 2'), findsOneWidget);
+        expectPage(1);
         await tester.sendKeyEvent(LogicalKeyboardKey.space);
         await settle();
-        expect(find.textContaining('Страница 2 / 2'), findsOneWidget);
+        expectPage(2);
         await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
         await tester.sendKeyEvent(LogicalKeyboardKey.space);
         await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
         await settle();
-        expect(find.textContaining('Страница 1 / 2'), findsOneWidget);
+        expectPage(1);
         trace('keyboard navigation works');
+        await showControls();
         await tester.tap(find.byTooltip('Поиск по книге'));
         await settle();
         await tester.enterText(find.byType(TextField), 'page two');
@@ -671,10 +725,10 @@ void main() {
         trace('search works');
         await tester.tap(find.text('Страница 2'));
         await settle();
-        expect(find.textContaining('Страница 2 / 2'), findsOneWidget);
-        await tester.tap(find.byTooltip('Вернуться на прежнее место'));
+        expectPage(2);
+        await tester.tap(find.byKey(const ValueKey('reader-jump-back')));
         await settle();
-        expect(find.textContaining('Страница 1 / 2'), findsOneWidget);
+        expectPage(1);
         await menu('Заметка к странице');
         expectReaderWindowTheme(
           tester,
@@ -692,6 +746,7 @@ void main() {
           expect(notes.single.comment, 'Мысль о первой странице');
           expect(notes.single.chapter, 0);
         });
+        await hideControls();
         final viewer = tester.widget<PdfViewer>(find.byType(PdfViewer));
         trace('page note saved');
         expect(
@@ -811,13 +866,25 @@ void main() {
         await settle();
         expect(find.byType(PdfViewer), findsOneWidget);
         trace('color highlight and Anki work');
-        await menu('Полный экран');
         trace('cross-page quotes saved');
-        expect(find.byTooltip('Выйти из полного экрана'), findsOneWidget);
-        await tester.tap(find.byTooltip('Выйти из полного экрана'));
-        await settle();
-        await palette('Системная');
-        trace('fullscreen works');
+        // Bookmarks are the text reader's: the same store and the ribbon.
+        await menu('Добавить закладку');
+        await readDatabase(() async {
+          final saved = await ReaderBookmarkStore(repo, asset.hash).list();
+          expect(saved.single.chapter, 0);
+        });
+        expect(
+          find.byKey(const ValueKey('reader-page-bookmark')),
+          findsOneWidget,
+        );
+        await showControls();
+        expect(
+          find.byKey(const ValueKey('reader-footer-bookmarked')),
+          findsOneWidget,
+        );
+        await hideControls();
+        trace('bookmark works');
+        await palette('system');
         final filtered = find
             .ancestor(
               of: find.byType(PdfViewer),
@@ -835,8 +902,8 @@ void main() {
           tester.widget<ColorFiltered>(filtered).colorFilter,
           isNot(light),
         );
-        await palette('Сепия');
-        await palette('Тёмная (инверсия страниц)');
+        await palette('sepia');
+        await palette('dark');
         trace('palettes work');
         await readDatabase(() async {
           expect(await repo.meta('reader:appearance'), contains('dark'));
@@ -851,18 +918,7 @@ void main() {
           ],
         );
         trace('notes read before hiding');
-        await menu('Оформление');
-        trace('highlight settings opened');
-        await tester.tap(
-          find.byKey(const ValueKey('reader-appearance-tab:Цвет')),
-        );
-        await settle();
-        await tester.tap(find.byType(SwitchListTile));
-        await settle();
-        await tester.ensureVisible(find.text('Готово'));
-        await settle();
-        await tester.tap(find.text('Готово'));
-        await settle();
+        await menu('Скрыть выделения');
         trace('highlights hidden');
         await readDatabase(() async {
           expect(
@@ -877,19 +933,7 @@ void main() {
               note.toJson(),
           ], beforeHiding);
         });
-        await menu('Текстовый режим');
-        trace('reflow opened');
-        expect(
-          tester
-              .widget<ReaderViewport>(find.byType(ReaderViewport))
-              .preferences!
-              .showHighlights,
-          isFalse,
-        );
-        expect(find.textContaining('PepeHub page one'), findsWidgets);
-        await tester.binding.handlePopRoute();
-        await settle();
-        expect(find.textContaining('Страница 1 / 2'), findsOneWidget);
+        expectPage(1);
         await readDatabase(() async {
           final sessions = await ReadingLibrary(repo)
               .entries('reading-session:');

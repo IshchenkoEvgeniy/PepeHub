@@ -35,7 +35,7 @@ void main() {
   setUp(() {
     db = AppDatabase(NativeDatabase.memory());
     repo = Repository(db);
-    PepeSection.hidden.value = {};
+    PepeNavLayout.current.value = PepeNavLayout.defaults();
   });
   tearDown(() => db.close());
 
@@ -105,16 +105,19 @@ void main() {
     expect(find.textContaining('Чтение и прослушивание'), findsOneWidget);
   });
 
-  testWidgets('hidden section leaves the bottom bar; 7 items fit 360 px', (
+  testWidgets('bottom bar: what does not fit goes behind «Ещё»', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
+    PepeSection? selected;
+    PepeNavItem? opened;
     final navigation = ShelfNavigation(
       current: PepeSection.books,
-      onSelect: (_) {},
+      onSelect: (s) => selected = s,
       onSettings: () {},
+      onOpen: (item) => opened = item,
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -123,13 +126,52 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Питомник'), findsOneWidget);
+    // 360 px holds five buttons: four sections and «Ещё».
+    expect(find.byKey(const ValueKey('nav:books')), findsOneWidget);
+    expect(find.byKey(const ValueKey('nav:statistics')), findsNothing);
+    expect(find.byKey(const ValueKey('nav:more')), findsOneWidget);
     expect(tester.takeException(), isNull, reason: 'no overflow at 360 px');
-    PepeSection.hidden.value = {PepeSection.pets};
+    await tester.tap(find.byKey(const ValueKey('nav:more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('nav-more:pets')));
+    await tester.pumpAndSettle();
+    expect(selected, PepeSection.pets);
+
+    // A page entry moved into the bar opens its page.
+    PepeNavLayout.current.value = PepeNavLayout(
+      [PepeNavItem.notes, ...PepeNavItem.values],
+      {PepeNavItem.notes, PepeNavItem.books, PepeNavItem.audio},
+    );
     await tester.pump();
-    expect(find.text('Питомник'), findsNothing);
-    expect(find.text('Статистика'), findsOneWidget);
-    PepeSection.hidden.value = {};
+    expect(find.byKey(const ValueKey('nav:pets')), findsNothing);
+    final bar = tester.getTopLeft(find.byKey(const ValueKey('nav:notes')));
+    expect(bar.dx, lessThan(tester.getTopLeft(find.text('Книги')).dx));
+    await tester.tap(find.byKey(const ValueKey('nav:notes')));
+    expect(opened, PepeNavItem.notes);
+  });
+
+  test('navigation layout survives storage and unknown entries', () async {
+    final layout = PepeNavLayout(
+      [PepeNavItem.statistics, PepeNavItem.books],
+      {PepeNavItem.statistics, PepeNavItem.vocabulary},
+    );
+    expect(layout.order.length, PepeNavItem.values.length);
+    expect(layout.bar, [PepeNavItem.statistics, PepeNavItem.vocabulary]);
+    final restored = PepeNavLayout.fromJson({
+      ...layout.toJson(),
+      'order': ['future-section', ...layout.toJson()['order']! as List],
+    });
+    expect(restored, layout);
+    // «Питомник» hidden in an earlier version starts behind «Ещё».
+    await PepeNavLayout.load(repo);
+    expect(PepeNavLayout.current.value.bar, contains(PepeNavItem.pets));
+    await repo.setMeta('pets-section-hidden', '1');
+    await PepeNavLayout.load(repo);
+    expect(PepeNavLayout.current.value.more, contains(PepeNavItem.pets));
+    await PepeNavLayout.save(layout);
+    PepeNavLayout.current.value = PepeNavLayout.defaults();
+    await PepeNavLayout.load(repo);
+    expect(PepeNavLayout.current.value, layout);
   });
 
   testWidgets('incubator, path, talents and achievements', (tester) async {

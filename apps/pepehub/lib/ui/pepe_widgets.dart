@@ -189,6 +189,10 @@ class PepeSubpage extends StatelessWidget {
                       Navigator.of(context).popUntil((r) => r.isFirst);
                       if (next != root.current) root.onSelect(next);
                     },
+                    onOpen: (item) {
+                      Navigator.of(context).popUntil((r) => r.isFirst);
+                      root.onOpen?.call(item);
+                    },
                   ),
                 ),
               Expanded(

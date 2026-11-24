@@ -25,8 +25,12 @@ import 'pdf_page_tools.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 
+import 'reader_bookmarks.dart';
+import 'reader_bookmarks_page.dart';
+import 'reader_contents.dart';
+import 'reader_status_line.dart';
+import 'reader_window.dart';
 import 'reader_viewport.dart';
-import 'reader_page.dart';
 import 'reading_activity.dart';
 import 'reading_library.dart';
 import 'reading_log.dart';
@@ -77,7 +81,6 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   late final library = ReadingLibrary(widget.repository);
   late final Future<PdfDocumentRefDirect> initial = _initial();
   PdfDocument? document;
-  ReaderDocument? textDocument;
   Map<String, dynamic> textIndex = {};
   bool axisLocked = false;
   bool cropMargins = false;
@@ -87,9 +90,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   final contentBounds = PdfContentBounds();
   ({int page, Matrix4 matrix, bool addedHistory})? linkReturn;
   double? lockedX, lockedZoom;
-  Future<void> textWork = Future.value();
   Future<void> indexWork = Future.value();
-  bool indexing = false, preparingText = false;
+  bool indexing = false;
   Timer? indexDelay;
   ReadingActivity? activity;
   Future<void> activityStart = Future.value();
@@ -101,6 +103,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
 
   void _syncKeepAwake() {
     keepAwake.enabled = preferences.keepAwake && foreground && routeVisible;
+    _syncWindow();
   }
 
   List<ReadingNote> _pageNotes = [];
@@ -127,8 +130,29 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   final loadingGlyphs = <int>{};
   ({int page, int start, int end})? highlighted;
   int page = 1, count = 0, panels = 0;
-  bool ready = false, foreground = true, fullscreen = false;
+  bool ready = false, foreground = true;
   bool navigating = false, finished = false, closing = false, allowPop = false;
+
+  /// Header and footer float over the page, as in the text reader; a tap in
+  /// the middle of the page shows them.
+  bool controlsVisible = false;
+
+  /// After a jump: a small «Вернуться» that fades on its own.
+  bool jumpHint = false;
+  Timer? jumpHintTimer;
+  List<ReaderBookmark> bookmarks = [];
+  bool savingBookmark = false;
+
+  /// The outline flattened by page, for chapter names; read once, lazily.
+  List<({String title, int page, int depth})>? outlineItems;
+  late final readerWindow = ReaderWindow(onVolumeKey: _volumeKey);
+  late final bookmarkStore = ReaderBookmarkStore(
+    widget.repository,
+    widget.asset.hash,
+  );
+
+  /// Height of the quiet line under the page.
+  static const statusLineHeight = 26.0;
   String? saveError, displayTitle;
   Future<void> writes = Future.value();
   double? dragging;
@@ -147,6 +171,167 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     // Any touch while reading extends the screen wake period.
     GestureBinding.instance.pointerRouter.addGlobalRoute(_pointerActivity);
     WidgetsBinding.instance.addObserver(this);
+    // The page always fills the screen, as in the text reader.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    unawaited(_reloadBookmarks());
+  }
+
+  /// Volume keys turn pages only on the open book itself.
+  void _syncWindow() {
+    if (closing) return;
+    readerWindow.configure(
+      volumeKeys:
+          preferences.volumeKeys &&
+          ready &&
+          foreground &&
+          routeVisible &&
+          panels == 0,
+      navigationBar: preferences.systemNavigation,
+    );
+  }
+
+  void _volumeKey(int direction) {
+    if (!mounted || !ready || panels > 0 || !routeVisible) return;
+    _go(page + direction, reading: true);
+  }
+
+  void _toggleControls() => setState(() => controlsVisible = !controlsVisible);
+
+  void _showJumpHint() {
+    jumpHintTimer?.cancel();
+    jumpHint = true;
+    jumpHintTimer = Timer(const Duration(seconds: 6), () {
+      if (mounted) setState(() => jumpHint = false);
+    });
+  }
+
+  Future<void> _reloadBookmarks() async {
+    try {
+      final list = await bookmarkStore.list();
+      if (mounted) setState(() => bookmarks = list);
+    } catch (_) {
+      // Marks are a convenience; the bookmarks page reports real errors.
+    }
+  }
+
+  ReaderBookmark? get _bookmarkHere =>
+      bookmarks.where((b) => b.chapter == page - 1).firstOrNull;
+
+  /// Outline entry the page belongs to, or null without an outline.
+  String? _chapterOf(int p) {
+    final items = outlineItems;
+    if (items == null || items.isEmpty) return null;
+    String? title;
+    for (final item in items) {
+      if (item.page > p) break;
+      title = item.title;
+    }
+    return title?.trim().isEmpty == true ? null : title?.trim();
+  }
+
+  Future<void> _loadOutlineItems() async {
+    if (outlineItems != null) return;
+    final outline = await _outline();
+    final items = <({String title, int page, int depth})>[];
+    void visit(List<PdfOutlineNode> nodes, int depth) {
+      if (depth > 20 || items.length > 20000) return;
+      for (final node in nodes) {
+        final dest = node.dest;
+        if (dest != null && dest.pageNumber >= 1 && dest.pageNumber <= count) {
+          items.add((title: node.title, page: dest.pageNumber, depth: depth));
+        }
+        visit(node.children, depth + 1);
+      }
+    }
+
+    visit(outline, 0);
+    if (mounted) setState(() => outlineItems = items);
+  }
+
+  String _placeLabel(int p) {
+    final chapter = _chapterOf(p);
+    return 'стр. $p${chapter == null ? '' : ' · $chapter'}';
+  }
+
+  Future<void> _quickBookmark() async {
+    if (savingBookmark || !ready) return;
+    final at = page;
+    setState(() => savingBookmark = true);
+    try {
+      await bookmarkStore.add(
+        title: (_chapterOf(at) ?? 'Страница $at').characters
+            .take(120)
+            .toString(),
+        chapter: at - 1,
+        offset: 0,
+      );
+      await _reloadBookmarks();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          persist: false,
+          content: const Text('Закладка сохранена'),
+          action: SnackBarAction(label: 'Открыть', onPressed: _bookmarks),
+        ),
+      );
+    } catch (e) {
+      _message('Не удалось сохранить закладку: ${describeError(e)}');
+    } finally {
+      if (mounted) setState(() => savingBookmark = false);
+    }
+  }
+
+  Future<void> _removeBookmark(ReaderBookmark bookmark) async {
+    try {
+      await bookmarkStore.delete(bookmark.id);
+      await _reloadBookmarks();
+      _message('Закладка удалена');
+    } catch (e) {
+      _message('Не удалось удалить закладку: ${describeError(e)}');
+    }
+  }
+
+  Future<void> _bookmarks() async {
+    if (!ready) return;
+    try {
+      final bookmark = await _panel(
+        () => Navigator.push<ReaderBookmark>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => Theme(
+              data: Theme.of(context),
+              child: ReaderBookmarksPage(
+                store: bookmarkStore,
+                chapterTitles: [for (var p = 1; p <= count; p++) 'Страница $p'],
+                describe: (b) => _placeLabel(b.chapter + 1),
+                chapter: page - 1,
+                offset: 0,
+              ),
+            ),
+          ),
+        ),
+      );
+      if (bookmark != null && mounted && bookmark.chapter < count) {
+        await _go(bookmark.chapter + 1);
+      }
+    } finally {
+      unawaited(_reloadBookmarks());
+    }
+  }
+
+  /// Where «Вернуться» leads: back from a link, or the last jump.
+  int get _returnPage => linkReturn?.page ?? history.last;
+
+  void _undoJump() {
+    jumpHintTimer?.cancel();
+    jumpHint = false;
+    if (linkReturn != null) {
+      _returnFromPdfLink();
+      return;
+    }
+    if (history.isEmpty) return;
+    final target = history.removeLast();
+    _go(target, remember: false);
   }
 
   Future<PdfDocument> _openDocument() async {
@@ -321,14 +506,6 @@ class _PdfReaderPageState extends State<PdfReaderPage>
   static const _pdfModeKey = 'pdf-reader-mode';
   static const _legacyPdfModeKey = 'reader:pdf-mode';
 
-  /// Shared reader appearance with the PDF's own page mode.
-  Future<ReaderPreferences?> _storedPreferences() async => _decodePreferences(
-    {
-      for (final key in ['reader:appearance', _pdfModeKey, _legacyPdfModeKey])
-        key: await widget.repository.meta(key) ?? '',
-    }..removeWhere((_, value) => value.isEmpty),
-  );
-
   ReaderPreferences? _decodePreferences(Map<String, String> stored) {
     final raw = stored['reader:appearance'];
     final pdfMode = stored[_pdfModeKey] ?? stored[_legacyPdfModeKey];
@@ -416,9 +593,9 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     final regionsClosed = imageRegions.close();
     readerRoutes.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
-    if (fullscreen) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    }
+    jumpHintTimer?.cancel();
+    readerWindow.reset();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     Future.wait<void>([
       savedPosition,
       activityStart.then((_) => activity?.close()),
@@ -427,7 +604,6 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     initial
         .then<void>((_) {}, onError: (Object _, StackTrace _) {})
         .then((_) => indexWork)
-        .then((_) => textWork)
         .then((_) => document?.dispose())
         .whenComplete(() async {
           await regionsClosed;
@@ -488,6 +664,8 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     setState(() {
       page = value;
       finished = false;
+      // Reading moved on: the controls give way to the page.
+      if (!navigating && dragging == null) controlsVisible = false;
     });
     positionDelay?.cancel();
     positionDelay = Timer(const Duration(seconds: 1), () => unawaited(_save()));
@@ -542,6 +720,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     int value, {
     bool reading = false,
     bool remember = true,
+    bool keepControls = false,
   }) async {
     if (!ready || navigating) return;
     value = value.clamp(1, count);
@@ -553,7 +732,9 @@ class _PdfReaderPageState extends State<PdfReaderPage>
       linkReturn = null;
       history.add(page);
       if (history.length > 20) history.removeAt(0);
+      _showJumpHint();
     }
+    if (!keepControls) controlsVisible = false;
     activity?.move(
       _absolute(value),
       jump: !reading,
@@ -600,7 +781,13 @@ class _PdfReaderPageState extends State<PdfReaderPage>
           controller.calcMatrixForDest(dest),
           duration: Duration.zero,
         );
-        if (mounted) setState(() => linkReturn = origin);
+        if (mounted) {
+          setState(() {
+            linkReturn = origin;
+            controlsVisible = false;
+            _showJumpHint();
+          });
+        }
         await WidgetsBinding.instance.endOfFrame;
       } finally {
         followingLink = false;
@@ -661,11 +848,13 @@ class _PdfReaderPageState extends State<PdfReaderPage>
 
   Future<T?> _panel<T>(Future<T?> Function() open) async {
     panels++;
+    _syncWindow();
     await activity?.pause('panel');
     try {
       return mounted ? await open() : null;
     } finally {
       panels--;
+      _syncWindow();
       if (mounted && foreground && routeVisible && panels == 0) {
         activity?.resume();
         _prepareIndex();
@@ -954,85 +1143,410 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         .toInt();
   }
 
-  Widget _footer() {
-    final pepe = PepeColors.of(context);
-    final ink = Theme.of(context).colorScheme.onSurface;
-    final value = (dragging ?? progress).clamp(0.0, 1.0);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (saveError != null)
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Text(saveError!, style: const TextStyle(color: Colors.red)),
+  /// Slides a control bar in from [from] and keeps it out of the way of taps
+  /// while it is hidden.
+  Widget _floating({
+    required bool visible,
+    required Offset from,
+    required Widget child,
+  }) => IgnorePointer(
+    ignoring: !visible,
+    child: AnimatedSlide(
+      offset: visible ? Offset.zero : from,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: const Duration(milliseconds: 140),
+        child: child,
+      ),
+    ),
+  );
+
+  String get _subtitle => _chapterOf(page) ?? 'Страница $page из $count';
+
+  /// The header of the text reader: back, title and chapter, search,
+  /// contents, appearance and «⋮» with the rest.
+  Widget _header(BuildContext context, Color background, Color ink) {
+    final wide = MediaQuery.sizeOf(context).width >= 1000;
+    Widget pill(String tooltip, String label, VoidCallback? onTap) => Tooltip(
+      message: tooltip,
+      child: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          foregroundColor: ink.withValues(alpha: .62),
+          shape: const StadiumBorder(),
+          minimumSize: const Size(0, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          textStyle: TextStyle(fontFamily: AppFonts.body, fontSize: 13),
+        ),
+        child: Text(label),
+      ),
+    );
+    Widget icon(String tooltip, IconData data, VoidCallback? onTap) =>
+        IconButton(
+          tooltip: tooltip,
+          color: ink.withValues(alpha: .85),
+          onPressed: onTap,
+          icon: Icon(data, size: 23),
+        );
+    final moreActions = PopupMenuButton<String>(
+      key: const ValueKey('pdf-more'),
+      tooltip: 'Другие действия',
+      enabled: ready,
+      iconColor: ink.withValues(alpha: .85),
+      onSelected: (value) {
+        switch (value) {
+          case 'bookmark':
+            _quickBookmark();
+          case 'bookmarks':
+            _bookmarks();
+          case 'notes':
+            _notes();
+          case 'pageNote':
+            _annotate();
+          case 'lock':
+            _toggleAxisLock();
+          case 'highlights':
+            _toggleHighlights();
+          case 'finish':
+            _finish();
+          case 'statistics':
+            _statistics();
+          case 'keyboard':
+            showReaderShortcuts(context, pdf: true);
+        }
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: 'bookmark',
+          enabled: !savingBookmark,
+          child: const Text('Добавить закладку'),
+        ),
+        const PopupMenuItem(value: 'bookmarks', child: Text('Закладки')),
+        PopupMenuItem(
+          value: 'notes',
+          child: Text(notes.isEmpty ? 'Заметки' : 'Заметки · ${notes.length}'),
+        ),
+        const PopupMenuItem(
+          value: 'pageNote',
+          child: Text('Заметка к странице'),
+        ),
+        const PopupMenuDivider(),
+        CheckedPopupMenuItem(
+          value: 'lock',
+          checked: axisLocked,
+          child: const Text('Зафиксировать масштаб'),
+        ),
+        PopupMenuItem(
+          value: 'highlights',
+          child: Text(
+            preferences.showHighlights
+                ? 'Скрыть выделения'
+                : 'Показать выделения',
           ),
-        ReaderBottomPanel(
-          child: ReaderProgressFooter(
-            value: value,
-            ink: ink,
-            accent: pepe.accent,
-            onChanged: !ready ? null : (v) => setState(() => dragging = v),
-            onChangeCancel: () => setState(() => dragging = null),
-            step: 1 / math.max(1, count),
-            onChangeEnd: !ready
-                ? null
-                : (v) {
-                    setState(() => dragging = null);
-                    _go(_pageAtFraction(v));
-                  },
-            details: [
-              Text(
-                'Страница ${dragging == null ? page : _pageAtFraction(value)} / $count · ${(value * 100).floor()}%',
-              ),
-            ],
-            actions: [
+        ),
+        if (page == count && !finished)
+          const PopupMenuItem(
+            value: 'finish',
+            child: Text('Отметить книгу прочитанной'),
+          ),
+        const PopupMenuItem(
+          value: 'statistics',
+          child: Text('Статистика чтения и журнал'),
+        ),
+        if (!readerTouchOnly)
+          const PopupMenuItem(
+            value: 'keyboard',
+            child: Text('Горячие клавиши'),
+          ),
+      ],
+    );
+    final tools = wide
+        ? <Widget>[
+            pill('Оглавление', 'Оглавление', ready ? _contents : null),
+            pill('Поиск по книге', 'Поиск', ready ? _search : null),
+            pill('Оформление чтения', 'Aa', ready ? _appearance : null),
+            pill(
+              'Заметки книги',
+              notes.isEmpty ? 'Заметки' : 'Заметки ${notes.length}',
+              ready ? _notes : null,
+            ),
+            moreActions,
+          ]
+        : <Widget>[
+            icon('Поиск по книге', Icons.search, ready ? _search : null),
+            icon('Оглавление', Icons.toc, ready ? _contents : null),
+            icon(
+              'Оформление чтения',
+              Icons.text_format,
+              ready ? _appearance : null,
+            ),
+            moreActions,
+          ];
+    return Material(
+      color: background,
+      elevation: 2,
+      shadowColor: Colors.black54,
+      child: SafeArea(
+        bottom: false,
+        child: SizedBox(
+          height: 60,
+          child: Row(
+            children: [
               IconButton(
-                tooltip: 'Вернуться на прежнее место',
-                visualDensity: VisualDensity.compact,
-                onPressed: !ready || history.isEmpty && linkReturn == null
-                    ? null
-                    : () {
-                        if (linkReturn != null) {
-                          _returnFromPdfLink();
-                          return;
-                        }
-                        final target = history.removeLast();
-                        _go(target, remember: false);
-                      },
-                icon: const Icon(Icons.undo),
+                tooltip: 'Закрыть книгу',
+                color: ink,
+                onPressed: _close,
+                icon: const Icon(Icons.arrow_back),
               ),
-              IconButton(
-                tooltip: 'Предыдущая страница',
-                visualDensity: VisualDensity.compact,
-                onPressed: !ready || page <= 1
-                    ? null
-                    : () => _go(page - 1, reading: true),
-                icon: const Icon(Icons.chevron_left),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayTitle ?? widget.asset.filename,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppFonts.book(ink, size: wide ? 20 : 17),
+                    ),
+                    Text(
+                      _subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontSize: 12,
+                        color: ink.withValues(alpha: .6),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              IconButton(
-                tooltip: page == count
-                    ? 'Завершить последнюю страницу'
-                    : 'Следующая страница',
-                visualDensity: VisualDensity.compact,
-                onPressed: !ready || finished
-                    ? null
-                    : () => page == count
-                          ? _finish()
-                          : _go(page + 1, reading: true),
-                icon: Icon(page == count ? Icons.done : Icons.chevron_right),
-              ),
-              IconButton(
-                tooltip: 'Цитаты и заметки',
-                visualDensity: VisualDensity.compact,
-                onPressed: ready ? _notes : null,
-                icon: const Icon(Icons.bookmarks_outlined),
-              ),
+              ...tools,
+              const SizedBox(width: 4),
             ],
           ),
         ),
-      ],
+      ),
     );
   }
+
+  void _toggleHighlights() {
+    setState(
+      () => preferences = preferences.copy(
+        showHighlights: !preferences.showHighlights,
+      ),
+    );
+    controller.invalidate();
+    unawaited(() async {
+      try {
+        final raw = await widget.repository.meta('reader:appearance');
+        final stored = raw == null
+            ? const <String, dynamic>{}
+            : jsonDecode(raw) as Map<String, dynamic>;
+        await widget.repository.setMeta(
+          'reader:appearance',
+          jsonEncode({...stored, 'showHighlights': preferences.showHighlights}),
+        );
+      } catch (e) {
+        _message('Настройка не сохранена: ${describeError(e)}');
+      }
+    }());
+  }
+
+  void _statistics() => Navigator.push(
+    context,
+    MaterialPageRoute<void>(
+      builder: (_) => ReadingStatisticsPage(
+        repository: widget.repository,
+        bookId: widget.asset.bookId,
+      ),
+    ),
+  );
+
+  /// Outline chapters as ticks on the progress bar.
+  List<double> get _ticks {
+    final items = outlineItems;
+    if (items == null || count <= 1) return const [];
+    return [
+      for (final item in items)
+        if (item.depth == 0 && item.page > 1) _fractionOf(item.page),
+    ];
+  }
+
+  double _fractionOf(int p) {
+    final starts = textIndex['starts'] as List? ?? [];
+    final length = (textIndex['length'] as num?)?.toInt() ?? 0;
+    if (starts.length == count && length > 0) {
+      return ((starts[p.clamp(1, count) - 1] as num) / length).clamp(0.0, 1.0);
+    }
+    return count == 0 ? 0 : ((p - 1) / count).clamp(0.0, 1.0);
+  }
+
+  /// The footer of the text reader: back, where you are, a bookmark, and
+  /// the book's progress bar with bookmarks and notes on it.
+  Widget _footer(BuildContext context, Color ink) {
+    final accent = PepeColors.of(context).accent;
+    final value = (dragging ?? progress).clamp(0.0, 1.0);
+    final target = dragging == null ? page : _pageAtFraction(value);
+    final here = dragging == null ? _bookmarkHere : null;
+    final chapter = _chapterOf(target);
+    final details = ['стр. $target из $count', ?chapter].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 48,
+                child: history.isEmpty && linkReturn == null
+                    ? null
+                    : IconButton(
+                        key: const ValueKey('reader-footer-back'),
+                        tooltip: 'Вернуться на ${_placeLabel(_returnPage)}',
+                        color: ink.withValues(alpha: .8),
+                        onPressed: _undoJump,
+                        icon: const Icon(Icons.undo),
+                      ),
+              ),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${(value * 100).toStringAsFixed(dragging == null ? 0 : 1)}%',
+                      key: const ValueKey('reader-footer-place'),
+                      style: TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w600,
+                        color: ink,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      details,
+                      key: const ValueKey('pdf-footer-details'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: AppFonts.body,
+                        fontSize: 12,
+                        color: ink.withValues(alpha: .6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(
+                width: 48,
+                child: here == null
+                    ? IconButton(
+                        tooltip: 'Сохранить закладку',
+                        color: ink.withValues(alpha: .8),
+                        onPressed: savingBookmark || !ready
+                            ? null
+                            : _quickBookmark,
+                        icon: const Icon(Icons.bookmark_add_outlined),
+                      )
+                    : IconButton(
+                        key: const ValueKey('reader-footer-bookmarked'),
+                        tooltip: 'Страница в закладках — убрать',
+                        color: accent,
+                        onPressed: () => _removeBookmark(here),
+                        icon: const Icon(Icons.bookmark),
+                      ),
+              ),
+            ],
+          ),
+          if (page == count && !finished && dragging == null)
+            Center(
+              child: TextButton.icon(
+                onPressed: ready ? _finish : null,
+                icon: const Icon(Icons.done),
+                label: const Text('Отметить книгу прочитанной'),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: ReaderProgressBar(
+              value: value,
+              ticks: _ticks,
+              bookmarks: [
+                for (final b in bookmarks) _fractionOf(b.chapter + 1),
+              ],
+              notes: [for (final n in notes) _fractionOf(n.chapter + 1)],
+              ink: ink,
+              accent: accent,
+              enabled: ready,
+              step: 1 / math.max(1, count),
+              onChanged: (v) => setState(() => dragging = v),
+              onChangeCancel: () => setState(() => dragging = null),
+              onChangeEnd: (v) {
+                setState(() => dragging = null);
+                _go(_pageAtFraction(v), keepControls: true);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One quiet line under the page: battery, time, title, percent, pages.
+  Widget _statusLine(Color ink) => ReaderStatusLine(
+    title: displayTitle ?? widget.asset.filename,
+    percent: '${(progress * 100).toStringAsFixed(2)}%',
+    pages: '$page/$count',
+    ink: ink,
+    margin: 16,
+    onTap: _toggleControls,
+  );
+
+  /// After a jump (contents, search, link, bookmark): a small way back that
+  /// fades on its own.
+  Widget _jumpBack(Color background, Color ink) => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Material(
+        key: const ValueKey('reader-jump-back'),
+        color: Color.lerp(background, ink, .12),
+        shape: const StadiumBorder(),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: _undoJump,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 7, 16, 7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.undo, size: 18, color: ink.withValues(alpha: .8)),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    'Вернуться на ${_placeLabel(_returnPage)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: AppFonts.body,
+                      fontSize: 13,
+                      color: ink.withValues(alpha: .85),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 
   void _trimGlyphs() {
     if (!ready || glyphs.length <= 8) return;
@@ -1097,60 +1611,71 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     if (hit != null) draw(hit.start, hit.end, Colors.orange);
   }
 
+  /// The contents sheet of the text reader: the PDF outline with a search
+  /// field, or the list of pages when the file has no outline.
   Future<void> _contents() async {
-    final outline = await _outline();
+    await _loadOutlineItems();
     if (!mounted) return;
-    final items = <({String title, int page, int depth})>[];
-    void visit(List<PdfOutlineNode> nodes, int depth) {
-      if (depth > 20 || items.length > 20000) return;
-      for (final node in nodes) {
-        if (node.dest != null) {
-          items.add((
-            title: node.title,
-            page: node.dest!.pageNumber,
-            depth: depth,
-          ));
-        }
-        visit(node.children, depth + 1);
-      }
+    final outline = outlineItems ?? const [];
+    final items = outline.isNotEmpty
+        ? outline
+        : [
+            for (var p = 1; p <= count; p++)
+              (title: 'Страница $p', page: p, depth: 0),
+          ];
+    var current = 0;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].page <= page) current = i;
     }
-
-    visit(outline, 0);
-    if (items.isEmpty) {
-      for (var p = 1; p <= count; p++) {
-        items.add((title: 'Страница $p', page: p, depth: 0));
-      }
-    }
+    final titles = [for (final item in items) item.title];
     final selected = await _panel(
       () => showModalBottomSheet<int>(
         context: context,
         showDragHandle: true,
+        isScrollControlled: true,
         builder: (context) => SafeArea(
-          child: Column(
-            children: [
-              Text(
-                outline.isEmpty ? 'Страницы PDF' : 'Оглавление PDF',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: items.length,
-                  itemBuilder: (context, i) {
-                    final item = items[i];
-                    return ListTile(
-                      contentPadding: EdgeInsets.only(
-                        left: 16 + item.depth * 12,
-                        right: 16,
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            child: SizedBox(
+              height: MediaQuery.sizeOf(context).height * .7,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      outline.isEmpty
+                          ? 'Страницы · $count'
+                          : 'Оглавление · ${outline.length}',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  Expanded(
+                    child: ReaderContentsSearch(
+                      titles: titles,
+                      builder: (context, indexes) => ListView.builder(
+                        itemCount: indexes.length,
+                        itemBuilder: (context, row) {
+                          final i = indexes[row];
+                          final item = items[i];
+                          return ListTile(
+                            selected: i == current,
+                            contentPadding: EdgeInsets.only(
+                              left: 16 + item.depth * 14.0,
+                              right: 16,
+                            ),
+                            title: Text(item.title),
+                            trailing: Text('${item.page}'),
+                            onTap: () => Navigator.pop(context, item.page),
+                          );
+                        },
                       ),
-                      title: Text(item.title),
-                      trailing: Text('${item.page}'),
-                      selected: item.page == page,
-                      onTap: () => Navigator.pop(context, item.page),
-                    );
-                  },
-                ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1226,6 +1751,10 @@ class _PdfReaderPageState extends State<PdfReaderPage>
           locked: axisLocked,
           page: originalPage,
           initialCrop: cropMargins,
+          onToggleLock: () async {
+            await _toggleAxisLock();
+            return axisLocked;
+          },
           onCrop: (value) async {
             if (value) {
               await _fitContent(
@@ -1303,23 +1832,10 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     });
   }
 
-  Future<void> _textMode() async {
-    if (preparingText) return;
-    preparingText = true;
-    await indexWork;
-    try {
-      await _openTextMode();
-    } finally {
-      preparingText = false;
-      _prepareIndex();
-    }
-  }
-
   void _prepareIndex({bool afterOpening = false}) {
     if (!mounted ||
         closing ||
         indexing ||
-        preparingText ||
         !ready ||
         !pagesMeasured ||
         !foreground ||
@@ -1346,12 +1862,7 @@ class _PdfReaderPageState extends State<PdfReaderPage>
           partial: partial,
           onProgress: (index) => library.update(partialKey, index),
           cancelled: () =>
-              !mounted ||
-              closing ||
-              preparingText ||
-              panels > 0 ||
-              !foreground ||
-              !routeVisible,
+              !mounted || closing || panels > 0 || !foreground || !routeVisible,
         );
         if (index == null || !mounted || closing) return;
         await widget.repository.db.transaction(() async {
@@ -1386,137 +1897,6 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         indexing = false;
       }
     })();
-  }
-
-  Future<void> _openTextMode() async {
-    if (textDocument == null) {
-      var cancelled = false;
-      final progress = ValueNotifier<int>(0);
-      final preparing = pdfReadingDocument(
-        document!,
-        displayTitle ?? widget.asset.filename,
-        cancelled: () => cancelled || !mounted,
-        onProgress: (v) {
-          if (!cancelled && mounted) progress.value = v;
-        },
-      );
-      Object? failure;
-      var completionRegistered = false;
-      textWork = preparing
-          .then((value) {
-            if (!cancelled && mounted) textDocument = value;
-          })
-          .catchError((Object e) {
-            failure = e;
-          });
-      await _panel(
-        () => showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (dialogContext) {
-            if (!completionRegistered) {
-              completionRegistered = true;
-              textWork.then((_) {
-                if (!cancelled && dialogContext.mounted) {
-                  final route = ModalRoute.of(dialogContext)!;
-                  if (route.isCurrent) {
-                    Navigator.pop(dialogContext);
-                  } else {
-                    Navigator.of(dialogContext).removeRoute(route);
-                  }
-                }
-              });
-            }
-            return PopScope(
-              canPop: false,
-              child: AlertDialog(
-                title: const Text('Подготовка текстового режима'),
-                content: ValueListenableBuilder<int>(
-                  valueListenable: progress,
-                  builder: (_, value, _) => Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      LinearProgressIndicator(value: value / count),
-                      Text('Страниц: $value / $count'),
-                      const Text(
-                        'Оригинал PDF можно читать без этой подготовки.',
-                      ),
-                    ],
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      cancelled = true;
-                      Navigator.pop(dialogContext);
-                    },
-                    child: const Text('Отмена'),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      );
-      cancelled = true;
-      // The notifier may still be referenced by one pending native read.
-      await textWork;
-      progress.dispose();
-      if (!mounted || textDocument == null) {
-        if (failure != null) _message('$failure');
-        return;
-      }
-      if (textDocument!.texts.every((t) => t.trim().isEmpty)) {
-        textDocument = null;
-        _message('В PDF нет текстового слоя. Для текстового режима нужен OCR.');
-        return;
-      }
-      // Keep the same structured UTF-16 coordinate system as saved quotations.
-      final index = pdfTextIndex(textDocument!);
-      await library.update('reading-index:${widget.asset.hash}', index);
-      textIndex = index;
-    }
-    if (!mounted || !routeVisible) return;
-    await _save();
-    // End this session before another reader writes coverage for the same book.
-    await activityStart;
-    await activity?.close();
-    final wasFullscreen = fullscreen;
-    if (wasFullscreen) _fullscreen(false);
-    await _panel(
-      () => Navigator.push<void>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ReaderPage(
-            repository: widget.repository,
-            asset: widget.asset,
-            suppliedDocument: textDocument,
-          ),
-        ),
-      ),
-    );
-    if (!mounted) return;
-    final saved = await library.value('reader:${widget.asset.hash}');
-    final fresh = await library.notes(hash: widget.asset.hash);
-    final appearance = await _storedPreferences();
-    if (!mounted) return;
-    setState(() {
-      notes = fresh;
-      if (appearance != null) preferences = appearance;
-    });
-    final nextActivity = _tracker();
-    final target = (((saved['chapter'] as num?)?.toInt() ?? page - 1) + 1)
-        .clamp(1, count);
-    await nextActivity.start(_absolute(target));
-    if (!mounted) {
-      await nextActivity.close();
-      return;
-    }
-    activity = nextActivity;
-    if (!foreground || !routeVisible) await nextActivity.pause('background');
-    await _go(target);
-    controller.invalidate();
-    if (wasFullscreen) _fullscreen(true);
   }
 
   Future<void> _toggleAxisLock() async {
@@ -1564,13 +1944,6 @@ class _PdfReaderPageState extends State<PdfReaderPage>
     } catch (e) {
       _message('Настройка не сохранена: ${describeError(e)}');
     }
-  }
-
-  void _fullscreen(bool value) {
-    setState(() => fullscreen = value);
-    SystemChrome.setEnabledSystemUIMode(
-      value ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
-    );
   }
 
   Future<void> _finish() async {
@@ -1648,21 +2021,30 @@ class _PdfReaderPageState extends State<PdfReaderPage>
         : preferences.palette == 'sepia'
         ? const Color(0xfff3e8d0)
         : const Color(0xfffafafa);
+    final foreground = dark
+        ? Color.lerp(pepe.text, pepe.muted, .15)!
+        : const Color(0xff302b24);
     final appTheme = Theme.of(context);
     final theme = appTheme.copyWith(
       brightness: dark ? Brightness.dark : Brightness.light,
     );
+    final chromeBackground = appTheme.scaffoldBackgroundColor;
+    final chromeInk = appTheme.colorScheme.onSurface;
+    // The reading frame is fixed, as in the text reader: system bars stay
+    // hidden and the controls float above the page.
+    final insets = MediaQuery.viewPaddingOf(context);
+    final topReserve = insets.top;
+    final bottomReserve = insets.bottom + statusLineHeight;
     return Theme(
       data: theme,
       child: PopScope(
         canPop: allowPop,
         onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) {
-            if (fullscreen) {
-              _fullscreen(false);
-            } else {
-              _close();
-            }
+          if (didPop) return;
+          if (controlsVisible) {
+            setState(() => controlsVisible = false);
+          } else {
+            _close();
           }
         },
         child: CallbackShortcuts(
@@ -1671,7 +2053,10 @@ class _PdfReaderPageState extends State<PdfReaderPage>
               if (ready && readerShortcutsAllowed(context)) _search();
             },
             const SingleActivator(LogicalKeyboardKey.keyD, control: true): () {
-              if (ready && readerShortcutsAllowed(context)) _annotate();
+              if (ready && readerShortcutsAllowed(context)) _quickBookmark();
+            },
+            const SingleActivator(LogicalKeyboardKey.keyB, control: true): () {
+              if (ready && readerShortcutsAllowed(context)) _bookmarks();
             },
             const SingleActivator(LogicalKeyboardKey.pageDown): () =>
                 _viewerKey(LogicalKeyboardKey.pageDown),
@@ -1702,11 +2087,11 @@ class _PdfReaderPageState extends State<PdfReaderPage>
             ): () =>
                 _keyZoom(false),
             const SingleActivator(LogicalKeyboardKey.f11): () {
-              if (readerShortcutsAllowed(context)) _fullscreen(!fullscreen);
+              if (readerShortcutsAllowed(context)) _toggleControls();
             },
             const SingleActivator(LogicalKeyboardKey.escape): () {
-              if (fullscreen && readerShortcutsAllowed(context)) {
-                _fullscreen(false);
+              if (controlsVisible && readerShortcutsAllowed(context)) {
+                _toggleControls();
               }
             },
           },
@@ -1715,334 +2100,317 @@ class _PdfReaderPageState extends State<PdfReaderPage>
             child: Scaffold(
               backgroundColor: background,
               resizeToAvoidBottomInset: false,
-              appBar: fullscreen
-                  ? null
-                  : AppBar(
-                      title: Text(displayTitle ?? widget.asset.filename),
-                      actions: [
-                        IconButton(
-                          tooltip: 'Статистика чтения и журнал',
-                          icon: const Icon(Icons.bar_chart_outlined),
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute<void>(
-                              builder: (_) => ReadingStatisticsPage(
-                                repository: widget.repository,
-                                bookId: widget.asset.bookId,
-                              ),
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Поиск по книге',
-                          onPressed: ready ? _search : null,
-                          icon: const Icon(Icons.search),
-                        ),
-                        IconButton(
-                          tooltip: axisLocked
-                              ? 'Разблокировать масштаб и движение'
-                              : 'Зафиксировать масштаб и горизонталь',
-                          onPressed: ready ? _toggleAxisLock : null,
-                          icon: Icon(axisLocked ? Icons.lock : Icons.lock_open),
-                        ),
-                        PopupMenuButton<String>(
-                          enabled: ready,
-                          onSelected: (v) {
-                            switch (v) {
-                              case 'contents':
-                                _contents();
-                              case 'notes':
-                                _notes();
-                              case 'bookmark':
-                                _annotate();
-                              case 'appearance':
-                                _appearance();
-                              case 'text':
-                                _textMode();
-                              case 'fullscreen':
-                                _fullscreen(true);
-                              case 'zoomIn':
-                                if (axisLocked) {
-                                  _message('Сначала снимите блокировку');
-                                } else {
-                                  controller.zoomUp();
-                                }
-                              case 'zoomOut':
-                                if (axisLocked) {
-                                  _message('Сначала снимите блокировку');
-                                } else {
-                                  controller.zoomDown();
-                                }
-                              case 'keyboard':
-                                showReaderShortcuts(context, pdf: true);
-                            }
-                          },
-                          itemBuilder: (_) => [
-                            for (final e in {
-                              'contents': 'Оглавление и страницы',
-                              'notes': 'Цитаты и заметки',
-                              'bookmark': 'Заметка к странице',
-                              'appearance': 'Оформление',
-                              'text': 'Текстовый режим',
-                              'fullscreen': 'Полный экран',
-                              'zoomIn': 'Увеличить масштаб',
-                              'zoomOut': 'Уменьшить масштаб',
-                              if (!readerTouchOnly)
-                                'keyboard': 'Горячие клавиши',
-                            }.entries)
-                              PopupMenuItem(
-                                value: e.key,
-                                child: Text(
-                                  e.value,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
               body: Listener(
                 onPointerDown: (_) => activity?.touch(),
                 onPointerSignal: (_) => activity?.touch(),
                 child: FutureBuilder<PdfDocumentRefDirect>(
                   future: initial,
                   builder: (context, snapshot) {
+                    final Widget pageArea;
                     if (snapshot.hasError) {
-                      return Center(
-                        child: Text(
-                          'Не удалось открыть PDF: ${snapshot.error}',
+                      pageArea = Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            'Не удалось открыть PDF: ${snapshot.error}',
+                            style: TextStyle(color: foreground),
+                          ),
                         ),
                       );
-                    }
-                    if (!snapshot.hasData) {
-                      return Center(
+                    } else if (!snapshot.hasData) {
+                      pageArea = Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const CircularProgressIndicator(),
                             const SizedBox(height: 16),
-                            const Text('Открытие PDF…'),
+                            Text(
+                              'Открытие PDF…',
+                              style: TextStyle(color: foreground),
+                            ),
                           ],
                         ),
                       );
+                    } else {
+                      pageArea = _viewer(snapshot.data!, dark);
                     }
-                    final dark = preferences.isDark(
-                      MediaQuery.platformBrightnessOf(context),
-                    );
-                    if (darkPages != dark) {
-                      darkPages = dark;
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted && ready) controller.invalidate();
-                      });
-                    }
-                    final filter = dark
-                        ? const ColorFilter.matrix([
-                            -.82,
-                            0,
-                            0,
-                            0,
-                            235,
-                            0,
-                            -.82,
-                            0,
-                            0,
-                            232,
-                            0,
-                            0,
-                            -.82,
-                            0,
-                            225,
-                            0,
-                            0,
-                            0,
-                            1,
-                            0,
-                          ])
-                        : preferences.palette == 'sepia'
-                        ? const ColorFilter.matrix([
-                            .94,
-                            0,
-                            0,
-                            0,
-                            5,
-                            0,
-                            .89,
-                            0,
-                            0,
-                            4,
-                            0,
-                            0,
-                            .77,
-                            0,
-                            8,
-                            0,
-                            0,
-                            0,
-                            1,
-                            0,
-                          ])
-                        : const ColorFilter.mode(
-                            Colors.transparent,
-                            BlendMode.srcOver,
-                          );
-                    return LayoutBuilder(
-                      builder: (context, constraints) => Stack(
-                        children: [
-                          ColorFiltered(
-                            colorFilter: filter,
-                            child: PdfViewer(
-                              snapshot.data!,
-                              controller: controller,
-                              initialPageNumber: page,
-                              params: PdfViewerParams(
-                                onKey: (_, key, _) => _viewerKey(key),
-                                textSelectionParams:
-                                    const PdfTextSelectionParams(
-                                      showContextMenuAutomatically: true,
-                                      magnifier:
-                                          PdfViewerSelectionMagnifierParams(
-                                            enabled: false,
-                                          ),
-                                    ),
-                                maxImageBytesCachedOnMemory: 24 * 1024 * 1024,
-                                horizontalCacheExtent: 0,
-                                verticalCacheExtent: .25,
-                                getPageRenderingScale: (_, p, _, scale) =>
-                                    pdfRenderScale(p.width, p.height, scale),
-                                scaleEnabled: !axisLocked,
-                                panAxis: axisLocked
-                                    ? PanAxis.vertical
-                                    : PanAxis.free,
-                                normalizeMatrix:
-                                    axisLocked &&
-                                        lockedX != null &&
-                                        lockedZoom != null
-                                    ? (matrix, view, layout, _) =>
-                                          lockedPdfMatrix(
-                                            matrix,
-                                            view,
-                                            layout.documentSize,
-                                            x: lockedX!,
-                                            zoom: lockedZoom!,
-                                          )
-                                    : null,
-                                calculateInitialPageNumber: (_, _) => page,
-                                onViewerReady: (_, _) {
-                                  if (!mounted || ready) return;
-                                  setState(() => ready = true);
-                                  activityStart = _startActivity();
-                                  _prepareIndex();
-                                  if (foreground &&
-                                      routeVisible &&
-                                      panels == 0) {
-                                    activity?.resume();
-                                  }
-                                  _save();
-                                  final note = widget.initialNote;
-                                  if (note != null) {
-                                    _reveal(page, note.start, note.end);
-                                  } else if (cropMargins && !axisLocked) {
-                                    unawaited(_fitContent(page));
-                                  }
-                                },
-                                onDocumentLoadFinished: (_, _) {
-                                  if (!mounted) return;
-                                  pagesMeasured = true;
-                                  _prepareIndex();
-                                },
-                                onPageChanged: _changed,
-                                pagePaintCallbacks: [_paint],
-                                layoutPages:
-                                    axisLocked || preferences.mode == 'scroll'
-                                    ? null
-                                    : (pages, params) {
-                                        final height =
-                                            pages.fold(
-                                              0.0,
-                                              (h, p) => math.max(h, p.height),
-                                            ) +
-                                            params.margin * 2;
-                                        var x = params.margin;
-                                        final layouts = <Rect>[];
-                                        for (final p in pages) {
-                                          layouts.add(
-                                            Rect.fromLTWH(
-                                              x,
-                                              (height - p.height) / 2,
-                                              p.width,
-                                              p.height,
-                                            ),
-                                          );
-                                          x += p.width + params.margin;
-                                        }
-                                        return PdfPageLayout(
-                                          pageLayouts: layouts,
-                                          documentSize: Size(x, height),
-                                        );
-                                      },
-                                onGeneralTap: (context, controller, details) {
-                                  if (details.type !=
-                                          PdfViewerGeneralTapType.tap ||
-                                      controller
-                                          .textSelectionDelegate
-                                          .hasSelectedText ||
-                                      details.tapOn ==
-                                          PdfViewerPart.selectedText) {
-                                    return false;
-                                  }
-                                  switch (preferences.tapAt(
-                                    details.localPosition.dx /
-                                        constraints.maxWidth,
-                                  )) {
-                                    case 'previous':
-                                      _go(page - 1, reading: true);
-                                    case 'next':
-                                      _go(page + 1, reading: true);
-                                    case 'controls':
-                                      _fullscreen(!fullscreen);
-                                    default:
-                                      return false;
-                                  }
-                                  return true;
-                                },
-                                buildContextMenu: (context, params) =>
-                                    _selectionMenu(
-                                      context,
-                                      params,
-                                      constraints.maxWidth,
-                                    ),
-                                linkHandlerParams: PdfLinkHandlerParams(
-                                  enableAutoLinkDetection: false,
-                                  onLinkTap: _followLink,
-                                ),
+                    final failed = snapshot.hasError;
+                    final showJumpBack =
+                        jumpHint &&
+                        !controlsVisible &&
+                        (history.isNotEmpty || linkReturn != null);
+                    final errors = [?saveError];
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Padding(
+                          padding: EdgeInsets.only(
+                            top: topReserve,
+                            bottom: bottomReserve,
+                          ),
+                          child: pageArea,
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: insets.bottom,
+                          height: statusLineHeight,
+                          child: _statusLine(foreground),
+                        ),
+                        // A bookmarked page carries a ribbon in its corner.
+                        if (_bookmarkHere != null)
+                          Positioned(
+                            top: topReserve,
+                            right: 6,
+                            child: GestureDetector(
+                              key: const ValueKey('reader-page-bookmark'),
+                              onTap: _bookmarks,
+                              child: Icon(
+                                Icons.bookmark,
+                                size: 22,
+                                color: pepe.accent.withValues(alpha: .85),
                               ),
                             ),
                           ),
-                          if (fullscreen)
-                            Positioned(
-                              top: 8,
-                              right: 8,
-                              child: SafeArea(
-                                child: IconButton.filledTonal(
-                                  tooltip: 'Выйти из полного экрана',
-                                  onPressed: () => _fullscreen(false),
-                                  icon: const Icon(Icons.fullscreen_exit),
-                                ),
-                              ),
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: _floating(
+                            // Without a document only the way out is useful.
+                            visible: controlsVisible || failed,
+                            from: const Offset(0, -1),
+                            child: _header(
+                              context,
+                              chromeBackground,
+                              chromeInk,
                             ),
-                        ],
-                      ),
+                          ),
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (showJumpBack)
+                                _jumpBack(background, foreground),
+                              for (final message in errors)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    8,
+                                    0,
+                                    8,
+                                    8,
+                                  ),
+                                  child: Material(
+                                    color: theme.colorScheme.surface,
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(8),
+                                      child: Text(
+                                        message,
+                                        style: TextStyle(
+                                          color: theme.colorScheme.error,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              if (controlsVisible && !failed)
+                                Material(
+                                  key: const ValueKey('reader-footer'),
+                                  color: chromeBackground,
+                                  child: SafeArea(
+                                    top: false,
+                                    child: _footer(context, chromeInk),
+                                  ),
+                                )
+                              else
+                                SizedBox(height: bottomReserve),
+                            ],
+                          ),
+                        ),
+                      ],
                     );
                   },
                 ),
               ),
-              bottomNavigationBar: fullscreen
-                  ? null
-                  : Material(
-                      color: appTheme.scaffoldBackgroundColor,
-                      child: SafeArea(child: _footer()),
-                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _viewer(PdfDocumentRefDirect document, bool dark) {
+    if (darkPages != dark) {
+      darkPages = dark;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && ready) controller.invalidate();
+      });
+    }
+    final filter = dark
+        ? const ColorFilter.matrix([
+            -.82,
+            0,
+            0,
+            0,
+            235,
+            0,
+            -.82,
+            0,
+            0,
+            232,
+            0,
+            0,
+            -.82,
+            0,
+            225,
+            0,
+            0,
+            0,
+            1,
+            0,
+          ])
+        : preferences.palette == 'sepia'
+        ? const ColorFilter.matrix([
+            .94,
+            0,
+            0,
+            0,
+            5,
+            0,
+            .89,
+            0,
+            0,
+            4,
+            0,
+            0,
+            .77,
+            0,
+            8,
+            0,
+            0,
+            0,
+            1,
+            0,
+          ])
+        : const ColorFilter.mode(Colors.transparent, BlendMode.srcOver);
+    return LayoutBuilder(
+      builder: (context, constraints) => ColorFiltered(
+        colorFilter: filter,
+        child: PdfViewer(
+          document,
+          controller: controller,
+          initialPageNumber: page,
+          params: PdfViewerParams(
+            // The reader's paper shows around the pages, as in the text
+            // reader; the colour filter keeps it transparent.
+            backgroundColor: Colors.transparent,
+            onKey: (_, key, _) => _viewerKey(key),
+            textSelectionParams: const PdfTextSelectionParams(
+              showContextMenuAutomatically: true,
+              magnifier: PdfViewerSelectionMagnifierParams(enabled: false),
+            ),
+            maxImageBytesCachedOnMemory: 24 * 1024 * 1024,
+            horizontalCacheExtent: 0,
+            verticalCacheExtent: .25,
+            getPageRenderingScale: (_, p, _, scale) =>
+                pdfRenderScale(p.width, p.height, scale),
+            scaleEnabled: !axisLocked,
+            panAxis: axisLocked ? PanAxis.vertical : PanAxis.free,
+            normalizeMatrix: axisLocked && lockedX != null && lockedZoom != null
+                ? (matrix, view, layout, _) => lockedPdfMatrix(
+                    matrix,
+                    view,
+                    layout.documentSize,
+                    x: lockedX!,
+                    zoom: lockedZoom!,
+                  )
+                : null,
+            calculateInitialPageNumber: (_, _) => page,
+            onViewerReady: (_, _) {
+              if (!mounted || ready) return;
+              setState(() => ready = true);
+              activityStart = _startActivity();
+              _prepareIndex();
+              if (foreground && routeVisible && panels == 0) {
+                activity?.resume();
+              }
+              _save();
+              final note = widget.initialNote;
+              if (note != null) {
+                _reveal(page, note.start, note.end);
+              } else if (cropMargins && !axisLocked) {
+                unawaited(_fitContent(page));
+              }
+            },
+            onDocumentLoadFinished: (_, _) {
+              if (!mounted) return;
+              pagesMeasured = true;
+              _prepareIndex();
+              // Chapter names for the header, footer and progress ticks.
+              unawaited(_loadOutlineItems());
+            },
+            onPageChanged: _changed,
+            pagePaintCallbacks: [_paint],
+            layoutPages: axisLocked || preferences.mode == 'scroll'
+                ? null
+                : (pages, params) {
+                    final height =
+                        pages.fold(0.0, (h, p) => math.max(h, p.height)) +
+                        params.margin * 2;
+                    var x = params.margin;
+                    final layouts = <Rect>[];
+                    for (final p in pages) {
+                      layouts.add(
+                        Rect.fromLTWH(
+                          x,
+                          (height - p.height) / 2,
+                          p.width,
+                          p.height,
+                        ),
+                      );
+                      x += p.width + params.margin;
+                    }
+                    return PdfPageLayout(
+                      pageLayouts: layouts,
+                      documentSize: Size(x, height),
+                    );
+                  },
+            onGeneralTap: (context, controller, details) {
+              if (details.type != PdfViewerGeneralTapType.tap ||
+                  controller.textSelectionDelegate.hasSelectedText ||
+                  details.tapOn == PdfViewerPart.selectedText) {
+                return false;
+              }
+              // With the controls open, any tap on the page hides them.
+              if (controlsVisible) {
+                setState(() => controlsVisible = false);
+                return true;
+              }
+              switch (preferences.tapAt(
+                details.localPosition.dx / constraints.maxWidth,
+              )) {
+                case 'previous':
+                  _go(page - 1, reading: true);
+                case 'next':
+                  _go(page + 1, reading: true);
+                case 'controls':
+                  _toggleControls();
+                default:
+                  return false;
+              }
+              return true;
+            },
+            buildContextMenu: (context, params) =>
+                _selectionMenu(context, params, constraints.maxWidth),
+            linkHandlerParams: PdfLinkHandlerParams(
+              enableAutoLinkDetection: false,
+              onLinkTap: _followLink,
             ),
           ),
         ),

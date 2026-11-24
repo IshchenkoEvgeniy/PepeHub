@@ -75,6 +75,8 @@ import 'reading_book_page.dart';
 import 'reading_plan_page.dart';
 import '../reader/reading_library.dart';
 import '../reader/reading_notes_page.dart';
+import '../vocabulary/vocabulary_page.dart';
+import '../vocabulary/vocabulary_repository.dart';
 import '../reader/reading_collections.dart';
 import '../library/library_service.dart';
 import '../library/personal_library.dart';
@@ -133,6 +135,11 @@ class _LibraryPageState extends State<LibraryPage> {
   String readingView = 'auto', audioView = 'auto';
   bool savingView = false;
   String get shelfView => reading ? readingView : audioView;
+
+  /// «Группировать по сериям»: a switch over the list or the covers, as in
+  /// «Библиотека», remembered per section.
+  bool readingGroupSeries = false, audioGroupSeries = false;
+  bool get groupSeries => reading ? readingGroupSeries : audioGroupSeries;
   bool _useCovers(double width) =>
       shelfView == 'covers' || shelfView == 'auto' && width >= 900;
   bool reading = false;
@@ -206,7 +213,6 @@ class _LibraryPageState extends State<LibraryPage> {
     super.initState();
     widget.repository.externalChanges.addListener(_remoteChanged);
     activeFolderScan.addListener(_folderScanChanged);
-    PepeSection.hidden.addListener(_sectionsChanged);
     folderScanOutcome.addListener(_folderScanFinished);
     personalLibrary.addListener(_libraryChanged);
     _initialize();
@@ -244,13 +250,8 @@ class _LibraryPageState extends State<LibraryPage> {
 
   Future<void> _initialize() async {
     var section = await startupSection(widget.repository);
-    PepeSection.hidden.value = await petsSectionHidden(widget.repository)
-        ? {PepeSection.pets}
-        : {};
+    await PepeNavLayout.load(widget.repository);
     if (!mounted) return;
-    if (section == 'pets' && PepeSection.hidden.value.isNotEmpty) {
-      section = 'reading';
-    }
     reading = section == 'reading';
     metadataSection = section == 'metadata';
     recommendationsSection = section == 'recommendations';
@@ -315,18 +316,8 @@ class _LibraryPageState extends State<LibraryPage> {
     await _reload(restoreDefault: true);
   }
 
-  /// Hiding «Питомник» while it is open moves to the books.
-  void _sectionsChanged() {
-    if (mounted &&
-        petsSection &&
-        PepeSection.hidden.value.contains(PepeSection.pets)) {
-      unawaited(_selectSection(PepeSection.books));
-    }
-  }
-
   @override
   void dispose() {
-    PepeSection.hidden.removeListener(_sectionsChanged);
     widget.repository.externalChanges.removeListener(_remoteChanged);
     activeFolderScan.removeListener(_folderScanChanged);
     folderScanOutcome.removeListener(_folderScanFinished);
@@ -601,6 +592,7 @@ class _LibraryPageState extends State<LibraryPage> {
         final orderFuture = repo.meta('reading-sort');
         final reverseFuture = repo.meta('reading-sort-reverse');
         final viewFuture = repo.meta('reading-shelf-view');
+        final groupFuture = repo.meta('reading-shelf-group-series');
         // Time estimates are optional; the shelf still lists books.
         final speedsFuture = readingLibrary
             .speedSamples()
@@ -618,6 +610,7 @@ class _LibraryPageState extends State<LibraryPage> {
           orderFuture,
           reverseFuture,
           viewFuture,
+          groupFuture,
           speedsFuture,
         ]);
         final positions = await positionsFuture;
@@ -629,6 +622,7 @@ class _LibraryPageState extends State<LibraryPage> {
         final order = await orderFuture ?? 'title';
         final reverse = await reverseFuture;
         final view = await viewFuture;
+        final group = await groupFuture;
         final speeds = await speedsFuture;
         if (mounted && reading == readingSection) {
           effectiveReadingInfo = {
@@ -655,9 +649,8 @@ class _LibraryPageState extends State<LibraryPage> {
           readingSourcePaths = sourcePaths;
           readingCollections = groups;
           readingSort = order;
-          readingView = const ['list', 'covers', 'series'].contains(view)
-              ? view!
-              : 'auto';
+          readingView = _storedShelfView(view);
+          readingGroupSeries = _storedShelfGrouping(view, group);
           if (!groups.containsKey(collectionFilter)) collectionFilter = null;
         }
       } else {
@@ -667,6 +660,7 @@ class _LibraryPageState extends State<LibraryPage> {
         final orderFuture = repo.meta('audio-sort');
         final reverseFuture = repo.meta('audio-sort-reverse');
         final viewFuture = repo.meta('audio-shelf-view');
+        final groupFuture = repo.meta('audio-shelf-group-series');
         final recentFuture = AudioLibraryRepository(repo.db).lastPlayed();
         await Future.wait<Object?>([
           prefsFuture,
@@ -675,6 +669,7 @@ class _LibraryPageState extends State<LibraryPage> {
           orderFuture,
           reverseFuture,
           viewFuture,
+          groupFuture,
           recentFuture,
         ]);
         final prefs = await prefsFuture;
@@ -683,6 +678,7 @@ class _LibraryPageState extends State<LibraryPage> {
         final order = await orderFuture ?? 'title';
         final reverse = await reverseFuture;
         final view = await viewFuture;
+        final group = await groupFuture;
         final recent = await recentFuture;
         if (mounted && reading == readingSection) {
           audioPrefs = prefs;
@@ -690,9 +686,8 @@ class _LibraryPageState extends State<LibraryPage> {
           audioSourcePaths = sourcePaths;
           audioSort = order;
           audioSortReverse = reverse == '1';
-          audioView = const ['list', 'covers', 'series'].contains(view)
-              ? view!
-              : 'auto';
+          audioView = _storedShelfView(view);
+          audioGroupSeries = _storedShelfGrouping(view, group);
           audioRecent = recent;
           if (!groups.containsKey(collectionFilter)) collectionFilter = null;
         }
@@ -847,7 +842,8 @@ class _LibraryPageState extends State<LibraryPage> {
       MaterialPageRoute(
         builder: (_) => ReadingNotesPage(
           repository: widget.repository,
-          bookIds: books.map((b) => b.id).toSet(),
+          // From another section (the bar's «Заметки») every book's notes.
+          bookIds: reading ? books.map((b) => b.id).toSet() : null,
           onOpen: (note) async {
             if (deletedReadingBooks.contains(note.bookId)) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -1214,7 +1210,29 @@ class _LibraryPageState extends State<LibraryPage> {
     enabled: !busy && !loading,
     onSettings: _appSettings,
     onSelect: _selectSection,
+    onOpen: _openNavigationPage,
   );
+
+  void _openNavigationPage(PepeNavItem item) {
+    if (busy || loading) return;
+    switch (item) {
+      case PepeNavItem.notes:
+        unawaited(_allNotes());
+      case PepeNavItem.vocabulary:
+        unawaited(
+          Navigator.push<void>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => VocabularyPage(
+                repository: VocabularyRepository(widget.repository),
+              ),
+            ),
+          ),
+        );
+      default:
+        break;
+    }
+  }
 
   Future<void> _selectSection(PepeSection section) async {
     if (busy || loading) return;
@@ -1310,6 +1328,53 @@ class _LibraryPageState extends State<LibraryPage> {
         setState(() => query = value);
       }
     });
+  }
+
+  /// The former «Серии» view opens as the list grouped by series.
+  static String _storedShelfView(String? view) =>
+      const ['list', 'covers'].contains(view)
+      ? view!
+      : view == 'series'
+      ? 'list'
+      : 'auto';
+
+  static bool _storedShelfGrouping(String? view, String? group) =>
+      group == null ? view == 'series' : group == '1';
+
+  Future<void> _setShelfGrouping(bool value) async {
+    if (busy || savingView) return;
+    final section = reading;
+    void apply(bool on) {
+      if (section) {
+        readingGroupSeries = on;
+      } else {
+        audioGroupSeries = on;
+      }
+    }
+
+    setState(() {
+      savingView = true;
+      apply(value);
+    });
+    try {
+      await widget.repository.setMeta(
+        '${section ? 'reading' : 'audio'}-shelf-group-series',
+        value ? '1' : '0',
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => apply(!value));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Не удалось сохранить группировку: ${describeError(e)}',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => savingView = false);
+    }
   }
 
   Future<void> _setShelfView(String value) async {
@@ -1935,8 +2000,11 @@ class _LibraryPageState extends State<LibraryPage> {
                   sliver: SliverLayoutBuilder(
                     builder: (context, constraints) {
                       final width = constraints.crossAxisExtent;
-                      if (shelfView == 'series') return _seriesSliver(listed);
-                      if (!_useCovers(width)) {
+                      final covers = _useCovers(width);
+                      if (groupSeries && !covers) {
+                        return _seriesSliver(listed);
+                      }
+                      if (!covers) {
                         return SliverList.builder(
                           itemCount: listed.length,
                           itemBuilder: (_, i) => Padding(
@@ -1952,8 +2020,9 @@ class _LibraryPageState extends State<LibraryPage> {
                       final scale =
                           MediaQuery.textScalerOf(context).scale(14) / 14;
                       final tile = (width - gap * (columns - 1)) / columns;
+                      final rows = groupSeries ? _seriesRows(listed) : null;
                       return SliverGrid.builder(
-                        itemCount: listed.length,
+                        itemCount: rows?.length ?? listed.length,
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: columns,
                           crossAxisSpacing: gap,
@@ -1962,7 +2031,12 @@ class _LibraryPageState extends State<LibraryPage> {
                               tile * (reading ? 1.5 : 1) +
                               (reading ? 160 : 184) * scale,
                         ),
-                        itemBuilder: (_, i) => _bookTile(listed[i], tile),
+                        itemBuilder: (_, i) => rows == null
+                            ? _bookTile(listed[i], tile)
+                            : switch (rows[i]) {
+                                _SeriesRow row => _seriesTile(row, tile),
+                                _BookRow(:final book) => _bookTile(book, tile),
+                              },
                       );
                     },
                   ),

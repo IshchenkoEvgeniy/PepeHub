@@ -84,7 +84,7 @@ void main() {
         clock.stop();
         expect(repo.checkpoint.isCompleted, isFalse);
         expect(state.page, 1200);
-        expect(find.textContaining('/ 1500'), findsOneWidget);
+        expect(find.textContaining('/1500'), findsOneWidget);
         expect(
           tester
               .widget<IconButton>(

@@ -41,7 +41,10 @@ void main() {
       mobile(tester);
       await tester.pumpWidget(PepeHubApp(repository: repo));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Рекомендации'));
+      // On a phone «Рекомендации» is behind «Ещё».
+      await tester.tap(find.byKey(const ValueKey('nav:more')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('nav-more:recommendations')));
       await tester.pumpAndSettle();
       expect(find.text('РЕКОМЕНДАЦИИ'), findsOneWidget);
       expect(await repo.meta('library-section'), 'recommendations');
