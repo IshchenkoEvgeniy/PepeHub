@@ -7,6 +7,7 @@ import '../diagnostics/error_log_page.dart';
 import '../diagnostics/user_message.dart';
 import '../library/library_service.dart';
 import '../media/audio_player_scope.dart';
+import '../pets/pets_service.dart';
 import '../reader/reader_appearance.dart';
 import '../reader/reader_layout.dart';
 import '../recommendations/recommendation_store.dart';
@@ -680,6 +681,28 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: assets == null
                   ? null
                   : () => _open(AudioRecoveryPage(assets: assets)),
+            ),
+            FutureBuilder<String?>(
+              future: widget.library.local.meta(PetsDev.enabledKey),
+              builder: (context, snapshot) => StatefulBuilder(
+                builder: (context, setLocal) {
+                  var on = snapshot.data == '1';
+                  return SwitchListTile(
+                    key: const ValueKey('settings-pets-dev'),
+                    secondary: const Icon(Icons.build_circle_outlined),
+                    title: const Text('Панель разработчика Питомника'),
+                    subtitle: const Text(
+                      'Кнопка DEV в Питомнике: монеты, минуты, опыт, время игры, потребности — для проверки',
+                    ),
+                    value: on,
+                    onChanged: (v) async {
+                      await widget.library.local.setMeta(PetsDev.enabledKey, v ? '1' : '0');
+                      on = v;
+                      if (mounted) setState(() {});
+                    },
+                  );
+                },
+              ),
             ),
           ],
         ),

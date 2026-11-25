@@ -12,6 +12,7 @@ import 'pet_progress.dart';
 import 'pet_rules.dart';
 
 part 'pets_progress_service.dart';
+part 'pets_dev.dart';
 
 /// One row of the coins and experience journal.
 class PetLedgerEntry {
@@ -112,6 +113,15 @@ class PetsOverview {
 
   /// Chosen honor title (achievement id), or null.
   final String? honor;
+
+  /// Mood 0..1 per pet id.
+  final Map<String, double> moods;
+
+  /// The bedroom light turned off early, until the morning.
+  final DateTime? lightsOff, lightsUntil;
+
+  /// Grants since the player last saw the «while you were away» card.
+  final PetsUnseen unseen;
   const PetsOverview({
     required this.enabledAt,
     required this.balance,
@@ -130,7 +140,31 @@ class PetsOverview {
     this.progress = const AchievementProgress(),
     this.achievements = const {},
     this.honor,
+    this.moods = const {},
+    this.lightsOff,
+    this.lightsUntil,
+    this.unseen = const PetsUnseen(),
   });
+
+  double moodOf(Pet pet) => moods[pet.id] ?? PetRules.moodDefault;
+}
+
+/// What was earned since the «while you were away» card was last closed.
+class PetsUnseen {
+  /// Newest ledger id included; [PetsService.markSeen] stores it.
+  final int lastId;
+  final int coins, xp, minutes;
+  final String? book;
+  final List<String> notes;
+  const PetsUnseen({
+    this.lastId = 0,
+    this.coins = 0,
+    this.xp = 0,
+    this.minutes = 0,
+    this.book,
+    this.notes = const [],
+  });
+  bool get isEmpty => coins <= 0 && xp <= 0;
 }
 
 /// A purchase or use that is not allowed; [message] is shown to the user.
@@ -154,6 +188,122 @@ class PetsService {
   static const _syncedKey = 'pets:syncedDay';
   static const _testKey = 'pets:testMinutes';
   static const _honorKey = 'pets:honor';
+  static const _moodKey = 'pets:mood';
+  static const _lightsKey = 'pets:lights';
+  static const _seenKey = 'pets:seenLedger';
+
+  // ---------------------------------------------------------- mood & light
+
+  /// Stored mood per pet: value and when it was set (it fades from there).
+  Future<Map<String, (double, DateTime)>> _moodRaw() async {
+    final raw = await repository.meta(_moodKey);
+    if (raw == null) return {};
+    try {
+      final value = jsonDecode(raw);
+      if (value is! Map) return {};
+      return {
+        for (final e in value.entries)
+          if (e.value is Map &&
+              (e.value as Map)['v'] is num &&
+              DateTime.tryParse('${(e.value as Map)['at']}') != null)
+            '${e.key}': (
+              ((e.value as Map)['v'] as num).toDouble(),
+              DateTime.parse('${(e.value as Map)['at']}').toLocal(),
+            ),
+      };
+    } on FormatException {
+      return {};
+    }
+  }
+
+  Future<Map<String, double>> moods() async {
+    final now = clock();
+    final raw = await _moodRaw();
+    return {
+      for (final e in raw.entries) e.key: PetRules.mood(e.value.$1, e.value.$2, now),
+    };
+  }
+
+  /// Raises (or with a negative [delta] lowers) a pet's mood, within 0..1.
+  Future<double> cheer(String petId, double delta) async {
+    final now = clock();
+    final raw = await _moodRaw();
+    final current = raw[petId] == null
+        ? PetRules.moodDefault
+        : PetRules.mood(raw[petId]!.$1, raw[petId]!.$2, now);
+    final next = (current + delta).clamp(0.0, 1.0);
+    raw[petId] = (next, now);
+    await repository.setMeta(
+      _moodKey,
+      jsonEncode({
+        for (final e in raw.entries)
+          e.key: {'v': e.value.$1, 'at': e.value.$2.toUtc().toIso8601String()},
+      }),
+    );
+    return next;
+  }
+
+  /// A game in the room.
+  Future<double> play(String petId) => cheer(petId, PetRules.moodPlay);
+
+  /// A stroke (tap on the pet).
+  Future<double> stroke(String petId) => cheer(petId, PetRules.moodPet);
+
+  Future<(DateTime?, DateTime?)> lights() async {
+    final raw = await repository.meta(_lightsKey);
+    if (raw == null) return (null, null);
+    try {
+      final value = jsonDecode(raw) as Map;
+      return (
+        DateTime.tryParse('${value['off']}')?.toLocal(),
+        DateTime.tryParse('${value['until']}')?.toLocal(),
+      );
+    } catch (_) {
+      return (null, null);
+    }
+  }
+
+  /// Turns the bedroom light off until the morning, or back on.
+  Future<void> setLightsOff(bool off) async {
+    if (!off) {
+      await repository.setMeta(_lightsKey, jsonEncode({}));
+      return;
+    }
+    final now = clock();
+    await repository.setMeta(
+      _lightsKey,
+      jsonEncode({
+        'off': now.toUtc().toIso8601String(),
+        'until': PetRules.nextMorning(now).toUtc().toIso8601String(),
+      }),
+    );
+  }
+
+  /// Rewards newer than the last closed «while you were away» card.
+  Future<PetsUnseen> unseen() async {
+    final seen = int.tryParse(await repository.meta(_seenKey) ?? '') ?? 0;
+    final rows = await _db
+        .customSelect(
+          "SELECT id,kind,coins,xp,note FROM pets_ledger_v1 WHERE id>? AND kind IN ('time','book','chest','achievement','level') ORDER BY id",
+          variables: [Variable(seen)],
+        )
+        .get();
+    var coins = 0, xp = 0, minutes = 0, last = seen;
+    String? book;
+    final notes = <String>[];
+    for (final r in rows) {
+      final kind = r.read<String>('kind');
+      coins += r.read<int>('coins');
+      xp += r.read<int>('xp');
+      last = math.max(last, r.read<int>('id'));
+      if (kind == 'time') minutes += r.read<int>('coins');
+      if (kind == 'book') book = r.read<String>('note').replaceFirst('Книга дня: ', '');
+      if (kind != 'time' && kind != 'book') notes.add(r.read<String>('note'));
+    }
+    return PetsUnseen(lastId: last, coins: coins, xp: xp, minutes: minutes, book: book, notes: notes);
+  }
+
+  Future<void> markSeen(int ledgerId) => repository.setMeta(_seenKey, '$ledgerId');
 
   // ------------------------------------------------------- testing helpers
 
@@ -320,6 +470,7 @@ class PetsService {
           note: '${pet.name}: ${food.title.toLowerCase()}',
           dedup: 'feed:${const Uuid().v4()}',
         );
+        await cheer(petId, food.treat ? PetRules.moodTreat : PetRules.moodFood);
         return food;
       });
 
@@ -473,7 +624,12 @@ class PetsService {
     final all = await pets();
     final companion = await companionId();
     final progress = await _progress(all);
+    final (lightsOff, lightsUntil) = await lights();
     return PetsOverview(
+      moods: await moods(),
+      lightsOff: lightsOff,
+      lightsUntil: lightsUntil,
+      unseen: await unseen(),
       enabledAt: enabled,
       balance: await balance(),
       todayMinutes: minutes,

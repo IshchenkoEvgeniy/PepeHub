@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -8,24 +9,42 @@ import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/pets/pet_catalog.dart';
 import 'package:pepehub/pets/pet_progress.dart';
 import 'package:pepehub/pets/pets_service.dart';
+import 'package:pepehub/pets/ui/pet_scene.dart';
 import 'package:pepehub/pets/ui/pets_section.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
-/// Flutter GPU is not available in tests: the 3D home is a placeholder.
-Widget _fakeScene(BuildContext _, Pet pet, Set<String> owned, Object _) =>
-    ColoredBox(
-      color: Colors.black12,
-      child: Center(child: Text('scene:${pet.species}:${owned.length}')),
-    );
+/// Flutter GPU is not available in tests: the 3D room is a placeholder.
+Widget _fakeScene(BuildContext _, PetSceneArgs a) => ColoredBox(
+  color: Colors.black12,
+  child: Center(
+    child: Text('scene:${a.pet.species}:${a.owned.length}:${a.room.key}'),
+  ),
+);
 
 Future<void> _settle(WidgetTester tester, bool Function() done) async {
-  for (var i = 0; i < 200 && !done(); i++) {
+  for (var i = 0; i < 300 && !done(); i++) {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 10)),
     );
     await tester.pump();
   }
   await tester.pump();
+}
+
+bool _has(Finder f) => f.evaluate().isNotEmpty;
+
+Finder _balance(String value) => find.descendant(
+  of: find.byKey(const ValueKey('pets-balance')),
+  matching: find.text(value),
+);
+
+/// Closes «Пока вас не было» when it is on screen.
+Future<void> _takeReward(WidgetTester tester) async {
+  await _settle(tester, () => _has(find.byKey(const ValueKey('reward-take'))));
+  if (_has(find.byKey(const ValueKey('reward-take')))) {
+    await tester.tap(find.byKey(const ValueKey('reward-take')));
+    await tester.pumpAndSettle();
+  }
 }
 
 void main() {
@@ -39,11 +58,11 @@ void main() {
   });
   tearDown(() => db.close());
 
-  Widget app() => MaterialApp(
+  Widget app({DateTime Function()? clock}) => MaterialApp(
     home: PetsSection(
       repository: repo,
-      clock: () => now,
-      sceneBuilder: (c, p, o, e, s) => _fakeScene(c, p, o, s),
+      clock: clock ?? () => now,
+      sceneBuilder: _fakeScene,
       navigation: ShelfNavigation(
         current: PepeSection.pets,
         onSelect: (_) {},
@@ -52,57 +71,116 @@ void main() {
     ),
   );
 
-  testWidgets('starter choice, shop and journal', (tester) async {
+  testWidgets('starter, reward card, shop, kitchen and journal', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(app());
-    await _settle(
-      tester,
-      () => find.text('Выберите первого питомца').evaluate().isNotEmpty,
-    );
+    await _settle(tester, () => _has(find.text('Выберите первого питомца')));
     expect(find.text('Лиса'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('starter-fox')));
-    await _settle(tester, () => find.text('scene:fox:0').evaluate().isNotEmpty);
-    expect(find.text('0 монет'), findsOneWidget);
-    expect(find.text('Еды нет — загляните в магазин'), findsOneWidget);
+    await _settle(tester, () => _has(find.text('scene:fox:0:living')));
+    expect(_balance('0'), findsOneWidget);
+    expect(find.byKey(const ValueKey('room-title')), findsOneWidget);
 
     // Nothing is affordable without coins.
-    await tester.tap(find.text('Магазин'));
+    await tester.tap(find.byKey(const ValueKey('dock-shop')));
     await tester.pumpAndSettle();
     final kibble = find.descendant(
       of: find.byKey(const ValueKey('shop-food_kibble')),
       matching: find.byType(FilledButton),
     );
     expect(tester.widget<FilledButton>(kibble).onPressed, isNull);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
 
-    // Earn an hour (test minutes) and buy food; it appears on the home tray.
+    // An hour of (test) reading; returning to the app recounts and shows
+    // «while you were away».
     await tester.runAsync(() async {
       final service = PetsService(repo, clock: () => now);
       await service.addTestMinutes(60);
     });
-    // Returning to the app recounts.
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await _settle(tester, () => find.text('60 монет').evaluate().isNotEmpty);
-    expect(find.text('60 монет'), findsOneWidget);
+    await _settle(tester, () => _has(find.text('Пока вас не было')));
+    expect(find.text('60 мин'), findsOneWidget);
+    await _takeReward(tester);
+    await _settle(tester, () => _has(_balance('60')));
+
+    await tester.tap(find.byKey(const ValueKey('dock-shop')));
+    await tester.pumpAndSettle();
     expect(tester.widget<FilledButton>(kibble).onPressed, isNotNull);
     await tester.tap(kibble);
-    await _settle(tester, () => find.text('50 монет').evaluate().isNotEmpty);
-
-    await tester.tap(find.text('Дом'));
+    await _settle(tester, () => _has(find.text('Куплено: Корм')));
+    await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
-    expect(find.text('Корм ×1'), findsOneWidget);
+    await _settle(tester, () => _has(_balance('50')));
 
-    await tester.tap(find.text('Журнал'));
+    // The kitchen tray feeds with one tap.
+    await tester.tap(find.byKey(const ValueKey('dock-food')));
     await tester.pumpAndSettle();
+    expect(find.text('scene:fox:0:kitchen'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('food-food_kibble')),
+        matching: find.text('×1'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('food-food_kibble')));
     await _settle(
       tester,
-      () => find.text('Покупка: Корм').evaluate().isNotEmpty,
+      () => _has(
+        find.descendant(
+          of: find.byKey(const ValueKey('food-food_kibble')),
+          matching: find.text('+'),
+        ),
+      ),
     );
+
+    await tester.tap(find.byKey(const ValueKey('side-journal')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Журнал'));
+    await tester.pumpAndSettle();
+    await _settle(tester, () => _has(find.text('Покупка: Корм')));
     expect(find.text('-10'), findsOneWidget);
     expect(find.textContaining('Чтение и прослушивание'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('developer panel grants coins and items', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.runAsync(() async {
+      final service = PetsService(repo, clock: () => now);
+      await service.enable(species: PetSpecies.cat);
+      await service.setDevEnabled(true);
+    });
+    await tester.pumpWidget(app());
+    await _settle(tester, () => _has(find.text('scene:cat:0:living')));
+    await tester.tap(find.byKey(const ValueKey('pets-dev')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('dev-coins-1000')));
+    await _settle(tester, () => _has(_balance('1000')));
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('dev-items')),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(find.byKey(const ValueKey('dev-items')));
+    await _settle(tester, () => _has(find.text('Все предметы открыты')));
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    // Owned decor reaches the scene.
+    expect(find.textContaining('scene:cat:'), findsOneWidget);
+    expect(find.text('scene:cat:0:living'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('bottom bar: what does not fit goes behind «Ещё»', (
@@ -189,21 +267,12 @@ void main() {
         day = day.add(const Duration(days: 1));
       }
     });
-    await tester.pumpWidget(
-      MaterialApp(
-        home: PetsSection(
-          repository: repo,
-          clock: () => day,
-          sceneBuilder: (c, p, o, e, s) => _fakeScene(c, p, o, s),
-          navigation: ShelfNavigation(
-            current: PepeSection.pets,
-            onSelect: (_) {},
-            onSettings: () {},
-          ),
-        ),
-      ),
-    );
-    await _settle(tester, () => find.text('scene:cat:0').evaluate().isNotEmpty);
+    await tester.pumpWidget(app(clock: () => day));
+    await _settle(tester, () => _has(find.text('scene:cat:0:living')));
+    await _takeReward(tester);
+
+    await tester.tap(find.byKey(const ValueKey('side-pets')));
+    await tester.pumpAndSettle();
     expect(find.text('Питомцы •'), findsOneWidget, reason: 'path pending');
 
     await tester.tap(find.text('Инкубатор'));
@@ -215,12 +284,8 @@ void main() {
         matching: find.byType(FilledButton),
       ),
     );
-    await _settle(
-      tester,
-      () => find.text('0:00 из 10:00').evaluate().isNotEmpty,
-    );
+    await _settle(tester, () => _has(find.text('0:00 из 10:00')));
     expect(find.text('Свободный слот'), findsNothing);
-    expect(find.text('0:00 из 10:00'), findsOneWidget);
 
     await tester.tap(find.text('Питомцы •'));
     await tester.pumpAndSettle();
@@ -233,46 +298,63 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Выбрать').last);
-    await _settle(
-      tester,
-      () => find.textContaining('Книжная:').evaluate().isNotEmpty,
-    );
+    await _settle(tester, () => _has(find.textContaining('Книжная:')));
     await tester.tap(find.byKey(const ValueKey('talent-greet')));
     await _settle(
       tester,
-      () => find.byKey(const ValueKey('talent-greet')).evaluate().isEmpty,
+      () => !_has(find.byKey(const ValueKey('talent-greet'))),
     );
-
-    await tester.tap(find.text('Достижения'));
+    await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
-    expect(find.text('Свой путь'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('side-achievements')));
+    await tester.pumpAndSettle();
     expect(find.text('Неделя чтения'), findsOneWidget, reason: 'honor chip');
+    await tester.scrollUntilVisible(
+      find.text('Свой путь'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('Свой путь'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  test('every model the scene may load is bundled', () {
+  test('every model, room, decor and icon the screen may load is bundled', () {
     final assets = <String>{
       for (final s in PetSpecies.values) ...[
         for (final level in [1, 10, 25, 45, 70, 90, 100])
           for (final path in [null, ...PetPath.of(s.name).map((p) => p.name)])
             PetGrowth.modelAsset(s.name, level, path),
+        eggIcon(s.name),
       ],
-      for (final i in shopItems)
+      for (final i in shopItems) ...[
+        i.icon,
         if (i.model != null) i.model!,
-      'assets/pets/egg.glb',
+        if (i.kind == ShopKind.decor) i.decorModel,
+      ],
       'assets/pets/fx_rank.glb',
-      'assets/pets/room_bedroom.glb',
+      'assets/pets/rooms/rooms.json',
+      'assets/pets/rooms/shadow.png',
     };
-    expect(assets.length, greaterThan(15));
+    final rooms = jsonDecode(
+      File('assets/pets/rooms/rooms.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
+    final spots = <String>{};
+    for (final r in (rooms['rooms'] as Map<String, dynamic>).values) {
+      final room = r as Map<String, dynamic>;
+      assets.add(room['background'] as String);
+      if (room['foreground'] != null) assets.add(room['foreground'] as String);
+      for (final d in room['decor'] as List) {
+        spots.add((d as Map)['id'] as String);
+      }
+    }
     for (final a in assets) {
       expect(File(a).existsSync(), isTrue, reason: a);
     }
-  });
-
-  test('every decor item has a node name in the room', () {
+    // Every decor item of the shop has a home in some room.
     expect(
-      shopItems.where((i) => i.kind == ShopKind.decor).map((i) => i.decorNode),
-      ['Decor_book_stack', 'Decor_moon_lamp', 'Decor_globe', 'Decor_aquarium'],
+      spots,
+      containsAll(shopItems.where((i) => i.kind == ShopKind.decor).map((i) => i.id)),
     );
   });
 }

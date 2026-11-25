@@ -66,9 +66,15 @@ class ShopItem {
     this.rewardOnly = false,
   });
 
-  /// Node name of a decor item inside `room_bedroom.glb`.
-  String get decorNode => 'Decor_${id.substring('decor_'.length)}';
+  /// 3D icon rendered in Blender (design/pets/scripts/icons_v4.py).
+  String get icon => 'assets/pets/icons/$id.png';
+
+  /// Decor model placed in its room (design/pets/scripts/app_assets.py).
+  String get decorModel => 'assets/pets/decor/$id.glb';
 }
+
+/// Icon of an egg of [species] in a nest.
+String eggIcon(String species) => 'assets/pets/icons/egg_$species.png';
 
 /// The permanent shop (no «today only» offers). Prices follow the concept:
 /// food 10–40, colors 500–1500, decor 100–1500, accessories 150–600.
@@ -100,7 +106,7 @@ const shopItems = <ShopItem>[
   ),
   ShopItem(
     id: 'food_cake',
-    title: 'Пирожное',
+    title: 'Капкейк',
     description: 'Праздничное угощение: сутки сытости и радость.',
     kind: ShopKind.food,
     price: 40,
@@ -158,6 +164,20 @@ const shopItems = <ShopItem>[
     description: 'Три рыбки и водоросль.',
     kind: ShopKind.decor,
     price: 1500,
+  ),
+  ShopItem(
+    id: 'decor_lantern',
+    title: 'Фонарь',
+    description: 'Свеча в фонаре — уютный свет в гостиной.',
+    kind: ShopKind.decor,
+    price: 450,
+  ),
+  ShopItem(
+    id: 'decor_mushroom_lamp',
+    title: 'Лампа-гриб',
+    description: 'Розовый ночник у лежанки в спальне.',
+    kind: ShopKind.decor,
+    price: 600,
   ),
   ShopItem(
     id: 'acc_scarf',

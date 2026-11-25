@@ -119,6 +119,10 @@ class ShelfShell extends StatelessWidget {
   final Widget body;
   final Widget? bottomNavigationBar;
   final List<Widget> actions;
+
+  /// False hides the large section title: the body fills the page
+  /// (the pets room is a full-screen scene with its own header).
+  final bool header;
   const ShelfShell({
     super.key,
     required this.title,
@@ -126,6 +130,7 @@ class ShelfShell extends StatelessWidget {
     required this.body,
     this.bottomNavigationBar,
     this.actions = const [],
+    this.header = true,
   });
 
   static const wideBreakpoint = 900.0;
@@ -159,6 +164,7 @@ class ShelfShell extends StatelessWidget {
               Expanded(
                 child: Column(
                   children: [
+                    if (header)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 14, 8, 6),
                       child: Row(

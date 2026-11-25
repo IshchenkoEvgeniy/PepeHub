@@ -51,6 +51,9 @@ flutter:
   uses-material-design: true
   assets:
     - assets/pets/
+    - assets/pets/rooms/
+    - assets/pets/icons/
+    - assets/pets/decor/
     - assets/reminders/windows-reminder.ps1
     - assets/fonts/Lora-OFL.txt
     - assets/fonts/Manrope-OFL.txt

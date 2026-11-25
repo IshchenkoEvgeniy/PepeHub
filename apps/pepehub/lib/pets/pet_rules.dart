@@ -87,6 +87,72 @@ abstract final class PetRules {
     return now.subtract(Duration(minutes: ((fullHours - total) * 60).round()));
   }
 
+  // ------------------------------------------------ sleep and mood (no penalty)
+
+  /// The pet's day: awake from [wakeHour] to [sleepHour], asleep at night.
+  static const wakeHour = 7, sleepHour = 23;
+
+  /// Energy left by bedtime and restored by the morning.
+  static const tiredEnergy = 0.2;
+
+  /// Energy 0..1 on a pet clock: full at 7:00, falls to [tiredEnergy] by
+  /// 23:00, rises back while asleep. With the light turned off early
+  /// ([lightsOff] … [lightsUntil]) the pet sleeps and recovers from then on.
+  static double energy(DateTime now, {DateTime? lightsOff, DateTime? lightsUntil}) {
+    final h = now.hour + now.minute / 60;
+    double awake(double hour) =>
+        1 - (1 - tiredEnergy) * ((hour - wakeHour) / (sleepHour - wakeHour));
+    if (lightsOff != null &&
+        lightsUntil != null &&
+        !now.isBefore(lightsOff) &&
+        now.isBefore(lightsUntil)) {
+      final lh = lightsOff.hour + lightsOff.minute / 60;
+      final start = lh >= wakeHour && lh < sleepHour ? awake(lh) : tiredEnergy;
+      final t = now.difference(lightsOff).inMinutes /
+          math.max(1, lightsUntil.difference(lightsOff).inMinutes);
+      return (start + (1 - start) * t).clamp(0, 1).toDouble();
+    }
+    if (h >= wakeHour && h < sleepHour) return awake(h).clamp(0, 1).toDouble();
+    // Night: from 23:00 to 7:00 (8 hours) back to full.
+    final slept = h >= sleepHour ? h - sleepHour : h + 24 - sleepHour;
+    return (tiredEnergy + (1 - tiredEnergy) * slept / (24 - sleepHour + wakeHour))
+        .clamp(0, 1)
+        .toDouble();
+  }
+
+  /// Night hours or the light turned off early.
+  static bool asleep(DateTime now, {DateTime? lightsOff, DateTime? lightsUntil}) {
+    if (lightsOff != null &&
+        lightsUntil != null &&
+        !now.isBefore(lightsOff) &&
+        now.isBefore(lightsUntil)) {
+      return true;
+    }
+    return now.hour >= sleepHour || now.hour < wakeHour;
+  }
+
+  /// The next morning [wakeHour] after [now].
+  static DateTime nextMorning(DateTime now) {
+    final today = DateTime(now.year, now.month, now.day, wakeHour);
+    return now.isBefore(today) ? today : today.add(const Duration(days: 1));
+  }
+
+  /// Hours for mood to fall from full to zero without attention.
+  static const moodHours = 36;
+
+  /// Mood of a pet nobody has played with yet.
+  static const moodDefault = 0.6;
+
+  /// Mood 0..1: [value] set at [at], slowly fading.
+  static double mood(double? value, DateTime? at, DateTime now) {
+    if (value == null || at == null) return moodDefault;
+    final hours = now.difference(at).inMinutes / 60;
+    return (value - hours / moodHours).clamp(0, 1).toDouble();
+  }
+
+  /// Mood gains: a game, a stroke, a treat, ordinary food.
+  static const moodPlay = 0.2, moodPet = 0.06, moodTreat = 0.3, moodFood = 0.1;
+
   /// Age shown in the profile, derived from the level (concept table):
   /// a pet not chosen for a while does not grow older.
   static String ageForLevel(int level) {

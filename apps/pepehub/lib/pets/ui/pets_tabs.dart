@@ -535,79 +535,89 @@ class _EggOfferTile extends StatelessWidget {
   );
 }
 
-// ---------------------------------------------------------------- shop tab
+// ---------------------------------------------------------------- journal
 
-class _ShopTab extends StatelessWidget {
-  final PetsOverview overview;
+/// Every grant and purchase with its reason, newest first, paged lazily.
+class _JournalTab extends StatefulWidget {
   final PetsService service;
-  final bool busy;
-  final ValueChanged<ShopItem> onBuy;
-  final ValueChanged<PetEggOffer> onBuyEgg;
-  const _ShopTab({
-    required this.overview,
-    required this.service,
-    required this.busy,
-    required this.onBuy,
-    required this.onBuyEgg,
-  });
+
+  /// Changes whenever the ledger may have grown, to reload the first page.
+  final int revision;
+  const _JournalTab({required this.service, required this.revision});
+  @override
+  State<_JournalTab> createState() => _JournalTabState();
+}
+
+class _JournalTabState extends State<_JournalTab> {
+  static const _page = 50;
+  final entries = <PetLedgerEntry>[];
+  bool loading = false, done = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_more());
+  }
+
+  @override
+  void didUpdateWidget(_JournalTab old) {
+    super.didUpdateWidget(old);
+    if (old.revision != widget.revision) {
+      entries.clear();
+      done = false;
+      unawaited(_more());
+    }
+  }
+
+  Future<void> _more() async {
+    if (loading || done) return;
+    loading = true;
+    final next = await widget.service.ledger(
+      limit: _page,
+      before: entries.isEmpty ? null : entries.last.id,
+    );
+    if (!mounted) return;
+    setState(() {
+      entries.addAll(next);
+      done = next.length < _page;
+      loading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final palette = ShelfPalette.of(context);
-    final free = overview.incubatorSlots - overview.eggs.length;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-      children: [
-        for (final kind in ShopKind.values) ...[
-          _heading(context, kind.label),
-          if (kind == ShopKind.upgrade)
-            for (final offer in service.eggOffers(overview.pets, overview.eggs))
-              _EggOfferTile(
-                offer: offer,
-                enabled: !busy && free > 0 && overview.balance >= offer.price,
-                onBuy: () => onBuyEgg(offer),
-              ),
-          for (final item in shopItems.where(
-            (i) => i.kind == kind && !i.rewardOnly,
-          ))
-            Builder(
-              builder: (context) {
-                final owned =
-                    !kind.consumable && overview.owned.contains(item.id);
-                final have = overview.inventory[item.id] ?? 0;
-                final frozenFull =
-                    kind == ShopKind.freeze &&
-                    overview.streak.freezes >= PetRules.maxFreezes;
-                final affordable = overview.balance >= item.price;
-                return Card(
-                  child: ListTile(
-                    key: ValueKey('shop-${item.id}'),
-                    title: Text(item.title),
-                    subtitle: Text(
-                      [
-                        item.description,
-                        if (kind == ShopKind.food && have > 0) 'Есть: $have',
-                        if (kind == ShopKind.freeze)
-                          'В запасе: ${overview.streak.freezes}',
-                      ].join(' · '),
-                    ),
-                    trailing: owned
-                        ? Text(
-                            'Куплено',
-                            style: TextStyle(color: palette.muted),
-                          )
-                        : FilledButton.tonal(
-                            onPressed: busy || !affordable || frozenFull
-                                ? null
-                                : () => onBuy(item),
-                            child: Text('${item.price}'),
-                          ),
-                  ),
-                );
-              },
+    if (entries.isEmpty) {
+      return Center(
+        child: Text(
+          done ? 'Пока пусто' : 'Загрузка…',
+          style: const TextStyle(color: PetsLook.muted),
+        ),
+      );
+    }
+    return ListView.builder(
+      itemCount: entries.length + (done ? 0 : 1),
+      itemBuilder: (context, i) {
+        if (i >= entries.length) {
+          unawaited(_more());
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final e = entries[i];
+        return ListTile(
+          dense: true,
+          title: Text(e.note),
+          subtitle: Text(e.day),
+          trailing: Text(
+            e.coins == 0 ? '—' : '${e.coins > 0 ? '+' : ''}${e.coins}',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: e.coins < 0 ? PetsLook.muted : null,
             ),
-        ],
-      ],
+          ),
+        );
+      },
     );
   }
 }

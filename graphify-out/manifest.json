@@ -1398,9 +1398,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/settings_page.dart": {
-    "mtime": 1795191313.703963,
-    "seen": 1795191785.1032343,
-    "ast_hash": "ece4d412f2757d9de475e952900c8760",
+    "mtime": 1795629141.1676,
+    "seen": 1795631827.338954,
+    "ast_hash": "2142442154c5c3f92719ef469d88126f",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/shelf_book_details.dart": {
@@ -1410,9 +1410,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/shelf_components.dart": {
-    "mtime": 1795554086.9334702,
-    "seen": 1795555803.1516938,
-    "ast_hash": "d67191b0527e53064ee9145667929871",
+    "mtime": 1795629133.4443395,
+    "seen": 1795631827.3389568,
+    "ast_hash": "6915a27edacdbed3385c3b190dca8de8",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/statistics_exchange_page.dart": {
@@ -1710,9 +1710,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/pubspec.yaml": {
-    "mtime": 1795278750.3594763,
-    "seen": 1795278829.8001578,
-    "ast_hash": "2fd8c145b608a62e65bdce35cfee2123",
+    "mtime": 1795629141.1220543,
+    "seen": 1795631827.3390613,
+    "ast_hash": "1d647f4d980f74bbb2417d7b3f226a9b",
     "semantic_hash": ""
   },
   "apps/pepehub/test/android_book_files_test.dart": {
@@ -2028,9 +2028,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/test/library_folder_storage_test.dart": {
-    "mtime": 1794259119.7726755,
-    "seen": 1795159690.6289663,
-    "ast_hash": "4a75d80420192ffb959f3f8d46ef1622",
+    "mtime": 1795556714.9252112,
+    "seen": 1795621965.5962107,
+    "ast_hash": "715e8e5f963df4e9ff13337fede30871",
     "semantic_hash": ""
   },
   "apps/pepehub/test/library_incremental_test.dart": {
@@ -4332,9 +4332,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/pet_rules.dart": {
-    "mtime": 1795211924.2299047,
-    "seen": 1795213571.832491,
-    "ast_hash": "4eda70dd91717bd0a3c196f90960d6f6",
+    "mtime": 1795628596.3779564,
+    "seen": 1795631827.3386998,
+    "ast_hash": "8a51dcac46c8e4fef65973373d265d28",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/pets_schema.dart": {
@@ -4344,9 +4344,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/pets_service.dart": {
-    "mtime": 1795212027.3312893,
-    "seen": 1795213571.8324974,
-    "ast_hash": "1be76c620b80ddef72f44661859600d8",
+    "mtime": 1795628646.8533075,
+    "seen": 1795631827.338712,
+    "ast_hash": "7df78ea67320971c3d2bf6cba1973549",
     "semantic_hash": ""
   },
   "apps/pepehub/test/pets_core_test.dart": {
@@ -4518,27 +4518,27 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/pet_catalog.dart": {
-    "mtime": 1795211924.2399392,
-    "seen": 1795213571.832486,
-    "ast_hash": "2222344afa932ecebe6a589f2ee5b26f",
+    "mtime": 1795628597.2507653,
+    "seen": 1795631827.338693,
+    "ast_hash": "efee265f227ca2e085ddbac4bbac9300",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/ui/pet_scene.dart": {
-    "mtime": 1795213494.4925086,
-    "seen": 1795213571.8324995,
-    "ast_hash": "daceb16cc82b51dcecc84257ae84cbda",
+    "mtime": 1795633714.6697984,
+    "seen": 1795634001.5212271,
+    "ast_hash": "67af130232a105d4e9904498f7046f39",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/ui/pets_section.dart": {
-    "mtime": 1795212763.9027128,
-    "seen": 1795213571.8325021,
-    "ast_hash": "023f65bf7a22b614497b5b2e4f32b15c",
+    "mtime": 1795631507.5157793,
+    "seen": 1795631827.3387175,
+    "ast_hash": "a57c1d6e6396ac22495f744eb59a3edb",
     "semantic_hash": ""
   },
   "apps/pepehub/test/pets_section_test.dart": {
-    "mtime": 1795554167.1226876,
-    "seen": 1795555803.151875,
-    "ast_hash": "0d934fc715302094249bbc7073295e08",
+    "mtime": 1795631680.4651456,
+    "seen": 1795631827.3392305,
+    "ast_hash": "0018fbc1e9709c13b57d21e33b4c9ee0",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/pet_progress.dart": {
@@ -4554,9 +4554,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/ui/pets_tabs.dart": {
-    "mtime": 1795213155.8912835,
-    "seen": 1795213571.832505,
-    "ast_hash": "05d95ddaff551f6f11df6de9d93849aa",
+    "mtime": 1795629204.144691,
+    "seen": 1795631827.338719,
+    "ast_hash": "6b78e06f7d75f47ce013f94063b89dfc",
     "semantic_hash": ""
   },
   "apps/pepehub/test/pets_growth_test.dart": {
@@ -4599,6 +4599,726 @@
     "mtime": 1795554382.6896951,
     "seen": 1795555803.1518533,
     "ast_hash": "bf31779e745d3019839332d67b573edc",
+    "semantic_hash": ""
+  },
+  "design/pets/scripts/rooms_v3.py": {
+    "mtime": 1795622288.8257036,
+    "seen": 1795623402.8348157,
+    "ast_hash": "796b9a11e9c799f7e40b87010451bd02",
+    "semantic_hash": ""
+  },
+  "design/pets/ui-concepts-2026-11-25/imagegen-prompts.txt": {
+    "mtime": 1795614869.2302134,
+    "seen": 1795621965.596499,
+    "ast_hash": "2e87f273b2923a677a44db5c9db21ca1",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03113.md": {
+    "mtime": 1795556814.281263,
+    "seen": 1795621965.5966938,
+    "ast_hash": "0542b00914402bc06a4ab959c8d285dd",
+    "semantic_hash": ""
+  },
+  "design/pets/shots_v3/Room_Bedroom3.png": {
+    "mtime": 1795622298.5932474,
+    "seen": 1795623402.8351557,
+    "ast_hash": "dce6a68ec87ca509b2e3ade4db6e1fc2",
+    "semantic_hash": ""
+  },
+  "design/pets/shots_v3/Room_Kitchen3.png": {
+    "mtime": 1795622297.6962152,
+    "seen": 1795623402.8351567,
+    "ast_hash": "4866b770da836579ac7c0db7b3259c54",
+    "semantic_hash": ""
+  },
+  "design/pets/shots_v3/Room_Living.png": {
+    "mtime": 1795622296.9459808,
+    "seen": 1795623402.8351579,
+    "ast_hash": "bbb811d698f0e08389180bf027c331cc",
+    "semantic_hash": ""
+  },
+  "design/pets/ui-concepts-2026-11-25/pet-detail.png": {
+    "mtime": 1795614851.3372686,
+    "seen": 1795621965.5967488,
+    "ast_hash": "7eb4f630a083a6ffc39c1e957a56ed17",
+    "semantic_hash": ""
+  },
+  "design/pets/ui-concepts-2026-11-25/pet-extras.png": {
+    "mtime": 1795614586.001452,
+    "seen": 1795621965.5967498,
+    "ast_hash": "28751b69afff2abd40ef82d93cdfa125",
+    "semantic_hash": ""
+  },
+  "design/pets/ui-concepts-2026-11-25/pet-rooms.png": {
+    "mtime": 1795614653.0929556,
+    "seen": 1795621965.5967507,
+    "ast_hash": "fe0b7859ff7d0177c5f0d050dadb2a85",
+    "semantic_hash": ""
+  },
+  "design/pets/scripts/icons_v3.py": {
+    "mtime": 1795623206.0444107,
+    "seen": 1795623402.8348067,
+    "ast_hash": "669a02c679ed910dbb50da73f5f75870",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/acc_beanie.png": {
+    "mtime": 1795623213.252344,
+    "seen": 1795623402.8351111,
+    "ast_hash": "766eb39afded554390b5963c9ddc0fd5",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/acc_glasses.png": {
+    "mtime": 1795623213.7532313,
+    "seen": 1795623402.8351123,
+    "ast_hash": "9c9e11ca58348edeb34130a0227807ef",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/acc_scarf.png": {
+    "mtime": 1795623212.9020605,
+    "seen": 1795623402.8351135,
+    "ast_hash": "a572d3acb9e3cb279a9b7ce2bd5dab78",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/color_amber.png": {
+    "mtime": 1795623216.3748014,
+    "seen": 1795623402.8351145,
+    "ast_hash": "fe754e6f58d1966c4b3edf88bebfba45",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/color_aurora.png": {
+    "mtime": 1795623217.0350616,
+    "seen": 1795623402.8351154,
+    "ast_hash": "1f3a8dceeb748247fabdf36ee412ad3e",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/color_midnight.png": {
+    "mtime": 1795623215.335524,
+    "seen": 1795623402.8351169,
+    "ast_hash": "e857e0bdfc720a3d5c98dc4fa45fe597",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/color_mint.png": {
+    "mtime": 1795623215.9925964,
+    "seen": 1795623402.8351178,
+    "ast_hash": "a15a8e2859f2a0901bc48860e6a91cff",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/color_snow.png": {
+    "mtime": 1795623215.6651766,
+    "seen": 1795623402.8351188,
+    "ast_hash": "ce96b43c1671d0b6e26accbd9494cfac",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/color_sunset.png": {
+    "mtime": 1795623216.7033322,
+    "seen": 1795623402.83512,
+    "ast_hash": "18b1eac9e6327ad26c168b822bf47bc1",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/decor_aquarium.png": {
+    "mtime": 1795623211.2727385,
+    "seen": 1795623402.835121,
+    "ast_hash": "f9e363ef9fd24e9d49a9a9625adadb1a",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/decor_book_stack.png": {
+    "mtime": 1795623209.7028253,
+    "seen": 1795623402.8351219,
+    "ast_hash": "5aa28e1f2f3176202e089bc5eac34f8f",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/decor_globe.png": {
+    "mtime": 1795623210.2898223,
+    "seen": 1795623402.835123,
+    "ast_hash": "8ced65467601067b142209e946c9ebb5",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/decor_lantern.png": {
+    "mtime": 1795623212.163824,
+    "seen": 1795623402.8351243,
+    "ast_hash": "017ab429792fff1f75bd7398630c6cfa",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/decor_moon_lamp.png": {
+    "mtime": 1795623209.97812,
+    "seen": 1795623402.8351254,
+    "ast_hash": "167dae3553a87f249af652197347d711",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/decor_mushroom_lamp.png": {
+    "mtime": 1795623211.7198484,
+    "seen": 1795623402.8351262,
+    "ast_hash": "53567fb8456d7ff4a359e1fe2e990bfb",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/decor_tulip_lamp.png": {
+    "mtime": 1795623212.5376756,
+    "seen": 1795623402.8351276,
+    "ast_hash": "193aa43cd81259b6a54f8bdc06e54a5d",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/egg_cat.png": {
+    "mtime": 1795623217.3726256,
+    "seen": 1795623402.8351285,
+    "ast_hash": "aab50e88b6cf8aaec5341c8039cc165f",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/egg_dragon.png": {
+    "mtime": 1795623218.0836647,
+    "seen": 1795623402.8351295,
+    "ast_hash": "9507896f606eb3428dc5a9c8b8afbe47",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/egg_fox.png": {
+    "mtime": 1795623217.7074811,
+    "seen": 1795623402.8351307,
+    "ast_hash": "4a43fa3781031e3db5c0e78753b6b56f",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/food_berries.png": {
+    "mtime": 1795623209.109561,
+    "seen": 1795623402.8351314,
+    "ast_hash": "08c9d8c8cc8eeeb3a18661d4e6d69f23",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/food_cake.png": {
+    "mtime": 1795623209.4025648,
+    "seen": 1795623402.8351324,
+    "ast_hash": "53ecf9af2cdf0269cde4ab6f21da3ee1",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/food_fish.png": {
+    "mtime": 1795623208.832711,
+    "seen": 1795623402.8351336,
+    "ast_hash": "cc93aaf317773db01ddc5759c6da7fbb",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/food_kibble.png": {
+    "mtime": 1795623208.5623043,
+    "seen": 1795623402.8351345,
+    "ast_hash": "807913105e284e02392ba76d7df94962",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/freeze.png": {
+    "mtime": 1795623215.0027225,
+    "seen": 1795623402.835136,
+    "ast_hash": "da0f9a75c475c2a7295b0f4f5fc19118",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v3/incubator_slot.png": {
+    "mtime": 1795623214.6024735,
+    "seen": 1795623402.8351371,
+    "ast_hash": "095a0191cc9e3f9ceb2c73769022d525",
+    "semantic_hash": ""
+  },
+  "design/pets/shots_v3/phone/Room_Bedroom3.png": {
+    "mtime": 1795622296.204377,
+    "seen": 1795623402.8351588,
+    "ast_hash": "91ac6a5bc54d00b4ca61552d9608a38c",
+    "semantic_hash": ""
+  },
+  "design/pets/shots_v3/phone/Room_Kitchen3.png": {
+    "mtime": 1795622293.245357,
+    "seen": 1795623402.8351598,
+    "ast_hash": "3730b01b36c5987804ae5d6408e22105",
+    "semantic_hash": ""
+  },
+  "design/pets/shots_v3/phone/Room_Living.png": {
+    "mtime": 1795622291.884517,
+    "seen": 1795623402.8351607,
+    "ast_hash": "b8fe0773422c5c99dc167eddc0aece45",
+    "semantic_hash": ""
+  },
+  "design/pets/shots_v3/phone/strip.png": {
+    "mtime": 1795622273.8085678,
+    "seen": 1795623402.835162,
+    "ast_hash": "9775516ad2355f6bee06f8c6fe05c371",
+    "semantic_hash": ""
+  },
+  "design/pets/scripts/icons_v4.py": {
+    "mtime": 1795625355.4519057,
+    "seen": 1795625465.4018586,
+    "ast_hash": "41da00ac11d4df1325ea00570076f38d",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/acc_beanie.png": {
+    "mtime": 1795624835.9394085,
+    "seen": 1795625465.4024582,
+    "ast_hash": "8218c3bc06e78abca4b365513f15a13a",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/acc_glasses.png": {
+    "mtime": 1795625000.7598834,
+    "seen": 1795625465.4024599,
+    "ast_hash": "14ae393ed24bb3d8fd1a0528c9b69fc6",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/acc_scarf.png": {
+    "mtime": 1795624834.1440964,
+    "seen": 1795625465.4024615,
+    "ast_hash": "aa5e3ae887381b5d32c5ff42ab3c3dbc",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/color_amber.png": {
+    "mtime": 1795624802.056163,
+    "seen": 1795625465.4024632,
+    "ast_hash": "c467bfadd74c43995765a926a8eb5ffd",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/color_aurora.png": {
+    "mtime": 1795624808.283166,
+    "seen": 1795625465.4024649,
+    "ast_hash": "24b8792d488c9ab8bcb4536835f0df24",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/color_midnight.png": {
+    "mtime": 1795624792.5958903,
+    "seen": 1795625465.4024665,
+    "ast_hash": "474454f2044cd684b4441edb255cffa5",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/color_mint.png": {
+    "mtime": 1795624799.6169305,
+    "seen": 1795625465.4024684,
+    "ast_hash": "ee2bb80599232880e6d131db2ead923d",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/color_snow.png": {
+    "mtime": 1795624796.97917,
+    "seen": 1795625465.4024704,
+    "ast_hash": "e419616a21a12b707a5a6cf947ecc439",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/color_sunset.png": {
+    "mtime": 1795624805.3111136,
+    "seen": 1795625465.402472,
+    "ast_hash": "787e2d3982581a6e8c941d20d4fafd66",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/decor_aquarium.png": {
+    "mtime": 1795624820.9815834,
+    "seen": 1795625465.4024737,
+    "ast_hash": "34dd33f11f242b851fdcff4c97b1d881",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/decor_book_stack.png": {
+    "mtime": 1795624811.2722673,
+    "seen": 1795625465.4024754,
+    "ast_hash": "66f1a8ab0328e8e5badc5e924271ac2f",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/decor_globe.png": {
+    "mtime": 1795624816.9462652,
+    "seen": 1795625465.402477,
+    "ast_hash": "e34e00e27457c1e4bc73b46aefe7db99",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/decor_lantern.png": {
+    "mtime": 1795624827.6705754,
+    "seen": 1795625465.4024787,
+    "ast_hash": "9254d77fff3844192c9fdbc779cdc64c",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/decor_moon_lamp.png": {
+    "mtime": 1795625165.3560505,
+    "seen": 1795625465.4024804,
+    "ast_hash": "591ec74c3a4ca318d650c1f6f7ea20f4",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/decor_mushroom_lamp.png": {
+    "mtime": 1795624825.221052,
+    "seen": 1795625465.402482,
+    "ast_hash": "c9c53af1c01d615679ddf06208abab5d",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/decor_tulip_lamp.png": {
+    "mtime": 1795624998.161988,
+    "seen": 1795625465.402484,
+    "ast_hash": "73b9e3c51ba22c5003c2d7d54218febc",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/egg_cat.png": {
+    "mtime": 1795625003.7624457,
+    "seen": 1795625465.402486,
+    "ast_hash": "5d686c95f36b5f84a20fed9ef849e3ed",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/egg_dragon.png": {
+    "mtime": 1795625010.067016,
+    "seen": 1795625465.4024878,
+    "ast_hash": "f04b4d22d0d7f87ebf0431707294d4ed",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/egg_fox.png": {
+    "mtime": 1795625007.1529584,
+    "seen": 1795625465.40249,
+    "ast_hash": "30d3ac6f45f36fbc4475694f5cf3f5b1",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/food_berries.png": {
+    "mtime": 1795624787.6224296,
+    "seen": 1795625465.4024913,
+    "ast_hash": "9c47f7be8817f61cb65f2ce250605993",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/food_cake.png": {
+    "mtime": 1795624789.88697,
+    "seen": 1795625465.4024932,
+    "ast_hash": "59052290396a32d996e04205228a6bc4",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/food_fish.png": {
+    "mtime": 1795624784.016039,
+    "seen": 1795625465.402495,
+    "ast_hash": "9b1573881518744388d663df8c8f710f",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/food_kibble.png": {
+    "mtime": 1795624781.2936125,
+    "seen": 1795625465.4024968,
+    "ast_hash": "05f78e8387d478d19123d86e1d548cf8",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/freeze.png": {
+    "mtime": 1795625329.2816255,
+    "seen": 1795625465.4024982,
+    "ast_hash": "ccc891aee2ed22cc38f42f1836537810",
+    "semantic_hash": ""
+  },
+  "design/pets/icons_v4/incubator_slot.png": {
+    "mtime": 1795624857.8870277,
+    "seen": 1795625465.4025004,
+    "ast_hash": "b772035c74ec1c60d2da1946ea00c599",
+    "semantic_hash": ""
+  },
+  "design/pets/scripts/pets_v5.py": {
+    "mtime": 1795626491.5413656,
+    "seen": 1795626776.827466,
+    "ast_hash": "5887513a6f485c4c8bd99408cc6efe50",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/Accessories.png": {
+    "mtime": 1795626744.6337388,
+    "seen": 1795626776.8279777,
+    "ast_hash": "17b303f80e33489b758b25af63e85127",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/cat_adult_bookish.png": {
+    "mtime": 1795626633.5139954,
+    "seen": 1795626776.8279798,
+    "ast_hash": "4a949abf9028f49ea3b4b26f3686678a",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/cat_adult_night.png": {
+    "mtime": 1795626643.074947,
+    "seen": 1795626776.827981,
+    "ast_hash": "d43d1ed5c16bc7f363252198e9c2f79a",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/cat_baby.png": {
+    "mtime": 1795626602.4485617,
+    "seen": 1795626776.8279822,
+    "ast_hash": "e76b9cc6b8ad4842f021e8a2c4ec2e5f",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/cat_cub.png": {
+    "mtime": 1795626613.3729498,
+    "seen": 1795626776.8279831,
+    "ast_hash": "2d51a3ea83804eb6db324b71d0d0ce54",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/cat_teen.png": {
+    "mtime": 1795626623.8707047,
+    "seen": 1795626776.8279843,
+    "ast_hash": "962ee9b1dfd1386ebe04713884d3ee7a",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/dragon_adult_star.png": {
+    "mtime": 1795626730.1643114,
+    "seen": 1795626776.8279855,
+    "ast_hash": "9980c34144e9b95a80990ab973740c14",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/dragon_adult_stone.png": {
+    "mtime": 1795626738.1188831,
+    "seen": 1795626776.8279865,
+    "ast_hash": "7d29a913af6c1b7494613ca2604e86da",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/dragon_baby.png": {
+    "mtime": 1795626702.35437,
+    "seen": 1795626776.8279874,
+    "ast_hash": "9259493c0bfaaf88836acf8f78c759d8",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/dragon_cub.png": {
+    "mtime": 1795626711.3842418,
+    "seen": 1795626776.8279884,
+    "ast_hash": "34a2395f6368347224e8604c034fa72a",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/dragon_teen.png": {
+    "mtime": 1795626720.2852724,
+    "seen": 1795626776.8279896,
+    "ast_hash": "0c70cbebf8fffa51a60cec33b5044361",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/fox_adult_fire.png": {
+    "mtime": 1795626693.1405663,
+    "seen": 1795626776.8279905,
+    "ast_hash": "39f71178a0b87a0c82fe0f5951d876dd",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/fox_adult_forest.png": {
+    "mtime": 1795626683.0080385,
+    "seen": 1795626776.8279915,
+    "ast_hash": "5dd3bae6532c51c8d6cab4ad17b67f3f",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/fox_baby.png": {
+    "mtime": 1795626653.2483635,
+    "seen": 1795626776.8279922,
+    "ast_hash": "38db08022affeb2a8e13717b880cc0ff",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/fox_cub.png": {
+    "mtime": 1795626663.3308563,
+    "seen": 1795626776.8279936,
+    "ast_hash": "bb2acca52db56795f8bddd022afc84c6",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/fox_teen.png": {
+    "mtime": 1795626673.3335264,
+    "seen": 1795626776.8279946,
+    "ast_hash": "a4ec08ed1eca2b2abedc15cc64a44acf",
+    "semantic_hash": ""
+  },
+  "design/pets/pets_v5/lineup.png": {
+    "mtime": 1795626755.3259716,
+    "seen": 1795626776.8279953,
+    "ast_hash": "1ab003abd3fa71776f89b9d790b7d805",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/rooms/rooms.json": {
+    "mtime": 1795633262.4096622,
+    "seen": 1795634001.5210564,
+    "ast_hash": "68cc2de795467a319dfc80cce74321d1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/pets/pets_dev.dart": {
+    "mtime": 1795628646.9067135,
+    "seen": 1795631827.3387024,
+    "ast_hash": "ef1d0c2cd79ede03893e712fcba1b9fa",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/pets/ui/pets_dev_panel.dart": {
+    "mtime": 1795629193.0949378,
+    "seen": 1795631827.3387156,
+    "ast_hash": "785a747020c824b2eb31ce8a3dde1fa6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/pets/ui/pets_windows.dart": {
+    "mtime": 1795629193.0929265,
+    "seen": 1795631827.3387206,
+    "ast_hash": "2468f8fe19e674dc50e3eefdaf51d3d6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/tool/pets_scene_preview.dart": {
+    "mtime": 1795633714.3431053,
+    "seen": 1795634001.5218234,
+    "ast_hash": "bed044e0371d5da0f453b07a2a850608",
+    "semantic_hash": ""
+  },
+  "design/pets/scripts/app_assets.py": {
+    "mtime": 1795633649.950386,
+    "seen": 1795634001.521871,
+    "ast_hash": "bd850024171d3a66c9dad85960572e3b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/acc_beanie.png": {
+    "mtime": 1795628517.8720834,
+    "seen": 1795631827.3398492,
+    "ast_hash": "28b1ba181d82469ce84a53b640495fb4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/acc_glasses.png": {
+    "mtime": 1795628517.9720595,
+    "seen": 1795631827.339851,
+    "ast_hash": "9a150dc7bb928a843cda19ae769090f4",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/acc_scarf.png": {
+    "mtime": 1795628518.057194,
+    "seen": 1795631827.339852,
+    "ast_hash": "82aba94bf3063ece7651ec15c1cb06a0",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/color_amber.png": {
+    "mtime": 1795628518.1972277,
+    "seen": 1795631827.3398535,
+    "ast_hash": "254ea1bf831c8888db2473e7c8ffc7ab",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/color_aurora.png": {
+    "mtime": 1795628518.3211567,
+    "seen": 1795631827.3398545,
+    "ast_hash": "90ee5e8511cde2c624a760d839afd818",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/color_midnight.png": {
+    "mtime": 1795628518.4700758,
+    "seen": 1795631827.3398557,
+    "ast_hash": "905cebbc57c143a447eae9f22ac55eab",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/color_mint.png": {
+    "mtime": 1795628518.6309106,
+    "seen": 1795631827.3398569,
+    "ast_hash": "070a54129c69f75e7d8b6f5c73ad599b",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/color_snow.png": {
+    "mtime": 1795628518.6840057,
+    "seen": 1795631827.3398578,
+    "ast_hash": "3b3c9e635b46adf67f05cfd57b2e8827",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/color_sunset.png": {
+    "mtime": 1795628518.7776859,
+    "seen": 1795631827.3398592,
+    "ast_hash": "104a3226a8de31e7527c34b742e7611a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/decor_aquarium.png": {
+    "mtime": 1795628518.8734233,
+    "seen": 1795631827.3398602,
+    "ast_hash": "a4a0b3bc3ab0f3488b2dd79b6e85db5d",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/decor_book_stack.png": {
+    "mtime": 1795628518.9688497,
+    "seen": 1795631827.3398614,
+    "ast_hash": "47c56329282ddb79f796c609eee38cda",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/decor_globe.png": {
+    "mtime": 1795628519.0648656,
+    "seen": 1795631827.339863,
+    "ast_hash": "bf3750ebba188b5b902e387c76018aba",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/decor_lantern.png": {
+    "mtime": 1795628519.1205149,
+    "seen": 1795631827.3398643,
+    "ast_hash": "68a620f0e152b07d553eec3811b78db6",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/decor_moon_lamp.png": {
+    "mtime": 1795628519.2681828,
+    "seen": 1795631827.339865,
+    "ast_hash": "7ed72a80fd5c878186a4c6ee6a467895",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/decor_mushroom_lamp.png": {
+    "mtime": 1795628519.323101,
+    "seen": 1795631827.3398664,
+    "ast_hash": "89c5e2828c9ba9041ceb0357475238fa",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/decor_tulip_lamp.png": {
+    "mtime": 1795628519.3698268,
+    "seen": 1795631827.3398676,
+    "ast_hash": "bd479a1ce65cd1f4f240d7f6f0733530",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/egg_cat.png": {
+    "mtime": 1795628519.43544,
+    "seen": 1795631827.3398693,
+    "ast_hash": "b41dfa0a4c4fd594bab9ae29ded75e91",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/egg_dragon.png": {
+    "mtime": 1795628519.564033,
+    "seen": 1795631827.3398702,
+    "ast_hash": "50af3647d5d5826383087a58c0b281f1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/egg_fox.png": {
+    "mtime": 1795628519.6772819,
+    "seen": 1795631827.3398712,
+    "ast_hash": "023a3e8a0ce0534bca2d104f660cf631",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/food_berries.png": {
+    "mtime": 1795628519.7453928,
+    "seen": 1795631827.3398726,
+    "ast_hash": "5eaffc2b7cbb5df0e4b0f98bfd7747b3",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/food_cake.png": {
+    "mtime": 1795628519.8273766,
+    "seen": 1795631827.3398738,
+    "ast_hash": "9654602066861d737154913fd2e4e05d",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/food_fish.png": {
+    "mtime": 1795628519.9482903,
+    "seen": 1795631827.339875,
+    "ast_hash": "facae75ccb2af34f696b1baa0b446b43",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/food_kibble.png": {
+    "mtime": 1795628520.0569289,
+    "seen": 1795631827.3398762,
+    "ast_hash": "427fb06a7f2eb9575eb34ae90322f438",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/freeze.png": {
+    "mtime": 1795628520.1685789,
+    "seen": 1795631827.3398771,
+    "ast_hash": "5b02357369c61af2ee90ff13bd56307e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/icons/incubator_slot.png": {
+    "mtime": 1795628520.24116,
+    "seen": 1795631827.3398783,
+    "ast_hash": "d919ba3c4cff5e0a9959704b46345f2a",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/rooms/bedroom_bg.jpg": {
+    "mtime": 1795628481.7082477,
+    "seen": 1795631827.3398798,
+    "ast_hash": "70ac72f772306f569c4a4c4aaf1cc775",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/rooms/bedroom_fg.png": {
+    "mtime": 1795633651.1493287,
+    "seen": 1795634001.522235,
+    "ast_hash": "84d9d336fa18463edaadd6f15b5c22ee",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/rooms/kitchen_bg.jpg": {
+    "mtime": 1795628461.3034303,
+    "seen": 1795631827.3398817,
+    "ast_hash": "697fe1f075e8d0c5abdfc53470aad042",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/rooms/kitchen_fg.png": {
+    "mtime": 1795632529.4783015,
+    "seen": 1795634001.5222378,
+    "ast_hash": "90d3e8ad5dc69a7abc84792b72a91b41",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/rooms/living_bg.jpg": {
+    "mtime": 1795628453.0931478,
+    "seen": 1795631827.339884,
+    "ast_hash": "7827bef211817319f30958073bc04274",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/assets/pets/rooms/shadow.png": {
+    "mtime": 1795628520.60368,
+    "seen": 1795631827.339885,
+    "ast_hash": "dc002f01a167c12b25da5b472c78fa33",
     "semantic_hash": ""
   },
   "package-lock.json": {

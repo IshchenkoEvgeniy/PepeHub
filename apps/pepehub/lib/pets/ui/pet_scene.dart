@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -12,14 +16,20 @@ import '../pet_progress.dart';
 import '../pet_rules.dart';
 import '../pets_service.dart';
 
-/// Lets the home tab ask the scene for a reaction (feeding, a tap).
+/// Lets the room screen ask the scene for a reaction.
 class PetSceneController {
-  _PetHomeSceneState? _state;
+  _PetRoomSceneState? _state;
 
   /// Eat, then a happy hop for treats or back to the mood clip.
   void eat({bool treat = false}) =>
       _state?._sequence(['Eat', if (treat) _state!._happy]);
   void cheer() => _state?._sequence([_state!._happy]);
+  void play() => _state?._sequence([
+    ['Jump', 'Spin', 'Happy'][math.Random().nextInt(3)],
+    'Happy',
+  ]);
+  void stroke() => _state?._sequence(['Pet']);
+  void wave() => _state?._sequence(['Wave']);
 }
 
 /// Natural shell colors of the eggs per species.
@@ -29,107 +39,313 @@ const eggColors = {
   PetSpecies.dragon: Color(0xFF9ED8CF),
 };
 
-/// The bedroom with the companion and the eggs of the incubator. Rendered
-/// only while the home tab is open (the widget is disposed with it), so
-/// reading never pays for it.
-class PetHomeScene extends StatefulWidget {
-  final Pet pet;
-  final Set<String> owned;
-  final List<PetEgg> eggs;
-  final PetSceneController? controller;
-  final DateTime Function() clock;
-  const PetHomeScene({
-    super.key,
-    required this.pet,
-    required this.owned,
-    this.eggs = const [],
-    this.controller,
-    this.clock = DateTime.now,
-  });
-
-  @override
-  State<PetHomeScene> createState() => _PetHomeSceneState();
+/// A buyable decor item's home spot in a room.
+class PetDecorSpot {
+  final String id;
+  final vm.Vector3 position;
+  final double rotation, scale;
+  const PetDecorSpot(this.id, this.position, this.rotation, this.scale);
 }
 
-/// Glb exports are Y-up, (x, z, -y) of Blender, and flutter_scene mirrors
-/// imported models in Z: in the scene Blender (x, y, z) lands at (x, z, y).
-/// Models sit under holder nodes, so moving them keeps the import mirror.
-final _poufSpot = vm.Vector3(0.35, 0.16, -0.35);
-final _bedSpot = vm.Vector3(-0.55, 0.59, 0.7);
-final _eggSpots = [vm.Vector3(1.0, 0.01, -0.75), vm.Vector3(-0.2, 0.01, -0.95)];
+/// One room of the pet's home, rendered in Blender (design/pets/scripts/
+/// app_assets.py): a square background, an optional foreground of what
+/// stands in front of the pet, the camera and the pet's spot. Positions are
+/// Blender coordinates (Z up, the pet faces -Y).
+class PetRoom {
+  final String key, title, background;
+  final String? foreground;
+  final vm.Vector3 cameraPosition, cameraForward, cameraUp, spot;
+  final vm.Vector3 lightDirection, lightColor;
+  final double fov, yaw, lightIntensity;
+  final List<PetDecorSpot> decor;
+  const PetRoom({
+    required this.key,
+    required this.title,
+    required this.background,
+    required this.foreground,
+    required this.cameraPosition,
+    required this.cameraForward,
+    required this.cameraUp,
+    required this.spot,
+    required this.lightDirection,
+    required this.lightColor,
+    required this.fov,
+    required this.yaw,
+    required this.lightIntensity,
+    required this.decor,
+  });
 
-const _oneShots = {'Eat', 'Happy', 'Spin', 'Jump', 'Stretch'};
+  static vm.Vector3 _v(Object? v) {
+    final l = (v as List).map((e) => (e as num).toDouble()).toList();
+    return vm.Vector3(l[0], l[1], l[2]);
+  }
 
-class _PetHomeSceneState extends State<PetHomeScene> {
+  /// Rooms in swipe order from `assets/pets/rooms/rooms.json` (small; read on open).
+  static Future<List<PetRoom>> load() => () async {
+    final json = jsonDecode(
+      await rootBundle.loadString('assets/pets/rooms/rooms.json', cache: false),
+    ) as Map<String, dynamic>;
+    final rooms = json['rooms'] as Map<String, dynamic>;
+    return [
+      for (final key in (json['order'] as List).cast<String>())
+        () {
+          final r = rooms[key] as Map<String, dynamic>;
+          final cam = r['camera'] as Map<String, dynamic>;
+          final light = r['light'] as Map<String, dynamic>;
+          return PetRoom(
+            key: key,
+            title: r['title'] as String,
+            background: r['background'] as String,
+            foreground: r['foreground'] as String?,
+            cameraPosition: _v(cam['position']),
+            cameraForward: _v(cam['forward']),
+            cameraUp: _v(cam['up']),
+            fov: (cam['fov'] as num).toDouble(),
+            spot: _v(r['spot']),
+            yaw: (r['yaw'] as num).toDouble(),
+            lightDirection: _v(light['dir']),
+            lightColor: _v(light['color']),
+            lightIntensity: (light['intensity'] as num).toDouble(),
+            decor: [
+              for (final d in (r['decor'] as List).cast<Map<String, dynamic>>())
+                PetDecorSpot(
+                  d['id'] as String,
+                  _v(d['pos']),
+                  (d['rot'] as num).toDouble(),
+                  (d['scale'] as num).toDouble(),
+                ),
+            ],
+          );
+        }(),
+    ];
+  }();
+}
+
+/// Blender (x, y, z) in scene space: glb exports are Y-up and flutter_scene
+/// mirrors imported models in Z, so a Blender point lands at (x, z, y).
+vm.Vector3 blenderToScene(vm.Vector3 b) => vm.Vector3(b.x, b.z, b.y);
+
+/// What the room screen shows in the 3D view.
+class PetSceneArgs {
+  final PetRoom room;
+  final Pet pet;
+  final Set<String> owned;
+  final bool asleep, sad;
+  final PetSceneController controller;
+  final VoidCallback? onTapPet;
+
+  /// Dev preview only: hides the room render to check the 3D models.
+  final bool hideRoom;
+  const PetSceneArgs({
+    this.hideRoom = false,
+    required this.room,
+    required this.pet,
+    required this.owned,
+    required this.asleep,
+    required this.sad,
+    required this.controller,
+    this.onTapPet,
+  });
+}
+
+/// The room with the companion. Rendered only while the pets section is
+/// open (the widget is disposed with it), so reading never pays for it.
+class PetRoomScene extends StatefulWidget {
+  /// Counts loaded pets; the dev preview waits on it before a snapshot.
+  static final loaded = ValueNotifier<int>(0);
+  final PetSceneArgs args;
+  const PetRoomScene({super.key, required this.args});
+
+  @override
+  State<PetRoomScene> createState() => _PetRoomSceneState();
+}
+
+const _oneShots = {'Eat', 'Happy', 'Spin', 'Jump', 'Stretch', 'Wave', 'Pet'};
+
+class _PetRoomSceneState extends State<PetRoomScene> {
   final scene = Scene();
-  Node? room, pet, fx;
+  final _backdrop = Node(name: 'backdrop');
+  final _shadow = Node(name: 'shadow');
+  final _decorRoot = Node(name: 'decor');
+  Node? pet, fx;
   String? error;
   final clips = <String, AnimationClip>{};
   final ends = <String, double>{};
   final _bodies = <PhysicallyBasedMaterial>[];
   final _naturalColors = <vm.Vector4>[];
   final _accessories = <PetSocket, Node>{};
-  final _eggs = <Node>[];
-  String? _modelKey;
+  final _textures = <String, Texture2D>{};
+  final _decorModels = <String, Node>{};
+  String? _modelKey, _roomKey;
+  double _aspect = 9 / 16;
 
   final _queue = <String>[];
   String? _current, _previous;
   double _blend = 1;
-  double _yaw = 0;
   double _time = 0, _idleSince = 0;
+
+  PetSceneArgs get a => widget.args;
 
   @override
   void initState() {
     super.initState();
-    widget.controller?._state = this;
+    a.controller._state = this;
     unawaited(_load());
   }
 
   @override
-  void didUpdateWidget(PetHomeScene old) {
+  void didUpdateWidget(PetRoomScene old) {
     super.didUpdateWidget(old);
-    widget.controller?._state = this;
-    if (_modelFor(widget.pet) != _modelKey) {
+    a.controller._state = this;
+    if (_modelFor(a.pet) != _modelKey) {
       unawaited(_loadPet());
     } else {
-      _placePet();
       unawaited(_applyLooks());
       _settle();
     }
-    _applyDecor();
-    unawaited(_applyEggs());
+    if (a.room.key != _roomKey || old.args.owned.length != a.owned.length) {
+      unawaited(_applyRoom());
+    }
   }
 
   static String _modelFor(Pet pet) =>
       PetGrowth.modelAsset(pet.species, pet.level, pet.path);
 
-  bool _has(TalentEffect effect) => widget.pet.has(effect);
+  bool _has(TalentEffect effect) => a.pet.has(effect);
   String get _happy => _has(TalentEffect.jump) ? 'Jump' : 'Happy';
 
   Future<void> _load() async {
     try {
       await Scene.initializeStaticResources();
-      scene.directionalLight = DirectionalLight(
-        direction: vm.Vector3(-0.45, -1, -0.35),
-        color: vm.Vector3(1, 0.93, 0.85),
-        intensity: 2.2,
-        castsShadow: true,
-      );
-      final loaded = await Node.fromGlbAsset('assets/pets/room_bedroom.glb');
-      scene.add(loaded);
-      room = loaded;
-      _applyDecor();
+      // The rooms are pre-lit renders: show their pixels unchanged.
+      scene
+        ..toneMapping = ToneMappingMode.linear
+        ..exposure = 1
+        ..environmentIntensity = 0.75;
+      scene
+        ..add(_backdrop)
+        ..add(_decorRoot)
+        ..add(_shadow);
+      await _applyRoom();
       await _loadPet();
-      await _applyEggs();
-      if (_has(TalentEffect.greet)) _sequence([_happy]);
+      _sequence(['Wave']);
     } catch (e, stack) {
       ErrorLog.record(e, stack, context: 'pets scene');
       if (mounted) setState(() => error = describeError(e));
     }
   }
 
+  /// Room renders are shown about 1:1, so no mip chain (building one on the
+  /// CPU for a 2048² image takes very long); an opaque render wraps the
+  /// decoded GPU image directly.
+  Future<Texture2D> _texture(String asset, {bool opaque = false}) async {
+    final cached = _textures[asset];
+    if (cached != null) return cached;
+    final data = await rootBundle.load(asset);
+    final codec = await ui.instantiateImageCodec(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
+    final image = (await codec.getNextFrame()).image;
+    try {
+      return _textures[asset] = await Texture2D.fromImage(
+        image,
+        opaque: opaque,
+        sampling: const TextureSampling(mipmaps: false),
+      );
+    } finally {
+      image.dispose();
+    }
+  }
+
+  /// A camera-facing quad covering the view at [distance] from the camera.
+  Future<Node> _screenQuad(Node node, String asset, double distance) async {
+    final room = a.room;
+    final p = blenderToScene(room.cameraPosition);
+    final f = blenderToScene(room.cameraForward).normalized();
+    final up0 = blenderToScene(room.cameraUp).normalized();
+    final r = up0.cross(f).normalized(); // the camera's right, as flutter_scene computes it
+    final u = f.cross(r).normalized();
+    final h = distance * math.tan(room.fov / 2) * 1.02;
+    final c = p + f * distance;
+    final corners = [c - r * h + u * h, c + r * h + u * h, c - r * h - u * h, c + r * h - u * h];
+    final positions = Float32List(12);
+    for (var i = 0; i < 4; i++) {
+      positions[i * 3] = corners[i].x;
+      positions[i * 3 + 1] = corners[i].y;
+      positions[i * 3 + 2] = corners[i].z;
+    }
+    final n = -f;
+    final geometry = MeshGeometry.fromArrays(
+      positions: positions,
+      normals: Float32List.fromList([for (var i = 0; i < 4; i++) ...[n.x, n.y, n.z]]),
+      texCoords: Float32List.fromList([0, 0, 1, 0, 0, 1, 1, 1]),
+      indices: [0, 2, 1, 1, 2, 3],
+    );
+    final material = UnlitMaterial(colorTexture: await _texture(asset, opaque: true))
+      ..doubleSided = true
+      ..vertexColorWeight = 0;
+    node.mesh = Mesh(geometry, material);
+    return node;
+  }
+
+  Future<void> _applyRoom() async {
+    final room = a.room;
+    _roomKey = room.key;
+    await _screenQuad(_backdrop, room.background, 30);
+    _backdrop.visible = !a.hideRoom;
+    // Soft round shadow under the pet.
+    final s = blenderToScene(room.spot);
+    const half = 0.42;
+    final y = s.y + 0.004;
+    final shadowMaterial = UnlitMaterial(
+      colorTexture: await _texture('assets/pets/rooms/shadow.png'),
+    )
+      ..alphaMode = AlphaMode.blend
+      ..doubleSided = true
+      ..vertexColorWeight = 0;
+    _shadow.mesh = Mesh(
+      MeshGeometry.fromArrays(
+        positions: Float32List.fromList([
+          s.x - half, y, s.z - half, s.x + half, y, s.z - half,
+          s.x - half, y, s.z + half, s.x + half, y, s.z + half,
+        ]),
+        normals: Float32List.fromList([for (var i = 0; i < 4; i++) ...[0, 1, 0]]),
+        texCoords: Float32List.fromList([0, 0, 1, 0, 0, 1, 1, 1]),
+        indices: [0, 2, 1, 1, 2, 3],
+      ),
+      shadowMaterial,
+    );
+    final d = blenderToScene(room.lightDirection).normalized();
+    scene.directionalLight = DirectionalLight(
+      direction: d,
+      color: room.lightColor,
+      intensity: room.lightIntensity,
+      castsShadow: false,
+    );
+    // Decor bought for this room.
+    for (final child in [..._decorRoot.children]) {
+      _decorRoot.remove(child);
+    }
+    for (final spot in room.decor) {
+      if (!a.owned.contains(spot.id)) continue;
+      final item = shopItem(spot.id);
+      if (item == null) continue;
+      try {
+        final model = _decorModels[spot.id] ??= await Node.fromGlbAsset(item.decorModel);
+        if (!mounted || _roomKey != room.key) return;
+        final holder = Node(name: 'decor:${spot.id}')..add(model);
+        holder.position = blenderToScene(spot.position);
+        holder.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), -spot.rotation * vm.degrees2Radians);
+        holder.scale = vm.Vector3.all(spot.scale);
+        _decorRoot.add(holder);
+      } catch (e, stack) {
+        ErrorLog.record(e, stack, context: 'pets decor ${spot.id}');
+      }
+    }
+    _placePet();
+    if (mounted) setState(() {});
+  }
+
   Future<void> _loadPet() async {
-    final key = _modelFor(widget.pet);
+    final key = _modelFor(a.pet);
     _modelKey = key;
     final model = await Node.fromGlbAsset(key);
     final node = Node(name: 'pet')..add(model);
@@ -150,8 +366,7 @@ class _PetHomeSceneState extends State<PetHomeScene> {
     for (final mesh in node.meshNodes) {
       for (final primitive in mesh.mesh!.primitives) {
         final material = primitive.material;
-        if (material is PhysicallyBasedMaterial &&
-            material.name.endsWith('_body')) {
+        if (material is PhysicallyBasedMaterial && material.name.endsWith('_body')) {
           _bodies.add(material);
           _naturalColors.add(vm.Vector4.copy(material.baseColorFactor));
         }
@@ -163,40 +378,23 @@ class _PetHomeSceneState extends State<PetHomeScene> {
     await _applyLooks();
     _current = null;
     _settle();
+    PetRoomScene.loaded.value++;
   }
 
   void _placePet() {
     final node = pet;
     if (node == null) return;
-    final bed = _has(TalentEffect.bedSpot);
-    node.position = bed ? _bedSpot : _poufSpot;
-    node.rotation = vm.Quaternion.axisAngle(
-      vm.Vector3(0, 1, 0),
-      bed ? -0.3 : -0.6,
-    );
-    final s = PetGrowth.stageScale(widget.pet.level);
-    node.scale = vm.Vector3.all(s);
-  }
-
-  void _applyDecor() {
-    final r = room;
-    if (r == null) return;
-    for (final item in shopItems.where((i) => i.kind == ShopKind.decor)) {
-      r.getChildByName(item.decorNode)?.visible = widget.owned.contains(
-        item.id,
-      );
-    }
+    node.position = blenderToScene(a.room.spot);
+    node.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), a.room.yaw * vm.degrees2Radians);
+    node.scale = vm.Vector3.all(PetGrowth.stageScale(a.pet.level));
   }
 
   Future<void> _applyLooks() async {
-    final p = widget.pet;
+    final p = a.pet;
     final tint = shopItem(p.color ?? '')?.tint;
-    // Elders go a little grey.
     final grey = p.stage.index >= PetStage.elder.index ? 0.3 : 0.0;
     for (var i = 0; i < _bodies.length; i++) {
-      final base = tint == null
-          ? vm.Vector4.copy(_naturalColors[i])
-          : _linear(tint);
+      final base = tint == null ? vm.Vector4.copy(_naturalColors[i]) : _linear(tint);
       final g = (base.x + base.y + base.z) / 3 * 0.6 + 0.35;
       _bodies[i]
         ..baseColorFactor = vm.Vector4(
@@ -205,9 +403,8 @@ class _PetHomeSceneState extends State<PetHomeScene> {
           base.z + (g - base.z) * grey,
           1,
         )
-        // ★ adds a shine.
-        ..metallicFactor = p.rank >= 1 ? 0.35 : 0
-        ..roughnessFactor = p.rank >= 1 ? 0.35 : 0.8;
+        ..metallicFactor = p.rank >= 1 ? 0.25 : 0
+        ..roughnessFactor = p.rank >= 1 ? 0.4 : 0.75;
     }
     final node = pet;
     if (node == null) return;
@@ -235,7 +432,7 @@ class _PetHomeSceneState extends State<PetHomeScene> {
 
   /// ★★ particles circle the pet, ★★★ and level 100 add the aura ring.
   Future<void> _applyFx(Node node) async {
-    final p = widget.pet;
+    final p = a.pet;
     final particles = p.rank >= 2;
     final aura = p.rank >= 3 || p.level >= PetRules.maxLevel;
     if (!particles && !aura) {
@@ -254,54 +451,17 @@ class _PetHomeSceneState extends State<PetHomeScene> {
     effects.getChildByName('Fx_Aura')?.visible = aura;
   }
 
-  Future<void> _applyEggs() async {
-    final r = room;
-    if (r == null) return;
-    final wanted = widget.eggs.take(_eggSpots.length).toList();
-    while (_eggs.length < wanted.length) {
-      final node = Node(name: 'egg')
-        ..add(await Node.fromGlbAsset('assets/pets/egg.glb'));
-      if (!mounted) return;
-      if (_eggs.length >= widget.eggs.take(_eggSpots.length).length) break;
-      node.position = _eggSpots[_eggs.length];
-      scene.add(node);
-      _eggs.add(node);
-    }
-    while (_eggs.length > wanted.length) {
-      scene.remove(_eggs.removeLast());
-    }
-    for (var i = 0; i < _eggs.length && i < wanted.length; i++) {
-      final egg = wanted[i], node = _eggs[i];
-      for (var c = 1; c <= 3; c++) {
-        node.getChildByName('Crack_$c')?.visible = egg.fraction >= c / 4;
-      }
-      final color = eggColors[PetSpecies.byId(egg.species)];
-      for (final mesh in node.meshNodes) {
-        for (final primitive in mesh.mesh!.primitives) {
-          final m = primitive.material;
-          if (m is PhysicallyBasedMaterial &&
-              m.name == 'Egg_shell' &&
-              color != null) {
-            m.baseColorFactor = _linear(color);
-          }
-        }
-      }
-    }
-  }
-
   static vm.Vector4 _linear(Color c) {
-    double lin(double v) => v <= 0.04045
-        ? v / 12.92
-        : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+    double lin(double v) =>
+        v <= 0.04045 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
     return vm.Vector4(lin(c.r), lin(c.g), lin(c.b), 1);
   }
 
   /// The clip that fits the pet's state when nothing else plays.
   String get _mood {
-    final now = widget.clock();
-    if (widget.pet.satiety(now) <= 0) return 'Sad';
-    final night = now.hour >= 23 || now.hour < 6;
-    return night && !_has(TalentEffect.nightOwl) ? 'Sleep' : 'Idle';
+    if (a.asleep && !_has(TalentEffect.nightOwl)) return 'Sleep';
+    if (a.sad) return 'Sad';
+    return 'Idle';
   }
 
   void _settle() {
@@ -342,11 +502,7 @@ class _PetHomeSceneState extends State<PetHomeScene> {
     _time += dt;
     if (_blend < 1) _blend = math.min(1, _blend + dt / 0.25);
     clips.forEach((name, clip) {
-      clip.weight = name == _current
-          ? _blend
-          : name == _previous
-          ? 1 - _blend
-          : 0;
+      clip.weight = name == _current ? _blend : name == _previous ? 1 - _blend : 0;
       if (clip.weight == 0 && clip.playing && name != _current) clip.stop();
     });
     final active = clips[_current];
@@ -355,72 +511,88 @@ class _PetHomeSceneState extends State<PetHomeScene> {
         active.playbackTime >= (ends[_current] ?? 0) - 1e-3) {
       _next();
     }
-    // A long idle ends with a stretch now and then.
-    if (_current == 'Idle' &&
-        _has(TalentEffect.stretch) &&
-        _time - _idleSince > 18) {
+    if (_current == 'Idle' && _has(TalentEffect.stretch) && _time - _idleSince > 18) {
       _sequence(['Stretch']);
     }
-    fx?.getChildByName('Fx_Particles')?.rotation = vm.Quaternion.axisAngle(
-      vm.Vector3(0, 1, 0),
-      _time * 0.8,
-    );
-    fx?.getChildByName('Fx_Aura')?.rotation = vm.Quaternion.axisAngle(
-      vm.Vector3(0, 1, 0),
-      -_time * 0.3,
-    );
-    // Ready eggs wobble.
-    for (var i = 0; i < _eggs.length && i < widget.eggs.length; i++) {
-      _eggs[i].rotation = widget.eggs[i].ready
-          ? vm.Quaternion.axisAngle(
-              vm.Vector3(0, 0, 1),
-              math.sin(_time * 9) *
-                  0.12 *
-                  (math.sin(_time * 1.3) > 0.3 ? 1 : 0),
-            )
-          : vm.Quaternion.identity();
-    }
+    fx?.getChildByName('Fx_Particles')?.rotation =
+        vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), _time * 0.8);
+    fx?.getChildByName('Fx_Aura')?.rotation =
+        vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), -_time * 0.3);
   }
 
   Camera _camera(Duration _) {
-    // The diorama camera of the Blender scene, orbiting a little on drag.
-    final target = vm.Vector3(0, 0.75, -0.1);
-    const distance = 8.6, height = 3.4;
-    final a = 0.7 + _yaw;
+    final room = a.room;
+    final p = blenderToScene(room.cameraPosition);
+    final f = blenderToScene(room.cameraForward);
+    // The render is square: keep the view inside it for any window shape.
+    final fov = _aspect > 1 ? 2 * math.atan(math.tan(room.fov / 2) / _aspect) : room.fov;
     return PerspectiveCamera(
-      fovRadiansY: 30 * vm.degrees2Radians,
-      position:
-          target +
-          vm.Vector3(distance * math.sin(a), height, -distance * math.cos(a)),
-      target: target,
+      fovRadiansY: fov,
+      position: p,
+      target: p + f,
+      up: blenderToScene(room.cameraUp),
     );
   }
 
   @override
   void dispose() {
-    if (widget.controller?._state == this) widget.controller?._state = null;
+    if (a.controller._state == this) a.controller._state = null;
     super.dispose();
   }
 
+  /// A square room render placed exactly like the backdrop quad: the camera
+  /// fits the square by height in a tall view and by width in a wide one,
+  /// and the quad overshoots the view by 2 %.
+  Widget _roomLayer(String asset, BoxConstraints constraints) {
+    final side = 1.02 * math.max(constraints.maxWidth, constraints.maxHeight);
+    return ClipRect(
+      child: OverflowBox(
+        minWidth: side,
+        maxWidth: side,
+        minHeight: side,
+        maxHeight: side,
+        child: Image.asset(asset, width: side, height: side, fit: BoxFit.fill, gaplessPlayback: true),
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
-    if (error != null) {
+  Widget build(BuildContext context) {    if (error != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: SelectableText(
-            'Сцена не запустилась: $error',
-            textAlign: TextAlign.center,
-          ),
+          child: SelectableText('Сцена не запустилась: $error', textAlign: TextAlign.center),
         ),
       );
     }
-    if (pet == null) return const Center(child: CircularProgressIndicator());
-    return GestureDetector(
-      onHorizontalDragUpdate: (d) =>
-          setState(() => _yaw = (_yaw - d.delta.dx * 0.005).clamp(-0.6, 0.6)),
-      onTap: () => _sequence([_has(TalentEffect.spin) ? 'Spin' : _happy]),
-      child: SceneView(scene, cameraBuilder: _camera, onTick: _tick),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _aspect = constraints.maxWidth / math.max(1, constraints.maxHeight);
+        final fg = a.hideRoom ? null : a.room.foreground;
+        if (pet == null) {
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              _roomLayer(a.room.background, constraints),
+              if (fg != null) _roomLayer(fg, constraints),
+              const Center(child: CircularProgressIndicator()),
+            ],
+          );
+        }
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: a.onTapPet,
+              child: SceneView(scene, cameraBuilder: _camera, onTick: _tick),
+            ),
+            // What stands in front of the pet (the kitchen table, the bed's
+            // rim) is a flat layer over the 3D view: it is always in front.
+            if (fg != null) IgnorePointer(child: _roomLayer(fg, constraints)),
+          ],
+        );
+      },
     );
   }
 }
