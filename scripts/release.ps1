@@ -181,7 +181,13 @@ try {
         $env:GIT_TERMINAL_PROMPT = '0'
         try {
             $ErrorActionPreference = 'Continue'
-            $credential = "protocol=https`nhost=github.com`n`n" | & git credential fill 2>$null
+            # Feed the request from a file: git 2.56 sees no protocol in what a
+            # PowerShell 5.1 pipe (or a .NET stdin pipe) sends and fails with
+            # "credential missing protocol field"; cmd redirection works.
+            $credentialRequest = Join-Path ([IO.Path]::GetTempPath()) ('pepehub-credential-' + [Guid]::NewGuid().ToString('N') + '.txt')
+            [IO.File]::WriteAllBytes($credentialRequest, [Text.Encoding]::ASCII.GetBytes("protocol=https`nhost=github.com`n`n"))
+            try { $credential = & cmd.exe /d /c "git credential fill < `"$credentialRequest`" 2>nul" }
+            finally { Remove-Item -LiteralPath $credentialRequest -Force -ErrorAction SilentlyContinue }
             $hasToken = [bool]($credential | Where-Object { "$_" -like 'password=?*' })
         } finally {
             $credential = $null

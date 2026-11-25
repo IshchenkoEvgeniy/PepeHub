@@ -165,44 +165,44 @@ class ShelfShell extends StatelessWidget {
                 child: Column(
                   children: [
                     if (header)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 14, 8, 6),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                title.toUpperCase(),
-                                maxLines: 1,
-                                style: AppFonts.title(
-                                  palette.text,
-                                  size: constraints.maxWidth < 400 ? 30 : 36,
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 14, 8, 6),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  title.toUpperCase(),
+                                  maxLines: 1,
+                                  style: AppFonts.title(
+                                    palette.text,
+                                    size: constraints.maxWidth < 400 ? 30 : 36,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          ...actions,
-                          // No second settings button when the bar has one.
-                          if (!wide)
-                            ValueListenableBuilder(
-                              valueListenable: PepeNavLayout.current,
-                              builder: (context, layout, _) =>
-                                  layout
-                                      .split(constraints.maxWidth)
-                                      .bar
-                                      .contains(PepeNavItem.settings)
-                                  ? const SizedBox.shrink()
-                                  : IconButton(
-                                      tooltip: 'Настройки',
-                                      onPressed: navigation.onSettings,
-                                      icon: const Icon(Icons.tune_rounded),
-                                    ),
-                            ),
-                        ],
+                            ...actions,
+                            // No second settings button when the bar has one.
+                            if (!wide)
+                              ValueListenableBuilder(
+                                valueListenable: PepeNavLayout.current,
+                                builder: (context, layout, _) =>
+                                    layout
+                                        .split(constraints.maxWidth)
+                                        .bar
+                                        .contains(PepeNavItem.settings)
+                                    ? const SizedBox.shrink()
+                                    : IconButton(
+                                        tooltip: 'Настройки',
+                                        onPressed: navigation.onSettings,
+                                        icon: const Icon(Icons.tune_rounded),
+                                      ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
                     Expanded(child: body),
                   ],
                 ),

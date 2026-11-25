@@ -151,9 +151,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('developer panel grants coins and items', (
-    tester,
-  ) async {
+  testWidgets('developer panel grants coins and items', (tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -354,7 +352,9 @@ void main() {
     // Every decor item of the shop has a home in some room.
     expect(
       spots,
-      containsAll(shopItems.where((i) => i.kind == ShopKind.decor).map((i) => i.id)),
+      containsAll(
+        shopItems.where((i) => i.kind == ShopKind.decor).map((i) => i.id),
+      ),
     );
   });
 }

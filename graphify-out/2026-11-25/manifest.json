@@ -4524,9 +4524,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/ui/pet_scene.dart": {
-    "mtime": 1795631655.1088662,
-    "seen": 1795631827.3387141,
-    "ast_hash": "cc854aac20a75732d4d2ab2b8d42c883",
+    "mtime": 1795633714.6697984,
+    "seen": 1795634001.5212271,
+    "ast_hash": "67af130232a105d4e9904498f7046f39",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/ui/pets_section.dart": {
@@ -5100,9 +5100,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/assets/pets/rooms/rooms.json": {
-    "mtime": 1795628496.7594595,
-    "seen": 1795631827.3385434,
-    "ast_hash": "5844a100e91c3d77c45f409c2354784f",
+    "mtime": 1795633262.4096622,
+    "seen": 1795634001.5210564,
+    "ast_hash": "68cc2de795467a319dfc80cce74321d1",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/pets_dev.dart": {
@@ -5124,15 +5124,15 @@
     "semantic_hash": ""
   },
   "apps/pepehub/tool/pets_scene_preview.dart": {
-    "mtime": 1795631748.6874332,
-    "seen": 1795631827.339353,
-    "ast_hash": "d424f3cd53a7a5fe4dc5ab045353994e",
+    "mtime": 1795633714.3431053,
+    "seen": 1795634001.5218234,
+    "ast_hash": "bed044e0371d5da0f453b07a2a850608",
     "semantic_hash": ""
   },
   "design/pets/scripts/app_assets.py": {
-    "mtime": 1795628436.8254995,
-    "seen": 1795631827.3393981,
-    "ast_hash": "1f66ebae4446b528599f744b177955e0",
+    "mtime": 1795633649.950386,
+    "seen": 1795634001.521871,
+    "ast_hash": "bd850024171d3a66c9dad85960572e3b",
     "semantic_hash": ""
   },
   "apps/pepehub/assets/pets/icons/acc_beanie.png": {
@@ -5292,9 +5292,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/assets/pets/rooms/bedroom_fg.png": {
-    "mtime": 1795628520.9635034,
-    "seen": 1795631827.3398807,
-    "ast_hash": "8ebbd34396df43d04c287c9915790fb0",
+    "mtime": 1795633651.1493287,
+    "seen": 1795634001.522235,
+    "ast_hash": "84d9d336fa18463edaadd6f15b5c22ee",
     "semantic_hash": ""
   },
   "apps/pepehub/assets/pets/rooms/kitchen_bg.jpg": {
@@ -5304,9 +5304,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/assets/pets/rooms/kitchen_fg.png": {
-    "mtime": 1795628520.7866735,
-    "seen": 1795631827.339883,
-    "ast_hash": "d1da7f7e3715aef1fee9874d43d7ded4",
+    "mtime": 1795632529.4783015,
+    "seen": 1795634001.5222378,
+    "ast_hash": "90d3e8ad5dc69a7abc84792b72a91b41",
     "semantic_hash": ""
   },
   "apps/pepehub/assets/pets/rooms/living_bg.jpg": {

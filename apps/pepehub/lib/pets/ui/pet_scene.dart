@@ -242,7 +242,9 @@ class _PetRoomSceneState extends State<PetRoomScene> {
     final cached = _textures[asset];
     if (cached != null) return cached;
     final data = await rootBundle.load(asset);
-    final codec = await ui.instantiateImageCodec(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
+    final codec = await ui.instantiateImageCodec(
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+    );
     final image = (await codec.getNextFrame()).image;
     try {
       return _textures[asset] = await Texture2D.fromImage(
@@ -261,11 +263,18 @@ class _PetRoomSceneState extends State<PetRoomScene> {
     final p = blenderToScene(room.cameraPosition);
     final f = blenderToScene(room.cameraForward).normalized();
     final up0 = blenderToScene(room.cameraUp).normalized();
-    final r = up0.cross(f).normalized(); // the camera's right, as flutter_scene computes it
+    final r = up0
+        .cross(f)
+        .normalized(); // the camera's right, as flutter_scene computes it
     final u = f.cross(r).normalized();
     final h = distance * math.tan(room.fov / 2) * 1.02;
     final c = p + f * distance;
-    final corners = [c - r * h + u * h, c + r * h + u * h, c - r * h - u * h, c + r * h - u * h];
+    final corners = [
+      c - r * h + u * h,
+      c + r * h + u * h,
+      c - r * h - u * h,
+      c + r * h - u * h,
+    ];
     final positions = Float32List(12);
     for (var i = 0; i < 4; i++) {
       positions[i * 3] = corners[i].x;
@@ -275,13 +284,16 @@ class _PetRoomSceneState extends State<PetRoomScene> {
     final n = -f;
     final geometry = MeshGeometry.fromArrays(
       positions: positions,
-      normals: Float32List.fromList([for (var i = 0; i < 4; i++) ...[n.x, n.y, n.z]]),
+      normals: Float32List.fromList([
+        for (var i = 0; i < 4; i++) ...[n.x, n.y, n.z],
+      ]),
       texCoords: Float32List.fromList([0, 0, 1, 0, 0, 1, 1, 1]),
       indices: [0, 2, 1, 1, 2, 3],
     );
-    final material = UnlitMaterial(colorTexture: await _texture(asset, opaque: true))
-      ..doubleSided = true
-      ..vertexColorWeight = 0;
+    final material =
+        UnlitMaterial(colorTexture: await _texture(asset, opaque: true))
+          ..doubleSided = true
+          ..vertexColorWeight = 0;
     node.mesh = Mesh(geometry, material);
     return node;
   }
@@ -295,19 +307,32 @@ class _PetRoomSceneState extends State<PetRoomScene> {
     final s = blenderToScene(room.spot);
     const half = 0.42;
     final y = s.y + 0.004;
-    final shadowMaterial = UnlitMaterial(
-      colorTexture: await _texture('assets/pets/rooms/shadow.png'),
-    )
-      ..alphaMode = AlphaMode.blend
-      ..doubleSided = true
-      ..vertexColorWeight = 0;
+    final shadowMaterial =
+        UnlitMaterial(
+            colorTexture: await _texture('assets/pets/rooms/shadow.png'),
+          )
+          ..alphaMode = AlphaMode.blend
+          ..doubleSided = true
+          ..vertexColorWeight = 0;
     _shadow.mesh = Mesh(
       MeshGeometry.fromArrays(
         positions: Float32List.fromList([
-          s.x - half, y, s.z - half, s.x + half, y, s.z - half,
-          s.x - half, y, s.z + half, s.x + half, y, s.z + half,
+          s.x - half,
+          y,
+          s.z - half,
+          s.x + half,
+          y,
+          s.z - half,
+          s.x - half,
+          y,
+          s.z + half,
+          s.x + half,
+          y,
+          s.z + half,
         ]),
-        normals: Float32List.fromList([for (var i = 0; i < 4; i++) ...[0, 1, 0]]),
+        normals: Float32List.fromList([
+          for (var i = 0; i < 4; i++) ...[0, 1, 0],
+        ]),
         texCoords: Float32List.fromList([0, 0, 1, 0, 0, 1, 1, 1]),
         indices: [0, 2, 1, 1, 2, 3],
       ),
@@ -329,11 +354,16 @@ class _PetRoomSceneState extends State<PetRoomScene> {
       final item = shopItem(spot.id);
       if (item == null) continue;
       try {
-        final model = _decorModels[spot.id] ??= await Node.fromGlbAsset(item.decorModel);
+        final model = _decorModels[spot.id] ??= await Node.fromGlbAsset(
+          item.decorModel,
+        );
         if (!mounted || _roomKey != room.key) return;
         final holder = Node(name: 'decor:${spot.id}')..add(model);
         holder.position = blenderToScene(spot.position);
-        holder.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), -spot.rotation * vm.degrees2Radians);
+        holder.rotation = vm.Quaternion.axisAngle(
+          vm.Vector3(0, 1, 0),
+          -spot.rotation * vm.degrees2Radians,
+        );
         holder.scale = vm.Vector3.all(spot.scale);
         _decorRoot.add(holder);
       } catch (e, stack) {
@@ -366,7 +396,8 @@ class _PetRoomSceneState extends State<PetRoomScene> {
     for (final mesh in node.meshNodes) {
       for (final primitive in mesh.mesh!.primitives) {
         final material = primitive.material;
-        if (material is PhysicallyBasedMaterial && material.name.endsWith('_body')) {
+        if (material is PhysicallyBasedMaterial &&
+            material.name.endsWith('_body')) {
           _bodies.add(material);
           _naturalColors.add(vm.Vector4.copy(material.baseColorFactor));
         }
@@ -385,7 +416,10 @@ class _PetRoomSceneState extends State<PetRoomScene> {
     final node = pet;
     if (node == null) return;
     node.position = blenderToScene(a.room.spot);
-    node.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), a.room.yaw * vm.degrees2Radians);
+    node.rotation = vm.Quaternion.axisAngle(
+      vm.Vector3(0, 1, 0),
+      a.room.yaw * vm.degrees2Radians,
+    );
     node.scale = vm.Vector3.all(PetGrowth.stageScale(a.pet.level));
   }
 
@@ -394,7 +428,9 @@ class _PetRoomSceneState extends State<PetRoomScene> {
     final tint = shopItem(p.color ?? '')?.tint;
     final grey = p.stage.index >= PetStage.elder.index ? 0.3 : 0.0;
     for (var i = 0; i < _bodies.length; i++) {
-      final base = tint == null ? vm.Vector4.copy(_naturalColors[i]) : _linear(tint);
+      final base = tint == null
+          ? vm.Vector4.copy(_naturalColors[i])
+          : _linear(tint);
       final g = (base.x + base.y + base.z) / 3 * 0.6 + 0.35;
       _bodies[i]
         ..baseColorFactor = vm.Vector4(
@@ -452,8 +488,9 @@ class _PetRoomSceneState extends State<PetRoomScene> {
   }
 
   static vm.Vector4 _linear(Color c) {
-    double lin(double v) =>
-        v <= 0.04045 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+    double lin(double v) => v <= 0.04045
+        ? v / 12.92
+        : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
     return vm.Vector4(lin(c.r), lin(c.g), lin(c.b), 1);
   }
 
@@ -502,7 +539,11 @@ class _PetRoomSceneState extends State<PetRoomScene> {
     _time += dt;
     if (_blend < 1) _blend = math.min(1, _blend + dt / 0.25);
     clips.forEach((name, clip) {
-      clip.weight = name == _current ? _blend : name == _previous ? 1 - _blend : 0;
+      clip.weight = name == _current
+          ? _blend
+          : name == _previous
+          ? 1 - _blend
+          : 0;
       if (clip.weight == 0 && clip.playing && name != _current) clip.stop();
     });
     final active = clips[_current];
@@ -511,13 +552,19 @@ class _PetRoomSceneState extends State<PetRoomScene> {
         active.playbackTime >= (ends[_current] ?? 0) - 1e-3) {
       _next();
     }
-    if (_current == 'Idle' && _has(TalentEffect.stretch) && _time - _idleSince > 18) {
+    if (_current == 'Idle' &&
+        _has(TalentEffect.stretch) &&
+        _time - _idleSince > 18) {
       _sequence(['Stretch']);
     }
-    fx?.getChildByName('Fx_Particles')?.rotation =
-        vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), _time * 0.8);
-    fx?.getChildByName('Fx_Aura')?.rotation =
-        vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), -_time * 0.3);
+    fx?.getChildByName('Fx_Particles')?.rotation = vm.Quaternion.axisAngle(
+      vm.Vector3(0, 1, 0),
+      _time * 0.8,
+    );
+    fx?.getChildByName('Fx_Aura')?.rotation = vm.Quaternion.axisAngle(
+      vm.Vector3(0, 1, 0),
+      -_time * 0.3,
+    );
   }
 
   Camera _camera(Duration _) {
@@ -525,7 +572,9 @@ class _PetRoomSceneState extends State<PetRoomScene> {
     final p = blenderToScene(room.cameraPosition);
     final f = blenderToScene(room.cameraForward);
     // The render is square: keep the view inside it for any window shape.
-    final fov = _aspect > 1 ? 2 * math.atan(math.tan(room.fov / 2) / _aspect) : room.fov;
+    final fov = _aspect > 1
+        ? 2 * math.atan(math.tan(room.fov / 2) / _aspect)
+        : room.fov;
     return PerspectiveCamera(
       fovRadiansY: fov,
       position: p,
@@ -551,17 +600,27 @@ class _PetRoomSceneState extends State<PetRoomScene> {
         maxWidth: side,
         minHeight: side,
         maxHeight: side,
-        child: Image.asset(asset, width: side, height: side, fit: BoxFit.fill, gaplessPlayback: true),
+        child: Image.asset(
+          asset,
+          width: side,
+          height: side,
+          fit: BoxFit.fill,
+          gaplessPlayback: true,
+        ),
       ),
     );
   }
 
   @override
-  Widget build(BuildContext context) {    if (error != null) {
+  Widget build(BuildContext context) {
+    if (error != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: SelectableText('Сцена не запустилась: $error', textAlign: TextAlign.center),
+          child: SelectableText(
+            'Сцена не запустилась: $error',
+            textAlign: TextAlign.center,
+          ),
         ),
       );
     }

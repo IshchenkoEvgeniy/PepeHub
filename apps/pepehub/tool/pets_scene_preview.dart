@@ -15,7 +15,9 @@ import 'package:flutter/material.dart';
 import 'package:pepehub/pets/pets_service.dart';
 import 'package:pepehub/pets/ui/pet_scene.dart';
 
-void main() => runApp(const MaterialApp(debugShowCheckedModeBanner: false, home: _Preview()));
+void main() => runApp(
+  const MaterialApp(debugShowCheckedModeBanner: false, home: _Preview()),
+);
 
 class _Preview extends StatefulWidget {
   const _Preview();
@@ -36,7 +38,8 @@ class _PreviewState extends State<_Preview> {
       await Future<void>.delayed(const Duration(milliseconds: 250));
     }
     await Future<void>.delayed(const Duration(seconds: 12));
-    final boundary = shot.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+    final boundary =
+        shot.currentContext!.findRenderObject()! as RenderRepaintBoundary;
     final image = await boundary.toImage();
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
     await File(path).writeAsBytes(bytes!.buffer.asUint8List());
@@ -49,12 +52,19 @@ class _PreviewState extends State<_Preview> {
     unawaited(() async {
       final all = await PetRoom.load();
       final pinned = Platform.environment['PETS_PREVIEW_ROOM'];
-      setState(() => rooms = pinned == null ? all : all.where((r) => r.key == pinned).toList());
+      setState(
+        () => rooms = pinned == null
+            ? all
+            : all.where((r) => r.key == pinned).toList(),
+      );
       final out = Platform.environment['PETS_PREVIEW_OUT'];
       if (out != null) {
         unawaited(_capture(out));
       } else {
-        timer = Timer.periodic(const Duration(seconds: 6), (_) => setState(() => index++));
+        timer = Timer.periodic(
+          const Duration(seconds: 6),
+          (_) => setState(() => index++),
+        );
       }
     }());
   }
@@ -68,7 +78,9 @@ class _PreviewState extends State<_Preview> {
   @override
   Widget build(BuildContext context) {
     final list = rooms;
-    if (list == null || list.isEmpty) return const ColoredBox(color: Colors.black);
+    if (list == null || list.isEmpty) {
+      return const ColoredBox(color: Colors.black);
+    }
     final room = list[index % list.length];
 
     final env = Platform.environment;
@@ -82,29 +94,43 @@ class _PreviewState extends State<_Preview> {
     return RepaintBoundary(
       key: shot,
       child: Scaffold(
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: PetRoomScene(
-              args: PetSceneArgs(
-                room: room,
-                pet: pet,
-                owned: const {'decor_lantern', 'decor_book_stack', 'decor_globe', 'decor_aquarium', 'decor_mushroom_lamp', 'decor_moon_lamp'},
-                asleep: false,
-                sad: false,
-                controller: controller,
-                hideRoom: env['PETS_PREVIEW_NOBG'] == '1',
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: PetRoomScene(
+                args: PetSceneArgs(
+                  room: room,
+                  pet: pet,
+                  owned: const {
+                    'decor_lantern',
+                    'decor_book_stack',
+                    'decor_globe',
+                    'decor_aquarium',
+                    'decor_mushroom_lamp',
+                    'decor_moon_lamp',
+                  },
+                  asleep: false,
+                  sad: false,
+                  controller: controller,
+                  hideRoom: env['PETS_PREVIEW_NOBG'] == '1',
+                ),
               ),
             ),
-          ),
-          Positioned(
-            left: 12,
-            top: 12,
-            child: Text(room.title, style: const TextStyle(color: Colors.white, fontSize: 24, shadows: [Shadow(blurRadius: 4)])),
-          ),
-        ],
+            Positioned(
+              left: 12,
+              top: 12,
+              child: Text(
+                room.title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  shadows: [Shadow(blurRadius: 4)],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
     );
   }
 }

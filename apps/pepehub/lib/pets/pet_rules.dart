@@ -98,7 +98,11 @@ abstract final class PetRules {
   /// Energy 0..1 on a pet clock: full at 7:00, falls to [tiredEnergy] by
   /// 23:00, rises back while asleep. With the light turned off early
   /// ([lightsOff] … [lightsUntil]) the pet sleeps and recovers from then on.
-  static double energy(DateTime now, {DateTime? lightsOff, DateTime? lightsUntil}) {
+  static double energy(
+    DateTime now, {
+    DateTime? lightsOff,
+    DateTime? lightsUntil,
+  }) {
     final h = now.hour + now.minute / 60;
     double awake(double hour) =>
         1 - (1 - tiredEnergy) * ((hour - wakeHour) / (sleepHour - wakeHour));
@@ -108,20 +112,26 @@ abstract final class PetRules {
         now.isBefore(lightsUntil)) {
       final lh = lightsOff.hour + lightsOff.minute / 60;
       final start = lh >= wakeHour && lh < sleepHour ? awake(lh) : tiredEnergy;
-      final t = now.difference(lightsOff).inMinutes /
+      final t =
+          now.difference(lightsOff).inMinutes /
           math.max(1, lightsUntil.difference(lightsOff).inMinutes);
       return (start + (1 - start) * t).clamp(0, 1).toDouble();
     }
     if (h >= wakeHour && h < sleepHour) return awake(h).clamp(0, 1).toDouble();
     // Night: from 23:00 to 7:00 (8 hours) back to full.
     final slept = h >= sleepHour ? h - sleepHour : h + 24 - sleepHour;
-    return (tiredEnergy + (1 - tiredEnergy) * slept / (24 - sleepHour + wakeHour))
+    return (tiredEnergy +
+            (1 - tiredEnergy) * slept / (24 - sleepHour + wakeHour))
         .clamp(0, 1)
         .toDouble();
   }
 
   /// Night hours or the light turned off early.
-  static bool asleep(DateTime now, {DateTime? lightsOff, DateTime? lightsUntil}) {
+  static bool asleep(
+    DateTime now, {
+    DateTime? lightsOff,
+    DateTime? lightsUntil,
+  }) {
     if (lightsOff != null &&
         lightsUntil != null &&
         !now.isBefore(lightsOff) &&

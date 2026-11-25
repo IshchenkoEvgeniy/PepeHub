@@ -1398,9 +1398,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/settings_page.dart": {
-    "mtime": 1795629141.1676,
-    "seen": 1795631827.338954,
-    "ast_hash": "2142442154c5c3f92719ef469d88126f",
+    "mtime": 1795634554.0997438,
+    "seen": 1795634676.377592,
+    "ast_hash": "1870650e8739a4fcd41b38e884753404",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/shelf_book_details.dart": {
@@ -1410,9 +1410,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/shelf_components.dart": {
-    "mtime": 1795629133.4443395,
-    "seen": 1795631827.3389568,
-    "ast_hash": "6915a27edacdbed3385c3b190dca8de8",
+    "mtime": 1795634554.1267989,
+    "seen": 1795634676.3775945,
+    "ast_hash": "1814249cccc5c977791aa5df963b9caf",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/ui/statistics_exchange_page.dart": {
@@ -1710,9 +1710,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/pubspec.yaml": {
-    "mtime": 1795629141.1220543,
-    "seen": 1795631827.3390613,
-    "ast_hash": "1d647f4d980f74bbb2417d7b3f226a9b",
+    "mtime": 1795634532.136368,
+    "seen": 1795634676.3776543,
+    "ast_hash": "31b7c439e4a86645cc934958dcb32e10",
     "semantic_hash": ""
   },
   "apps/pepehub/test/android_book_files_test.dart": {
@@ -3036,9 +3036,9 @@
     "semantic_hash": ""
   },
   "scripts/release.ps1": {
-    "mtime": 1794670907.7577624,
-    "seen": 1795159690.6291606,
-    "ast_hash": "976fcbf20b7405caee7717834a44edab",
+    "mtime": 1795634518.8675604,
+    "seen": 1795634676.3779433,
+    "ast_hash": "fea4249d0988082ee45bb802565a573c",
     "semantic_hash": ""
   },
   "scripts/run-local-build.ps1": {
@@ -4332,9 +4332,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/pet_rules.dart": {
-    "mtime": 1795628596.3779564,
-    "seen": 1795631827.3386998,
-    "ast_hash": "8a51dcac46c8e4fef65973373d265d28",
+    "mtime": 1795634552.213199,
+    "seen": 1795634676.3774178,
+    "ast_hash": "61497159f5761c027880271bfe6018a1",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/pets_schema.dart": {
@@ -4344,9 +4344,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/pets_service.dart": {
-    "mtime": 1795628646.8533075,
-    "seen": 1795631827.338712,
-    "ast_hash": "7df78ea67320971c3d2bf6cba1973549",
+    "mtime": 1795634633.5391595,
+    "seen": 1795634676.3774254,
+    "ast_hash": "0ffccf2ea0858d954ab892971afbacf9",
     "semantic_hash": ""
   },
   "apps/pepehub/test/pets_core_test.dart": {
@@ -4524,21 +4524,21 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/ui/pet_scene.dart": {
-    "mtime": 1795633714.6697984,
-    "seen": 1795634001.5212271,
-    "ast_hash": "67af130232a105d4e9904498f7046f39",
+    "mtime": 1795634552.2597597,
+    "seen": 1795634676.3774266,
+    "ast_hash": "9e0dff117f64da6ac2c9a82974c5d8f3",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/ui/pets_section.dart": {
-    "mtime": 1795631507.5157793,
-    "seen": 1795631827.3387175,
-    "ast_hash": "a57c1d6e6396ac22495f744eb59a3edb",
+    "mtime": 1795634633.5431733,
+    "seen": 1795634676.377429,
+    "ast_hash": "2d36c55125bc160b470bc27d2d81a52d",
     "semantic_hash": ""
   },
   "apps/pepehub/test/pets_section_test.dart": {
-    "mtime": 1795631680.4651456,
-    "seen": 1795631827.3392305,
-    "ast_hash": "0018fbc1e9709c13b57d21e33b4c9ee0",
+    "mtime": 1795634555.2502694,
+    "seen": 1795634676.3777614,
+    "ast_hash": "ad13fb5f27b3b6b93b00c941a83dee78",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/pet_progress.dart": {
@@ -5106,27 +5106,27 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/pets_dev.dart": {
-    "mtime": 1795628646.9067135,
-    "seen": 1795631827.3387024,
-    "ast_hash": "ef1d0c2cd79ede03893e712fcba1b9fa",
+    "mtime": 1795634552.2197206,
+    "seen": 1795634676.3774197,
+    "ast_hash": "eaec63e4c3d534ab1dbf3f2c5073ce1b",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/ui/pets_dev_panel.dart": {
-    "mtime": 1795629193.0949378,
-    "seen": 1795631827.3387156,
-    "ast_hash": "785a747020c824b2eb31ce8a3dde1fa6",
+    "mtime": 1795634552.2653582,
+    "seen": 1795634676.377428,
+    "ast_hash": "bf67976630a9d5b24eec608558bf75e2",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/pets/ui/pets_windows.dart": {
-    "mtime": 1795629193.0929265,
-    "seen": 1795631827.3387206,
-    "ast_hash": "2468f8fe19e674dc50e3eefdaf51d3d6",
+    "mtime": 1795634552.3584678,
+    "seen": 1795634676.3774326,
+    "ast_hash": "867656105ead9f3e2d039fa70603d617",
     "semantic_hash": ""
   },
   "apps/pepehub/tool/pets_scene_preview.dart": {
-    "mtime": 1795633714.3431053,
-    "seen": 1795634001.5218234,
-    "ast_hash": "bed044e0371d5da0f453b07a2a850608",
+    "mtime": 1795634633.5451784,
+    "seen": 1795634676.377868,
+    "ast_hash": "86345a220d5af0237045abb93d18231f",
     "semantic_hash": ""
   },
   "design/pets/scripts/app_assets.py": {
@@ -5319,6 +5319,12 @@
     "mtime": 1795628520.60368,
     "seen": 1795631827.339885,
     "ast_hash": "dc002f01a167c12b25da5b472c78fa33",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03114.md": {
+    "mtime": 1795634385.8676822,
+    "seen": 1795634676.3781755,
+    "ast_hash": "e41e0f00a8da7f21c4c4c81888dbe458",
     "semantic_hash": ""
   },
   "package-lock.json": {

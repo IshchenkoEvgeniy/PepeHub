@@ -20,9 +20,13 @@ part 'pets_windows.dart';
 part 'pets_dev_panel.dart';
 
 /// Builds the 3D room; tests replace it (Flutter GPU is not available there).
-typedef PetSceneBuilder = Widget Function(BuildContext context, PetSceneArgs args);
+typedef PetSceneBuilder = Widget Function(
+  BuildContext context,
+  PetSceneArgs args,
+);
 
-Widget _defaultScene(BuildContext context, PetSceneArgs args) => PetRoomScene(args: args);
+Widget _defaultScene(BuildContext context, PetSceneArgs args) =>
+    PetRoomScene(args: args);
 
 /// Colors of the pets screen (cozy cream panels, lavender accent), the same
 /// in light and dark app themes: the panels float over a rendered room.
@@ -47,18 +51,27 @@ abstract final class PetsLook {
     color: ink,
   );
 
-  static BoxDecoration panel({double radius = 24, double alpha = .97}) => BoxDecoration(
-    color: cream.withValues(alpha: alpha),
-    borderRadius: BorderRadius.circular(radius),
-    border: Border.all(color: line, width: 1.5),
-    boxShadow: const [BoxShadow(color: Color(0x40281A28), blurRadius: 18, offset: Offset(0, 6))],
-  );
+  static BoxDecoration panel({double radius = 24, double alpha = .97}) =>
+      BoxDecoration(
+        color: cream.withValues(alpha: alpha),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: line, width: 1.5),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x40281A28),
+            blurRadius: 18,
+            offset: Offset(0, 6),
+          ),
+        ],
+      );
 
   /// Theme for sheets and dialogs over the room.
   static ThemeData theme(BuildContext context) {
     final base = Theme.of(context);
-    final scheme = ColorScheme.fromSeed(seedColor: lavender, brightness: Brightness.light)
-        .copyWith(primary: lavender, surface: cream, onSurface: ink);
+    final scheme = ColorScheme.fromSeed(
+      seedColor: lavender,
+      brightness: Brightness.light,
+    ).copyWith(primary: lavender, surface: cream, onSurface: ink);
     return base.copyWith(
       colorScheme: scheme,
       scaffoldBackgroundColor: cream,
@@ -109,7 +122,8 @@ class _PetsSectionState extends State<PetsSection> with WidgetsBindingObserver {
   int _shift = 0;
   late final service = PetsService(
     widget.repository,
-    clock: () => (widget.clock ?? DateTime.now)().add(Duration(minutes: _shift)),
+    clock: () =>
+        (widget.clock ?? DateTime.now)().add(Duration(minutes: _shift)),
   );
   final scene = PetSceneController();
   final overview = ValueNotifier<PetsOverview?>(null);
@@ -191,7 +205,12 @@ class _PetsSectionState extends State<PetsSection> with WidgetsBindingObserver {
   }
 
   void _maybeReward(PetsOverview o) {
-    if (_rewardShown || o.enabledAt == null || o.companion == null || o.unseen.isEmpty) return;
+    if (_rewardShown ||
+        o.enabledAt == null ||
+        o.companion == null ||
+        o.unseen.isEmpty) {
+      return;
+    }
     _rewardShown = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -271,8 +290,16 @@ class _HomeState extends State<_Home> {
   }
 
   double get satiety => pet.satiety(s.now);
-  double get energy => PetRules.energy(s.now, lightsOff: o.lightsOff, lightsUntil: o.lightsUntil);
-  bool get asleep => PetRules.asleep(s.now, lightsOff: o.lightsOff, lightsUntil: o.lightsUntil);
+  double get energy => PetRules.energy(
+    s.now,
+    lightsOff: o.lightsOff,
+    lightsUntil: o.lightsUntil,
+  );
+  bool get asleep => PetRules.asleep(
+    s.now,
+    lightsOff: o.lightsOff,
+    lightsUntil: o.lightsUntil,
+  );
   double get mood => o.moodOf(pet);
 
   @override
@@ -331,7 +358,12 @@ class _HomeState extends State<_Home> {
                     top: c.maxHeight * .3,
                     child: _bubble(),
                   ),
-                Positioned(left: 10, right: 10, bottom: 10, child: _bottom(narrow)),
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  bottom: 10,
+                  child: _bottom(narrow),
+                ),
               ],
             ],
           ),
@@ -348,14 +380,24 @@ class _HomeState extends State<_Home> {
     final max = pet.level >= PetRules.maxLevel;
     final progress = max ? 1.0 : ((pet.xp - start) / need).clamp(0.0, 1.0);
     final status = switch (room.key) {
-      'kitchen' => _bar('Сытость', satiety <= 0 ? 'голоден' : '${(satiety * 100).round()}%', satiety, PetsLook.food),
-      'bedroom' => _bar('Бодрость', '${(energy * 100).round()}%${asleep ? ' · спит' : ''}', energy, PetsLook.sleep),
+      'kitchen' => _bar(
+        'Сытость',
+        satiety <= 0 ? 'голоден' : '${(satiety * 100).round()}%',
+        satiety,
+        PetsLook.food,
+      ),
+      'bedroom' => _bar(
+        'Бодрость',
+        '${(energy * 100).round()}%${asleep ? ' · спит' : ''}',
+        energy,
+        PetsLook.sleep,
+      ),
       _ => _bar(
-          o.bookOfDay == null ? 'Сегодня засчитано' : 'Книга дня: ${o.bookOfDay}',
-          '${_hm(o.todayCredited)} / ${_hm(PetRules.dailyMinutes)}',
-          o.todayCredited / PetRules.dailyMinutes,
-          PetsLook.lavender,
-        ),
+        o.bookOfDay == null ? 'Сегодня засчитано' : 'Книга дня: ${o.bookOfDay}',
+        '${_hm(o.todayCredited)} / ${_hm(PetRules.dailyMinutes)}',
+        o.todayCredited / PetRules.dailyMinutes,
+        PetsLook.lavender,
+      ),
     };
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -399,20 +441,31 @@ class _HomeState extends State<_Home> {
                     onTap: () => _showShop(context, s),
                   ),
                   _Pill(
-                    icon: const Icon(Icons.local_fire_department_rounded, color: Color(0xFFE58A4E), size: 20),
+                    icon: const Icon(
+                      Icons.local_fire_department_rounded,
+                      color: Color(0xFFE58A4E),
+                      size: 20,
+                    ),
                     text: '${o.streak.current} дн.',
                   ),
                   if (s.dev)
                     _Pill(
                       key: const ValueKey('pets-dev'),
-                      icon: const Icon(Icons.build_circle_outlined, color: PetsLook.deep, size: 20),
+                      icon: const Icon(
+                        Icons.build_circle_outlined,
+                        color: PetsLook.deep,
+                        size: 20,
+                      ),
                       text: 'DEV',
                       onTap: () => _showDevPanel(context, s),
                     ),
                 ],
               ),
               const SizedBox(height: 8),
-              ConstrainedBox(constraints: const BoxConstraints(maxWidth: 260), child: status),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 260),
+                child: status,
+              ),
             ],
           ),
         ),
@@ -430,12 +483,25 @@ class _HomeState extends State<_Home> {
         Row(
           children: [
             Expanded(
-              child: Text(title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: PetsLook.ink)),
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: PetsLook.ink,
+                ),
+              ),
             ),
-            Text(value, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: color)),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 4),
@@ -453,7 +519,8 @@ class _HomeState extends State<_Home> {
   );
 
   Widget _sideButtons() {
-    final pending = o.pets.any((p) => p.pathPending) || o.eggs.any((e) => e.ready);
+    final pending =
+        o.pets.any((p) => p.pathPending) || o.eggs.any((e) => e.ready);
     return Column(
       children: [
         _RoundButton(
@@ -475,7 +542,8 @@ class _HomeState extends State<_Home> {
           key: const ValueKey('side-achievements'),
           icon: Icons.emoji_events_outlined,
           tooltip: 'Достижения',
-          onTap: () => _showPetsWindow(context, s, _PetsWindowKind.achievements),
+          onTap: () =>
+              _showPetsWindow(context, s, _PetsWindowKind.achievements),
         ),
         const SizedBox(height: 10),
         _RoundButton(
@@ -504,15 +572,27 @@ class _HomeState extends State<_Home> {
                 : o.todayCredited >= PetRules.dailyMinutes
                 ? 'Сегодня мы отлично почитали!'
                 : 'Почитаем вместе?',
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: PetsLook.ink, height: 1.25),
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: PetsLook.ink,
+              height: 1.25,
+            ),
           ),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-            decoration: BoxDecoration(color: PetsLook.lavender, borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(
+              color: PetsLook.lavender,
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: Text(
               satiety <= 0 ? 'На кухню' : 'Книга или аудио',
-              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ],
@@ -525,8 +605,14 @@ class _HomeState extends State<_Home> {
   Widget _bottom(bool narrow) => Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      if (room.key == 'kitchen') ...[_FoodTray(home: this), const SizedBox(height: 10)],
-      if (room.key == 'bedroom') ...[_NightPanel(home: this), const SizedBox(height: 10)],
+      if (room.key == 'kitchen') ...[
+        _FoodTray(home: this),
+        const SizedBox(height: 10),
+      ],
+      if (room.key == 'bedroom') ...[
+        _NightPanel(home: this),
+        const SizedBox(height: 10),
+      ],
       _roomSwitcher(),
       const SizedBox(height: 10),
       _dock(),
@@ -548,7 +634,11 @@ class _HomeState extends State<_Home> {
           onPressed: () => _go(-1),
           icon: const Icon(Icons.chevron_left_rounded, color: PetsLook.deep),
         ),
-        Text(room.title, key: const ValueKey('room-title'), style: PetsLook.title(15)),
+        Text(
+          room.title,
+          key: const ValueKey('room-title'),
+          style: PetsLook.title(15),
+        ),
         const SizedBox(width: 8),
         for (var i = 0; i < widget.rooms.length; i++)
           Container(
@@ -557,7 +647,9 @@ class _HomeState extends State<_Home> {
             margin: const EdgeInsets.symmetric(horizontal: 2),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: i == s.room % widget.rooms.length ? PetsLook.lavender : const Color(0xFFD8CCE6),
+              color: i == s.room % widget.rooms.length
+                  ? PetsLook.lavender
+                  : const Color(0xFFD8CCE6),
             ),
           ),
         IconButton(
@@ -649,7 +741,10 @@ class _FoodTray extends StatelessWidget {
           Row(
             children: [
               Expanded(child: Text('Угощение', style: PetsLook.title(17))),
-              TextButton(onPressed: () => _showShop(context, s), child: const Text('В магазин')),
+              TextButton(
+                onPressed: () => _showShop(context, s),
+                child: const Text('В магазин'),
+              ),
             ],
           ),
           Row(
@@ -668,8 +763,12 @@ class _FoodTray extends StatelessWidget {
                                 _showShop(context, s, kind: ShopKind.food);
                                 return;
                               }
-                              final eaten = await s._act(() => s.service.feed(home.pet.id, food.id));
-                              if (eaten != null) s.scene.eat(treat: eaten.treat);
+                              final eaten = await s._act(
+                                () => s.service.feed(home.pet.id, food.id),
+                              );
+                              if (eaten != null) {
+                                s.scene.eat(treat: eaten.treat);
+                              }
                             },
                     ),
                   ),
@@ -704,13 +803,29 @@ class _FoodTile extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
             child: Column(
               children: [
-                Image.asset(food.icon, height: 46, errorBuilder: (_, _, _) => const SizedBox(height: 46)),
-                Text(food.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: PetsLook.ink)),
-                Text(count > 0 ? '+${food.satietyHours} ч' : '${food.price} мон.',
-                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: PetsLook.muted)),
+                Image.asset(
+                  food.icon,
+                  height: 46,
+                  errorBuilder: (_, _, _) => const SizedBox(height: 46),
+                ),
+                Text(
+                  food.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: PetsLook.ink,
+                  ),
+                ),
+                Text(
+                  count > 0 ? '+${food.satietyHours} ч' : '${food.price} мон.',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: PetsLook.muted,
+                  ),
+                ),
               ],
             ),
           ),
@@ -723,8 +838,14 @@ class _FoodTile extends StatelessWidget {
                 color: count > 0 ? PetsLook.lavender : PetsLook.food,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Text(count > 0 ? '×$count' : '+',
-                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
+              child: Text(
+                count > 0 ? '×$count' : '+',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
             ),
           ),
         ],
@@ -751,10 +872,18 @@ class _NightPanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              Expanded(child: Text('Спокойной ночи', style: PetsLook.title(17))),
+              Expanded(
+                child: Text('Спокойной ночи', style: PetsLook.title(17)),
+              ),
               Text(
-                home.asleep ? 'спит до ${PetRules.wakeHour}:00' : 'сон с ${PetRules.sleepHour}:00',
-                style: const TextStyle(fontSize: 12, color: PetsLook.muted, fontWeight: FontWeight.w700),
+                home.asleep
+                    ? 'спит до ${PetRules.wakeHour}:00'
+                    : 'сон с ${PetRules.sleepHour}:00',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: PetsLook.muted,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ],
           ),
@@ -767,7 +896,9 @@ class _NightPanel extends StatelessWidget {
                   icon: off ? Icons.lightbulb_outline : Icons.nightlight_round,
                   title: off ? 'Включить свет' : 'Выключить свет',
                   subtitle: off ? 'разбудить' : 'уложить спать',
-                  onTap: s.busy ? null : () => s._act(() => s.service.setLightsOff(!off)),
+                  onTap: s.busy
+                      ? null
+                      : () => s._act(() => s.service.setLightsOff(!off)),
                 ),
               ),
               const SizedBox(width: 8),
@@ -804,7 +935,9 @@ class _DecorateLayer extends StatelessWidget {
     final r = up0.cross(f).normalized();
     final u = f.cross(r).normalized();
     final aspect = size.width / size.height;
-    final fovY = aspect > 1 ? 2 * math.atan(math.tan(room.fov / 2) / aspect) : room.fov;
+    final fovY = aspect > 1
+        ? 2 * math.atan(math.tan(room.fov / 2) / aspect)
+        : room.fov;
     final tanY = math.tan(fovY / 2), tanX = tanY * aspect;
     final v = blenderToScene(blender) - p;
     final depth = v.dot(f);
@@ -826,14 +959,21 @@ class _DecorateLayer extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                child: Text('Ремонт · ${room.title}',
-                    style: PetsLook.title(22).copyWith(color: Colors.white, shadows: const [
+                child: Text(
+                  'Ремонт · ${room.title}',
+                  style: PetsLook.title(22).copyWith(
+                    color: Colors.white,
+                    shadows: const [
                       Shadow(color: Color(0xAA000000), blurRadius: 6),
-                    ])),
+                    ],
+                  ),
+                ),
               ),
               FilledButton(
                 key: const ValueKey('decorate-done'),
-                style: FilledButton.styleFrom(backgroundColor: PetsLook.lavender),
+                style: FilledButton.styleFrom(
+                  backgroundColor: PetsLook.lavender,
+                ),
                 onPressed: home.finishDecorating,
                 child: const Text('Готово'),
               ),
@@ -849,14 +989,20 @@ class _DecorateLayer extends StatelessWidget {
               child: const Text(
                 'Здесь пока нечего переставить: декор живёт в гостиной и спальне.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: PetsLook.ink, fontWeight: FontWeight.w700),
+                style: TextStyle(
+                  color: PetsLook.ink,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),
         for (final spot in room.decor)
           Builder(
             builder: (context) {
-              final at = _project(room, spot.position + vm.Vector3(0, 0, 0.25 * spot.scale));
+              final at = _project(
+                room,
+                spot.position + vm.Vector3(0, 0, 0.25 * spot.scale),
+              );
               final item = shopItem(spot.id);
               if (at == null || item == null) return const SizedBox.shrink();
               final owned = o.owned.contains(spot.id);
@@ -867,7 +1013,9 @@ class _DecorateLayer extends StatelessWidget {
                   message: item.title,
                   child: Material(
                     color: owned ? PetsLook.lavender : PetsLook.cream,
-                    shape: const CircleBorder(side: BorderSide(color: PetsLook.line, width: 1.5)),
+                    shape: const CircleBorder(
+                      side: BorderSide(color: PetsLook.line, width: 1.5),
+                    ),
                     elevation: 4,
                     child: InkWell(
                       key: ValueKey('decor-${spot.id}'),
@@ -905,7 +1053,13 @@ class _LevelRing extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: PetsLook.cream,
-            boxShadow: [BoxShadow(color: Color(0x40281A28), blurRadius: 10, offset: Offset(0, 3))],
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x40281A28),
+                blurRadius: 10,
+                offset: Offset(0, 3),
+              ),
+            ],
           ),
           child: SizedBox.expand(),
         ),
@@ -920,7 +1074,11 @@ class _LevelRing extends StatelessWidget {
             ),
           ),
         ),
-        Text('$level', key: const ValueKey('pets-level'), style: PetsLook.title(21).copyWith(color: PetsLook.deep)),
+        Text(
+          '$level',
+          key: const ValueKey('pets-level'),
+          style: PetsLook.title(21).copyWith(color: PetsLook.deep),
+        ),
       ],
     ),
   );
@@ -958,7 +1116,9 @@ class _Pill extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Material(
     color: PetsLook.cream.withValues(alpha: .94),
-    shape: const StadiumBorder(side: BorderSide(color: PetsLook.line, width: 1.5)),
+    shape: const StadiumBorder(
+      side: BorderSide(color: PetsLook.line, width: 1.5),
+    ),
     child: InkWell(
       customBorder: const StadiumBorder(),
       onTap: onTap,
@@ -969,7 +1129,14 @@ class _Pill extends StatelessWidget {
           children: [
             icon,
             const SizedBox(width: 6),
-            Text(text, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: PetsLook.ink)),
+            Text(
+              text,
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+                color: PetsLook.ink,
+              ),
+            ),
           ],
         ),
       ),
@@ -982,7 +1149,13 @@ class _RoundButton extends StatelessWidget {
   final String tooltip;
   final VoidCallback onTap;
   final bool dot;
-  const _RoundButton({super.key, required this.icon, required this.tooltip, required this.onTap, this.dot = false});
+  const _RoundButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.dot = false,
+  });
   @override
   Widget build(BuildContext context) => Tooltip(
     message: tooltip,
@@ -991,13 +1164,19 @@ class _RoundButton extends StatelessWidget {
       children: [
         Material(
           color: PetsLook.cream.withValues(alpha: .94),
-          shape: const CircleBorder(side: BorderSide(color: PetsLook.line, width: 1.5)),
+          shape: const CircleBorder(
+            side: BorderSide(color: PetsLook.line, width: 1.5),
+          ),
           elevation: 3,
           shadowColor: const Color(0x66281A28),
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: onTap,
-            child: SizedBox(width: 46, height: 46, child: Icon(icon, color: PetsLook.deep, size: 23)),
+            child: SizedBox(
+              width: 46,
+              height: 46,
+              child: Icon(icon, color: PetsLook.deep, size: 23),
+            ),
           ),
         ),
         if (dot)
@@ -1046,7 +1225,14 @@ class _DockButton extends StatelessWidget {
             child: Icon(icon, color: active ? Colors.white : PetsLook.deep),
           ),
           const SizedBox(height: 3),
-          Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: PetsLook.ink)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: PetsLook.ink,
+            ),
+          ),
           const SizedBox(height: 3),
           SizedBox(
             width: 34,
@@ -1072,7 +1258,13 @@ class _WideButton extends StatelessWidget {
   final IconData icon;
   final String title, subtitle;
   final VoidCallback? onTap;
-  const _WideButton({super.key, required this.icon, required this.title, required this.subtitle, this.onTap});
+  const _WideButton({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.onTap,
+  });
   @override
   Widget build(BuildContext context) => Material(
     color: PetsLook.card,
@@ -1093,11 +1285,24 @@ class _WideButton extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: PetsLook.ink)),
-                  Text(subtitle, style: const TextStyle(fontSize: 11, color: PetsLook.muted, fontWeight: FontWeight.w700)),
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                      color: PetsLook.ink,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: PetsLook.muted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1149,11 +1354,22 @@ class _StarterPicker extends StatelessWidget {
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           children: [
-                            Image.asset(eggIcon(species.name), height: 110,
-                                errorBuilder: (_, _, _) => const Icon(Icons.egg, size: 80, color: PetsLook.lavender)),
+                            Image.asset(
+                              eggIcon(species.name),
+                              height: 110,
+                              errorBuilder: (_, _, _) => const Icon(
+                                Icons.egg,
+                                size: 80,
+                                color: PetsLook.lavender,
+                              ),
+                            ),
                             const SizedBox(height: 8),
                             Text(species.label, style: PetsLook.title(18)),
-                            Text(species.motto, textAlign: TextAlign.center, style: const TextStyle(color: PetsLook.muted)),
+                            Text(
+                              species.motto,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: PetsLook.muted),
+                            ),
                           ],
                         ),
                       ),

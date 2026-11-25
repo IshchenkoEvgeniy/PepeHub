@@ -220,7 +220,8 @@ class PetsService {
     final now = clock();
     final raw = await _moodRaw();
     return {
-      for (final e in raw.entries) e.key: PetRules.mood(e.value.$1, e.value.$2, now),
+      for (final e in raw.entries)
+        e.key: PetRules.mood(e.value.$1, e.value.$2, now),
     };
   }
 
@@ -297,13 +298,23 @@ class PetsService {
       xp += r.read<int>('xp');
       last = math.max(last, r.read<int>('id'));
       if (kind == 'time') minutes += r.read<int>('coins');
-      if (kind == 'book') book = r.read<String>('note').replaceFirst('Книга дня: ', '');
+      if (kind == 'book') {
+        book = r.read<String>('note').replaceFirst('Книга дня: ', '');
+      }
       if (kind != 'time' && kind != 'book') notes.add(r.read<String>('note'));
     }
-    return PetsUnseen(lastId: last, coins: coins, xp: xp, minutes: minutes, book: book, notes: notes);
+    return PetsUnseen(
+      lastId: last,
+      coins: coins,
+      xp: xp,
+      minutes: minutes,
+      book: book,
+      notes: notes,
+    );
   }
 
-  Future<void> markSeen(int ledgerId) => repository.setMeta(_seenKey, '$ledgerId');
+  Future<void> markSeen(int ledgerId) =>
+      repository.setMeta(_seenKey, '$ledgerId');
 
   // ------------------------------------------------------- testing helpers
 

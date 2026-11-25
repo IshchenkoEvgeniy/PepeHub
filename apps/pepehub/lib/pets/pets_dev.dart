@@ -65,7 +65,9 @@ extension PetsDev on PetsService {
     final id = await companionId();
     final pet = (await pets()).where((p) => p.id == id).firstOrNull;
     if (pet == null) return;
-    final need = PetRules.totalXpForLevel(level.clamp(1, PetRules.maxLevel)) - pet.xp.floor();
+    final need =
+        PetRules.totalXpForLevel(level.clamp(1, PetRules.maxLevel)) -
+        pet.xp.floor();
     if (need > 0) await devXp(need, petId: pet.id);
   }
 
@@ -77,16 +79,21 @@ extension PetsDev on PetsService {
   }
 
   /// Every egg in the incubator becomes ready to hatch.
-  Future<void> devHatchReady() =>
-      _db.customStatement('UPDATE pets_eggs_v1 SET minutes=0 WHERE hatched_at IS NULL');
+  Future<void> devHatchReady() => _db.customStatement(
+    'UPDATE pets_eggs_v1 SET minutes=0 WHERE hatched_at IS NULL',
+  );
 
   /// Satiety of every pet: 1 full, 0 hungry.
   Future<void> devSatiety(double value) async {
     final now = clock();
     final fedAt = now.subtract(
-      Duration(minutes: ((1 - value.clamp(0, 1)) * PetRules.fullHours * 60).round()),
+      Duration(
+        minutes: ((1 - value.clamp(0, 1)) * PetRules.fullHours * 60).round(),
+      ),
     );
-    await _db.customStatement('UPDATE pets_v1 SET fed_at=?', [fedAt.toUtc().toIso8601String()]);
+    await _db.customStatement('UPDATE pets_v1 SET fed_at=?', [
+      fedAt.toUtc().toIso8601String(),
+    ]);
   }
 
   /// Mood of the companion.

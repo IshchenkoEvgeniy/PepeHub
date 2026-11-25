@@ -696,7 +696,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     value: on,
                     onChanged: (v) async {
-                      await widget.library.local.setMeta(PetsDev.enabledKey, v ? '1' : '0');
+                      await widget.library.local.setMeta(
+                        PetsDev.enabledKey,
+                        v ? '1' : '0',
+                      );
                       on = v;
                       if (mounted) setState(() {});
                     },
