@@ -123,6 +123,10 @@ class ShelfShell extends StatelessWidget {
   /// False hides the large section title: the body fills the page
   /// (the pets room is a full-screen scene with its own header).
   final bool header;
+
+  /// False hides the phone bottom bar: a full-screen section (the pets room)
+  /// offers [showNavigationSheet] instead. The rail of wide windows stays.
+  final bool bottomBar;
   const ShelfShell({
     super.key,
     required this.title,
@@ -131,6 +135,7 @@ class ShelfShell extends StatelessWidget {
     this.bottomNavigationBar,
     this.actions = const [],
     this.header = true,
+    this.bottomBar = true,
   });
 
   static const wideBreakpoint = 900.0;
@@ -143,7 +148,7 @@ class ShelfShell extends StatelessWidget {
       final extra = AudioPlayerFooter(child: bottomNavigationBar);
       return Scaffold(
         backgroundColor: palette.background,
-        bottomNavigationBar: wide
+        bottomNavigationBar: wide || !bottomBar
             ? extra
             : Column(
                 mainAxisSize: MainAxisSize.min,
@@ -461,57 +466,66 @@ class _MoreItem extends StatelessWidget {
       label: 'Ещё',
       icon: selected ? Icons.more_horiz_rounded : Icons.more_horiz,
       selected: selected,
-      onTap: navigation.enabled ? () => _sheet(context) : null,
+      onTap: navigation.enabled
+          ? () => showNavigationSheet(context, navigation, items: items)
+          : null,
       onLongPress: navigation.enabled
           ? () => openNavigationLayout(context)
           : null,
     );
   }
+}
 
-  Future<void> _sheet(BuildContext context) async {
-    final palette = ShelfPalette.of(context);
-    final chosen = await showModalBottomSheet<Object>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheet) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final item in items)
-                ListTile(
-                  key: ValueKey('nav-more:${item.name}'),
-                  leading: Icon(
-                    navigation.isSelected(item) ? item.selectedIcon : item.icon,
-                    color: navigation.isSelected(item)
-                        ? palette.accent
-                        : palette.muted,
-                  ),
-                  title: Text(item.label),
-                  selected: navigation.isSelected(item),
-                  onTap: () => Navigator.pop(sheet, item),
-                ),
-              const Divider(height: 1),
+/// Navigation entries in a sheet: «Ещё» shows the ones left out of the bar;
+/// full-screen sections that hide the bar show every entry ([items] null).
+Future<void> showNavigationSheet(
+  BuildContext context,
+  ShelfNavigation navigation, {
+  List<PepeNavItem>? items,
+}) async {
+  final palette = ShelfPalette.of(context);
+  final entries = items ?? PepeNavLayout.current.value.order;
+  final chosen = await showModalBottomSheet<Object>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheet) => SafeArea(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final item in entries)
               ListTile(
-                key: const ValueKey('nav-more:customize'),
-                leading: const Icon(Icons.dashboard_customize_outlined),
-                title: const Text('Настроить панель'),
-                onTap: () => Navigator.pop(sheet, 'customize'),
+                key: ValueKey('nav-more:${item.name}'),
+                leading: Icon(
+                  navigation.isSelected(item) ? item.selectedIcon : item.icon,
+                  color: navigation.isSelected(item)
+                      ? palette.accent
+                      : palette.muted,
+                ),
+                title: Text(item.label),
+                selected: navigation.isSelected(item),
+                onTap: () => Navigator.pop(sheet, item),
               ),
-            ],
-          ),
+            const Divider(height: 1),
+            ListTile(
+              key: const ValueKey('nav-more:customize'),
+              leading: const Icon(Icons.dashboard_customize_outlined),
+              title: const Text('Настроить панель'),
+              onTap: () => Navigator.pop(sheet, 'customize'),
+            ),
+          ],
         ),
       ),
-    );
-    if (!context.mounted) return;
-    if (chosen is PepeNavItem) {
-      if (!navigation.isSelected(chosen) || navigation.subpage) {
-        navigation.open(chosen);
-      }
-    } else if (chosen == 'customize') {
-      await openNavigationLayout(context);
+    ),
+  );
+  if (!context.mounted) return;
+  if (chosen is PepeNavItem) {
+    if (!navigation.isSelected(chosen) || navigation.subpage) {
+      navigation.open(chosen);
     }
+  } else if (chosen == 'customize') {
+    await openNavigationLayout(context);
   }
 }
 

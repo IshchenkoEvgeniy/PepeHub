@@ -426,10 +426,7 @@ class _IncubatorTab extends StatelessWidget {
           Card(
             child: ListTile(
               key: ValueKey('egg-${egg.id}'),
-              leading: CircleAvatar(
-                backgroundColor: eggColors[PetSpecies.byId(egg.species)],
-                child: const Icon(Icons.egg, color: Colors.white),
-              ),
+              leading: _EggImage(egg.species),
               title: Text(
                 '${egg.copy ? 'Копия: ' : ''}'
                 '${PetSpecies.byId(egg.species)?.label ?? egg.species}',
@@ -512,10 +509,7 @@ class _EggOfferTile extends StatelessWidget {
   Widget build(BuildContext context) => Card(
     child: ListTile(
       key: ValueKey('offer-${offer.species.name}'),
-      leading: CircleAvatar(
-        backgroundColor: eggColors[offer.species],
-        child: const Icon(Icons.egg, color: Colors.white),
-      ),
+      leading: _EggImage(offer.species.name),
       title: Text(
         offer.copy
             ? 'Яйцо копии: ${offer.species.label.toLowerCase()}'
@@ -530,6 +524,24 @@ class _EggOfferTile extends StatelessWidget {
       trailing: FilledButton.tonal(
         onPressed: enabled ? onBuy : null,
         child: Text('${offer.price}'),
+      ),
+    ),
+  );
+}
+
+/// The 3D egg of a species (the icons rendered in Blender).
+class _EggImage extends StatelessWidget {
+  final String species;
+  const _EggImage(this.species);
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 48,
+    height: 48,
+    child: Image.asset(
+      eggIcon(species),
+      errorBuilder: (_, _, _) => CircleAvatar(
+        backgroundColor: eggColors[PetSpecies.byId(species)],
+        child: const Icon(Icons.egg, color: Colors.white),
       ),
     ),
   );

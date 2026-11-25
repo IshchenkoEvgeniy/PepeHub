@@ -21,7 +21,7 @@ ROOMS = {
         fg=(), light=dict(dir=(-0.45, 0.35, -1.0), color=(1.0, 0.9, 0.78), intensity=2.4, ambient=(1.0, 0.86, 0.72)),
         title="Гостиная"),
     "kitchen": dict(
-        scene="Room_Kitchen3", cam="K3_Cam", spot=(0.0, 0.05, 0.0), yaw=0.0,
+        scene="Room_Kitchen3", cam="K3_Cam", spot=(0.0, 0.05, 0.3), yaw=0.0,  # on a stool: a baby peeks over the table
         hide=("K3_PetStandIn", "K3_PetSpot"),
         fg=("K3_TableTop", "K3_Placemat", "K3_Bowl", "K3_Berries"),
         light=dict(dir=(0.6, 0.4, -1.0), color=(1.0, 0.97, 0.92), intensity=2.6, ambient=(0.92, 0.95, 1.0)),

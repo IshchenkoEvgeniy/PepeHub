@@ -18,52 +18,65 @@ Future<void> _sheet(
     data: PetsLook.theme(context),
     child: FractionallySizedBox(
       heightFactor: height,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-        decoration: PetsLook.panel(radius: 28),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 44,
-              height: 5,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE0D3C0),
-                borderRadius: BorderRadius.circular(3),
+      // A Material, not a decorated box: list tiles paint their ink and
+      // background on the nearest Material, which must be the cream sheet.
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+        child: Material(
+          color: PetsLook.cream,
+          elevation: 10,
+          shadowColor: const Color(0x66281A28),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+            side: const BorderSide(color: PetsLook.line, width: 1.5),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0D3C0),
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
-              child: Row(
-                children: [
-                  Expanded(child: Text(title, style: PetsLook.title(24))),
-                  ?trailing,
-                  ValueListenableBuilder<PetsOverview?>(
-                    valueListenable: s.overview,
-                    builder: (context, o, _) => o == null
-                        ? const SizedBox.shrink()
-                        : _Pill(
-                            icon: const _Coin(size: 18),
-                            text: '${o.balance}',
-                          ),
-                  ),
-                  IconButton(
-                    tooltip: 'Закрыть',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded, color: PetsLook.deep),
-                  ),
-                ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(title, style: PetsLook.title(24))),
+                    ?trailing,
+                    ValueListenableBuilder<PetsOverview?>(
+                      valueListenable: s.overview,
+                      builder: (context, o, _) => o == null
+                          ? const SizedBox.shrink()
+                          : _Pill(
+                              icon: const _Coin(size: 18),
+                              text: '${o.balance}',
+                            ),
+                    ),
+                    IconButton(
+                      tooltip: 'Закрыть',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: PetsLook.deep,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Expanded(
-              child: ValueListenableBuilder<PetsOverview?>(
-                valueListenable: s.overview,
-                builder: (context, o, _) =>
-                    o == null ? const SizedBox.shrink() : builder(context, o),
+              Expanded(
+                child: ValueListenableBuilder<PetsOverview?>(
+                  valueListenable: s.overview,
+                  builder: (context, o, _) =>
+                      o == null ? const SizedBox.shrink() : builder(context, o),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     ),

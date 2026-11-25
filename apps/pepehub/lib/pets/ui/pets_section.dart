@@ -8,6 +8,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import '../../data/repository.dart';
 import '../../diagnostics/error_log.dart';
 import '../../diagnostics/user_message.dart';
+import '../../ui/app_theme.dart';
 import '../../ui/shelf_components.dart';
 import '../pet_catalog.dart';
 import '../pet_progress.dart';
@@ -51,7 +52,7 @@ abstract final class PetsLook {
     color: ink,
   );
 
-  static BoxDecoration panel({double radius = 24, double alpha = .97}) =>
+  static BoxDecoration panel({double radius = 24, double alpha = 1}) =>
       BoxDecoration(
         color: cream.withValues(alpha: alpha),
         borderRadius: BorderRadius.circular(radius),
@@ -65,16 +66,27 @@ abstract final class PetsLook {
         ],
       );
 
-  /// Theme for sheets and dialogs over the room.
+  /// The app palette in the room's colours: every component in the sheets
+  /// (lists, tabs, chips, buttons) reads it, whatever the app theme is.
+  static const colors = PepeColors(
+    background: cream,
+    surface: card,
+    raised: Color(0xFFF3EADB),
+    line: line,
+    strongLine: Color(0xFFD8C6AA),
+    accent: lavender,
+    accentSoft: Color(0xFFB9A6DE),
+    onAccent: Colors.white,
+    text: ink,
+    muted: muted,
+    navigation: cream,
+  );
+
+  /// Theme for sheets and dialogs over the room: a light theme of its own,
+  /// not the app's (white text of a dark app theme vanished on the cream).
   static ThemeData theme(BuildContext context) {
-    final base = Theme.of(context);
-    final scheme = ColorScheme.fromSeed(
-      seedColor: lavender,
-      brightness: Brightness.light,
-    ).copyWith(primary: lavender, surface: cream, onSurface: ink);
+    final base = AppTheme.fromColors(colors);
     return base.copyWith(
-      colorScheme: scheme,
-      scaffoldBackgroundColor: cream,
       cardTheme: base.cardTheme.copyWith(
         color: card,
         elevation: 0,
@@ -83,16 +95,7 @@ abstract final class PetsLook {
           side: const BorderSide(color: line, width: 1.2),
         ),
       ),
-      textTheme: base.textTheme.apply(bodyColor: ink, displayColor: ink),
       iconTheme: const IconThemeData(color: deep),
-      dividerColor: line,
-      chipTheme: base.chipTheme.copyWith(
-        backgroundColor: card,
-        selectedColor: lavenderSoft,
-        side: const BorderSide(color: line),
-        labelStyle: const TextStyle(color: ink),
-      ),
-      extensions: base.extensions.values,
     );
   }
 }
@@ -235,6 +238,7 @@ class _PetsSectionState extends State<PetsSection> with WidgetsBindingObserver {
     title: 'Питомник',
     navigation: widget.navigation,
     header: false,
+    bottomBar: false,
     body: ValueListenableBuilder<PetsOverview?>(
       valueListenable: overview,
       builder: (context, o, _) => _body(o),
@@ -317,6 +321,8 @@ class _HomeState extends State<_Home> {
         unawaited(s.service.stroke(pet.id));
       },
     );
+    // The app bar is hidden here: keep the dock above the system gesture bar.
+    final inset = MediaQueryData.fromView(View.of(context)).padding.bottom;
     return LayoutBuilder(
       builder: (context, c) {
         final narrow = c.maxWidth < 520;
@@ -355,13 +361,14 @@ class _HomeState extends State<_Home> {
                 if (room.key == 'living' && !asleep)
                   Positioned(
                     right: narrow ? 14 : c.maxWidth * .18,
-                    top: c.maxHeight * .3,
+                    // Below the five side buttons.
+                    top: math.max(c.maxHeight * .3, 310),
                     child: _bubble(),
                   ),
                 Positioned(
                   left: 10,
                   right: 10,
-                  bottom: 10,
+                  bottom: 10 + inset,
                   child: _bottom(narrow),
                 ),
               ],
@@ -523,6 +530,13 @@ class _HomeState extends State<_Home> {
         o.pets.any((p) => p.pathPending) || o.eggs.any((e) => e.ready);
     return Column(
       children: [
+        _RoundButton(
+          key: const ValueKey('side-sections'),
+          icon: Icons.apps_rounded,
+          tooltip: 'Разделы приложения',
+          onTap: () => showNavigationSheet(context, s.widget.navigation),
+        ),
+        const SizedBox(height: 10),
         _RoundButton(
           key: const ValueKey('side-pets'),
           icon: Icons.pets_rounded,
@@ -730,29 +744,19 @@ class _FoodTray extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = home.s, o = home.o;
     final foods = shopItems.where((i) => i.kind == ShopKind.food).toList();
-    return Container(
+    // Plates on the table, no panel: the pet behind the table stays visible.
+    return ConstrainedBox(
       key: const ValueKey('food-tray'),
-      constraints: const BoxConstraints(maxWidth: 560),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      decoration: PetsLook.panel(),
+      constraints: const BoxConstraints(maxWidth: 420),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              Expanded(child: Text('Угощение', style: PetsLook.title(17))),
-              TextButton(
-                onPressed: () => _showShop(context, s),
-                child: const Text('В магазин'),
-              ),
-            ],
-          ),
-          Row(
-            children: [
               for (final food in foods)
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
                     child: _FoodTile(
                       food: food,
                       count: o.inventory[food.id] ?? 0,
@@ -787,51 +791,72 @@ class _FoodTile extends StatelessWidget {
   final VoidCallback? onTap;
   const _FoodTile({required this.food, required this.count, this.onTap});
   @override
-  Widget build(BuildContext context) => Material(
-    color: PetsLook.card,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(16),
-      side: const BorderSide(color: PetsLook.line, width: 1.5),
-    ),
+  Widget build(BuildContext context) => Tooltip(
+    message: count > 0
+        ? '${food.title}: +${food.satietyHours} ч сытости'
+        : '${food.title}: купить за ${food.price}',
     child: InkWell(
       key: ValueKey('food-${food.id}'),
-      borderRadius: BorderRadius.circular(16),
+      customBorder: const CircleBorder(),
       onTap: onTap,
       child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.topCenter,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
-            child: Column(
-              children: [
-                Image.asset(
-                  food.icon,
-                  height: 46,
-                  errorBuilder: (_, _, _) => const SizedBox(height: 46),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // A plate: white rim, cream middle, soft shadow on the table.
+              Container(
+                width: 66,
+                height: 66,
+                padding: const EdgeInsets.all(7),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [Color(0xFFFFFDF8), Color(0xFFF3EADB)],
+                    stops: [.62, 1],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0x55281A28),
+                      blurRadius: 8,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
                 ),
-                Text(
-                  food.title,
+                child: Opacity(
+                  opacity: count > 0 ? 1 : .55,
+                  child: Image.asset(
+                    food.icon,
+                    errorBuilder: (_, _, _) => const SizedBox(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: PetsLook.cream,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: PetsLook.line),
+                ),
+                child: Text(
+                  count > 0 ? food.title : '${food.price}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: FontWeight.w800,
                     color: PetsLook.ink,
                   ),
                 ),
-                Text(
-                  count > 0 ? '+${food.satietyHours} ч' : '${food.price} мон.',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: PetsLook.muted,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
           Positioned(
-            right: 5,
-            top: 5,
+            right: 2,
+            top: -2,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
@@ -862,10 +887,9 @@ class _NightPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = home.s, o = home.o;
     final off = o.lightsUntil != null && s.now.isBefore(o.lightsUntil!);
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 560),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      decoration: PetsLook.panel(),
+    // Two buttons, no panel: the pet in its bed stays visible.
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 460),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -873,29 +897,15 @@ class _NightPanel extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text('Спокойной ночи', style: PetsLook.title(17)),
-              ),
-              Text(
-                home.asleep
-                    ? 'спит до ${PetRules.wakeHour}:00'
-                    : 'сон с ${PetRules.sleepHour}:00',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: PetsLook.muted,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
                 child: _WideButton(
                   key: const ValueKey('night-light'),
                   icon: off ? Icons.lightbulb_outline : Icons.nightlight_round,
                   title: off ? 'Включить свет' : 'Выключить свет',
-                  subtitle: off ? 'разбудить' : 'уложить спать',
+                  subtitle: off
+                      ? 'разбудить'
+                      : home.asleep
+                      ? 'спит до ${PetRules.wakeHour}:00'
+                      : 'сон с ${PetRules.sleepHour}:00',
                   onTap: s.busy
                       ? null
                       : () => s._act(() => s.service.setLightsOff(!off)),

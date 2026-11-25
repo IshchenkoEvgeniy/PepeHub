@@ -466,9 +466,15 @@ class AppTheme extends ChangeNotifier {
     Brightness brightness, {
     AppStyle style = AppStyle.fallback,
     bool compact = false,
-  }) {
-    final c = PepeColors.from(style);
-    final tone = style.brightness;
+  }) => fromColors(PepeColors.from(style), compact: compact);
+
+  /// The app theme for any set of colours; the brightness follows the
+  /// background. Screens with their own look (the pets room) use it to get
+  /// every component themed in their colours.
+  static ThemeData fromColors(PepeColors c, {bool compact = false}) {
+    final light =
+        ThemeData.estimateBrightnessForColor(c.background) == Brightness.light;
+    final tone = light ? Brightness.light : Brightness.dark;
     final scheme = ColorScheme.fromSeed(seedColor: c.accent, brightness: tone)
         .copyWith(
           primary: c.accent,
@@ -489,12 +495,8 @@ class AppTheme extends ChangeNotifier {
           surfaceContainerHighest: c.raised,
           outline: c.strongLine,
           outlineVariant: c.line,
-          error: style.light
-              ? const Color(0xffb3261e)
-              : const Color(0xffff7a70),
-          onError: style.light
-              ? const Color(0xffffffff)
-              : const Color(0xff2a0705),
+          error: light ? const Color(0xffb3261e) : const Color(0xffff7a70),
+          onError: light ? const Color(0xffffffff) : const Color(0xff2a0705),
         );
     final pill = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(22),

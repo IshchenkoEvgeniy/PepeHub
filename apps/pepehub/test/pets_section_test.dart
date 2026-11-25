@@ -11,6 +11,8 @@ import 'package:pepehub/pets/pet_progress.dart';
 import 'package:pepehub/pets/pets_service.dart';
 import 'package:pepehub/pets/ui/pet_scene.dart';
 import 'package:pepehub/pets/ui/pets_section.dart';
+import 'package:flutter/rendering.dart';
+import 'package:pepehub/ui/app_theme.dart';
 import 'package:pepehub/ui/shelf_components.dart';
 
 /// Flutter GPU is not available in tests: the 3D room is a placeholder.
@@ -181,6 +183,51 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('phone, dark app theme: no app bar, sections button, readable '
+      'sheets', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.runAsync(() async {
+      await PetsService(repo, clock: () => now).enable(species: PetSpecies.cat);
+    });
+    PepeSection? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.data(Brightness.dark, style: AppStyle.fallback),
+        home: PetsSection(
+          repository: repo,
+          clock: () => now,
+          sceneBuilder: _fakeScene,
+          navigation: ShelfNavigation(
+            current: PepeSection.pets,
+            onSelect: (s) => selected = s,
+            onSettings: () {},
+          ),
+        ),
+      ),
+    );
+    await _settle(tester, () => _has(find.text('scene:cat:0:living')));
+    // The room takes the whole screen: no bottom bar of the app.
+    expect(find.byType(ShelfBottomBar), findsNothing);
+    expect(find.byKey(const ValueKey('dock-shop')), findsOneWidget);
+
+    // Text in the cream sheets is dark even in a dark app theme.
+    await tester.tap(find.byKey(const ValueKey('side-pets')));
+    await tester.pumpAndSettle();
+    final level = tester.renderObject<RenderParagraph>(find.text('Уровень'));
+    expect(level.text.style?.color, PetsLook.ink);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    // The sections button leads to the other sections.
+    await tester.tap(find.byKey(const ValueKey('side-sections')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('nav-more:books')));
+    await tester.pumpAndSettle();
+    expect(selected, PepeSection.books);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('bottom bar: what does not fit goes behind «Ещё»', (
     tester,
   ) async {

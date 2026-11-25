@@ -611,30 +611,53 @@ class _PetRoomSceneState extends State<PetRoomScene> {
     );
   }
 
+  /// A note over the room render, above the panels at the bottom of the
+  /// screen (they would hide one in the middle).
+  Widget _note(Widget child) => Align(
+    alignment: const Alignment(0, -.25),
+    child: Container(
+      margin: const EdgeInsets.symmetric(horizontal: 32),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBF4E8),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE7D9C3), width: 1.5),
+      ),
+      child: child,
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
-    if (error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: SelectableText(
-            'Сцена не запустилась: $error',
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-    }
     return LayoutBuilder(
       builder: (context, constraints) {
         _aspect = constraints.maxWidth / math.max(1, constraints.maxHeight);
         final fg = a.hideRoom ? null : a.room.foreground;
-        if (pet == null) {
+        if (pet == null || error != null) {
           return Stack(
             fit: StackFit.expand,
             children: [
               _roomLayer(a.room.background, constraints),
               if (fg != null) _roomLayer(fg, constraints),
-              const Center(child: CircularProgressIndicator()),
+              if (error != null)
+                _note(
+                  SelectableText(
+                    'Питомец не загрузился: $error',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Color(0xFF3E2F4A)),
+                  ),
+                )
+              else
+                _note(
+                  const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: Color(0xFF8E76C2),
+                    ),
+                  ),
+                ),
             ],
           );
         }

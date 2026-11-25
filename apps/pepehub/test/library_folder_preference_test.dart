@@ -22,15 +22,21 @@ Future<void> section(WidgetTester tester, PepeSection next) async {
   if (inBar.evaluate().isNotEmpty) {
     await tester.tap(inBar);
   } else {
-    // A narrow bar keeps the rest of the sections behind «Ещё».
-    await tester.tap(find.byKey(const ValueKey('nav:more')));
+    // A narrow bar keeps the rest of the sections behind «Ещё»; the pets
+    // room hides the bar and lists every section behind its own button.
+    final more = find.byKey(const ValueKey('nav:more'));
+    await tester.tap(
+      more.evaluate().isNotEmpty
+          ? more
+          : find.byKey(const ValueKey('side-sections')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(ValueKey('nav-more:${next.name}')));
   }
   await ready(tester, () {
-    final bar = tester.widget<ShelfBottomBar>(find.byType(ShelfBottomBar));
-    return bar.navigation.current == next &&
-        bar.navigation.enabled &&
+    final shell = tester.widget<ShelfShell>(find.byType(ShelfShell));
+    return shell.navigation.current == next &&
+        shell.navigation.enabled &&
         find.byType(CircularProgressIndicator).evaluate().isEmpty &&
         find
             .byType(LinearProgressIndicator)
