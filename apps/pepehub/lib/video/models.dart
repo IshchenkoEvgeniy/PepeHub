@@ -59,6 +59,12 @@ class VideoItem {
   final String? root;
   final bool favorite;
   final bool connected;
+
+  /// Display path of the folder that holds the files, when it is known.
+  final String? folder;
+
+  /// Group key from automatic search; a later search offers new files here.
+  final String? discoveryKey;
   const VideoItem({
     required this.id,
     required this.title,
@@ -66,6 +72,8 @@ class VideoItem {
     this.root,
     this.favorite = false,
     this.connected = true,
+    this.folder,
+    this.discoveryKey,
   });
 
   factory VideoItem.fromJson(String id, Map<String, dynamic> data) => VideoItem(
@@ -75,6 +83,8 @@ class VideoItem {
     root: data['root'] as String?,
     favorite: data['favorite'] == true,
     connected: data['connected'] != false,
+    folder: data['folder'] as String?,
+    discoveryKey: data['discoveryKey'] as String?,
   );
 
   Map<String, dynamic> toJson() => {
@@ -84,6 +94,42 @@ class VideoItem {
     'root': root,
     'favorite': favorite,
     'connected': connected,
+    if (folder != null) 'folder': folder,
+    if (discoveryKey != null) 'discoveryKey': discoveryKey,
+  };
+}
+
+/// A user-made list of lessons from any videos and courses. Lessons stay in
+/// their own items; the playlist keeps only their IDs in the user's order.
+class VideoPlaylist {
+  final String id, title;
+
+  /// `video` or `music`: the media section that shows the playlist.
+  final String section;
+  final List<String> entries;
+  const VideoPlaylist({
+    required this.id,
+    required this.title,
+    required this.section,
+    this.entries = const [],
+  });
+
+  factory VideoPlaylist.fromJson(String id, Map<String, dynamic> data) =>
+      VideoPlaylist(
+        id: id,
+        title: data['title'] as String,
+        section: data['section'] == 'music' ? 'music' : 'video',
+        entries: [
+          for (final entry in data['entries'] as List? ?? const [])
+            if (entry is String) entry,
+        ],
+      );
+
+  Map<String, dynamic> toJson() => {
+    'version': 1,
+    'title': title,
+    'section': section,
+    'entries': entries,
   };
 }
 

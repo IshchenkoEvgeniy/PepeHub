@@ -29,6 +29,7 @@ import '../vocabulary/vocabulary_editor.dart';
 import '../vocabulary/vocabulary_repository.dart';
 import '../vocabulary/vocabulary_page.dart';
 import '../diagnostics/user_message.dart';
+import 'video_gestures.dart';
 
 class VideoPlayerPage extends StatefulWidget {
   final VideoRepository repository;
@@ -94,6 +95,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         caseSensitive: false,
       ).hasMatch(controller?.current?.source ?? '');
   bool _locked = false, _minimizing = false;
+  double? _heldSpeed;
+  bool _brightnessChanged = false, _autoNext = true;
   Future<void> _presentation = Future.value();
   bool get _enabled =>
       controller?.current != null && !controller!.loading && !_leaving;
@@ -115,6 +118,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           );
       _session.addListener(_changed);
       _session.attachPage();
+      unawaited(
+        widget.repository
+            .autoNext()
+            .then((value) {
+              if (mounted) setState(() => _autoNext = value);
+            })
+            .catchError((Object _) {}),
+      );
       unawaited(
         _perform(() async {
           try {
@@ -154,10 +165,31 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _previews.dismiss();
       _zoom.value = Matrix4.identity();
     }
+    // Writing a note or reading the study panel keeps the finished lesson.
+    if (controller?.upNextIndex != null &&
+        (_annotation != null || _studyOpen || _openingAnnotation)) {
+      controller!.cancelUpNext();
+    }
     final playing = controller?.state.playing == true;
     if (playing && !_wasPlaying) _showControls();
     _wasPlaying = playing;
     if (mounted) setState(() {});
+  }
+
+  /// Fullscreen turns the phone with the picture: landscape video lies
+  /// sideways, vertical video stays upright, music changes nothing.
+  String? _orientation() {
+    final player = controller;
+    if (player == null ||
+        player.current?.isAudio != false ||
+        player.audioOnly ||
+        player.engine.surface == null) {
+      return null;
+    }
+    final aspect = player.engine.aspectRatio;
+    if (!aspect.isFinite || aspect <= 0) return null;
+    final shown = _rotation.isOdd ? 1 / aspect : aspect;
+    return shown >= 1 ? 'landscape' : 'portrait';
   }
 
   Future<void> _perform(Future<void> Function() action) async {
@@ -203,6 +235,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         _session.miniWindow = false;
       }
       await _fullscreenHost.setFullscreen(enabled);
+      await _fullscreenHost.setOrientation(enabled ? _orientation() : null);
     });
     _presentation = operation.catchError((Object _) {});
     try {
@@ -287,8 +320,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       unawaited(
         _presentation
             .then((_) => _fullscreenHost.setFullscreen(false))
+            .then((_) => _fullscreenHost.setOrientation(null))
             .catchError((Object _) {}),
       );
+    }
+    if (_brightnessChanged) {
+      unawaited(_fullscreenHost.setBrightness(null).catchError((Object _) {}));
     }
     _session.detachPage();
     if (_ownsSession) {
@@ -586,7 +623,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           title: const Text('Горячие клавиши'),
           content: const SingleChildScrollView(
             child: Text(
-              'Пробел / K — воспроизведение и пауза\n← / → / J / L — ±10 секунд\nShift + ← / → — ±1 секунда\n↑ / ↓ — громкость ±5%\nM — звук / без звука\nShift + , / . — скорость ±0,25×\nF — полный экран\nEsc — выйти из полного экрана / закрыть плеер\nCtrl + G — точный переход\nCtrl + B — закладка / заметка\nCtrl + R — повтор A–B\nCtrl + S — дорожки и субтитры\nAlt + ← — вернуться до перемотки\n\nДвойной щелчок по видео — полный экран.',
+              'Пробел / K — воспроизведение и пауза\n← / → / J / L — ±10 секунд\nShift + ← / → — ±1 секунда\n↑ / ↓ — громкость ±5%\nM — звук / без звука\nShift + , / . — скорость ±0,25×\nF — полный экран\nEsc — выйти из полного экрана / закрыть плеер\nCtrl + G — точный переход\nCtrl + B — закладка / заметка\nCtrl + R — повтор A–B\nCtrl + S — дорожки и субтитры\nAlt + ← — вернуться до перемотки\n\nДвойной щелчок мышью — полный экран.\n\nНа телефоне:\nдвойное касание слева / справа — ∓10 секунд, в центре — полный экран\nудержание — скорость 2×\nсвайп влево-вправо — перемотка\nсвайп вверх-вниз: справа — громкость, слева — яркость',
             ),
           ),
           actions: [
@@ -600,83 +637,133 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     );
   }
 
-  Widget _surface(VideoPlaybackController player) => GestureDetector(
+  void _scrubTo(VideoPlaybackController player, double value) {
+    setState(() => _scrub = value);
+    if (_showPreviews &&
+        player.engine.canCaptureFrame &&
+        !player.audioOnly &&
+        player.current != null) {
+      _previews.request(
+        player.current!,
+        value.round(),
+        player.state.durationMs,
+      );
+    }
+  }
+
+  void _seekTo(VideoPlaybackController player, double value) {
+    setState(() => _scrub = null);
+    _previews.dismiss();
+    _perform(() => player.seek(value.round()));
+    _showControls();
+  }
+
+  /// Holding the video plays at 2× until the finger lifts.
+  bool _holdSpeed(bool holding) {
+    final player = controller;
+    if (player == null) return false;
+    if (holding) {
+      if (!player.state.playing || _heldSpeed != null) return false;
+      final previous = _heldSpeed = player.state.speed;
+      if (previous < 2) _perform(() => player.setSpeed(2));
+      return true;
+    }
+    final previous = _heldSpeed;
+    _heldSpeed = null;
+    if (previous != null && previous < 2) {
+      _perform(() => player.setSpeed(previous));
+    }
+    return true;
+  }
+
+  Widget _surface(VideoPlaybackController player) => VideoGestureLayer(
+    zoom: _zoom,
+    enabled: _enabled && !_dialogOpen && _annotation == null,
+    locked: _locked,
     onTap: () {
-      if (!_locked) {
-        if (_controlsVisible && player.state.playing) {
-          _controlsTimer?.cancel();
-          setState(() => _controlsVisible = false);
-        } else {
-          _showControls();
-        }
+      if (_controlsVisible && player.state.playing) {
+        _controlsTimer?.cancel();
+        setState(() => _controlsVisible = false);
+      } else {
+        _showControls();
       }
     },
-    onDoubleTap: _locked || _annotation != null
-        ? null
-        : () => _perform(() => _setFullscreen(!_fullscreen)),
-    child: Stack(
-      alignment: Alignment.center,
-      children: [
-        Positioned.fill(
-          child: InteractiveViewer(
-            key: const ValueKey('video-viewport'),
-            transformationController: _zoom,
-            minScale: 1,
-            maxScale: 6,
-            panEnabled: !_locked,
-            scaleEnabled: !_locked,
-            trackpadScrollCausesScale: true,
-            onInteractionStart: (_) {
-              _controlsTimer?.cancel();
-              if (!_locked) setState(() => _controlsVisible = false);
-            },
-            onInteractionEnd: (_) {
-              if (!_locked) _showControls();
-            },
-            child: RotatedBox(
-              quarterTurns: _rotation,
-              child: player.engine.surface == null
-                  ? Container(
-                      color: Colors.black,
-                      child: const Center(
-                        child: Icon(
-                          Icons.ondemand_video,
-                          size: 56,
-                          color: Colors.white54,
-                        ),
-                      ),
-                    )
-                  : Video(
-                      key: _surfaceKey,
-                      controller: player.engine.surface!,
-                      controls: NoVideoControls,
-                      subtitleViewConfiguration:
-                          const SubtitleViewConfiguration(visible: false),
-                      fit: _fit,
-                    ),
+    onFullscreen: () {
+      if (_annotation == null) _perform(() => _setFullscreen(!_fullscreen));
+    },
+    onSkip: (milliseconds) => _perform(() => player.skip(milliseconds)),
+    onHold: _holdSpeed,
+    position: () => player.positionMs,
+    duration: () => player.state.durationMs,
+    onScrubStart: () {
+      _controlsTimer?.cancel();
+      setState(() => _controlsVisible = true);
+    },
+    onScrub: (value) => _scrubTo(player, value),
+    onSeek: (value) => _seekTo(player, value),
+    onScrubCancel: () {
+      setState(() => _scrub = null);
+      _previews.dismiss();
+    },
+    volume: () => player.state.volume,
+    onVolume: (value) => _perform(() => player.setVolume(value)),
+    brightness: _fullscreenHost.supportsBrightness
+        ? _fullscreenHost.brightness
+        : null,
+    onBrightness: _fullscreenHost.supportsBrightness
+        ? (value) {
+            _brightnessChanged = true;
+            _perform(() => _fullscreenHost.setBrightness(value));
+          }
+        : null,
+    onZoomStart: () {
+      _controlsTimer?.cancel();
+      if (!_locked) setState(() => _controlsVisible = false);
+    },
+    onZoomEnd: () {
+      if (!_locked) _showControls();
+    },
+    viewport: RotatedBox(
+      quarterTurns: _rotation,
+      child: player.engine.surface == null
+          ? Container(
+              color: Colors.black,
+              child: const Center(
+                child: Icon(
+                  Icons.ondemand_video,
+                  size: 56,
+                  color: Colors.white54,
+                ),
+              ),
+            )
+          : Video(
+              key: _surfaceKey,
+              controller: player.engine.surface!,
+              controls: NoVideoControls,
+              subtitleViewConfiguration: const SubtitleViewConfiguration(
+                visible: false,
+              ),
+              fit: _fit,
             ),
+    ),
+    overlays: [
+      if (player.loading || player.state.buffering)
+        const IgnorePointer(child: CircularProgressIndicator()),
+      if (captions != null)
+        Positioned.fill(
+          child: VideoCaptionOverlay(
+            captions: captions!,
+            bottom:
+                _controlsVisible && !_fullscreenHost.pip && _annotation == null
+                ? 130
+                : _annotation != null
+                ? 52
+                : 12,
+            fontScale: _fullscreenHost.pip ? .65 : 1,
+            maxLines: _fullscreenHost.pip ? 2 : 4,
           ),
         ),
-        if (player.loading || player.state.buffering)
-          const CircularProgressIndicator(),
-        if (captions != null)
-          Positioned.fill(
-            child: VideoCaptionOverlay(
-              captions: captions!,
-              bottom:
-                  _controlsVisible &&
-                      !_fullscreenHost.pip &&
-                      _annotation == null
-                  ? 130
-                  : _annotation != null
-                  ? 52
-                  : 12,
-              fontScale: _fullscreenHost.pip ? .65 : 1,
-              maxLines: _fullscreenHost.pip ? 2 : 4,
-            ),
-          ),
-      ],
-    ),
+    ],
   );
 
   Future<void> _setMiniWindow(bool enabled) async {
@@ -841,6 +928,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           _session.miniWindow ? 'Обычное окно' : 'Мини-окно Windows',
           Icons.open_in_new,
         ),
+      if (player.current?.isAudio != true && player.lessons.length > 1)
+        (
+          'autonext',
+          _autoNext ? 'Автопереход: вкл' : 'Автопереход: выкл',
+          Icons.skip_next_outlined,
+        ),
       ('seek', 'Перейти ко времени', Icons.av_timer),
       ('undo', 'До перемотки', Icons.undo),
       ('chapters', 'Главы', Icons.menu_book_outlined),
@@ -960,6 +1053,21 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         await _fullscreenHost.enterPip();
       case 'window':
         await _setMiniWindow(!_session.miniWindow);
+      case 'autonext':
+        final enabled = !_autoNext;
+        await widget.repository.setAutoNext(enabled);
+        if (!enabled) player.cancelUpNext();
+        if (!mounted) return;
+        setState(() => _autoNext = enabled);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              enabled
+                  ? 'После урока следующий начнётся через 5 секунд'
+                  : 'Автопереход к следующему уроку выключен',
+            ),
+          ),
+        );
       case 'seek':
         await _seekDialog();
       case 'undo':
@@ -1038,6 +1146,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           }[value]!;
         }
       });
+      if (value == 'rotate' && _fullscreen) {
+        await _perform(() => _fullscreenHost.setOrientation(_orientation()));
+      }
     }
   }
 
@@ -1357,25 +1468,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                       _showControls();
                     },
                     onScrubStart: () => _controlsTimer?.cancel(),
-                    onScrub: (value) {
-                      setState(() => _scrub = value);
-                      if (_showPreviews &&
-                          player.engine.canCaptureFrame &&
-                          !player.audioOnly &&
-                          player.current != null) {
-                        _previews.request(
-                          player.current!,
-                          value.round(),
-                          player.state.durationMs,
-                        );
-                      }
-                    },
-                    onSeek: (value) {
-                      setState(() => _scrub = null);
-                      _previews.dismiss();
-                      _perform(() => player.seek(value.round()));
-                      _showControls();
-                    },
+                    onScrub: (value) => _scrubTo(player, value),
+                    onSeek: (value) => _seekTo(player, value),
+                  ),
+                ),
+              if (player.upNextIndex != null &&
+                  !_fullscreenHost.pip &&
+                  _annotation == null &&
+                  !_studyOpen)
+                Positioned(
+                  right: 12,
+                  bottom: 112,
+                  child: SafeArea(
+                    child: _UpNextCard(player: player, perform: _perform),
                   ),
                 ),
               if (noteLayout != null)
@@ -1669,5 +1774,93 @@ class _PlaybackAction extends Action<_PlaybackIntent> {
   Object? invoke(_PlaybackIntent intent) {
     onInvoke(intent);
     return null;
+  }
+}
+
+/// End-of-lesson countdown: the next lesson starts unless cancelled.
+class _UpNextCard extends StatefulWidget {
+  final VideoPlaybackController player;
+  final Future<void> Function(Future<void> Function()) perform;
+  const _UpNextCard({required this.player, required this.perform});
+  @override
+  State<_UpNextCard> createState() => _UpNextCardState();
+}
+
+class _UpNextCardState extends State<_UpNextCard> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final player = widget.player;
+    final next = player.upNextIndex;
+    if (next == null || next >= player.lessons.length) {
+      return const SizedBox.shrink();
+    }
+    final remaining = player.upNextRemainingMs ?? 0;
+    final total = VideoPlaybackController.upNextDelay.inMilliseconds;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 300),
+      child: Material(
+        key: const ValueKey('video-up-next'),
+        color: Colors.black87,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 8, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Следующий урок через ${(remaining / 1000).ceil()} с',
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                player.lessons[next].title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: total <= 0 ? 0 : 1 - remaining / total,
+                color: Colors.white,
+                backgroundColor: Colors.white24,
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: player.cancelUpNext,
+                    child: const Text('Отмена'),
+                  ),
+                  FilledButton.tonal(
+                    onPressed: () => widget.perform(player.playUpNext),
+                    child: const Text('Смотреть'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

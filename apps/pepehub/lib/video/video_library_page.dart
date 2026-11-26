@@ -16,6 +16,10 @@ import 'video_course_editor.dart';
 import 'video_folder_sync.dart';
 import 'video_folder_dialog.dart';
 import 'video_session.dart';
+import 'video_discovery.dart' show videoFolderSection;
+import 'video_discovery_page.dart';
+import 'video_discovery_scan.dart';
+import 'video_playlists.dart';
 import '../vocabulary/vocabulary_page.dart';
 import '../vocabulary/vocabulary_repository.dart';
 import '../music/music_statistics_page.dart';
@@ -26,12 +30,14 @@ class VideoLibraryPage extends StatefulWidget {
   final ShelfNavigation navigation;
   final AudioController? audio;
   final VideoFilePicker chooseFiles;
+  final VideoDiscoveryScanner discoveryScanner;
   const VideoLibraryPage({
     super.key,
     required this.repository,
     required this.navigation,
     this.audio,
     this.chooseFiles = pickVideoFiles,
+    this.discoveryScanner = const PlatformVideoDiscoveryScanner(),
   });
   @override
   State<VideoLibraryPage> createState() => _VideoLibraryPageState();
@@ -41,8 +47,13 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
   List<VideoItem> items = [];
   List<VideoLesson> lessons = [];
   Map<String, VideoProgress> progress = {};
+  List<VideoPlaylist> playlists = [];
   bool loading = true, busy = false, favorites = false;
   String query = '', mediaFilter = 'video';
+
+  /// `list`, `folders` or `playlists`.
+  String groupBy = 'list';
+  Map<String, List<VideoLesson>> _byItem = {};
   bool _filterLoaded = false;
   String? error;
   int _request = 0;
@@ -67,15 +78,28 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
             await widget.repository.repository.meta('media-section') == 'music'
             ? 'music'
             : 'video';
+        final savedGroup = await widget.repository.repository.meta(
+          'media-grouping',
+        );
+        if (const ['folders', 'playlists'].contains(savedGroup)) {
+          groupBy = savedGroup!;
+        }
         _filterLoaded = true;
       }
       final nextItems = await widget.repository.items();
       final nextLessons = await widget.repository.lessons();
       final nextProgress = await widget.repository.allProgress();
+      final nextPlaylists = await widget.repository.playlists();
       if (!mounted || request != _request) return;
+      final byItem = <String, List<VideoLesson>>{};
+      for (final lesson in nextLessons) {
+        (byItem[lesson.itemId] ??= []).add(lesson);
+      }
       setState(() {
         items = nextItems;
         lessons = nextLessons;
+        _byItem = byItem;
+        playlists = nextPlaylists;
         progress = nextProgress;
         loading = false;
         error = null;
@@ -177,9 +201,125 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
     return recent;
   }
 
-  Iterable<VideoLesson> _sectionLessons(VideoItem item) => lessons.where(
-    (lesson) =>
-        lesson.itemId == item.id && lesson.isAudio == (mediaFilter == 'music'),
+  // Lessons are indexed by item once per load: the list stays linear in
+  // size with thousands of videos.
+  Iterable<VideoLesson> _sectionLessons(VideoItem item) =>
+      (_byItem[item.id] ?? const <VideoLesson>[]).where(
+        (lesson) => lesson.isAudio == (mediaFilter == 'music'),
+      );
+
+  Future<void> _discover() async {
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => VideoDiscoveryPage(
+          repository: widget.repository,
+          scanner: widget.discoveryScanner,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (mediaFilter != 'video') {
+      mediaFilter = 'video';
+      await widget.repository.repository.setMeta('media-section', 'video');
+    }
+    await _load();
+  }
+
+  Future<void> _setGroupBy(String value) async {
+    setState(() => groupBy = value);
+    await widget.repository.repository.setMeta('media-grouping', value);
+  }
+
+  Future<void> _createPlaylist() => _run(() async {
+    final title = await askPlaylistTitle(context);
+    if (title == null) return;
+    final playlist = await widget.repository.createPlaylist(
+      title,
+      section: mediaFilter,
+    );
+    await _load();
+    if (mounted) await _openPlaylist(playlist);
+  });
+
+  Future<void> _openPlaylist(VideoPlaylist playlist) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => VideoPlaylistPage(
+          repository: widget.repository,
+          playlist: playlist,
+          audio: widget.audio,
+        ),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
+  Future<void> _addToPlaylist(VideoItem item) async {
+    await addLessonsToPlaylist(
+      context,
+      widget.repository,
+      _sectionLessons(item).toList(),
+    );
+    if (mounted) await _load();
+  }
+
+  /// Rows of the media list: items, playlists and section headers.
+  List<Object> _rows(
+    List<VideoItem> visible,
+    List<VideoPlaylist> sectionPlaylists,
+  ) {
+    if (groupBy == 'folders') {
+      final sections = <String, List<VideoItem>>{};
+      for (final item in visible) {
+        (sections[_folderOf(item)] ??= []).add(item);
+      }
+      int rank(String name) => name == 'Ссылки' || name == 'Другие' ? 1 : 0;
+      final names = sections.keys.toList()
+        ..sort((a, b) {
+          final order = rank(a).compareTo(rank(b));
+          return order != 0
+              ? order
+              : a.toLowerCase().compareTo(b.toLowerCase());
+        });
+      return [
+        for (final name in names) ...[
+          _SectionHeader(name, sections[name]!.length, Icons.folder_outlined),
+          ...sections[name]!,
+        ],
+      ];
+    }
+    if (groupBy == 'playlists') {
+      final listed = <String>{
+        for (final playlist in playlists)
+          if (playlist.section == mediaFilter) ...playlist.entries,
+      };
+      final rest = [
+        for (final item in visible)
+          if (!_sectionLessons(item).any((l) => listed.contains(l.id))) item,
+      ];
+      return [
+        _SectionHeader(
+          'Плейлисты',
+          sectionPlaylists.length,
+          Icons.playlist_play,
+          action: _createPlaylist,
+        ),
+        ...sectionPlaylists,
+        if (rest.isNotEmpty)
+          _SectionHeader('Вне плейлистов', rest.length, Icons.inbox_outlined),
+        ...rest,
+      ];
+    }
+    return visible;
+  }
+
+  String _folderOf(VideoItem item) => videoFolderSection(
+    item.folder,
+    course: item.kind == VideoItemKind.course,
+    root: item.root,
+    firstSource: _byItem[item.id]?.firstOrNull?.source,
   );
 
   Future<void> _remove(VideoItem item) async {
@@ -233,11 +373,7 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
   }
 
   Future<void> _open(VideoItem item) => _run(() async {
-    final own = lessons
-        .where(
-          (l) => l.itemId == item.id && l.isAudio == (mediaFilter == 'music'),
-        )
-        .toList();
+    final own = _sectionLessons(item).toList();
     if (own.isEmpty) return;
     if (item.kind == VideoItemKind.course &&
         !own.every((lesson) => lesson.isAudio)) {
@@ -291,35 +427,37 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
   @override
   Widget build(BuildContext context) {
     final palette = ShelfPalette.of(context);
+    final needle = query.toLowerCase();
+    final recent = <String, DateTime?>{};
     final visible =
-        items
-            .where(
-              (item) =>
-                  (!favorites || item.favorite) &&
-                  (lessons.any(
-                    (lesson) =>
-                        lesson.itemId == item.id &&
-                        lesson.isAudio == (mediaFilter == 'music'),
-                  )) &&
-                  (query.isEmpty ||
-                      item.title.toLowerCase().contains(query.toLowerCase()) ||
-                      lessons.any(
-                        (lesson) =>
-                            lesson.itemId == item.id &&
-                            lesson.isAudio == (mediaFilter == 'music') &&
-                            '${lesson.title} ${lesson.music?.artist ?? ''} ${lesson.music?.album ?? ''}'
-                                .toLowerCase()
-                                .contains(query.toLowerCase()),
-                      )),
-            )
-            .toList()
-          ..sort((a, b) {
-            final aTime = _recent(a)?.updatedAt, bTime = _recent(b)?.updatedAt;
-            if (aTime != null && bTime != null) return bTime.compareTo(aTime);
-            if (aTime != null) return -1;
-            if (bTime != null) return 1;
-            return a.title.compareTo(b.title);
-          });
+        items.where((item) {
+          if (favorites && !item.favorite) return false;
+          final own = _sectionLessons(item);
+          if (own.isEmpty) return false;
+          return query.isEmpty ||
+              item.title.toLowerCase().contains(needle) ||
+              own.any(
+                (lesson) =>
+                    '${lesson.title} ${lesson.music?.artist ?? ''} ${lesson.music?.album ?? ''}'
+                        .toLowerCase()
+                        .contains(needle),
+              );
+        }).toList()..sort((a, b) {
+          final aTime = recent.putIfAbsent(a.id, () => _recent(a)?.updatedAt),
+              bTime = recent.putIfAbsent(b.id, () => _recent(b)?.updatedAt);
+          if (aTime != null && bTime != null) return bTime.compareTo(aTime);
+          if (aTime != null) return -1;
+          if (bTime != null) return 1;
+          return a.title.compareTo(b.title);
+        });
+    final sectionPlaylists = [
+      for (final playlist in playlists)
+        if (playlist.section == mediaFilter &&
+            !favorites &&
+            (query.isEmpty || playlist.title.toLowerCase().contains(needle)))
+          playlist,
+    ];
+    final rows = _rows(visible, sectionPlaylists);
     return ShelfShell(
       title: 'Медиа',
       navigation: widget.navigation,
@@ -366,11 +504,19 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                       enabled: !busy,
                       icon: const Icon(Icons.add_circle_outline),
                       onSelected: (action) {
+                        if (action == 'discover') _discover();
                         if (action == 'files') _pick(false);
                         if (action == 'folder') _pick(true);
                         if (action == 'link') _addLink();
                       },
                       itemBuilder: (_) => const [
+                        PopupMenuItem(
+                          value: 'discover',
+                          child: ListTile(
+                            leading: Icon(Icons.manage_search),
+                            title: Text('Найти видео автоматически'),
+                          ),
+                        ),
                         PopupMenuItem(
                           value: 'files',
                           child: ListTile(
@@ -443,6 +589,30 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 4),
+                SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(
+                      value: 'list',
+                      icon: Icon(Icons.view_list_outlined),
+                      label: Text('Список'),
+                    ),
+                    ButtonSegment(
+                      value: 'folders',
+                      icon: Icon(Icons.folder_outlined),
+                      label: Text('Папки'),
+                    ),
+                    ButtonSegment(
+                      value: 'playlists',
+                      icon: Icon(Icons.playlist_play),
+                      label: Text('Плейлисты'),
+                    ),
+                  ],
+                  selected: {groupBy},
+                  onSelectionChanged: (value) => _setGroupBy(value.single),
+                ),
+                const SizedBox(height: 6),
                 Text(
                   '${visible.length} в библиотеке',
                   style: TextStyle(color: palette.muted, fontSize: 12),
@@ -485,11 +655,17 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                             'Добавьте файлы, подключите папку с уроками или музыкой либо укажите прямую ссылку. Медиа читаются из исходных файлов.',
                             textAlign: TextAlign.center,
                           ),
+                          const SizedBox(height: 16),
+                          FilledButton.icon(
+                            onPressed: busy ? null : _discover,
+                            icon: const Icon(Icons.manage_search),
+                            label: const Text('Найти видео автоматически'),
+                          ),
                         ],
                       ),
                     ),
                   ),
-                if (!loading && items.isNotEmpty && visible.isEmpty)
+                if (!loading && items.isNotEmpty && rows.isEmpty)
                   const Padding(
                     padding: EdgeInsets.all(24),
                     child: Text('По выбранным условиям ничего не найдено.'),
@@ -500,9 +676,66 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             sliver: SliverList.builder(
-              itemCount: visible.length,
+              itemCount: rows.length,
               itemBuilder: (_, index) {
-                final item = visible[index];
+                final row = rows[index];
+                if (row is _SectionHeader) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 18, bottom: 2),
+                    child: Row(
+                      children: [
+                        Icon(row.icon, size: 18, color: palette.muted),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            row.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                        ),
+                        Text(
+                          '${row.count}',
+                          style: TextStyle(color: palette.muted),
+                        ),
+                        if (row.action != null)
+                          IconButton(
+                            tooltip: 'Создать плейлист',
+                            onPressed: busy ? null : row.action,
+                            icon: const Icon(Icons.playlist_add),
+                          ),
+                      ],
+                    ),
+                  );
+                }
+                if (row is VideoPlaylist) {
+                  final own = row.entries.length;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: ShelfPanel(
+                      child: ListTile(
+                        key: ValueKey('media-playlist:${row.id}'),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 6,
+                        ),
+                        leading: Icon(
+                          Icons.playlist_play,
+                          color: palette.accent,
+                        ),
+                        title: Text(
+                          row.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text('Плейлист · файлов: $own'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: busy ? null : () => _openPlaylist(row),
+                      ),
+                    ),
+                  );
+                }
+                final item = row as VideoItem;
                 return Padding(
                   padding: const EdgeInsets.only(top: 10),
                   child: ShelfPanel(
@@ -561,8 +794,15 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                             key: ValueKey('media-item-menu:${item.id}'),
                             tooltip: 'Действия',
                             enabled: !busy,
-                            onSelected: (_) => _remove(item),
+                            onSelected: (action) {
+                              if (action == 'playlist') _addToPlaylist(item);
+                              if (action == 'remove') _remove(item);
+                            },
                             itemBuilder: (_) => const [
+                              PopupMenuItem(
+                                value: 'playlist',
+                                child: Text('Добавить в плейлист…'),
+                              ),
                               PopupMenuItem(
                                 value: 'remove',
                                 child: Text('Удалить из медиатеки…'),
@@ -716,7 +956,25 @@ class _VideoCoursePageState extends State<_VideoCoursePage> {
         result = i;
       }
     }
+    // A finished lesson sends «Continue» on to the next available one.
+    if (recent != null && _finished(lessons[result])) {
+      for (var i = result + 1; i < lessons.length; i++) {
+        if (lessons[i].available) return i;
+      }
+    }
     return result;
+  }
+
+  bool _finished(VideoLesson lesson) {
+    final state = learning['${lesson.id}:${lesson.mediaVersion}'];
+    if (state?.manualCompletedAt != null) return true;
+    final saved = progress[lesson.id];
+    final duration = lesson.durationMs;
+    return saved != null &&
+        saved.mediaVersion == lesson.mediaVersion &&
+        duration != null &&
+        duration > 20000 &&
+        saved.positionMs >= duration - 10000;
   }
 
   Future<void> _folderAction(String action) async {
@@ -882,7 +1140,21 @@ class _VideoCoursePageState extends State<_VideoCoursePage> {
                 if (!lessons[i].available) 'Файл недоступен',
               ].join(' · '),
             ),
-            trailing: const Icon(Icons.play_circle_outline),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Добавить урок в плейлист',
+                  onPressed: () => addLessonsToPlaylist(
+                    context,
+                    widget.repository,
+                    [lessons[i]],
+                  ),
+                  icon: const Icon(Icons.playlist_add),
+                ),
+                const Icon(Icons.play_circle_outline),
+              ],
+            ),
             onTap: opening || !currentItem.connected || !lessons[i].available
                 ? null
                 : () => _play(i),
@@ -1070,4 +1342,12 @@ class _VideoImportDialogState extends State<_VideoImportDialog> {
       ),
     ],
   );
+}
+
+class _SectionHeader {
+  final String title;
+  final int count;
+  final IconData icon;
+  final VoidCallback? action;
+  const _SectionHeader(this.title, this.count, this.icon, {this.action});
 }

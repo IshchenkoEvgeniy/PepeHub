@@ -63,6 +63,11 @@ class VideoCompactControls extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, bounds) {
         final wide = bounds.maxWidth >= 600;
+        // Phones are 360–412 wide in portrait: slightly smaller buttons keep
+        // «previous / next lesson» on screen.
+        final narrow = bounds.maxWidth < 420;
+        final hit = narrow ? 40.0 : 44.0;
+        final lessons = player.lessons.length > 1;
         Widget button(
           String tooltip,
           IconData icon,
@@ -73,9 +78,9 @@ class VideoCompactControls extends StatelessWidget {
           onPressed: tap,
           icon: Icon(icon, size: size),
           style: IconButton.styleFrom(
-            minimumSize: const Size(44, 44),
+            minimumSize: Size(hit, hit),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            padding: const EdgeInsets.all(8),
+            padding: EdgeInsets.all(narrow ? 6 : 8),
           ),
         );
         return Stack(
@@ -268,8 +273,7 @@ class VideoCompactControls extends StatelessWidget {
                                 Icons.lock_outline,
                                 onLock,
                               ),
-                            if ((player.current?.isAudio == true ||
-                                    bounds.maxWidth >= 420) &&
+                            if ((player.current?.isAudio == true || lessons) &&
                                 !miniWindow)
                               button(
                                 player.current?.isAudio == true
@@ -304,8 +308,8 @@ class VideoCompactControls extends StatelessWidget {
                                 size: 30,
                               ),
                               style: IconButton.styleFrom(
-                                minimumSize: const Size(54, 54),
-                                padding: const EdgeInsets.all(10),
+                                minimumSize: Size.square(narrow ? 50 : 54),
+                                padding: EdgeInsets.all(narrow ? 8 : 10),
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                 backgroundColor: Colors.white,
                                 foregroundColor: Colors.black,
@@ -318,8 +322,7 @@ class VideoCompactControls extends StatelessWidget {
                                   ? () => perform(() => player.skip(10000))
                                   : null,
                             ),
-                            if ((player.current?.isAudio == true ||
-                                    bounds.maxWidth >= 420) &&
+                            if ((player.current?.isAudio == true || lessons) &&
                                 !miniWindow)
                               button(
                                 player.current?.isAudio == true

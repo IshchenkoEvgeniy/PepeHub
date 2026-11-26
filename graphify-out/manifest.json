@@ -66,9 +66,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/MainActivity.kt": {
-    "mtime": 1794394097.7697234,
-    "seen": 1795159690.6285586,
-    "ast_hash": "3a9688f9bd8bb754edd596fd2648f6c1",
+    "mtime": 1795724519.1490247,
+    "seen": 1795725304.3508315,
+    "ast_hash": "941f16c0077c2dfcd9be516b8094a108",
     "semantic_hash": ""
   },
   "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/Mp3AudioBounds.kt": {
@@ -108,15 +108,15 @@
     "semantic_hash": ""
   },
   "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/VideoFilesChannel.kt": {
-    "mtime": 1794394378.1353786,
-    "seen": 1795159690.6285677,
-    "ast_hash": "6966e3a2f52416b44094b70e6d96ffbb",
+    "mtime": 1795725332.296919,
+    "seen": 1795727228.3308556,
+    "ast_hash": "19f1ead69c97463e204b80405222d5c6",
     "semantic_hash": ""
   },
   "apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/VideoWindowChannel.kt": {
-    "mtime": 1794075116.875748,
-    "seen": 1795159690.6285691,
-    "ast_hash": "3ef816c16d6bc72850f917a033752c78",
+    "mtime": 1795726514.4637272,
+    "seen": 1795727228.3308578,
+    "ast_hash": "0fc11eeea73eb6a6b6490d2ffb21425a",
     "semantic_hash": ""
   },
   "apps/pepehub/android/app/src/test/kotlin/app/pepehub/pepehub/BookFileAccessTest.kt": {
@@ -1500,9 +1500,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/models.dart": {
-    "mtime": 1792743629.5566149,
-    "seen": 1795159690.6288645,
-    "ast_hash": "53f1ab31b704e50d5a8c026f77d30733",
+    "mtime": 1795724238.9164836,
+    "seen": 1795725304.3512142,
+    "ast_hash": "a3b8cc20d97e0128d19d40ba1029c6ac",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_activity.dart": {
@@ -1548,15 +1548,15 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_compact_controls.dart": {
-    "mtime": 1793011951.5095012,
-    "seen": 1795159690.6288738,
-    "ast_hash": "045cade7c817a9978ee08be161060809",
+    "mtime": 1795726844.5400848,
+    "seen": 1795727228.3312519,
+    "ast_hash": "c1e2ecf9dc91f9f506998078079b7b1c",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_controller.dart": {
-    "mtime": 1794142355.2515533,
-    "seen": 1795159690.6288748,
-    "ast_hash": "8770e50ba4a0462bbdb950cffae61d7b",
+    "mtime": 1795726855.8501782,
+    "seen": 1795727228.3312547,
+    "ast_hash": "45b5cccdde02d6b5d24f695d5b127983",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_course_editor.dart": {
@@ -1596,9 +1596,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_fullscreen.dart": {
-    "mtime": 1792003885.3620555,
-    "seen": 1795159690.628883,
-    "ast_hash": "b337736c141d24ab3e6c4425498af469",
+    "mtime": 1795726525.778365,
+    "seen": 1795727228.3312755,
+    "ast_hash": "950473db19678cc2d2e22174c7d2d5ba",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_import.dart": {
@@ -1608,9 +1608,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_library_page.dart": {
-    "mtime": 1794330406.0351107,
-    "seen": 1795159690.628885,
-    "ast_hash": "8812796ee0af6f9eb0071ea328083148",
+    "mtime": 1795726853.8507476,
+    "seen": 1795727228.3312824,
+    "ast_hash": "ee3e143be21a8ca5cbb4182205882721",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_mini_player.dart": {
@@ -1620,9 +1620,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_player_page.dart": {
-    "mtime": 1794142355.3420649,
-    "seen": 1795159690.6288874,
-    "ast_hash": "9977c4c6a75d7c45808e43a9bc7b95dc",
+    "mtime": 1795726835.0492377,
+    "seen": 1795727228.3312864,
+    "ast_hash": "ee7f5a64cf23a5d08cba17cfb720c850",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_progress_widgets.dart": {
@@ -1632,9 +1632,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_repository.dart": {
-    "mtime": 1794297346.199332,
-    "seen": 1795159690.6288893,
-    "ast_hash": "5a7499417d5c315f25ec23b6255c1050",
+    "mtime": 1795726615.9702559,
+    "seen": 1795727228.3312926,
+    "ast_hash": "06782e3b5e8d70e421debb7a4546a3b6",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_seek_previews.dart": {
@@ -1644,9 +1644,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_session.dart": {
-    "mtime": 1792923038.9990363,
-    "seen": 1795159690.6288917,
-    "ast_hash": "367e32add50669980e4be167bbdfd7c8",
+    "mtime": 1795724549.080123,
+    "seen": 1795725304.351275,
+    "ast_hash": "973ed152f6769d4035d51606442683d6",
     "semantic_hash": ""
   },
   "apps/pepehub/lib/video/video_statistics_page.dart": {
@@ -1710,9 +1710,9 @@
     "semantic_hash": ""
   },
   "apps/pepehub/pubspec.yaml": {
-    "mtime": 1795639660.8603427,
-    "seen": 1795688241.8768694,
-    "ast_hash": "f70a1c7aad9289956ab12ad5c4af30cc",
+    "mtime": 1795703724.3752873,
+    "seen": 1795725304.3513,
+    "ast_hash": "be48b455baf33b8d2fc365a5b83e9278",
     "semantic_hash": ""
   },
   "apps/pepehub/test/android_book_files_test.dart": {
@@ -5415,6 +5415,60 @@
     "mtime": 1795693760.8980691,
     "seen": 1795695816.332512,
     "ast_hash": "cee3fd8820fe75d7dd018f76e089911c",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_discovery.dart": {
+    "mtime": 1795725193.4767213,
+    "seen": 1795725304.3512392,
+    "ast_hash": "1710e555ce06f245ec39caff1c581f00",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_discovery_page.dart": {
+    "mtime": 1795724829.719234,
+    "seen": 1795725304.3512418,
+    "ast_hash": "96c2c25b80cec7997e143acc34c8bed1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_discovery_scan.dart": {
+    "mtime": 1795724829.7217407,
+    "seen": 1795725304.351243,
+    "ast_hash": "de0d34f67338a4b0d0166a176b0198ff",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_playlists.dart": {
+    "mtime": 1795724829.9657853,
+    "seen": 1795725304.3512669,
+    "ast_hash": "e71bf4da7471beadc551e042abc3e2f1",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_discovery_test.dart": {
+    "mtime": 1795725193.8967142,
+    "seen": 1795725304.3516366,
+    "ast_hash": "220064caba0337117cda9e0e2b35925f",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_discovery_widget_test.dart": {
+    "mtime": 1795725315.9326403,
+    "seen": 1795727228.3316126,
+    "ast_hash": "b22777967428cabb4cdde7672e7bca12",
+    "semantic_hash": ""
+  },
+  "docs/releases/RELEASE_03116.md": {
+    "mtime": 1795703724.5225015,
+    "seen": 1795725304.352199,
+    "ast_hash": "f5cf1cf5f5792b5fe39cb11520e70be7",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/lib/video/video_gestures.dart": {
+    "mtime": 1795727165.0253892,
+    "seen": 1795727228.3312776,
+    "ast_hash": "9d3113e66ec6e66102d973a71149918e",
+    "semantic_hash": ""
+  },
+  "apps/pepehub/test/video_player_flow_test.dart": {
+    "mtime": 1795727051.383098,
+    "seen": 1795727228.3316221,
+    "ast_hash": "b95be2e0ad92e9bee80248cf2ece5446",
     "semantic_hash": ""
   },
   "package-lock.json": {

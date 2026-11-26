@@ -17,6 +17,9 @@ class VideoPlaybackController extends ChangeNotifier {
   final VideoRepository repository;
   final VideoPlaybackEngine engine;
   final List<VideoLesson> lessons;
+
+  /// Key of the saved music queue: the item, or the user playlist playing.
+  final String? queueKey;
   final Future<void> Function()? beforePlaying;
   final Future<void> Function()? afterPaused;
   final Future<void> Function(VideoLesson)? configureLesson;
@@ -154,6 +157,37 @@ class VideoPlaybackController extends ChangeNotifier {
   bool audioOnly = false, pipVisible = false;
   bool _requestedAudioOnly = false;
   bool get _playAllowed => _foreground || pipVisible || audioOnly;
+
+  /// The video lesson that starts when the end-of-lesson countdown runs out.
+  int? upNextIndex;
+  int? _upNextDeadline;
+  Timer? _upNextTimer;
+  static const upNextDelay = Duration(seconds: 5);
+  int? get upNextRemainingMs => _upNextDeadline == null
+      ? null
+      : (_upNextDeadline! - nowMonotonic()).clamp(0, 60000);
+
+  void _clearUpNext() {
+    _upNextTimer?.cancel();
+    _upNextTimer = null;
+    _upNextDeadline = null;
+    upNextIndex = null;
+  }
+
+  /// Stays on the finished lesson.
+  void cancelUpNext() {
+    if (upNextIndex == null) return;
+    _clearUpNext();
+    _notify();
+  }
+
+  /// Skips the rest of the countdown.
+  Future<void> playUpNext() => _command(() async {
+    final target = upNextIndex;
+    _clearUpNext();
+    if (target != null) await _load(target);
+  });
+
   Timer? _sleepTimer;
   int? _sleepDeadline;
   int _sleepEpoch = 0;
@@ -167,6 +201,7 @@ class VideoPlaybackController extends ChangeNotifier {
     required this.repository,
     required this.engine,
     required this.lessons,
+    this.queueKey,
     this.beforePlaying,
     this.afterPaused,
     this.configureLesson,
@@ -342,6 +377,25 @@ class VideoPlaybackController extends ChangeNotifier {
               lessons[nextIndex].isAudio &&
               lessons[nextIndex].available) {
             await _load(nextIndex);
+          } else if (!sleepAtEnd &&
+              !lesson.isAudio &&
+              _playAllowed &&
+              current?.id == lesson.id &&
+              nextIndex != null &&
+              !lessons[nextIndex].isAudio &&
+              lessons[nextIndex].available &&
+              await repository.autoNext()) {
+            // Courses, series and playlists count down into the next lesson;
+            // the player shows the countdown with «Cancel».
+            _clearUpNext();
+            upNextIndex = nextIndex;
+            _upNextDeadline = nowMonotonic() + upNextDelay.inMilliseconds;
+            _upNextTimer = createSleepTimer(upNextDelay, () {
+              if (upNextIndex == nextIndex && current?.id == lesson.id) {
+                unawaited(playUpNext().catchError((Object _) {}));
+              }
+            });
+            _notify();
           }
         }).catchError((Object _) {}),
       );
@@ -450,7 +504,7 @@ class VideoPlaybackController extends ChangeNotifier {
   Future<void> _restoreQueue() async {
     if (_queueRestored || lessons.isEmpty) return;
     _queueRestored = true;
-    final saved = await repository.musicQueue(lessons.first.itemId);
+    final saved = await repository.musicQueue(queueKey ?? lessons.first.itemId);
     if (saved == null || saved['version'] != 1) return;
     final byId = {for (var i = 0; i < lessons.length; i++) lessons[i].id: i};
     List<int> decode(Object? raw) => raw is! List
@@ -485,7 +539,7 @@ class VideoPlaybackController extends ChangeNotifier {
 
   Future<void> _saveQueue() async {
     if (current?.isAudio != true || lessons.isEmpty) return;
-    await repository.saveMusicQueue(lessons.first.itemId, {
+    await repository.saveMusicQueue(queueKey ?? lessons.first.itemId, {
       'version': 1,
       'shuffle': _shuffleEnabled,
       'repeat': repeatMode.name,
@@ -523,12 +577,16 @@ class VideoPlaybackController extends ChangeNotifier {
       );
     }
     _stopLoop(clear: true);
+    _clearUpNext();
     _seekHistory.clear();
     _boundary();
     _transition = true;
     loading = true;
     _notify();
     try {
+      // The speed the user is watching at carries over to lessons that have
+      // none of their own.
+      final carriedSpeed = current != null ? state.speed : null;
       if (current != null) {
         await engine.pause();
         await _persist();
@@ -536,6 +594,17 @@ class VideoPlaybackController extends ChangeNotifier {
       final lesson = lessons[nextIndex];
       final saved = await repository.progress(lesson);
       final restartTrack = lesson.isAudio && current != null;
+      var startMs = restartTrack ? 0 : saved?.positionMs ?? 0;
+      final duration = lesson.durationMs;
+      // A finished lesson starts over instead of opening on its last frame.
+      if (duration != null && duration > 20000 && startMs >= duration - 10000) {
+        startMs = 0;
+      }
+      final speed =
+          saved?.speed ??
+          carriedSpeed ??
+          await repository.recentSpeed(lessons.map((l) => l.id)) ??
+          1;
       // Clear the old lesson before opening, so a failed open cannot save the
       // new engine's position as progress for the previous lesson.
       current = null;
@@ -560,8 +629,8 @@ class VideoPlaybackController extends ChangeNotifier {
       await validateSource?.call(lesson);
       await engine.open(
         lesson,
-        positionMs: restartTrack ? 0 : saved?.positionMs ?? 0,
-        speed: saved?.speed ?? 1,
+        positionMs: startMs,
+        speed: speed.isFinite ? speed.clamp(.5, 3).toDouble() : 1,
       );
       current = lesson;
       if (lesson.isAudio) {
@@ -629,6 +698,7 @@ class VideoPlaybackController extends ChangeNotifier {
 
   Future<void> _play() async {
     if (current == null || !_playAllowed || _focusInterrupted) return;
+    _clearUpNext();
     if (loopWaiting) _stopLoop();
     await beforePlaying?.call();
     _boundary();
@@ -651,6 +721,7 @@ class VideoPlaybackController extends ChangeNotifier {
   }
 
   Future<void> _pause() async {
+    _clearUpNext();
     _cancelFocusResume();
     _stopLoop();
     await _pausePlayback();
@@ -682,6 +753,7 @@ class VideoPlaybackController extends ChangeNotifier {
     bool remember = true,
   }) async {
     if (current == null) return;
+    _clearUpNext();
     if (stopLoop) _stopLoop();
     final target = state.durationMs > 0
         ? targetMs.clamp(0, state.durationMs)
@@ -1022,6 +1094,7 @@ class VideoPlaybackController extends ChangeNotifier {
     final previous = _closeFuture;
     if (previous != null) return previous;
     _closing = true;
+    _clearUpNext();
     _cancelSleep();
     _stopLoop(clear: true);
     _checkpointTimer?.cancel();
@@ -1052,6 +1125,7 @@ class VideoPlaybackController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _clearUpNext();
     _cancelSleep();
     _stopLoop(clear: true);
     _checkpointTimer?.cancel();

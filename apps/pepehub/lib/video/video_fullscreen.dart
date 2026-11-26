@@ -7,6 +7,7 @@ class VideoFullscreenHost extends ChangeNotifier {
   static VideoFullscreenHost? _channelOwner;
   bool _disposed = false;
   bool pip = false, supportsPip = false, supportsMiniWindow = false;
+  bool supportsOrientation = false, supportsBrightness = false;
   bool _available = false;
   Future<void> Function(String)? onAction;
   Future<void> initialize() async {
@@ -32,6 +33,8 @@ class VideoFullscreenHost extends ChangeNotifier {
       supportsPip = caps?['pip'] == true;
       _available = caps != null;
       supportsMiniWindow = caps?['miniWindow'] == true;
+      supportsOrientation = caps?['orientation'] == true;
+      supportsBrightness = caps?['brightness'] == true;
       notifyListeners();
     } on MissingPluginException {
       /* Surface-free tests have no native host. */
@@ -73,6 +76,25 @@ class VideoFullscreenHost extends ChangeNotifier {
         enabled ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
       );
     }
+  }
+
+  /// Locks the phone to the video's orientation in fullscreen:
+  /// `landscape`, `portrait`, or null to give rotation back.
+  Future<void> setOrientation(String? mode) async {
+    if (!supportsOrientation) return;
+    await channel.invokeMethod<void>('setOrientation', mode ?? 'restore');
+  }
+
+  /// Brightness of the app window, 0..1.
+  Future<double?> brightness() async {
+    if (!supportsBrightness) return null;
+    return (await channel.invokeMethod<num>('getBrightness'))?.toDouble();
+  }
+
+  /// Changes only the app window; null returns it to the system level.
+  Future<void> setBrightness(double? value) async {
+    if (!supportsBrightness) return;
+    await channel.invokeMethod<void>('setBrightness', value ?? -1.0);
   }
 
   @override

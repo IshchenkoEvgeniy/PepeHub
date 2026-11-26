@@ -18,6 +18,11 @@ class VideoSourceDraft {
   final String? relativeName;
   final VideoFileIdentity? identity;
   final bool audio;
+
+  /// Cheap facts from automatic search. They let a later search recognise the
+  /// same file found through another source (a folder or Android's media
+  /// index) without reading file contents.
+  final int? size, durationMs;
   const VideoSourceDraft(
     this.source,
     this.title, {
@@ -25,8 +30,36 @@ class VideoSourceDraft {
     this.relativeName,
     this.identity,
     this.audio = false,
+    this.size,
+    this.durationMs,
   });
   bool get isAudio => audio || isMusicSource(relativeName ?? source);
+}
+
+/// Sources and file keys already in the media library, for automatic search.
+class VideoKnownMedia {
+  final Set<String> sources, fileKeys;
+  const VideoKnownMedia(this.sources, this.fileKeys);
+  static String fileKey(String name, int size) {
+    final base = name.replaceAll('\\', '/').split('/').last.toLowerCase();
+    return '$base|$size';
+  }
+
+  bool contains(String source, String name, int? size) =>
+      sources.contains(source) ||
+      (size != null && size > 0 && fileKeys.contains(fileKey(name, size)));
+}
+
+/// Where automatic search looks. Roots are folder URIs (Android) or paths.
+class VideoDiscoverySettings {
+  final List<({String root, String title})> roots;
+  final bool device;
+  final Set<String> ignored;
+  const VideoDiscoverySettings({
+    this.roots = const [],
+    this.device = false,
+    this.ignored = const {},
+  });
 }
 
 /// Local-only video records.
@@ -76,6 +109,10 @@ class VideoRepository {
     required String title,
     required List<VideoSourceDraft> sources,
     String? root,
+    String? itemId,
+    String? folder,
+    String? discoveryKey,
+    bool single = false,
   }) async {
     final clean = title.trim();
     if (clean.isEmpty || clean.length > 300) {
@@ -91,9 +128,13 @@ class VideoRepository {
     }
     return repository.db.transaction(() async {
       final existingItems = await items();
-      final existingLessons = await lessons();
       VideoItem? existing;
-      if (root != null) {
+      if (itemId != null) {
+        existing = existingItems.where((item) => item.id == itemId).firstOrNull;
+        if (existing == null) {
+          throw StateError('Медиа удалено. Повторите поиск');
+        }
+      } else if (root != null) {
         for (final item in existingItems) {
           if (item.root == root) {
             existing = item;
@@ -101,15 +142,20 @@ class VideoRepository {
           }
         }
       } else if (sources.length == 1) {
-        for (final lesson in existingLessons) {
-          if (lesson.source == sources.single.source) {
-            for (final item in existingItems) {
-              if (item.id == lesson.itemId) {
-                existing = item;
-                break;
-              }
-            }
-            if (existing != null) return existing;
+        // Only the lessons with this source, not the whole media library:
+        // automatic search adds hundreds of groups in a row.
+        final owners = await repository.db
+            .customSelect(
+              "SELECT json_extract(payload,'\$.itemId') AS item FROM records "
+              "WHERE ${SchemaSql.videoLessonRows} "
+              "AND json_extract(payload,'\$.source')=?",
+              variables: [Variable(sources.single.source)],
+            )
+            .get();
+        for (final owner in owners) {
+          final id = owner.readNullable<String>('item');
+          for (final item in existingItems) {
+            if (item.id == id) return item;
           }
         }
       }
@@ -118,19 +164,25 @@ class VideoRepository {
           VideoItem(
             id: uuid.v4(),
             title: clean,
-            kind: root != null || sources.length > 1
+            kind: !single && (root != null || sources.length > 1)
                 ? VideoItemKind.course
                 : VideoItemKind.video,
             root: root,
+            folder: folder,
+            discoveryKey: discoveryKey,
           );
       if (existing == null) await _put('video_item', item.id, item.toJson());
-      final own = existingLessons.where((l) => l.itemId == item.id).toList();
+      final own = existing == null
+          ? const <VideoLesson>[]
+          : await lessons(itemId: existing.id);
       final known = own.map((l) => l.source).toSet();
       var ordinal = own.isEmpty
           ? 0
           : own.map((l) => l.ordinal).reduce((a, b) => a > b ? a : b) + 1;
+      var added = 0;
       for (final source in sources) {
         if (!known.add(source.source)) continue;
+        added++;
         final lesson = VideoLesson(
           id: uuid.v4(),
           itemId: item.id,
@@ -139,6 +191,9 @@ class VideoRepository {
           source: source.source,
           mediaVersion: uuid.v4(),
           ordinal: ordinal++,
+          durationMs: source.durationMs != null && source.durationMs! > 0
+              ? source.durationMs
+              : null,
           audio: source.isAudio,
         );
         await _put('video_lesson', lesson.id, {
@@ -146,6 +201,21 @@ class VideoRepository {
           if (source.identity != null)
             'fileIdentity': source.identity!.toJson(),
           if (source.relativeName != null) 'relativeName': source.relativeName,
+          if (source.size != null && source.size! > 0) 'fileSize': source.size,
+        });
+      }
+      if (existing != null &&
+          existing.kind == VideoItemKind.video &&
+          own.length + added > 1) {
+        // New episodes turn a single found video into a course.
+        final row = (await repository.record(existing.id))!;
+        await _put('video_item', existing.id, {
+          ...row.payload!,
+          'kind': VideoItemKind.course.name,
+        });
+        return VideoItem.fromJson(existing.id, {
+          ...row.payload!,
+          'kind': VideoItemKind.course.name,
         });
       }
       return item;
@@ -173,6 +243,208 @@ class VideoRepository {
         }
         return ids;
       });
+
+  /// Lesson sources plus `name|size` keys, read with one light query.
+  Future<VideoKnownMedia> knownMedia() async {
+    final rows = await repository.db
+        .customSelect(
+          "SELECT json_extract(payload,'\$.source') AS source,"
+          "json_extract(payload,'\$.relativeName') AS name,"
+          "json_extract(payload,'\$.title') AS title,"
+          "coalesce(json_extract(payload,'\$.fileSize'),"
+          "json_extract(payload,'\$.fileIdentity.size')) AS size "
+          'FROM records WHERE ${SchemaSql.videoLessonRows}',
+        )
+        .get();
+    final sources = <String>{}, keys = <String>{};
+    for (final row in rows) {
+      final source = row.readNullable<String>('source');
+      if (source != null) sources.add(source);
+      final size = row.data['size'];
+      final name = row.readNullable<String>('name');
+      if (size is int && size > 0 && name != null) {
+        keys.add(VideoKnownMedia.fileKey(name, size));
+      }
+    }
+    return VideoKnownMedia(sources, keys);
+  }
+
+  /// Whether a finished video lesson counts down into the next one.
+  Future<bool> autoNext() async =>
+      await repository.meta('video-auto-next') != 'off';
+
+  Future<void> setAutoNext(bool enabled) =>
+      repository.setMeta('video-auto-next', enabled ? 'on' : 'off');
+
+  /// Speed of the most recently watched lesson among [lessonIds].
+  Future<double?> recentSpeed(Iterable<String> lessonIds) async {
+    final ids = lessonIds.toSet();
+    VideoProgress? recent;
+    for (final progress in (await allProgress()).values) {
+      if (ids.contains(progress.lessonId) &&
+          (recent == null || progress.updatedAt.isAfter(recent.updatedAt))) {
+        recent = progress;
+      }
+    }
+    return recent?.speed;
+  }
+
+  static const _discoveryKey = 'video-discovery';
+
+  Future<VideoDiscoverySettings> discoverySettings() async {
+    final raw = await repository.meta(_discoveryKey);
+    if (raw == null) return const VideoDiscoverySettings();
+    try {
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      return VideoDiscoverySettings(
+        roots: [
+          for (final root in data['roots'] as List? ?? const [])
+            if (root is Map &&
+                root['root'] is String &&
+                root['title'] is String)
+              (root: root['root'] as String, title: root['title'] as String),
+        ],
+        device: data['device'] == true,
+        ignored: {
+          for (final key in data['ignored'] as List? ?? const [])
+            if (key is String) key,
+        },
+      );
+    } catch (_) {
+      return const VideoDiscoverySettings();
+    }
+  }
+
+  Future<void> saveDiscoverySettings(VideoDiscoverySettings value) {
+    if (value.roots.length > 100) {
+      throw ArgumentError('Не больше 100 папок для поиска');
+    }
+    // Oldest hidden groups drop out first; the set keeps insertion order.
+    final ignored = value.ignored.toList();
+    return repository.setMeta(
+      _discoveryKey,
+      jsonEncode({
+        'version': 1,
+        'roots': [
+          for (final root in value.roots)
+            {'root': root.root, 'title': root.title},
+        ],
+        'device': value.device,
+        'ignored': ignored.length > 5000
+            ? ignored.sublist(ignored.length - 5000)
+            : ignored,
+      }),
+    );
+  }
+
+  Future<List<VideoPlaylist>> playlists() async => [
+    for (final row in await repository.records('video_playlist'))
+      VideoPlaylist.fromJson(row.id, row.payload!),
+  ]..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+
+  static String _playlistTitle(String title) {
+    final clean = title.trim();
+    if (clean.isEmpty || clean.length > 300) {
+      throw ArgumentError('Название плейлиста: от 1 до 300 символов');
+    }
+    return clean;
+  }
+
+  Future<VideoPlaylist> createPlaylist(
+    String title, {
+    required String section,
+    List<String> entries = const [],
+  }) async {
+    final playlist = VideoPlaylist(
+      id: uuid.v4(),
+      title: _playlistTitle(title),
+      section: section == 'music' ? 'music' : 'video',
+      entries: entries.toSet().toList(),
+    );
+    if (playlist.entries.length > 10000) {
+      throw ArgumentError('В плейлисте не больше 10000 файлов');
+    }
+    await _put('video_playlist', playlist.id, playlist.toJson());
+    return playlist;
+  }
+
+  Future<VideoPlaylist> _changePlaylist(
+    String id,
+    VideoPlaylist Function(VideoPlaylist current) change,
+  ) => repository.db.transaction(() async {
+    final row = await repository.record(id);
+    if (row == null || row.deleted || row.type != 'video_playlist') {
+      throw StateError('Плейлист удалён');
+    }
+    final next = change(VideoPlaylist.fromJson(id, row.payload!));
+    if (next.entries.length > 10000) {
+      throw ArgumentError('В плейлисте не больше 10000 файлов');
+    }
+    await _put('video_playlist', id, {...row.payload!, ...next.toJson()});
+    return next;
+  });
+
+  Future<VideoPlaylist> renamePlaylist(String id, String title) {
+    final clean = _playlistTitle(title);
+    return _changePlaylist(
+      id,
+      (current) => VideoPlaylist(
+        id: id,
+        title: clean,
+        section: current.section,
+        entries: current.entries,
+      ),
+    );
+  }
+
+  /// Appends lessons that are not in the playlist yet. Returns how many.
+  Future<int> addToPlaylist(String id, Iterable<String> lessonIds) async {
+    var added = 0;
+    await _changePlaylist(id, (current) {
+      final entries = [...current.entries];
+      final known = entries.toSet();
+      for (final lesson in lessonIds) {
+        if (known.add(lesson)) {
+          entries.add(lesson);
+          added++;
+        }
+      }
+      return VideoPlaylist(
+        id: id,
+        title: current.title,
+        section: current.section,
+        entries: entries,
+      );
+    });
+    return added;
+  }
+
+  /// Saves the order and removals made on the playlist screen. Entries that
+  /// the screen did not show (removed media that can still be restored)
+  /// stay at the end.
+  Future<VideoPlaylist> savePlaylistEntries(
+    String id,
+    List<String> visible, {
+    required Set<String> shown,
+  }) => _changePlaylist(id, (current) {
+    final kept = visible.toSet();
+    return VideoPlaylist(
+      id: id,
+      title: current.title,
+      section: current.section,
+      entries: [
+        ...kept,
+        for (final entry in current.entries)
+          if (!shown.contains(entry) && !kept.contains(entry)) entry,
+      ],
+    );
+  });
+
+  Future<void> deletePlaylist(String id) => repository.db.customStatement(
+    "UPDATE records SET deleted=1,revision=revision+1 "
+    "WHERE id=? AND type='video_playlist' AND deleted=0",
+    [id],
+  );
 
   /// Undoes [removeItem]; progress and notes were kept all along.
   Future<void> restoreItem(String itemId, List<String> lessonIds) =>

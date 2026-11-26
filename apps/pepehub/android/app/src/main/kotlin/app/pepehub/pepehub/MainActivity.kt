@@ -141,7 +141,8 @@ class MainActivity : AudioServiceActivity() {
         super.onUserLeaveHint()
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        if (reminders?.onPermissions(requestCode, grantResults) != true) super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (reminders?.onPermissions(requestCode, grantResults) != true &&
+            videos?.onPermissions(requestCode, grantResults) != true) super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
     override fun onPictureInPictureModeChanged(inPictureInPicture: Boolean, configuration: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(inPictureInPicture, configuration)

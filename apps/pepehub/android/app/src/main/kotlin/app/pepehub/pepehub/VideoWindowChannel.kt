@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Rect
 import android.graphics.drawable.Icon
@@ -35,6 +36,8 @@ class VideoWindowChannel(activity: Activity, messenger: BinaryMessenger) {
     private var visual = false
     private var readingAwake = false
     private var aspect = 16.0 / 9.0
+    /** The activity's orientation before video fullscreen locked it. */
+    private var savedOrientation: Int? = null
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == actionName) channel.invokeMethod("pipAction", intent.getStringExtra("command"))
@@ -48,7 +51,7 @@ class VideoWindowChannel(activity: Activity, messenger: BinaryMessenger) {
         channel.setMethodCallHandler { call, result ->
             try {
                 when (call.method) {
-                  "getCapabilities" -> result.success(mapOf("pip" to supportsPip(), "miniWindow" to false))
+                  "getCapabilities" -> result.success(mapOf("pip" to supportsPip(), "miniWindow" to false, "orientation" to true, "brightness" to true))
                   "setPlayback" -> {
                     val arguments = call.arguments as? Map<*, *> ?: error("Expected playback parameters")
                     playing = arguments["playing"] == true
@@ -65,6 +68,15 @@ class VideoWindowChannel(activity: Activity, messenger: BinaryMessenger) {
                     result.success(null)
                   }
                   "enterPip" -> result.success(enterPip())
+                  "setOrientation" -> {
+                    applyOrientation(call.arguments as? String ?: error("Expected an orientation"))
+                    result.success(null)
+                  }
+                  "getBrightness" -> result.success(brightness())
+                  "setBrightness" -> {
+                    setBrightness((call.arguments as? Number)?.toFloat())
+                    result.success(null)
+                  }
                   "setFullscreen" -> {
                     check(call.arguments is Boolean) { "Expected a fullscreen boolean" }
                     apply(call.arguments as Boolean)
@@ -164,7 +176,39 @@ class VideoWindowChannel(activity: Activity, messenger: BinaryMessenger) {
         }
         fullscreen = enabled
     }
+    /** Fullscreen follows the video: landscape video turns the phone, vertical stays upright. */
+    private fun applyOrientation(mode: String) {
+        val activity = owner.get() ?: error("Откройте приложение")
+        when (mode) {
+            "landscape", "portrait" -> {
+                if (savedOrientation == null) savedOrientation = activity.requestedOrientation
+                activity.requestedOrientation = if (mode == "landscape") ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            }
+            else -> restoreOrientation()
+        }
+    }
+    private fun restoreOrientation() {
+        val saved = savedOrientation ?: return
+        savedOrientation = null
+        owner.get()?.requestedOrientation = saved
+    }
+    /** Window brightness 0..1; the system level while the player has not changed it. */
+    private fun brightness(): Double {
+        val own = owner.get()?.window?.attributes?.screenBrightness ?: -1f
+        if (own >= 0f) return own.toDouble()
+        val system = runCatching { android.provider.Settings.System.getInt(context.contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS) }.getOrDefault(128)
+        return (system / 255.0).coerceIn(0.0, 1.0)
+    }
+    /** Only this window changes; null returns control to the system. */
+    private fun setBrightness(value: Float?) {
+        val window = owner.get()?.window ?: return
+        val attributes = window.attributes
+        attributes.screenBrightness = if (value == null || value < 0f) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE else value.coerceIn(0.01f, 1f)
+        window.attributes = attributes
+    }
     fun reset() {
+        restoreOrientation()
+        setBrightness(null)
         playing = false; visual = false; readingAwake = false
         owner.get()?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         updatePip()

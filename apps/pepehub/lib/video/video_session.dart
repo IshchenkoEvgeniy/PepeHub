@@ -100,6 +100,7 @@ class VideoPlaybackSession extends BaseAudioHandler
           repository: repository,
           engine: engineFactory(),
           lessons: List.of(lessons),
+          queueKey: value.id,
           beforePlaying: _takeSound,
           validateSource: (lesson) async {
             if (!controller!.engine.validatesLocalSources) return;

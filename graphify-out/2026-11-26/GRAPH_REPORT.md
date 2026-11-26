@@ -1,17 +1,17 @@
 # Graph Report - PepeHub  (2026-11-26)
 
 ## Corpus Check
-- 716 files · ~659,533 words
+- 725 files · ~670,680 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 210 file(s) not represented in the graph (top: .glb 146, .ttf 24, .xml 11)
+- Unclassified: 204 file(s) not represented in the graph (top: .glb 140, .ttf 24, .xml 11)
 
 ## Summary
-- 11895 nodes · 19546 edges · 548 communities (355 shown, 193 thin omitted)
-- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 607 edges (avg confidence: 0.86)
+- 12175 nodes · 19952 edges · 556 communities (354 shown, 202 thin omitted)
+- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 606 edges (avg confidence: 0.86)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `21447bc2`
+- Built from commit: `d3d9fc22`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -27,11 +27,11 @@
 - library_folder_storage.dart
 - reader_page.dart
 - reader_viewport.dart
-- package:flutter/services.dart
+- video_discovery_scan.dart
 - pdf_reader_page.dart
 - video_controller.dart
 - statistics_management_page.dart
-- Repository
+- package:drift/native.dart
 - library_archive_page.dart
 - recommendations_page.dart
 - video_player_page.dart
@@ -45,7 +45,7 @@
 - package:flutter_test/flutter_test.dart
 - audio_statistics_page.dart
 - settings_page.dart
-- audio_mini_player_navigation_test.dart
+- recommendations_actions_test.dart
 - reading_activity.dart
 - video/models.dart
 - rooms_v3.py
@@ -62,7 +62,7 @@
 - app.js
 - pet_progress.dart
 - annual_book_statistics.dart
-- audio_notes_page.dart
+- audio_mini_player_navigation_test.dart
 - readme_screenshots_test.dart
 - audio_journal.dart
 - folder_files.dart
@@ -83,7 +83,7 @@
 - reading_library.dart
 - reading_notes_page.dart
 - audio_roots_page.dart
-- folder_scan_progress.dart
+- video_discovery.dart
 - Win32Window
 - app_theme.dart
 - math
@@ -92,7 +92,7 @@
 - audio_page.dart
 - stage4.py
 - update_installer.dart
-- File
+- video_discovery_page.dart
 - video_annotation_editor.dart
 - library_work_page.dart
 - activity_store.dart
@@ -120,7 +120,7 @@
 - vocabulary_page.dart
 - repository.dart
 - listening_analytics.dart
-- video_compact_controls.dart
+- AudioController
 - ../media/asset_store.dart
 - pdf_search_page.dart
 - reader_search.dart
@@ -143,7 +143,7 @@
 - goal_settings_page.dart
 - video_progress_widgets.dart
 - Android: локальная сборка
-- reader_bookmarks.dart
+- video_playlists.dart
 - reader_bookmarks_page.dart
 - reader_progress_panel.dart
 - update_manifest.dart
@@ -151,7 +151,7 @@
 - build.js
 - pdf_image_regions.dart
 - book_trash.dart
-- soft
+- pets_windows.dart
 - pdf_support.dart
 - pet_catalog.dart
 - video_import.dart
@@ -159,7 +159,7 @@
 - steps
 - .configureFlutterEngine
 - reader/reader_controls.dart
-- package:file_selector/file_selector.dart
+- package:crypto/crypto.dart
 - dependencies
 - utils.cpp
 - Detailed isometric reading room with arched window and glasses-wearing cat
@@ -183,7 +183,7 @@
 - FlutterWindow
 - m4b_chapters.dart
 - note_store.dart
-- media_music_test.dart
+- video_subtitle_widget_test.dart
 - update_installer_test.dart
 - update_delta_test.dart
 - vocabulary_repository.dart
@@ -194,12 +194,12 @@
 - shared_media_handler.dart
 - reader_selection_toolbar.dart
 - app_preferences.dart
-- reader_window.dart
+- FormState
 - storage_settings_page.dart
 - update_delta.dart
 - build_bedroom
 - metadata_values.dart
-- models.dart
+- playback_settings_page.dart
 - verified_stream_copy.dart
 - video_mini_player.dart
 - Видео и обучение в PepeHub — спецификация
@@ -207,7 +207,7 @@
 - audio_resume.dart
 - statistics_exchange.dart
 - music_player_view.dart
-- VoidCallback
+- update_page.dart
 - reading_collections.dart
 - import_folder_page.dart
 - video_transcript_panel.dart
@@ -215,8 +215,8 @@
 - Как собрать и выпустить PepeHub
 - interface_settings.dart
 - video_course_editor.dart
-- video_media_session_test.dart
-- package:path/path.dart
+- package:flutter_test/flutter_test.dart
+- import_folder.dart
 - library_cover_search.dart
 - update_installer_app.dart
 - PepeHub: самостоятельное приложение для чтения и аудиокниг
@@ -224,16 +224,16 @@
 - Timer?
 - .stage
 - video_annotations.dart
-- DateTime
-- Mp3AudioBoundsTest
+- personal_library.dart
+- FolderFilesChannel
 - audio_import_dialog.dart
 - library_duration_input.dart
 - library_notes_page.dart
 - statistics-concepts.html
 - statistics-concepts-v2.html
 - statistics-concepts-v3.html
-- video_tools_test.dart
-- models.dart
+- video_seek_previews_test.dart
+- series_draft.dart
 - metadata_input.dart
 - assets_ext.py
 - video_tools.dart
@@ -243,20 +243,20 @@
 - APP_UPDATES.md
 - PepeHub 0.9.4 — разделы библиотеки и периоды статистики
 - BookFileChannel
-- statistics_exchange_page.dart
+- String get
 - statistics_export.dart
 - pet_scene.dart
-- dialogs.dart
+- State
 - reader_layout_frame.dart
 - Архитектура PepeHub
-- String get
+- ../media/asset_store.dart
 - pet_rules.dart
 - PepeHub
-- ../library/library_service.dart
+- dart:math
 - book_image_export.dart
 - audio_rewind_options.dart
 - listening_timeline.dart
-- State
+- ../library/library_service.dart
 - package.json
 - audio_library_sort.dart
 - ../audio/audio_folder.dart
@@ -264,11 +264,12 @@
 - support/video_engine.dart
 - support/reader_controls.dart
 - ТЗ: полноценный аудиоплеер PepeHub
-- video_fullscreen.dart
+- BookFileAccessTest.kt
+- video_compact_controls.dart
 - compilerOptions
 - BookFileAccess.kt
 - MaterialPageRoute
-- reader_contents.dart
+- PDF и обмен файлами Android: изменения в исходниках
 - MainActivity
 - release.ps1
 - app_assets.py
@@ -279,7 +280,6 @@
 - video_annotations_panel.dart
 - activity_streak.dart
 - audio_timeline.dart
-- PdfPreview.kt
 - book_calendar.dart
 - PepeHub · Тихий архив, v2
 - Как проверить PepeHub
@@ -289,16 +289,16 @@
 - Техническое задание PepeHub
 - audio_player_scope.dart
 - pets_v5.py
-- ReminderReceiverTest.kt
+- reader_selectable_paragraph.dart
 - statistics_period.dart
-- package:uuid/uuid.dart
+- package:path/path.dart
 - audio_daily_totals.dart
 - flutter
-- book_folder_operations.dart
+- LibraryDataPage
 - generated_plugin_registrant.cc
 - WindowClassRegistrar
 - database-architect.md
-- error_log_page.dart
+- RecommendationEditor
 - Личная библиотека
 - reading_daily_totals.dart
 - catalog_search.dart
@@ -333,20 +333,19 @@
 - Аудиокниги: анализ Smart AudioBook Player и PepeHub
 - manual_audio_progress.dart
 - statistics_history.dart
-- ValueChanged
-- performance_projections.dart
-- video_activity_calendar.dart
+- RecommendationSourcesPage
+- pets_schema.dart
+- library_recovery.dart
 - Обложки и .pepehub — 0.6.0
-- Point
-- video_folder_dialog.dart
+- VideoGroupKind
+- RELEASE_03116.md
 - PDF: обложки и общие инструменты чтения
 - Отображение книг — изменения после 0.12.2
-- .length
 - Библиотека и заметки — 0.10.1
-- reminder_scheduler.dart
+- static const
 - analysis_options.yaml
 - fonts/README.md
-- video_subtitle_import.dart
+- return
 - Book Club mobile concept for annual statistics, library, media and recommendations
 - Taste desktop Library concept with an archive list and selected book details
 - Taste Media concept with course progress, upcoming lessons and a reading music playlist
@@ -368,7 +367,6 @@
 - run-local-build.ps1
 - UpdateFileProvider.kt
 - Future
-- WidgetsBindingObserver
 - update_trust.dart
 - figcraft/package.json
 - pets_dev.dart
@@ -430,22 +428,19 @@
 - Library screenshot with synchronization, cover grid and selected book details
 - Audiobook player with chapter list, pace control and playback progress
 - Recommendations screen with lists, search and book suggestions
-- VideoFilesChannel
-- library_folder_storage_test.dart
-- VideoFilesChannelTest.kt
-- int get
-- ../media/asset_store.dart
-- CustomPainter
-- Reply
+- dart:async
+- audio_notes_page.dart
+- audio_artwork.dart
+- pets_progress_service.dart
 - String get
 - shelf_book_details.dart
+- rtf.dart
 - FolderFileSystem
 - PepeHub 0.10.0 — экран чтения
 - Проверка больших каталогов
-- AssetStore
+- ../diagnostics/user_message.dart
 - Автоматическое чтение и карточка книги — код 0.10.1
 - listening_timeline_test.dart
-- pets_schema.dart
 - NativeUpdatePlatform
 - 0.5.2 — чтение аудиокниг из исходной папки
 - Заметки и инструменты читалки — исходники 0.10.1
@@ -455,7 +450,7 @@
 - RELEASE_03113.md
 - 0.5.3 — корни библиотеки и отдельные книги
 - RELEASE_03114.md
-- AnnualBookStatistics
+- video_media_session_test.dart
 - _StatisticsManagementPageState
 - Extension on Stopwatch
 - CREDITS.md
@@ -474,29 +469,29 @@
 10. `build_living()` - 44 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Подтверждённый дефект` --references--> `UpdateChannel`  [INFERRED]
-  docs/ANDROID_UPDATE_CERTIFICATES.md → apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/UpdateChannel.kt
-- `9. Нативная часть Android` --references--> `UpdateChannel`  [INFERRED]
-  ARCHITECTURE.md → apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/UpdateChannel.kt
-- `9. Нативная часть Android` --references--> `FolderFilesChannel`  [INFERRED]
-  ARCHITECTURE.md → apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/FolderFilesChannel.kt
+- `Хранение и проверка` --references--> `VideoFilesChannelTest`  [INFERRED]
+  docs/MEDIA_MUSIC.md → apps/pepehub/android/app/src/test/kotlin/app/pepehub/pepehub/VideoFilesChannelTest.kt
+- `Уже отсутствующий файл — 0.21.7` --references--> `confirmedAbsent()`  [INFERRED]
+  docs/ANDROID_BOOK_DELETE_ACCESS.md → apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/BookFileAccess.kt
 - `Проверка` --references--> `MainActivity`  [INFERRED]
   docs/PDF_ANDROID_FILES.md → apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/MainActivity.kt
-- `9. Нативная часть Android` --references--> `ReminderChannel`  [INFERRED]
-  ARCHITECTURE.md → apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/ReminderChannel.kt
+- `9. Нативная часть Android` --references--> `UpdateChannel`  [INFERRED]
+  ARCHITECTURE.md → apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/UpdateChannel.kt
+- `Подтверждённый дефект` --references--> `UpdateChannel`  [INFERRED]
+  docs/ANDROID_UPDATE_CERTIFICATES.md → apps/pepehub/android/app/src/main/kotlin/app/pepehub/pepehub/UpdateChannel.kt
 
 ## Import Cycles
 - None detected.
 
-## Communities (548 total, 193 thin omitted)
+## Communities (556 total, 202 thin omitted)
 
 ### Community 0 - "dart:io"
 Cohesion: 0.02
-Nodes (109): ImportCancelled, AudioJournal, AudioRoot, LocalAsset, FolderScanCancelled, _checkRoot, clearTemporaryCopies, root (+101 more)
+Nodes (101): AudioJournal, AssetStore, LocalAsset, embeddedArtwork, file, ReadingBookWriteAccessRequired, ShelfShell, calls (+93 more)
 
 ### Community 1 - "package:flutter/material.dart"
 Cohesion: 0.02
-Nodes (97): readerRoutes, ReaderViewport, _ReaderViewportState, cardTitles, main, action, asset, backgrounds (+89 more)
+Nodes (151): readerRoutes, ReaderSelectableParagraph, ReaderViewport, main, main, main, main, archive (+143 more)
 
 ### Community 2 - "library_page.dart"
 Cohesion: 0.01
@@ -504,7 +499,7 @@ Nodes (165): _action, _activeFilterCount, _addBook, _addSession, _allNotes, _app
 
 ### Community 4 - "cube_pets.py"
 Cohesion: 0.08
-Nodes (33): _add_box(), add_clips(), _at(), base(), blink(), build_cube_pets(), build_pet(), bunny() (+25 more)
+Nodes (34): _add_box(), add_clips(), _at(), base(), blink(), build_cube_pets(), build_pet(), bunny() (+26 more)
 
 ### Community 5 - "audio_controller.dart"
 Cohesion: 0.01
@@ -516,7 +511,7 @@ Nodes (130): Badge(), BottomBar(), Button(), Card(), Chip(), Cover(), CoverIcon(
 
 ### Community 7 - "library_dashboard_filters_test.dart"
 Cohesion: 0.03
-Nodes (88): LibraryService, main, db, library, local, main, reinstall, root (+80 more)
+Nodes (82): LibraryService, LibraryMetadataEditor, main, db, library, local, main, reinstall (+74 more)
 
 ### Community 8 - "library_folder_storage.dart"
 Cohesion: 0.01
@@ -524,43 +519,43 @@ Nodes (130): ancestors, _apply, attempt, base, _baselineKey, before, _beforeName
 
 ### Community 9 - "reader_page.dart"
 Cohesion: 0.01
-Nodes (126): activity, allowPop, _anki, _annotate, asset, bookFlow, bookFlowDocument, _bookmarkHere (+118 more)
+Nodes (128): activity, allowPop, _anki, _annotate, asset, bookFlow, bookFlowDocument, _bookmarkHere (+120 more)
 
 ### Community 10 - "reader_viewport.dart"
 Cohesion: 0.01
-Nodes (134): alignment, build, _changed, createState, dispose, initState, onSelection, _ParagraphState (+126 more)
+Nodes (119): _activateTextLink, _alignment, anchor, _attach, _blockAt, _bodyAlignment, build, chapterBreaks (+111 more)
 
-### Community 11 - "package:flutter/services.dart"
-Cohesion: 0.02
-Nodes (117): musicArtwork, VocabularyRepository, main, main, audioTracks, ensureVisible, firstTrackReads, main (+109 more)
+### Community 11 - "video_discovery_scan.dart"
+Cohesion: 0.09
+Nodes (18): PetsActionError, cancel, _cancelled, errors, files, _listening, PlatformVideoDiscoveryScanner, scan (+10 more)
 
 ### Community 12 - "pdf_reader_page.dart"
 Cohesion: 0.01
-Nodes (121): _absolute, activity, activityStart, _anki, _annotate, _appearance, appearanceGeneration, asset (+113 more)
+Nodes (123): _absolute, activity, activityStart, _anki, _annotate, _appearance, appearanceGeneration, asset (+115 more)
 
 ### Community 13 - "video_controller.dart"
 Cohesion: 0.02
-Nodes (111): active, adjustVolume, _advanceLoop, audioOnly, _boundary, _cancelFocusResume, _cancelSleep, canGoNext (+103 more)
+Nodes (112): active, adjustVolume, _advanceLoop, audioOnly, _boundary, _cancelFocusResume, _cancelSleep, canGoNext (+104 more)
 
 ### Community 14 - "statistics_management_page.dart"
 Cohesion: 0.02
 Nodes (107): _addEntry, at, _audioEventDialog, audioEvents, _audioItem, _audioList, automatic, bookId (+99 more)
 
-### Community 15 - "Repository"
+### Community 15 - "package:drift/native.dart"
 Cohesion: 0.02
-Nodes (77): AppDatabase, Repository, BookTrash, LibraryRepository, available, deleted, deletedIds, prefix (+69 more)
+Nodes (86): AppDatabase, Repository, BookTrash, LibraryRepository, activity, assets, db, directory (+78 more)
 
 ### Community 16 - "library_archive_page.dart"
 Cohesion: 0.02
-Nodes (90): _activeFilters, _add, _advancedFilters, _amount, annualGoal, _bookTitle, build, canonical (+82 more)
+Nodes (92): _activeFilters, _add, _advancedFilters, _amount, annualGoal, _bookTitle, build, canonical (+84 more)
 
 ### Community 17 - "recommendations_page.dart"
 Cohesion: 0.02
-Nodes (90): _acceptProgress, _action, book, _bookList, _bookMenu, _bookMenuButton, build, busy (+82 more)
+Nodes (86): _acceptProgress, _action, book, _bookList, _bookMenu, _bookMenuButton, build, busy (+78 more)
 
 ### Community 18 - "video_player_page.dart"
 Cohesion: 0.02
-Nodes (80): action, _annotation, _annotationKey, _back, build, captions, _captionSettings, _captureFrame (+72 more)
+Nodes (78): action, _annotation, _annotationKey, _back, build, captions, _captionSettings, _captureFrame (+70 more)
 
 ### Community 19 - "video_activity.dart"
 Cohesion: 0.02
@@ -591,8 +586,8 @@ Cohesion: 0.03
 Nodes (60): allowInstall, app, artifact, automatic, available, busy, _cache, cancelDownload (+52 more)
 
 ### Community 26 - "package:flutter_test/flutter_test.dart"
-Cohesion: 0.03
-Nodes (43): main, _describe, describeError, error, _isRussian, _logged, text, book (+35 more)
+Cohesion: 0.05
+Nodes (27): main, encode, _imagePdf, main, objects, offsets, out, pdfium (+19 more)
 
 ### Community 27 - "audio_statistics_page.dart"
 Cohesion: 0.03
@@ -600,43 +595,43 @@ Nodes (57): analytics, _archiveTitles, AudioStatisticsPage, _AudioStatisticsPage
 
 ### Community 28 - "settings_page.dart"
 Cohesion: 0.03
-Nodes (48): area, _back, build, _content, createState, dispose, _embedded, error (+40 more)
+Nodes (50): area, _back, build, _content, createState, dispose, _embedded, error (+42 more)
 
-### Community 29 - "audio_mini_player_navigation_test.dart"
-Cohesion: 0.03
-Nodes (57): CatalogSearch, RecommendationStore, ShelfBottomBar, ShelfRail, ShelfShell, artwork, assets, bookFraction (+49 more)
+### Community 29 - "recommendations_actions_test.dart"
+Cohesion: 0.04
+Nodes (42): RecommendationStore, card, db, emptyCatalog, main, page, response, size (+34 more)
 
 ### Community 30 - "reading_activity.dart"
 Cohesion: 0.03
 Nodes (57): activityStreak, add, _begin, checkpoint, close, coverage, days, delay (+49 more)
 
 ### Community 31 - "video/models.dart"
-Cohesion: 0.04
-Nodes (48): audio, available, completionPercent, connected, coverageCompletedAt, coverageKey, coverageThreshold, durationMs (+40 more)
+Cohesion: 0.03
+Nodes (53): audio, available, completionPercent, connected, coverageCompletedAt, coverageKey, coverageThreshold, discoveryKey (+45 more)
 
 ### Community 32 - "rooms_v3.py"
-Cohesion: 0.10
-Nodes (43): _egg(), icon_globe(), cork(), _egg_mat(), knit_stripes(), liquid(), hexc(), Batch (+35 more)
+Cohesion: 0.09
+Nodes (46): _egg(), icon_globe(), cork(), _egg_mat(), gradient_mat(), j_globe(), knit_stripes(), liquid() (+38 more)
 
 ### Community 33 - "library_data_page.dart"
 Cohesion: 0.04
-Nodes (49): LibraryFolderReport, allBackups, _backupPanel, backups, build, busy, _children, _chooseFolder (+41 more)
+Nodes (47): LibraryFolderReport, allBackups, _backupPanel, backups, build, busy, _children, _chooseFolder (+39 more)
 
 ### Community 34 - "audio_sidecar.dart"
-Cohesion: 0.04
-Nodes (48): absorb, assets, AudioMerge, _commonParent, merge, _moveRecords, repository, assets (+40 more)
+Cohesion: 0.05
+Nodes (41): assets, backup, books, catalog, cell, data, days, directory (+33 more)
 
 ### Community 35 - "video_library_page.dart"
-Cohesion: 0.04
-Nodes (46): _addLink, audio, build, chooseFiles, _completionLabel, createState, currentItem, dispose (+38 more)
+Cohesion: 0.03
+Nodes (61): action, _addLink, _addToPlaylist, audio, build, _byItem, chooseFiles, _completionLabel (+53 more)
 
 ### Community 36 - "video_session.dart"
 Cohesion: 0.04
-Nodes (51): SharedMediaHandler, attachPage, audio, _audioSession, _backgroundTimer, BaseAudioHandler, _bookTakesSound, captions (+43 more)
+Nodes (46): attachPage, audio, _audioSession, _backgroundTimer, _bookTakesSound, captions, _changed, chapters (+38 more)
 
 ### Community 37 - "shelf_components.dart"
 Cohesion: 0.03
-Nodes (62): PepeColors, PepeNavLayout, SettingsRoute, accent, accentSoft, action, actions, activeLabel (+54 more)
+Nodes (59): accent, accentSoft, action, actions, activeLabel, background, _bar, body (+51 more)
 
 ### Community 38 - "FolderFilesHistoryTest.kt"
 Cohesion: 0.09
@@ -663,16 +658,16 @@ Cohesion: 0.09
 Nodes (47): activity, add(), archive, audioFiles, base, chart(), counts(), courseArt() (+39 more)
 
 ### Community 44 - "pet_progress.dart"
-Cohesion: 0.04
-Nodes (41): accessorySlots, AchievementMetric, AchievementProgress, byId, coins, copyEggMinutes, copyEggPrice, description (+33 more)
+Cohesion: 0.10
+Nodes (17): AchievementMetric, AchievementProgress, coins, description, honor, item, levelReward, metric (+9 more)
 
 ### Community 45 - "annual_book_statistics.dart"
 Cohesion: 0.04
-Nodes (42): audioActivityAllDays, audioActivityDays, audioDays, audioUndatedMs, _barRow, _bars, _book, build (+34 more)
+Nodes (44): AnnualBookStatistics, _AnnualBookStatisticsState, audioActivityAllDays, audioActivityDays, audioDays, audioUndatedMs, _barRow, _bars (+36 more)
 
-### Community 46 - "audio_notes_page.dart"
-Cohesion: 0.10
-Nodes (19): audio, audioNoteLabels, AudioNotesPage, _AudioNotesPageState, bookId, build, busy, controller (+11 more)
+### Community 46 - "audio_mini_player_navigation_test.dart"
+Cohesion: 0.06
+Nodes (27): main, bytes, dataSize, main, sampleRate, silentWav, text, ShelfRail (+19 more)
 
 ### Community 47 - "readme_screenshots_test.dart"
 Cohesion: 0.03
@@ -687,16 +682,16 @@ Cohesion: 0.04
 Nodes (47): append, arguments, _base, bytes, _check, checkRoot, clock, deleted (+39 more)
 
 ### Community 50 - "video_repository.dart"
-Cohesion: 0.04
-Nodes (46): VideoFileIdentity, addSources, allLearningStates, allProgress, annotations, applyFolderRefresh, audio, _checkLesson (+38 more)
+Cohesion: 0.03
+Nodes (64): addSources, addToPlaylist, allLearningStates, allProgress, annotations, applyFolderRefresh, audio, _changePlaylist (+56 more)
 
 ### Community 51 - "hidden_deleted_page.dart"
-Cohesion: 0.03
-Nodes (51): askBookDeletion, audioOnly, BookToDelete, days, deleteBooksToTrash, moved, player, retentionDays (+43 more)
+Cohesion: 0.04
+Nodes (42): audio, book, _bookTrash, build, busy, card, _count, createState (+34 more)
 
 ### Community 52 - "reading_roots_page.dart"
 Cohesion: 0.04
-Nodes (43): assets, bookCount, build, busy, byCount, colon, _confirmDisconnect, _connect (+35 more)
+Nodes (45): assets, bookCount, build, busy, byCount, colon, _confirmDisconnect, _connect (+37 more)
 
 ### Community 53 - "statistics_hub_page.dart"
 Cohesion: 0.04
@@ -715,12 +710,12 @@ Cohesion: 0.16
 Nodes (4): PepeHub 0.16.0 — Android, PepeHub 0.17.0 — Android, PepeHub 0.18.2 — Android, PepeHub 0.31.0
 
 ### Community 57 - "StatelessWidget"
-Cohesion: 0.04
-Nodes (58): _Coin, _DecorateLayer, _DockButton, _FoodTile, _FoodTray, _LevelRing, _NightPanel, _Pill (+50 more)
+Cohesion: 0.03
+Nodes (60): _Coin, _DecorateLayer, _DockButton, _FoodTile, _FoodTray, _LevelRing, _NightPanel, _Pill (+52 more)
 
 ### Community 58 - "library_series_editor_page.dart"
 Cohesion: 0.05
-Nodes (38): added, bookFormat, build, _checkConflicts, conflicts, createState, dispose, _edit (+30 more)
+Nodes (40): added, bookFormat, build, _checkConflicts, conflicts, createState, dispose, _edit (+32 more)
 
 ### Community 59 - "publish-update.ts"
 Cohesion: 0.08
@@ -732,7 +727,7 @@ Nodes (40): active, alignment, _AppearanceSheet, _AppearanceSheetState, build, c
 
 ### Community 61 - "book_catalog.dart"
 Cohesion: 0.05
-Nodes (40): _authorDetails, _authorSearch, BookCatalog, books, _cacheBytes, catalogText, CatalogTransport, _checkedJson (+32 more)
+Nodes (41): _authorDetails, _authorSearch, BookCatalog, books, _cacheBytes, CatalogSearch, catalogText, CatalogTransport (+33 more)
 
 ### Community 62 - "UpdateChannelTest.kt"
 Cohesion: 0.11
@@ -748,23 +743,23 @@ Nodes (38): ReadingNote, bookFilter, bookIds, build, _card, character, character
 
 ### Community 66 - "audio_roots_page.dart"
 Cohesion: 0.05
-Nodes (35): assets, audiobookCount, audioRootSummary, build, busy, _connect, createState, dispose (+27 more)
+Nodes (37): assets, audiobookCount, AudioRootsPage, _AudioRootsPageState, audioRootSummary, build, busy, _connect (+29 more)
 
-### Community 67 - "folder_scan_progress.dart"
-Cohesion: 0.07
-Nodes (22): activeFolderScan, cancel, cancellable, _cancelled, check, done, doneLabel, failed (+14 more)
+### Community 67 - "video_discovery.dart"
+Cohesion: 0.02
+Nodes (98): b, _brackets, byFolder, _byPath, bySignature, candidate, candidates, clean (+90 more)
 
 ### Community 68 - "Win32Window"
-Cohesion: 0.11
-Nodes (13): Win32Window::Destroy(), Win32Window::GetClientArea(), Win32Window::GetHandle(), Win32Window::OnCreate(), Win32Window::Show(), EnableFullDpiSupportIfAvailable(), EnableNonClientDpiScaling, Scale() (+5 more)
+Cohesion: 0.08
+Nodes (21): FlutterWindow::OnDestroy(), Win32Window::Destroy(), Win32Window::GetClientArea(), Win32Window::GetHandle(), Win32Window::OnCreate(), Win32Window::OnDestroy(), Win32Window::Show(), EnableFullDpiSupportIfAvailable() (+13 more)
 
 ### Community 69 - "app_theme.dart"
 Cohesion: 0.05
-Nodes (36): AppFonts, AppStyle, AppTheme, body, book, brightness, _closed, compact (+28 more)
+Nodes (34): AppFonts, AppStyle, body, book, brightness, _closed, compact, copyWith (+26 more)
 
 ### Community 70 - "math"
-Cohesion: 0.12
-Nodes (51): arc_tube(), _blueberry4(), bowl4(), ceramic(), _coll4(), fish_rings(), _flask_profile(), _frame4() (+43 more)
+Cohesion: 0.10
+Nodes (78): _arc_tube(), _bowl(), clear_glass(), _frame(), _frame_all(), icon_aquarium(), icon_beanie(), icon_book_stack() (+70 more)
 
 ### Community 71 - "database_schema.dart"
 Cohesion: 0.05
@@ -776,7 +771,7 @@ Nodes (36): charsPerMinute, complete, coverage, covered, days, deadline, expecte
 
 ### Community 73 - "audio_page.dart"
 Cohesion: 0.05
-Nodes (35): 0, _addBookmark, _anki, audioTime, bookDragPosition, bookmarkRows, _bookProgress, _bookProgressContent (+27 more)
+Nodes (37): 0, _addBookmark, _anki, AudioPage, _AudioPageState, audioTime, bookDragPosition, bookmarkRows (+29 more)
 
 ### Community 74 - "stage4.py"
 Cohesion: 0.10
@@ -786,37 +781,45 @@ Nodes (30): add_clips(), bake(), bone_for(), bones_for(), clip(), group_of(), st
 Cohesion: 0.05
 Nodes (34): _apply, applyUpdateFlag, _backupDir, _before, beforeClose, bytes, _canWrite, config (+26 more)
 
+### Community 76 - "video_discovery_page.dart"
+Cohesion: 0.05
+Nodes (43): _add, _addRoot, build, candidates, createState, error, excluded, _files (+35 more)
+
 ### Community 77 - "video_annotation_editor.dart"
 Cohesion: 0.05
 Nodes (35): _body, build, createState, _details, dispose, draft, durationMs, editor (+27 more)
 
 ### Community 78 - "library_work_page.dart"
-Cohesion: 0.07
-Nodes (21): fields, reviewLibraryLink, selected, sourceFields, text, busy, card, _changed (+13 more)
+Cohesion: 0.06
+Nodes (26): annualCategories, AnnualCategory, completions, counts, label, ids, libraryBatchAction, libraryBatchLabels (+18 more)
 
 ### Community 79 - "activity_store.dart"
 Cohesion: 0.05
 Nodes (37): _applyNative, capture, catalog, date, day, _decodeSlots, _decodeSlotsApart, edit (+29 more)
 
 ### Community 80 - "main.dart"
-Cohesion: 0.05
+Cohesion: 0.06
 Nodes (25): assets, _attachErrorLog, audio, audioError, build, createState, dispose, _externalChange (+17 more)
 
 ### Community 81 - "activity_page.dart"
-Cohesion: 0.06
-Nodes (33): activityTime, build, byDay, _changed, _chip, createState, days, _dayTitle (+25 more)
+Cohesion: 0.05
+Nodes (35): ActivityPage, _ActivityPageState, activityTime, build, byDay, _changed, _chip, createState (+27 more)
 
 ### Community 82 - "reading_roots.dart"
-Cohesion: 0.09
-Nodes (19): activeReadingScan, assets, availableIds, bookIds, connect, connectFromScan, disconnect, forReading (+11 more)
+Cohesion: 0.05
+Nodes (38): _JournalChanges, activeFolderScan, cancel, cancellable, _cancelled, check, done, doneLabel (+30 more)
+
+### Community 83 - "Mp3AudioBoundsTest.kt"
+Cohesion: 0.07
+Nodes (5): AudioPlaybackProvider, Mp3AudioBounds, Mp3AudioBoundsTest, ExtractorOutput, Result
 
 ### Community 84 - "library_rows.dart"
-Cohesion: 0.14
+Cohesion: 0.15
 Nodes (12): catalogStores, createSchema, hasRows, journalStores, LibraryRows, _meta, migrate, moveCatalog (+4 more)
 
 ### Community 85 - "audio_import.dart"
-Cohesion: 0.08
-Nodes (24): AudioImportService, bytes, cached, cancelled, check, directory, extension, file (+16 more)
+Cohesion: 0.04
+Nodes (47): deleteForever, hasRegisteredFiles, hideMany, AudioImportService, bytes, cached, cancelled, check (+39 more)
 
 ### Community 86 - "library_repository.dart"
 Cohesion: 0.08
@@ -824,11 +827,11 @@ Nodes (22): _cache, _CatalogCache, _decodeCatalog, _decodeRows, _encodeCatalog, 
 
 ### Community 87 - "pets_section.dart"
 Cohesion: 0.02
-Nodes (162): build, o, s, active, asleep, _bar, _body, _bottom (+154 more)
+Nodes (169): build, o, s, build, createState, dispose, icon, initState (+161 more)
 
 ### Community 88 - "package:pepehub/data/repository.dart"
-Cohesion: 0.03
-Nodes (61): main, card, main, main, main, main, close, db (+53 more)
+Cohesion: 0.02
+Nodes (72): main, main, card, main, main, _featureTables, file, _legacyVideoIndexes (+64 more)
 
 ### Community 89 - "reader_resources.dart"
 Cohesion: 0.06
@@ -863,8 +866,8 @@ Cohesion: 0.06
 Nodes (34): allowPop, _back, build, _context, createState, _deck, _details, dispose (+26 more)
 
 ### Community 97 - "audio_folder.dart"
-Cohesion: 0.06
-Nodes (32): CatalogFile, audioFolderChannel, audioSourceExists, audioSourceUri, books, bytes, entries, files (+24 more)
+Cohesion: 0.07
+Nodes (26): audioFolderChannel, audioSourceExists, audioSourceUri, books, bytes, entries, files, folderFileStamp (+18 more)
 
 ### Community 98 - "database.dart"
 Cohesion: 0.15
@@ -875,8 +878,8 @@ Cohesion: 0.06
 Nodes (27): add, addBook, audioImporter, audioTracks, _bookExtension, byHash, bytes, close (+19 more)
 
 ### Community 100 - "video_caption_settings_dialog.dart"
-Cohesion: 0.07
-Nodes (29): audio, audioDelay, background, build, captions, _changed, createState, _delay (+21 more)
+Cohesion: 0.06
+Nodes (35): audio, audioDelay, background, build, captions, _changed, createState, _delay (+27 more)
 
 ### Community 101 - "vocabulary_page.dart"
 Cohesion: 0.09
@@ -884,19 +887,19 @@ Nodes (20): AnkiExporter, build, cards, createState, _delete, dispose, _edit, er
 
 ### Community 102 - "repository.dart"
 Cohesion: 0.06
-Nodes (30): _JournalChanges, addBook, addSession, bookHeaders, db, delete, deleted, deviceId (+22 more)
+Nodes (29): addBook, addSession, bookHeaders, db, delete, deleted, deviceId, _externalChanges (+21 more)
 
 ### Community 103 - "listening_analytics.dart"
 Cohesion: 0.06
 Nodes (30): active, allBook, analyzeListening, book, bookId, byBook, currentStreak, cutoff (+22 more)
 
-### Community 104 - "video_compact_controls.dart"
-Cohesion: 0.20
-Nodes (6): build, onScrubStart, player, scrub, seekPreview, VideoCompactControls
+### Community 104 - "AudioController"
+Cohesion: 0.11
+Nodes (19): LibraryFolderStorage, AudioController, SharedMediaHandler, AppTheme, ThemeScope, UpdateService, VideoCaptionsController, VideoPlaybackController (+11 more)
 
 ### Community 105 - "../media/asset_store.dart"
-Cohesion: 0.06
-Nodes (26): audioPlaybackUri, isMp3Source, source, close, _closed, _handle, isDirect, open (+18 more)
+Cohesion: 0.09
+Nodes (18): AudioBookActions, assets, _delete, deleteFiles, deleteForever, hasRegisteredFiles, hide, hideMany (+10 more)
 
 ### Community 106 - "pdf_search_page.dart"
 Cohesion: 0.08
@@ -924,7 +927,7 @@ Nodes (33): Android 0.4.0 — 14 сентября 2026, Аудиомодель 0
 
 ### Community 112 - "import_folder_test.dart"
 Cohesion: 0.04
-Nodes (44): PetsActionError, _listen, main, _read, main, app, _balance, db (+36 more)
+Nodes (44): _listen, main, _read, main, app, _balance, db, _fakeScene (+36 more)
 
 ### Community 113 - "image_size.dart"
 Cohesion: 0.12
@@ -947,12 +950,16 @@ Cohesion: 0.06
 Nodes (30): runs-on, steps, GH_TOKEN, RELEASE_TAG, release_tag, jobs, build-and-upload, name (+22 more)
 
 ### Community 118 - "UpdateChannel.kt"
-Cohesion: 0.11
-Nodes (4): attach(), detach(), requestBookWriteAccess(), work()
+Cohesion: 0.09
+Nodes (8): attach(), detach(), requestBookWriteAccess(), work(), attach(), detach(), _PlaybackAction, _PlaybackIntent
 
 ### Community 119 - "pets_service.dart"
 Cohesion: 0.02
-Nodes (117): createdAt, eggs, incubatorSlots, _pet, progress, reserve, _talents, accessories (+109 more)
+Nodes (79): accessories, achievements, addTestMinutes, at, balance, bonus, book, _bookCandidates (+71 more)
+
+### Community 120 - "UpdateChannel"
+Cohesion: 0.12
+Nodes (6): UpdateChannel, Исправление, Подтверждённый дефект, Проверки, Публикация, Чтение подписи APK — 18 октября 2026
 
 ### Community 121 - "reading_statistics_data.dart"
 Cohesion: 0.07
@@ -967,28 +974,28 @@ Cohesion: 0.07
 Nodes (28): build, _busy, check, copyWith, createState, dispose, enabled, error (+20 more)
 
 ### Community 124 - "goal_settings_page.dart"
-Cohesion: 0.07
-Nodes (26): build, controller, createState, _custom, dispose, error, _goal, GoalAndReminderSettings (+18 more)
+Cohesion: 0.04
+Nodes (41): StatisticsImportResult, build, controller, createState, _custom, dispose, error, _goal (+33 more)
 
 ### Community 125 - "video_progress_widgets.dart"
-Cohesion: 0.07
-Nodes (27): VideoLearningState, VideoCourseCoverage, VideoStats, build, coverage, date, _details, duration (+19 more)
+Cohesion: 0.05
+Nodes (33): VideoLearningState, build, createState, days, month, VideoActivityCalendar, _VideoActivityCalendarState, VideoCourseCoverage (+25 more)
 
 ### Community 126 - "Android: локальная сборка"
 Cohesion: 0.07
 Nodes (30): Android: локальная сборка, Повторная сборка, Подпись и установка, Предыдущий результат 0.4.0 — 14 сентября, Проверка на устройстве, Результат 0.4.1 — 14 сентября, Результат 0.5.0 — 14 сентября, Результат 0.5.1 — 15 сентября (+22 more)
 
-### Community 127 - "reader_bookmarks.dart"
-Cohesion: 0.11
-Nodes (16): add, createdAt, delete, fromJson, hash, list, offset, _prefix (+8 more)
+### Community 127 - "video_playlists.dart"
+Cohesion: 0.06
+Nodes (35): VideoPlaylist, addLessonsToPlaylist, askPlaylistTitle, audio, build, choice, controller, createState (+27 more)
 
 ### Community 128 - "reader_bookmarks_page.dart"
-Cohesion: 0.08
-Nodes (25): _BookmarkNameDialog, _BookmarkNameDialogState, bookmarks, build, busy, chapterTitles, controller, createState (+17 more)
+Cohesion: 0.05
+Nodes (41): add, createdAt, delete, fromJson, hash, list, offset, _BookmarkNameDialog (+33 more)
 
 ### Community 129 - "reader_progress_panel.dart"
-Cohesion: 0.09
-Nodes (22): accent, actions, build, child, createState, enabled, hidden, ink (+14 more)
+Cohesion: 0.05
+Nodes (39): BookActivityDay, accent, actions, _BookProgressPainter, build, child, createState, enabled (+31 more)
 
 ### Community 130 - "update_manifest.dart"
 Cohesion: 0.07
@@ -1010,9 +1017,9 @@ Nodes (20): boxes, close, _closeDocument, _disabled, document, _documents, _imag
 Cohesion: 0.08
 Nodes (22): hasSource, list, move, policyStartKey, purge, purgeExpired, removedAt, removedAtPrefix (+14 more)
 
-### Community 135 - "soft"
-Cohesion: 0.14
-Nodes (34): _arc_tube(), arrange_icons(), _bowl(), build_icons(), clear_glass(), _frame(), _frame_all(), icon_aquarium() (+26 more)
+### Community 135 - "pets_windows.dart"
+Cohesion: 0.05
+Nodes (40): build, colors, createState, icon, label, line, o, onTap (+32 more)
 
 ### Community 136 - "pdf_support.dart"
 Cohesion: 0.07
@@ -1020,7 +1027,7 @@ Nodes (25): chapters, checkpoint, checkpointPages, dispose, document, length, lo
 
 ### Community 137 - "pet_catalog.dart"
 Cohesion: 0.09
-Nodes (22): byId, consumable, decorModel, description, eggIcon, icon, kind, label (+14 more)
+Nodes (22): byId, consumable, decorModel, description, icon, kind, label, model (+14 more)
 
 ### Community 138 - "video_import.dart"
 Cohesion: 0.07
@@ -1042,9 +1049,9 @@ Nodes (8): EngineLifecycleListener, EngineLifecycleListener, EngineLifecycleList
 Cohesion: 0.08
 Nodes (23): build, busy, _changed, controller, createState, currentChapter, debounce, dispose (+15 more)
 
-### Community 143 - "package:file_selector/file_selector.dart"
-Cohesion: 0.03
-Nodes (58): main, bytes, dataSize, main, sampleRate, silentWav, text, embeddedArtwork (+50 more)
+### Community 143 - "package:crypto/crypto.dart"
+Cohesion: 0.11
+Nodes (16): ReadingRoots, assets, cachedFiles, chunks, closes, connect, db, expectHistory (+8 more)
 
 ### Community 144 - "dependencies"
 Cohesion: 0.07
@@ -1063,36 +1070,36 @@ Cohesion: 0.10
 Nodes (16): AudioChapter, audioDefaultSpeeds, AudioEdition, AudioProgress, audioSeekSteps, AudioTrack, bookId, durationMs (+8 more)
 
 ### Community 148 - "reading_roots.dart"
-Cohesion: 0.08
-Nodes (20): assets, audioRootKey, AudioRoots, bookIds, data, errors, key, list (+12 more)
+Cohesion: 0.05
+Nodes (38): assets, AudioRoot, audioRootKey, AudioRoots, bookIds, data, errors, key (+30 more)
 
 ### Community 149 - "library/models.dart"
 Cohesion: 0.08
 Nodes (21): coverAsset, false, fields, fromJson, item, kind, LibraryField, mediaType (+13 more)
 
 ### Community 150 - "_"
-Cohesion: 0.06
-Nodes (33): _, bar, build, _change, copyWith, createState, current, defaults (+25 more)
+Cohesion: 0.05
+Nodes (36): PepeColors, _, bar, build, _change, copyWith, createState, current (+28 more)
 
 ### Community 151 - "book_action_menu.dart"
 Cohesion: 0.08
 Nodes (23): audio, available, BookActionGroup, _BookActionMenu, _BookActionMenuState, BookMenuAction, bookMenuActions, bookMenuHiddenKey (+15 more)
 
 ### Community 152 - "video_captions_controller.dart"
-Cohesion: 0.07
-Nodes (29): LibraryFolderStorage, AudioController, _apply, bound, busy, delayFor, dispose, documents (+21 more)
+Cohesion: 0.06
+Nodes (28): editor, focus, readerShortcutsAllowed, readerTouchOnly, showReaderShortcuts, _apply, bound, busy (+20 more)
 
 ### Community 153 - "MUSIC_SYNC_PERFORMANCE_VALIDATION.md"
-Cohesion: 0.22
-Nodes (6): Выполнено, Границы, Проверка музыки, синхронизации и загрузки данных, Загрузка библиотеки, заметок и статистики, PepeHub 0.22.0 — музыка, синхронизация и быстрая загрузка, Публикация и проверка
+Cohesion: 0.15
+Nodes (10): Библиотека, Медиа: видео и музыка, Плеер, Хранение и проверка, Выполнено, Границы, Проверка музыки, синхронизации и загрузки данных, Загрузка библиотеки, заметок и статистики (+2 more)
 
 ### Community 154 - "library_card_actions.dart"
-Cohesion: 0.09
-Nodes (21): allowFileDeletion, assets, audio, choice, deleteBookFilesWithAccess, deleteLibraryCards, entry, false (+13 more)
+Cohesion: 0.06
+Nodes (32): askBookDeletion, audioOnly, BookToDelete, days, deleteBooksToTrash, moved, player, retentionDays (+24 more)
 
 ### Community 155 - "audio_catalog.dart"
-Cohesion: 0.08
-Nodes (21): 2, AudioBookDraft, connectAudioCatalog, count, disc, files, groupAudioCatalog, groups (+13 more)
+Cohesion: 0.07
+Nodes (26): 2, AudioBookDraft, CatalogFile, connectAudioCatalog, count, disc, files, groupAudioCatalog (+18 more)
 
 ### Community 156 - "error_log.dart"
 Cohesion: 0.08
@@ -1111,16 +1118,16 @@ Cohesion: 0.08
 Nodes (21): build, busy, _cache, changed, controller, createState, crop, cropped (+13 more)
 
 ### Community 160 - "audio_statistics_history.dart"
-Cohesion: 0.06
-Nodes (28): AudioStatisticsHistory, _event, events, load, _recordedBefore, titles, _maxEnd, overlapping (+20 more)
+Cohesion: 0.09
+Nodes (19): load, ReadingStatisticsHistory, sessions, titles, canonical, catalog, data, end (+11 more)
 
 ### Community 161 - "VIDEO_SPECIFICATION.md"
 Cohesion: 0.15
 Nodes (10): Аудиопанель, Карточки для Anki, Папка по умолчанию, Проверка, Словарь Anki, аудиопанель и папка по умолчанию, Экспорт и импорт, PepeHub 0.20.0 — локальные Windows и Android сборки, Пакеты (+2 more)
 
 ### Community 162 - "LibraryService"
-Cohesion: 0.05
-Nodes (32): editLibraryAudioTime, error, form, progress, saving, total, unit, ids (+24 more)
+Cohesion: 0.11
+Nodes (16): build, createState, currentSeriesKey, expected, groups, initState, key, kind (+8 more)
 
 ### Community 163 - "video_tools_dialogs.dart"
 Cohesion: 0.09
@@ -1128,7 +1135,7 @@ Nodes (23): build, createState, dispose, durationMs, end, endMs, error, form (+1
 
 ### Community 164 - "FlutterWindow"
 Cohesion: 0.08
-Nodes (17): FlutterWindow::OnDestroy(), FlutterWindow, flutter_controller_, project_, reading_awake_, update_channel_, video_fullscreen_, video_mini_ex_style_ (+9 more)
+Nodes (15): FlutterWindow, flutter_controller_, project_, reading_awake_, update_channel_, video_fullscreen_, video_mini_ex_style_, video_mini_placement_ (+7 more)
 
 ### Community 165 - "m4b_chapters.dart"
 Cohesion: 0.09
@@ -1138,9 +1145,9 @@ Nodes (22): BookChapter, _Box, _boxes, _child, chpl, data, file, list (+14 more)
 Cohesion: 0.09
 Nodes (22): ActivityStore, anchor, _apply, _audio, capture, edit, entries, id (+14 more)
 
-### Community 167 - "media_music_test.dart"
+### Community 167 - "video_subtitle_widget_test.dart"
 Cohesion: 0.07
-Nodes (23): VideoItem, clock, close, db, engine, Harness, main, modes (+15 more)
+Nodes (21): VocabularyRepository, capture, close, closed, db, ensureVisible, expose, _Fixture (+13 more)
 
 ### Community 168 - "update_installer_test.dart"
 Cohesion: 0.09
@@ -1162,9 +1169,13 @@ Nodes (23): Выпуск 0.21.1+53 — 17 октября, Выпуск 0.21.2+54
 Cohesion: 0.09
 Nodes (19): Author.Today, Open Library, Вывод для PepeHub, Дополнительное исследование зарубежных источников, Живые проверки новых источников, Источники данных для вкладки «Книжные рекомендации», Какие источники используют другие приложения, Остальные источники (+11 more)
 
+### Community 173 - "PdfPreview.kt"
+Cohesion: 0.15
+Nodes (3): PdfPreview, PdfPreviewTest, InputStream
+
 ### Community 174 - "database.dart"
-Cohesion: 0.12
-Nodes (8): _addAudioSchema, _addEditionSchema, allSchemaEntities, allTables, migration, open, openInDirectory, schemaVersion
+Cohesion: 0.05
+Nodes (27): BookTimeline, lengths, positionMs, totalMs, _addAudioSchema, _addEditionSchema, allSchemaEntities, allTables (+19 more)
 
 ### Community 175 - "shared_media_handler.dart"
 Cohesion: 0.09
@@ -1172,39 +1183,39 @@ Nodes (20): books, close, fastForward, _generation, onTaskRemoved, owner, pause,
 
 ### Community 176 - "reader_selection_toolbar.dart"
 Cohesion: 0.10
-Nodes (16): anchors, build, colors, copy, createState, highlight, icon, items (+8 more)
+Nodes (18): anchors, build, colors, copy, createState, highlight, icon, items (+10 more)
 
 ### Community 177 - "app_preferences.dart"
 Cohesion: 0.09
 Nodes (20): AboutAppSettings, _AboutAppSettingsState, assets, build, _copy, createState, error, initState (+12 more)
 
-### Community 178 - "reader_window.dart"
-Cohesion: 0.17
-Nodes (10): _active, channel, configure, _handle, onVolumeKey, ReaderWindow, reset, _send (+2 more)
+### Community 178 - "FormState"
+Cohesion: 0.11
+Nodes (12): editLibraryAudioTime, error, form, progress, saving, total, unit, fields (+4 more)
 
 ### Community 179 - "storage_settings_page.dart"
-Cohesion: 0.08
-Nodes (21): build, hotkeyGroups, HotkeysSettings, assets, build, busy, _clear, _clearLog (+13 more)
+Cohesion: 0.10
+Nodes (18): assets, build, busy, _clear, _clearLog, _compact, _confirm, createState (+10 more)
 
 ### Community 180 - "update_delta.dart"
-Cohesion: 0.06
-Nodes (26): applyUpdateDelta, atEnd, bodyOffset, chunk, _DeltaReader, destination, false, _hash (+18 more)
+Cohesion: 0.09
+Nodes (19): applyUpdateDelta, atEnd, bodyOffset, chunk, _DeltaReader, destination, false, _hash (+11 more)
 
 ### Community 181 - "build_bedroom"
 Cohesion: 0.14
-Nodes (46): build_icons4(), _setup_scene4(), _view_all4(), ball(), box(), camera(), coll(), cone() (+38 more)
+Nodes (45): arrange_icons(), build_icons(), ball(), box(), camera(), coll(), cone(), cyl() (+37 more)
 
 ### Community 182 - "metadata_values.dart"
 Cohesion: 0.10
 Nodes (20): canonical, canonicalLibraryStatus, configured, exportLibraryStatus, libraryStatuses, libraryStatusLabels, match, matchLibraryProgress (+12 more)
 
-### Community 183 - "models.dart"
-Cohesion: 0.12
-Nodes (15): aliases, hash, isFinishedLibraryItem, isLibraryDeleted, libraryCompletionDate, libraryStartDate, personalLibraryFields, personalLibraryItem (+7 more)
+### Community 183 - "playback_settings_page.dart"
+Cohesion: 0.13
+Nodes (8): build, hotkeyGroups, HotkeysSettings, build, PlaybackSettings, PlaybackSettingsPage, _reset, _speedLabel
 
 ### Community 184 - "verified_stream_copy.dart"
-Cohesion: 0.08
-Nodes (22): _DigestSink, add, bytes, close, commands, completed, CopiedDigest, copyVerifiedStream (+14 more)
+Cohesion: 0.06
+Nodes (30): _DigestSink, add, bytes, close, commands, completed, CopiedDigest, copyVerifiedStream (+22 more)
 
 ### Community 185 - "video_mini_player.dart"
 Cohesion: 0.17
@@ -1227,27 +1238,27 @@ Cohesion: 0.08
 Nodes (22): _allowedKey, conflicts, data, day, decode, _decodeStatistics, _decodeStatisticsInBackground, _encodeStatistics (+14 more)
 
 ### Community 190 - "music_player_view.dart"
-Cohesion: 0.06
-Nodes (28): build, createState, drag, duration, _edit, item, MusicPlayerView, MusicSeekBar (+20 more)
+Cohesion: 0.04
+Nodes (40): build, createState, drag, duration, _edit, item, MusicPlayerView, MusicSeekBar (+32 more)
 
-### Community 191 - "VoidCallback"
-Cohesion: 0.08
-Nodes (18): BookActivityDay, BookActivityDayTile, build, day, onTap, title, build, _checked (+10 more)
+### Community 191 - "update_page.dart"
+Cohesion: 0.11
+Nodes (15): build, _clear, _copy, createState, ErrorLogPage, _ErrorLogPageState, initState, _load (+7 more)
 
 ### Community 192 - "reading_collections.dart"
 Cohesion: 0.11
-Nodes (16): audio, bookId, build, busy, createState, error, initState, library (+8 more)
+Nodes (18): audio, bookId, build, busy, _Collections, _CollectionsState, createState, error (+10 more)
 
 ### Community 193 - "import_folder_page.dart"
 Cohesion: 0.11
-Nodes (13): assets, build, busy, _choose, _clear, _copy, count, createState (+5 more)
+Nodes (15): assets, build, busy, _choose, _clear, _copy, count, createState (+7 more)
 
 ### Community 194 - "video_transcript_panel.dart"
 Cohesion: 0.10
 Nodes (19): VideoSubtitleDocument, build, captions, _changed, createState, didUpdateWidget, dispose, filtered (+11 more)
 
 ### Community 195 - "audio_player_regressions_test.dart"
-Cohesion: 0.09
+Cohesion: 0.08
 Nodes (23): ChapterLoadPlayer, controlsPlayer, GatedControlsPlayer, h, loadedIndexes, main, play, RefusingPlayer (+15 more)
 
 ### Community 196 - "Как собрать и выпустить PepeHub"
@@ -1255,28 +1266,28 @@ Cohesion: 0.10
 Nodes (18): 1. Подготовить среду, 2. Выбрать версию и написать изменения, 3. Проверить Node.js-часть, 4. Собрать Windows, 5. Проверить нативный Android-код, 6. Собрать Android ARM64, 7. Подготовить пакеты без публикации, 8. Опубликовать в стабильном канале (+10 more)
 
 ### Community 197 - "interface_settings.dart"
-Cohesion: 0.12
-Nodes (13): appearance, _bar, build, _change, createState, _marked, _palettes, _preview (+5 more)
+Cohesion: 0.11
+Nodes (15): appearance, _bar, build, _change, createState, InterfaceSettings, _InterfaceSettingsState, _marked (+7 more)
 
 ### Community 198 - "video_course_editor.dart"
-Cohesion: 0.10
-Nodes (19): VideoLessonEdit, build, createState, dispose, editLesson, error, item, lessons (+11 more)
+Cohesion: 0.12
+Nodes (16): VideoLessonEdit, build, createState, dispose, editLesson, error, item, lessons (+8 more)
 
-### Community 199 - "video_media_session_test.dart"
-Cohesion: 0.05
-Nodes (33): spokenAudioConfiguration, close, db, engine, _Harness, lessons, main, open (+25 more)
+### Community 199 - "package:flutter_test/flutter_test.dart"
+Cohesion: 0.02
+Nodes (101): clock, close, db, engine, Harness, main, modes, nativeLibrary (+93 more)
 
-### Community 200 - "package:path/path.dart"
-Cohesion: 0.05
-Nodes (30): artworkOrder, ArtworkStore, assets, choose, findAudioArtwork, load, _load, lower (+22 more)
+### Community 200 - "import_folder.dart"
+Cohesion: 0.08
+Nodes (19): audioPlaybackUri, isMp3Source, source, assets, candidates, check, clear, configure (+11 more)
 
 ### Community 201 - "library_cover_search.dart"
-Cohesion: 0.11
-Nodes (16): LibraryItem, build, busy, choose, client, createState, dispose, error (+8 more)
+Cohesion: 0.10
+Nodes (18): LibraryItem, build, busy, choose, client, createState, dispose, error (+10 more)
 
 ### Community 202 - "update_installer_app.dart"
-Cohesion: 0.11
-Nodes (16): build, createState, didUpdateWidget, error, initState, _install, installed, installer (+8 more)
+Cohesion: 0.06
+Nodes (28): build, createState, didUpdateWidget, error, initState, _install, installed, installer (+20 more)
 
 ### Community 203 - "PepeHub: самостоятельное приложение для чтения и аудиокниг"
 Cohesion: 0.11
@@ -1291,23 +1302,27 @@ Cohesion: 0.13
 Nodes (12): awake, channel, dispose, _enabled, idle, ReaderKeepAwake, _send, _set (+4 more)
 
 ### Community 206 - ".stage"
-Cohesion: 0.19
-Nodes (6): FolderFilesChannel, Archived, History, HistoryItem, HistoryPolicy, Node
+Cohesion: 0.34
+Nodes (3): Archived, History, HistoryPolicy
 
 ### Community 207 - "video_annotations.dart"
-Cohesion: 0.18
-Nodes (8): annotation, endMs, fromJson, revision, toJson, updatedAt, VideoAnnotation, VideoAnnotationDeletion
+Cohesion: 0.11
+Nodes (13): ListeningClock, milliseconds, setAudible, _since, _total, annotation, endMs, fromJson (+5 more)
 
-### Community 208 - "DateTime"
-Cohesion: 0.15
-Nodes (12): age, audio, build, date, days, folderScanReport, FolderScanSummary, folderScanTime (+4 more)
+### Community 208 - "personal_library.dart"
+Cohesion: 0.12
+Nodes (15): aliases, hash, isFinishedLibraryItem, isLibraryDeleted, libraryCompletionDate, libraryStartDate, personalLibraryFields, personalLibraryItem (+7 more)
+
+### Community 209 - "FolderFilesChannel"
+Cohesion: 0.18
+Nodes (3): FolderFilesChannel, HistoryItem, Node
 
 ### Community 210 - "audio_import_dialog.dart"
 Cohesion: 0.12
-Nodes (14): AudioImportControl, assets, build, busy, control, createState, dispose, error (+6 more)
+Nodes (16): AudioImportControl, assets, AudioImportDialog, _AudioImportDialogState, build, busy, control, createState (+8 more)
 
 ### Community 211 - "library_duration_input.dart"
-Cohesion: 0.11
+Cohesion: 0.12
 Nodes (16): build, controller, createState, dispose, enabled, hours, initState, LibraryDurationInput (+8 more)
 
 ### Community 212 - "library_notes_page.dart"
@@ -1326,21 +1341,21 @@ Nodes (17): PepeHub — статистика, концепт v2, Больше в
 Cohesion: 0.11
 Nodes (17): PepeHub — статистика, концепт v3, Больше всего времени, Время по месяцам, Выбранный день, Жанры и авторы НОВОЕ, Завершённые по месяцам, Книги за год, Книжный календарь (+9 more)
 
-### Community 216 - "video_tools_test.dart"
-Cohesion: 0.05
-Nodes (35): MusicEngine, TestVideoEngine, interval, main, lesson, main, span, _Engine (+27 more)
+### Community 216 - "video_seek_previews_test.dart"
+Cohesion: 0.20
+Nodes (8): close, closed, lesson, main, pending, read, reads, turn
 
-### Community 217 - "models.dart"
-Cohesion: 0.05
-Nodes (34): assets, AutomaticMetadata, _cachedDetails, details, _foreign, local, refresh, withCover (+26 more)
+### Community 217 - "series_draft.dart"
+Cohesion: 0.10
+Nodes (20): authors, conflicts, end, index, known, next, numbered, occupied (+12 more)
 
 ### Community 218 - "metadata_input.dart"
-Cohesion: 0.13
+Cohesion: 0.12
 Nodes (14): build, commit, controller, createState, dispose, enabled, focus, initial (+6 more)
 
 ### Community 219 - "assets_ext.py"
-Cohesion: 0.11
-Nodes (30): actions_of(), activate(), asset_path(), _bounds(), box(), build_all(), build_bedroom(), build_kitchen() (+22 more)
+Cohesion: 0.10
+Nodes (33): actions_of(), activate(), asset_path(), _bounds(), box(), build_all(), build_bedroom(), build_kitchen() (+25 more)
 
 ### Community 220 - "video_tools.dart"
 Cohesion: 0.12
@@ -1356,31 +1371,27 @@ Nodes (8): Большие книги и точная позиция, Выдел�
 
 ### Community 224 - "APP_UPDATES.md"
 Cohesion: 0.05
-Nodes (23): graphify, Правила библиотеки PepeHub, Исправление, Подтверждённый дефект, Проверки, Публикация, Чтение подписи APK — 18 октября 2026, Дельта-обновления (+15 more)
+Nodes (23): graphify, Правила библиотеки PepeHub, Поведение исправления, Причина сообщения на скриншоте, Проверки, Удаление книги и доступ к Android SAF, Уже отсутствующий файл — 0.21.7, Дельта-обновления (+15 more)
 
 ### Community 225 - "PepeHub 0.9.4 — разделы библиотеки и периоды статистики"
 Cohesion: 0.40
 Nodes (5): PepeHub 0.9.4 — разделы библиотеки и периоды статистики, Папки книг, Следующая очередь: чтение, Статистика, Что изменилось
 
-### Community 226 - "BookFileChannel"
-Cohesion: 0.11
-Nodes (9): BookFileChannel, Incoming, BookFileProvider, 9. Нативная часть Android, Android: поделиться и открыть, PDF и обмен файлами Android: изменения в исходниках, Большие PDF, Проверка (+1 more)
-
-### Community 227 - "statistics_exchange_page.dart"
-Cohesion: 0.12
-Nodes (15): StatisticsImportResult, build, busy, _choose, createState, exchange, _export, _import (+7 more)
+### Community 227 - "String get"
+Cohesion: 0.20
+Nodes (8): clear, key, LibraryFolderPreference, load, _prefix, reading, replace, repository
 
 ### Community 228 - "statistics_export.dart"
-Cohesion: 0.10
-Nodes (17): AudioLinkService, connect, repository, csvCell, json, ListeningGoals, load, name (+9 more)
+Cohesion: 0.12
+Nodes (14): csvCell, json, ListeningGoals, load, name, rows, save, saveStatisticsFile (+6 more)
 
 ### Community 229 - "pet_scene.dart"
 Cohesion: 0.02
-Nodes (79): Pet, a, _accessories, _applyFx, _applyLooks, _applyRoom, args, _aspect (+71 more)
+Nodes (74): a, _accessories, _applyLooks, _applyRoom, args, _aspect, _backdrop, background (+66 more)
 
-### Community 230 - "dialogs.dart"
-Cohesion: 0.15
-Nodes (12): AddBookDialog, _AddBookDialogState, audioOnly, build, createState, dispose, form, format (+4 more)
+### Community 230 - "State"
+Cohesion: 0.07
+Nodes (29): PetRoomScene, _PetRoomSceneState, build, _cachedQuery, controller, createState, didUpdateWidget, dispose (+21 more)
 
 ### Community 231 - "reader_layout_frame.dart"
 Cohesion: 0.13
@@ -1390,9 +1401,9 @@ Nodes (14): build, createState, dispose, _landscape, onResize, pageSize, pending
 Cohesion: 0.11
 Nodes (19): 10. Обновления, 11. Интерфейс и состояние, 12. Проверки, 13. Известные долги, 1. Что это и чего здесь нет, 2. Репозиторий, 3. Запуск, 4. Данные (+11 more)
 
-### Community 233 - "String get"
-Cohesion: 0.14
-Nodes (10): clear, key, LibraryFolderPreference, load, _prefix, reading, replace, repository (+2 more)
+### Community 233 - "../media/asset_store.dart"
+Cohesion: 0.10
+Nodes (14): absorb, assets, AudioMerge, _commonParent, merge, _moveRecords, repository, close (+6 more)
 
 ### Community 234 - "pet_rules.dart"
 Cohesion: 0.04
@@ -1402,25 +1413,25 @@ Nodes (48): ageForLevel, asleep, best, bookBonus, bookMinutes, bought, chests, c
 Cohesion: 0.07
 Nodes (29): PDF, PepeHub, Аудиобиблиотека, Аудиоплеер, Библиотека электронных книг, Видео, курсы и обучение, Возможности, Для разработчиков (+21 more)
 
-### Community 236 - "../library/library_service.dart"
-Cohesion: 0.20
-Nodes (9): assets, audio, build, client, createState, dispose, library, ReadingHiddenBooksPage (+1 more)
+### Community 236 - "dart:math"
+Cohesion: 0.09
+Nodes (18): byId, catchCoins, catchSeconds, coins, dailyCoins, description, memoryCoins, memoryPairs (+10 more)
 
 ### Community 237 - "book_image_export.dart"
 Cohesion: 0.15
 Nodes (11): base, bookImageFileName, bookImageType, clean, fromData, head, parts, saveBookImage (+3 more)
 
 ### Community 238 - "audio_rewind_options.dart"
-Cohesion: 0.13
-Nodes (13): AudioRewindSettings, AudioRewindOptions, audioSeekReasonLabel, build, onResumeAfterInterruption, onSettings, onSleepEnabled, onSleepSeconds (+5 more)
+Cohesion: 0.08
+Nodes (23): AudioRewindSettings, AudioRewindOptions, audioSeekReasonLabel, build, onResumeAfterInterruption, onSettings, onSleepEnabled, onSleepSeconds (+15 more)
 
 ### Community 239 - "listening_timeline.dart"
 Cohesion: 0.06
-Nodes (28): at, buildListeningTimeline, count, day, days, deltaMs, end, endMs (+20 more)
+Nodes (31): at, buildListeningTimeline, count, day, days, deltaMs, end, endMs (+23 more)
 
-### Community 240 - "State"
-Cohesion: 0.06
-Nodes (45): PetRoomScene, _PetRoomSceneState, _ReaderSelectionToolbar, _ReaderSelectionToolbarState, _Collections, _CollectionsState, ActivityPage, _ActivityPageState (+37 more)
+### Community 240 - "../library/library_service.dart"
+Cohesion: 0.09
+Nodes (17): libraryCardAction, libraryCardOpener, libraryItemIdForBook, null, open, build, LibraryTrashPage, service (+9 more)
 
 ### Community 241 - "package.json"
 Cohesion: 0.15
@@ -1435,12 +1446,12 @@ Cohesion: 0.14
 Nodes (13): AndroidBookFiles, AndroidBookSource, bookFilesChannel, bookShareMime, _bookSource, dispose, disposed, drain (+5 more)
 
 ### Community 244 - "models.dart"
-Cohesion: 0.07
-Nodes (22): _cell, exportMarkdown, lines, bindings, catalog, detachRemovedCards, exportValues, importCached (+14 more)
+Cohesion: 0.05
+Nodes (32): _cell, exportMarkdown, lines, assets, AutomaticMetadata, _cachedDetails, details, _foreign (+24 more)
 
 ### Community 245 - "support/video_engine.dart"
-Cohesion: 0.07
-Nodes (20): VideoEngineState, fixture, library, main, close, closed, open, pause (+12 more)
+Cohesion: 0.11
+Nodes (17): VideoEngineState, MusicEngine, close, closed, open, pause, play, seek (+9 more)
 
 ### Community 246 - "support/reader_controls.dart"
 Cohesion: 0.14
@@ -1450,29 +1461,29 @@ Nodes (13): openReaderMenu, pager, pump, pumpAndSettle, rect, showReaderControls
 Cohesion: 0.14
 Nodes (14): 10. Архитектура и миграция, 11. Измеримые требования качества, 12. Приёмочные сценарии, 13. План поставки и критерий готовности, 1. Результат и границы, 2. Библиотека и импорт, 3. Форматы и главы, 4. Экран и управление (+6 more)
 
-### Community 249 - "video_fullscreen.dart"
-Cohesion: 0.12
-Nodes (14): _available, channel, _channelOwner, dispose, _disposed, enterPip, initialize, pip (+6 more)
+### Community 249 - "video_compact_controls.dart"
+Cohesion: 0.20
+Nodes (6): build, onScrubStart, player, scrub, seekPreview, VideoCompactControls
 
 ### Community 250 - "compilerOptions"
 Cohesion: 0.15
 Nodes (12): compilerOptions, allowImportingTsExtensions, erasableSyntaxOnly, lib, module, moduleResolution, noEmit, skipLibCheck (+4 more)
 
 ### Community 251 - "BookFileAccess.kt"
-Cohesion: 0.22
-Nodes (13): completeFolder(), BookFileAccessFailure, confirmedAbsent(), denied(), grant(), root(), treeRoot(), writableDocument() (+5 more)
+Cohesion: 0.41
+Nodes (8): completeFolder(), BookFileAccessFailure, confirmedAbsent(), denied(), grant(), root(), treeRoot(), writableDocument()
 
 ### Community 252 - "MaterialPageRoute"
 Cohesion: 0.18
 Nodes (10): _updateNotice, build, _detail, _fileShelf, build, build, build, build (+2 more)
 
-### Community 253 - "reader_contents.dart"
-Cohesion: 0.18
-Nodes (11): build, _cachedQuery, controller, createState, didUpdateWidget, dispose, _indexes, query (+3 more)
+### Community 253 - "PDF и обмен файлами Android: изменения в исходниках"
+Cohesion: 0.29
+Nodes (6): BookFileProvider, Android: поделиться и открыть, PDF и обмен файлами Android: изменения в исходниках, Большие PDF, Проверка, Фиксация страницы
 
 ### Community 256 - "app_assets.py"
-Cohesion: 0.13
-Nodes (11): _camera_data(), cut_foreground(), export_app_assets(), export_decor(), export_rooms(), _match(), _render(), _tree() (+3 more)
+Cohesion: 0.09
+Nodes (18): _camera_data(), cut_foreground(), export_app_assets(), export_decor(), export_rooms(), _match(), _render(), _tree() (+10 more)
 
 ### Community 257 - "library_dates.dart"
 Cohesion: 0.18
@@ -1499,12 +1510,12 @@ Cohesion: 0.14
 Nodes (11): activityStreak, activityStreakMinimumMs, at, best, current, local, minimumMs, previous (+3 more)
 
 ### Community 263 - "audio_timeline.dart"
-Cohesion: 0.04
-Nodes (42): clamp, identity, lockedPdfMatrix, maxPages, min, pdfRenderScale, y, AudioMiniPlayer (+34 more)
+Cohesion: 0.07
+Nodes (26): AudioTimeline, _AudioTimelineState, book, build, _chapter, _clock, controller, createState (+18 more)
 
 ### Community 265 - "book_calendar.dart"
-Cohesion: 0.08
-Nodes (20): BookCalendarData, annualCategories, AnnualCategory, completions, counts, label, BookCalendar, _BookCalendarState (+12 more)
+Cohesion: 0.11
+Nodes (15): BookCalendarData, BookCalendar, _BookCalendarState, _books, build, _cover, createState, data (+7 more)
 
 ### Community 266 - "PepeHub · Тихий архив, v2"
 Cohesion: 0.20
@@ -1536,27 +1547,27 @@ Nodes (5): AudioPlayerScope, controller, of, updateShouldNotify, UpdateScope
 
 ### Community 273 - "pets_v5.py"
 Cohesion: 0.07
-Nodes (35): _cycles_gpu(), _acc_scene(), _accessories5(), _adopt(), _along(), bake5(), _bm_cone(), _bm_sphere() (+27 more)
+Nodes (33): _acc_scene(), _accessories5(), _adopt(), _along(), bake5(), _bm_cone(), _bm_sphere(), bones5() (+25 more)
+
+### Community 274 - "reader_selectable_paragraph.dart"
+Cohesion: 0.10
+Nodes (14): alignment, build, _changed, createState, dispose, initState, onSelection, _ParagraphState (+6 more)
 
 ### Community 275 - "statistics_period.dart"
 Cohesion: 0.22
 Nodes (8): count, first, last, local, shown, statisticsChartWindow, statisticsDayPeriods, statisticsPeriodStart
 
-### Community 276 - "package:uuid/uuid.dart"
-Cohesion: 0.20
-Nodes (8): currentDatabaseFilename, currentDatabaseVersion, directory, legacy, prepareDatabaseFiles, _snapshot, target, temporary
+### Community 276 - "package:path/path.dart"
+Cohesion: 0.05
+Nodes (33): currentDatabaseFilename, currentDatabaseVersion, directory, legacy, prepareDatabaseFiles, _snapshot, target, temporary (+25 more)
 
 ### Community 277 - "audio_daily_totals.dart"
-Cohesion: 0.10
-Nodes (16): AudioBookActions, deleteForever, hasRegisteredFiles, hideMany, _at, AudioDailyStore, AudioDailyTotals, bookDays (+8 more)
+Cohesion: 0.17
+Nodes (11): _at, AudioDailyStore, AudioDailyTotals, bookDays, books, _end, forYear, lifetime (+3 more)
 
 ### Community 278 - "flutter"
 Cohesion: 0.22
 Nodes (9): flutter, assets, fonts, uses-material-design, asset, family, fonts, style (+1 more)
-
-### Community 279 - "book_folder_operations.dart"
-Cohesion: 0.10
-Nodes (17): assets, base, binding, BookFolderLocation, BookFolderOperations, candidate, checkedDirectory, hasPending (+9 more)
 
 ### Community 281 - "WindowClassRegistrar"
 Cohesion: 0.25
@@ -1566,17 +1577,13 @@ Nodes (3): WindowClassRegistrar, class_registered_, instance_
 Cohesion: 0.22
 Nodes (8): Changing a live database, Choosing a database, Hand-offs, How you work, Modeling rules, Multi-tenancy, Prove it, Reviewing a schema
 
-### Community 283 - "error_log_page.dart"
-Cohesion: 0.18
-Nodes (9): build, _clear, _copy, createState, ErrorLogPage, _ErrorLogPageState, initState, _load (+1 more)
-
 ### Community 284 - "Личная библиотека"
 Cohesion: 0.50
 Nodes (3): Карточка и организация, Личная библиотека, Экспорт и резервные копии
 
 ### Community 285 - "reading_daily_totals.dart"
-Cohesion: 0.14
-Nodes (12): day, _decodeSpans, range, ReadingDailyTotals, refresh, _refresh, _refreshing, repository (+4 more)
+Cohesion: 0.08
+Nodes (18): day, _decodeSpans, range, ReadingDailyTotals, refresh, _refresh, _refreshing, repository (+10 more)
 
 ### Community 286 - "catalog_search.dart"
 Cohesion: 0.25
@@ -1643,8 +1650,8 @@ Cohesion: 0.33
 Nodes (3): Taste Books concept with a reading progress card and local book covers, Desktop Books screen with current reading progress and a cover grid, Mobile Books screen with current reading progress and compact book rows
 
 ### Community 302 - "VideoWindowChannel.kt"
-Cohesion: 0.07
-Nodes (3): ReaderWindowChannel, onReceive(), ReminderChannel
+Cohesion: 0.06
+Nodes (4): ReaderWindowChannel, onReceive(), ReminderChannel, 9. Нативная часть Android
 
 ### Community 303 - "Компактный журнал и таблица библиотеки — 0.9.2"
 Cohesion: 0.33
@@ -1706,29 +1713,17 @@ Nodes (4): audioProgressMs, manualAudioProgressStamp, unit, value
 Cohesion: 0.15
 Nodes (11): bookIds, data, hasMore, historyEventName, page, repository, rows, source (+3 more)
 
-### Community 318 - "ValueChanged"
-Cohesion: 0.20
-Nodes (8): BookPicker, books, build, createState, onChanged, query, titles, value
+### Community 319 - "pets_schema.dart"
+Cohesion: 0.18
+Nodes (10): columns, createPetsSchema, customStatement, json, now, oldJson, upgradePetsSchemaV11, upgradePetsSchemaV12 (+2 more)
 
-### Community 319 - "performance_projections.dart"
-Cohesion: 0.17
-Nodes (10): customStatement, db, ensurePerformanceProjections, ensureReadingSessionBookIndex, exists, json_valid, reading_shelf_v1, sessionsExist (+2 more)
-
-### Community 320 - "video_activity_calendar.dart"
-Cohesion: 0.25
-Nodes (6): build, createState, days, month, VideoActivityCalendar, _VideoActivityCalendarState
+### Community 320 - "library_recovery.dart"
+Cohesion: 0.08
+Nodes (18): AudioStatisticsHistory, _event, events, load, _recordedBefore, titles, failures, files (+10 more)
 
 ### Community 321 - "Обложки и .pepehub — 0.6.0"
 Cohesion: 0.40
 Nodes (5): Восстановление, Обложки, Обложки и .pepehub — 0.6.0, Проверки, Снимки
-
-### Community 322 - "Point"
-Cohesion: 0.21
-Nodes (6): Point, x, y, Size, height, width
-
-### Community 323 - "video_folder_dialog.dart"
-Cohesion: 0.18
-Nodes (10): apply, build, confirmed, createState, error, preview, saving, VideoFolderRefreshDialog (+2 more)
 
 ### Community 324 - "PDF: обложки и общие инструменты чтения"
 Cohesion: 0.40
@@ -1742,9 +1737,9 @@ Nodes (4): Границы поддержки, Отображение книг �
 Cohesion: 0.40
 Nodes (5): Библиотека, Библиотека и заметки — 0.10.1, Выделения и заметки, Дальше, Хранение и границы
 
-### Community 328 - "reminder_scheduler.dart"
-Cohesion: 0.25
-Nodes (5): channel, configure, ReminderScheduler, restore, supported
+### Community 328 - "static const"
+Cohesion: 0.05
+Nodes (33): channel, configure, ReminderScheduler, restore, supported, _active, channel, configure (+25 more)
 
 ### Community 331 - "analysis_options.yaml"
 Cohesion: 0.50
@@ -1754,9 +1749,9 @@ Nodes (3): analyzer, exclude, include
 Cohesion: 0.50
 Nodes (3): Additional reading fonts, Interface fonts, Reader font
 
-### Community 333 - "video_subtitle_import.dart"
-Cohesion: 0.25
-Nodes (6): bytes, file, name, pickVideoSubtitles, VideoSubtitleFile, VideoSubtitlePicker
+### Community 333 - "return"
+Cohesion: 0.13
+Nodes (11): audioExtensions, bookExtensions, bookFormat, bookFormats, extension, format, formatLabel, name (+3 more)
 
 ### Community 338 - "Android 0.5.6: карточка в шторке и фоновый сервис"
 Cohesion: 0.50
@@ -1811,16 +1806,12 @@ Cohesion: 1.00
 Nodes (3): Initialize-PepeBuildPackages(), Invoke-PepeBuildCommand(), Write-PepeBuildLine()
 
 ### Community 355 - "Future"
-Cohesion: 0.18
+Cohesion: 0.20
 Nodes (9): assets, AudioCover, _AudioCoverState, bookId, build, createState, didUpdateWidget, image (+1 more)
 
-### Community 356 - "WidgetsBindingObserver"
-Cohesion: 0.33
-Nodes (5): PdfReaderPage, _PdfReaderPageState, ReaderPage, _ReaderPageState, UpdateService
-
 ### Community 359 - "pets_dev.dart"
-Cohesion: 0.11
-Nodes (18): enabledKey, PetsService, clockShiftKey, devClockShift, devCoins, devEnabled, devHatchReady, devLevel (+10 more)
+Cohesion: 0.13
+Nodes (14): enabledKey, clockShiftKey, devClockShift, devCoins, devEnabled, devLevel, devMinutes, devMood (+6 more)
 
 ### Community 362 - "Импорт папок — 0.5.1"
 Cohesion: 0.67
@@ -1830,33 +1821,33 @@ Nodes (3): Импорт папок — 0.5.1, Проверка на Android, С�
 Cohesion: 0.17
 Nodes (10): ankiText, field, html, location, name, out, saveAnkiExport, text (+2 more)
 
-### Community 513 - "library_folder_storage_test.dart"
-Cohesion: 0.04
-Nodes (41): LibraryFolderConflict, LibraryFolderPending, legacyDatabase, main, raw, root, _featureTables, file (+33 more)
+### Community 513 - "dart:async"
+Cohesion: 0.05
+Nodes (32): LibraryFolderConflict, LibraryFolderPending, book, main, messenger, _AppException, main, message (+24 more)
 
-### Community 514 - "VideoFilesChannelTest.kt"
-Cohesion: 0.13
-Nodes (5): VideoFilesChannelTest, Библиотека, Медиа: видео и музыка, Плеер, Хранение и проверка
+### Community 516 - "audio_notes_page.dart"
+Cohesion: 0.08
+Nodes (21): audio, audioNoteLabels, AudioNotesPage, _AudioNotesPageState, bookId, build, busy, controller (+13 more)
 
-### Community 515 - "int get"
-Cohesion: 0.33
-Nodes (4): BookTimeline, lengths, positionMs, totalMs
+### Community 517 - "audio_artwork.dart"
+Cohesion: 0.10
+Nodes (12): artworkOrder, ArtworkStore, assets, choose, findAudioArtwork, load, _load, lower (+4 more)
 
-### Community 516 - "../media/asset_store.dart"
-Cohesion: 0.06
-Nodes (28): failures, files, hash, library, protectedEvents, protectedPositions, recoverAudioRoot, recoverReadingRoot (+20 more)
-
-### Community 517 - "CustomPainter"
-Cohesion: 0.40
-Nodes (4): _BookProgressPainter, ReaderBookTicksPainter, _BatteryPainter, _CoveragePainter
+### Community 518 - "pets_progress_service.dart"
+Cohesion: 0.17
+Nodes (11): gameCoinsToday, _progress, PetsService, buyPet, _checkProgress, finishGame, petOffers, PetsDev (+3 more)
 
 ### Community 519 - "String get"
-Cohesion: 0.12
-Nodes (13): ListeningClock, milliseconds, setAudible, _since, _total, album, coverPath, fromJson (+5 more)
+Cohesion: 0.20
+Nodes (8): album, coverPath, fromJson, MusicMetadata, MusicRepeat, subtitle, toJson, trackNumber
 
 ### Community 520 - "shelf_book_details.dart"
-Cohesion: 0.06
-Nodes (27): audioExtensions, bookExtensions, bookFormat, bookFormats, extension, format, formatLabel, name (+19 more)
+Cohesion: 0.12
+Nodes (16): date, day, days, lastOpenedLabel, local, minimumSpeedSampleMs, minutes, _months (+8 more)
+
+### Community 521 - "rtf.dart"
+Cohesion: 0.17
+Nodes (11): bold, decode, destinations, emit, output, _rtfLetter, rtfText, skip (+3 more)
 
 ### Community 522 - "FolderFileSystem"
 Cohesion: 0.40
@@ -1870,21 +1861,17 @@ Nodes (5): PepeHub 0.10.0 — экран чтения, Дальше по пла�
 Cohesion: 0.50
 Nodes (3): Воспроизводимая проверка, Изменения, Проверка больших каталогов
 
-### Community 526 - "AssetStore"
-Cohesion: 0.08
-Nodes (23): AudioFolder, assets, _cache, choose, CoverSync, discardCached, normalize, path (+15 more)
+### Community 526 - "../diagnostics/user_message.dart"
+Cohesion: 0.05
+Nodes (37): AudioFolder, assets, AudioCatalogDialog, _AudioCatalogDialogState, build, busy, createState, drafts (+29 more)
 
 ### Community 527 - "Автоматическое чтение и карточка книги — код 0.10.1"
 Cohesion: 0.29
 Nodes (7): Автоматическое чтение и карточка книги — код 0.10.1, Карточка книги, Компактные журналы, Новое продвижение и повтор, Остаётся, Учёт чтения, Экран статистики
 
 ### Community 528 - "listening_timeline_test.dart"
-Cohesion: 0.20
-Nodes (8): JumpEntry, ListenSpan, TimelineEntry, evening, _listen, main, minute, _seek
-
-### Community 529 - "pets_schema.dart"
-Cohesion: 0.20
-Nodes (9): columns, createPetsSchema, customStatement, json, now, oldJson, upgradePetsSchemaV11, upgradePetsSchemaV12 (+1 more)
+Cohesion: 0.29
+Nodes (5): evening, _listen, main, minute, _seek
 
 ### Community 530 - "NativeUpdatePlatform"
 Cohesion: 0.50
@@ -1910,25 +1897,29 @@ Nodes (5): Где открыть, Как оценивается скорость
 Cohesion: 0.40
 Nodes (5): 0.5.3 — корни библиотеки и отдельные книги, Папка данных, Приоритеты и проверка, Реализовано, Сборки
 
+### Community 547 - "video_media_session_test.dart"
+Cohesion: 0.06
+Nodes (30): spokenAudioConfiguration, close, db, engine, _Harness, lessons, main, open (+22 more)
+
 ## Knowledge Gaps
-- **7122 isolated node(s):** `_checkRoot`, `clearTemporaryCopies`, `root`, `_size`, `StorageUsage` (+7117 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 8977 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **193 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **7321 isolated node(s):** `VideoItemKind`, `VideoFolderBinding`, `VideoProgress`, `VideoHistoryPage`, `modifiedMs` (+7316 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 9187 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **202 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `9. Нативная часть Android` connect `BookFileChannel` to `VideoFilesChannel`, `Архитектура PepeHub`, `VideoWindowChannel.kt`, `.stage`, `VideoWindowChannel`, `UpdateChannel`?**
-  _High betweenness centrality (0.064) - this node is a cross-community bridge._
-- **What connects `_checkRoot`, `clearTemporaryCopies`, `root` to the rest of the system?**
-  _7122 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Why does `9. Нативная часть Android` connect `VideoWindowChannel.kt` to `BookFileChannel`, `Архитектура PepeHub`, `VideoWindowChannel`, `FolderFilesChannel`, `UpdateChannel`?**
+  _High betweenness centrality (0.077) - this node is a cross-community bridge._
+- **What connects `VideoItemKind`, `VideoFolderBinding`, `VideoProgress` to the rest of the system?**
+  _7321 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `dart:io` be split into smaller, more focused modules?**
-  _Cohesion score 0.018819733835192903 - nodes in this community are weakly interconnected._
-- **Why does `Архитектура PepeHub` connect `Архитектура PepeHub` to `APP_UPDATES.md`, `BookFileChannel`?**
-  _High betweenness centrality (0.063) - this node is a cross-community bridge._
+  _Cohesion score 0.022653488204314263 - nodes in this community are weakly interconnected._
+- **Why does `Архитектура PepeHub` connect `Архитектура PepeHub` to `APP_UPDATES.md`, `VideoWindowChannel.kt`?**
+  _High betweenness centrality (0.077) - this node is a cross-community bridge._
 - **Should `package:flutter/material.dart` be split into smaller, more focused modules?**
-  _Cohesion score 0.02292282430213465 - nodes in this community are weakly interconnected._
-- **Why does `BookFileChannel` connect `BookFileChannel` to `UpdateChannel.kt`, `MainActivity`?**
-  _High betweenness centrality (0.054) - this node is a cross-community bridge._
+  _Cohesion score 0.015910619753736362 - nodes in this community are weakly interconnected._
+- **Why does `UpdateChannel` connect `UpdateChannel` to `UpdateChannelTest.kt`, `VideoWindowChannel.kt`, `UpdateChannel.kt`, `MainActivity`?**
+  _High betweenness centrality (0.052) - this node is a cross-community bridge._
 - **Should `library_page.dart` be split into smaller, more focused modules?**
-  _Cohesion score 0.011496113989637305 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.01156195462478185 - nodes in this community are weakly interconnected._
