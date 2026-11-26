@@ -32,13 +32,6 @@ class PetSceneController {
   void wave() => _state?._sequence(['Wave']);
 }
 
-/// Natural shell colors of the eggs per species.
-const eggColors = {
-  PetSpecies.cat: Color(0xFFD9DCE3),
-  PetSpecies.fox: Color(0xFFF2B37A),
-  PetSpecies.dragon: Color(0xFF9ED8CF),
-};
-
 /// A buyable decor item's home spot in a room.
 class PetDecorSpot {
   final String id;
@@ -167,7 +160,7 @@ class _PetRoomSceneState extends State<PetRoomScene> {
   final _backdrop = Node(name: 'backdrop');
   final _shadow = Node(name: 'shadow');
   final _decorRoot = Node(name: 'decor');
-  Node? pet, fx;
+  Node? pet;
   String? error;
   final clips = <String, AnimationClip>{};
   final ends = <String, double>{};
@@ -209,10 +202,9 @@ class _PetRoomSceneState extends State<PetRoomScene> {
   }
 
   static String _modelFor(Pet pet) =>
-      PetGrowth.modelAsset(pet.species, pet.level, pet.path);
+      PetGrowth.modelAsset(pet.species, pet.level);
 
-  bool _has(TalentEffect effect) => a.pet.has(effect);
-  String get _happy => _has(TalentEffect.jump) ? 'Jump' : 'Happy';
+  String get _happy => 'Happy';
 
   Future<void> _load() async {
     try {
@@ -387,7 +379,6 @@ class _PetRoomSceneState extends State<PetRoomScene> {
     _bodies.clear();
     _naturalColors.clear();
     _accessories.clear();
-    fx = null;
     for (final animation in model.parsedAnimations) {
       final name = animation.name.split('_').last;
       clips[name] = model.createAnimationClip(animation)..weight = 0;
@@ -432,19 +423,15 @@ class _PetRoomSceneState extends State<PetRoomScene> {
           ? vm.Vector4.copy(_naturalColors[i])
           : _linear(tint);
       final g = (base.x + base.y + base.z) / 3 * 0.6 + 0.35;
-      _bodies[i]
-        ..baseColorFactor = vm.Vector4(
-          base.x + (g - base.x) * grey,
-          base.y + (g - base.y) * grey,
-          base.z + (g - base.z) * grey,
-          1,
-        )
-        ..metallicFactor = p.rank >= 1 ? 0.25 : 0
-        ..roughnessFactor = p.rank >= 1 ? 0.4 : 0.75;
+      _bodies[i].baseColorFactor = vm.Vector4(
+        base.x + (g - base.x) * grey,
+        base.y + (g - base.y) * grey,
+        base.z + (g - base.z) * grey,
+        1,
+      );
     }
     final node = pet;
     if (node == null) return;
-    await _applyFx(node);
     for (final socket in PetSocket.values) {
       final wanted = p.accessories[socket];
       final current = _accessories[socket];
@@ -466,27 +453,6 @@ class _PetRoomSceneState extends State<PetRoomScene> {
     }
   }
 
-  /// ★★ particles circle the pet, ★★★ and level 100 add the aura ring.
-  Future<void> _applyFx(Node node) async {
-    final p = a.pet;
-    final particles = p.rank >= 2;
-    final aura = p.rank >= 3 || p.level >= PetRules.maxLevel;
-    if (!particles && !aura) {
-      fx?.visible = false;
-      return;
-    }
-    var effects = fx;
-    if (effects == null) {
-      effects = await Node.fromGlbAsset('assets/pets/fx_rank.glb');
-      if (!mounted || pet != node) return;
-      node.add(effects);
-      fx = effects;
-    }
-    effects.visible = true;
-    effects.getChildByName('Fx_Particles')?.visible = particles;
-    effects.getChildByName('Fx_Aura')?.visible = aura;
-  }
-
   static vm.Vector4 _linear(Color c) {
     double lin(double v) => v <= 0.04045
         ? v / 12.92
@@ -496,7 +462,7 @@ class _PetRoomSceneState extends State<PetRoomScene> {
 
   /// The clip that fits the pet's state when nothing else plays.
   String get _mood {
-    if (a.asleep && !_has(TalentEffect.nightOwl)) return 'Sleep';
+    if (a.asleep) return 'Sleep';
     if (a.sad) return 'Sad';
     return 'Idle';
   }
@@ -552,19 +518,10 @@ class _PetRoomSceneState extends State<PetRoomScene> {
         active.playbackTime >= (ends[_current] ?? 0) - 1e-3) {
       _next();
     }
-    if (_current == 'Idle' &&
-        _has(TalentEffect.stretch) &&
-        _time - _idleSince > 18) {
+    // A long wait ends in a stretch.
+    if (_current == 'Idle' && _time - _idleSince > 18) {
       _sequence(['Stretch']);
     }
-    fx?.getChildByName('Fx_Particles')?.rotation = vm.Quaternion.axisAngle(
-      vm.Vector3(0, 1, 0),
-      _time * 0.8,
-    );
-    fx?.getChildByName('Fx_Aura')?.rotation = vm.Quaternion.axisAngle(
-      vm.Vector3(0, 1, 0),
-      -_time * 0.3,
-    );
   }
 
   Camera _camera(Duration _) {

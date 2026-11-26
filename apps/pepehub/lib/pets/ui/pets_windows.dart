@@ -90,16 +90,19 @@ const _shopTabs = <(String, List<ShopKind>)>[
   ('Декор', [ShopKind.decor]),
   ('Окрасы', [ShopKind.color]),
   ('Аксессуары', [ShopKind.accessory]),
-  ('Яйца', []),
-  ('Разное', [ShopKind.freeze, ShopKind.upgrade]),
+  ('Питомцы', []),
+  ('Разное', [ShopKind.freeze]),
 ];
 
 Future<void> _showShop(
   BuildContext context,
   _PetsSectionState s, {
   ShopKind? kind,
+  bool pets = false,
 }) {
-  final initial = kind == null
+  final initial = pets
+      ? _shopTabs.indexWhere((t) => t.$2.isEmpty)
+      : kind == null
       ? 0
       : _shopTabs.indexWhere((t) => t.$2.contains(kind));
   return _sheet(
@@ -129,32 +132,34 @@ class _ShopViewState extends State<_ShopView> {
     final (_, kinds) = _shopTabs[tab];
     final cards = <Widget>[];
     if (kinds.isEmpty) {
-      final free = o.incubatorSlots - o.eggs.length;
-      for (final offer in s.service.eggOffers(o.pets, o.eggs)) {
+      for (final species in s.service.petOffers(o.pets)) {
         cards.add(
           _ShopCard(
-            key: ValueKey('offer-${offer.species.name}'),
-            icon: eggIcon(offer.species.name),
-            title: offer.copy
-                ? 'Копия: ${offer.species.label.toLowerCase()}'
-                : offer.species.label,
-            subtitle: '${offer.minutes ~/ 60} ч чтения',
-            price: offer.price,
-            enabled: !s.busy && free > 0 && o.balance >= offer.price,
+            key: ValueKey('offer-${species.name}'),
+            icon: species.icon,
+            title: species.label,
+            subtitle: species.motto,
+            price: petPrice,
+            description:
+                '${species.motto}. Появится дома сразу, сытым и довольным.',
+            enabled: !s.busy && o.balance >= petPrice,
             onBuy: () async {
-              final done = await s._act(() async {
-                await s.service.buyEgg(offer.species);
-                return true;
-              });
-              if (done == true) s._say('Яйцо в инкубаторе');
+              if (!await _confirm(
+                context,
+                'Завести: ${species.label.toLowerCase()}?',
+                'Новый питомец за $petPrice монет появится дома сразу.',
+                'Завести',
+              )) {
+                return;
+              }
+              final id = await s._act(() => s.service.buyPet(species));
+              if (id != null) s._say('${species.label} теперь живёт дома');
             },
           ),
         );
       }
-      if (free <= 0) {
-        cards.add(
-          const _ShopNote('Инкубатор занят: яйцо высиживается чтением.'),
-        );
+      if (cards.isEmpty) {
+        cards.add(const _ShopNote('Все питомцы уже дома.'));
       }
     } else {
       for (final item in shopItems.where((i) => kinds.contains(i.kind))) {
@@ -546,7 +551,7 @@ class _WardrobeViewState extends State<_WardrobeView> {
           child: Text(
             colors
                 ? 'Окрас меняет мех питомца.'
-                : 'Ячеек: ${pet.accessories.length} из ${pet.accessorySlots}',
+                : 'Аксессуары надеваются в любом сочетании.',
             style: const TextStyle(
               color: PetsLook.muted,
               fontWeight: FontWeight.w700,
@@ -627,46 +632,16 @@ Future<void> _showPetsWindow(
     context,
     s,
     title: 'Питомцы',
-    builder: (context, o) => DefaultTabController(
-      length: 2,
-      child: Column(
-        children: [
-          TabBar(
-            labelColor: PetsLook.deep,
-            indicatorColor: PetsLook.lavender,
-            tabs: [
-              Tab(
-                text: o.pets.any((p) => p.pathPending)
-                    ? 'Питомцы •'
-                    : 'Питомцы',
-              ),
-              Tab(
-                text: o.eggs.any((e) => e.ready) ? 'Инкубатор •' : 'Инкубатор',
-              ),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                _PetsTab(
-                  overview: o,
-                  service: s.service,
-                  now: s.now,
-                  busy: s.busy,
-                  act: s._act,
-                ),
-                _IncubatorTab(
-                  overview: o,
-                  service: s.service,
-                  busy: s.busy,
-                  act: s._act,
-                  say: s._say,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    builder: (sheet, o) => _PetsTab(
+      overview: o,
+      service: s.service,
+      now: s.now,
+      busy: s.busy,
+      act: s._act,
+      onShop: () {
+        Navigator.pop(sheet);
+        unawaited(_showShop(context, s, pets: true));
+      },
     ),
   ),
   _PetsWindowKind.achievements => _sheet(
@@ -713,7 +688,7 @@ Future<void> _showPetsWindow(
   ),
 };
 
-/// Photos of the pet's milestones: the first meeting, levels, the path and
+/// Photos of the pet's milestones: the first meeting, levels and
 /// every unlocked achievement; locked ones wait as empty frames.
 class _AlbumView extends StatelessWidget {
   final PetsOverview o;
@@ -729,8 +704,6 @@ class _AlbumView extends StatelessWidget {
       for (final level in [10, 25, 45, 70, 100])
         if (pet.level >= level)
           ('Уровень $level', bg(level), Icons.trending_up_rounded),
-      if (pet.pathInfo != null)
-        ('Путь: ${pet.pathInfo!.label}', bg(2), Icons.alt_route_rounded),
       for (final a in petAchievements)
         if (o.achievements.contains(a.id))
           (a.title, bg(a.title.length), Icons.emoji_events_outlined),

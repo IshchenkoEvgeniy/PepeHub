@@ -53,6 +53,7 @@ class AppDatabase extends GeneratedDatabase {
       await createPetsSchema(this);
       await upgradePetsSchemaV11(this);
       await upgradePetsSchemaV12(this);
+      await upgradePetsSchemaV13(this);
       await customStatement('PRAGMA user_version = $currentDatabaseVersion');
     }),
     onUpgrade: (_, from, to) async {
@@ -69,6 +70,7 @@ class AppDatabase extends GeneratedDatabase {
         if (from < 10) await createPetsSchema(this);
         if (from < 11) await upgradePetsSchemaV11(this);
         if (from < 12) await upgradePetsSchemaV12(this);
+        if (from < 13) await upgradePetsSchemaV13(this);
         await customStatement('PRAGMA user_version = $currentDatabaseVersion');
       });
     },

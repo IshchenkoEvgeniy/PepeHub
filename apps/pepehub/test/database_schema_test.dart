@@ -390,4 +390,45 @@ void main() {
       isEmpty,
     );
   });
+
+  test('version 13 starts the pets section over and keeps the rest', () async {
+    final db = AppDatabase(NativeDatabase(file));
+    final repo = Repository(db);
+    await repo.setMeta('reading-book:b1', '{"title":"Книга"}');
+    await repo.setMeta('pets-section-hidden', '1');
+    await repo.setMeta('pets:enabledAt', '2026-11-01T10:00:00Z');
+    await db.customStatement(
+      "INSERT INTO pets_v1(id,species,name,created_at) VALUES('p','cat','Кошка','2026-11-01')",
+    );
+    await db.customStatement(
+      "INSERT INTO pets_ledger_v1(at,day,kind,coins,note,dedup) VALUES('x','2026-11-01','time',60,'','t1')",
+    );
+    await db.customStatement(
+      "INSERT INTO pets_xp_v1(ledger_id,pet_id,xp) VALUES(1,'p',60)",
+    );
+    await db.close();
+    final raw = sqlite.sqlite3.open(file.path);
+    raw.execute("CREATE TABLE IF NOT EXISTS pets_eggs_v1(id TEXT PRIMARY KEY)");
+    raw.execute('PRAGMA user_version=12');
+    raw.close();
+
+    final upgraded = AppDatabase(NativeDatabase(file));
+    final again = Repository(upgraded);
+    for (final table in ['pets_v1', 'pets_ledger_v1', 'pets_xp_v1']) {
+      final n = await upgraded
+          .customSelect('SELECT COUNT(*) AS n FROM $table')
+          .getSingle();
+      expect(n.read<int>('n'), 0, reason: table);
+    }
+    expect(await again.meta('pets:enabledAt'), isNull);
+    expect(await again.meta('pets-section-hidden'), '1');
+    expect(await again.meta('reading-book:b1'), '{"title":"Книга"}');
+    final tables = await upgraded
+        .customSelect(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('pets_eggs_v1','pets_reserve_v1')",
+        )
+        .get();
+    expect(tables, isEmpty);
+    await upgraded.close();
+  });
 }

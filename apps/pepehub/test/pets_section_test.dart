@@ -159,11 +159,11 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.runAsync(() async {
       final service = PetsService(repo, clock: () => now);
-      await service.enable(species: PetSpecies.cat);
+      await service.enable(species: PetSpecies.bunny);
       await service.setDevEnabled(true);
     });
     await tester.pumpWidget(app());
-    await _settle(tester, () => _has(find.text('scene:cat:0:living')));
+    await _settle(tester, () => _has(find.text('scene:bunny:0:living')));
     await tester.tap(find.byKey(const ValueKey('pets-dev')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('dev-coins-1000')));
@@ -178,8 +178,8 @@ void main() {
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
     // Owned decor reaches the scene.
-    expect(find.textContaining('scene:cat:'), findsOneWidget);
-    expect(find.text('scene:cat:0:living'), findsNothing);
+    expect(find.textContaining('scene:bunny:'), findsOneWidget);
+    expect(find.text('scene:bunny:0:living'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -189,7 +189,10 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.runAsync(() async {
-      await PetsService(repo, clock: () => now).enable(species: PetSpecies.cat);
+      await PetsService(
+        repo,
+        clock: () => now,
+      ).enable(species: PetSpecies.bunny);
     });
     PepeSection? selected;
     await tester.pumpWidget(
@@ -207,7 +210,7 @@ void main() {
         ),
       ),
     );
-    await _settle(tester, () => _has(find.text('scene:cat:0:living')));
+    await _settle(tester, () => _has(find.text('scene:bunny:0:living')));
     // The room takes the whole screen: no bottom bar of the app.
     expect(find.byType(ShelfBottomBar), findsNothing);
     expect(find.byKey(const ValueKey('dock-shop')), findsOneWidget);
@@ -297,70 +300,76 @@ void main() {
     expect(PepeNavLayout.current.value, layout);
   });
 
-  testWidgets('incubator, path, talents and achievements', (tester) async {
+  testWidgets('a pet from the shop, a mini-game and achievements', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1280, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     var day = now;
     await tester.runAsync(() async {
       final service = PetsService(repo, clock: () => day);
-      await service.enable(species: PetSpecies.cat);
-      // 14 days of 4 hours: level 25+, coins for an egg.
-      for (var i = 0; i < 14; i++) {
+      await service.enable(species: PetSpecies.bunny);
+      // 8 days of 4 hours: coins for a pet and the week streak.
+      for (var i = 0; i < 8; i++) {
         await service.addTestMinutes(240);
         await service.sync();
         day = day.add(const Duration(days: 1));
       }
     });
     await tester.pumpWidget(app(clock: () => day));
-    await _settle(tester, () => _has(find.text('scene:cat:0:living')));
+    await _settle(tester, () => _has(find.text('scene:bunny:0:living')));
     await _takeReward(tester);
 
+    // The pets window shows the species not bought yet; one leads to the
+    // shop's «Питомцы» tab.
     await tester.tap(find.byKey(const ValueKey('side-pets')));
     await tester.pumpAndSettle();
-    expect(find.text('Питомцы •'), findsOneWidget, reason: 'path pending');
-
-    await tester.tap(find.text('Инкубатор'));
+    expect(find.byKey(const ValueKey('pet-offer-fox')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pet-offer-puppy')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('pet-offer-fox')));
     await tester.pumpAndSettle();
-    expect(find.text('Свободный слот'), findsOneWidget);
     await tester.tap(
       find.descendant(
         of: find.byKey(const ValueKey('offer-fox')),
         matching: find.byType(FilledButton),
       ),
     );
-    await _settle(tester, () => _has(find.text('0:00 из 10:00')));
-    expect(find.text('Свободный слот'), findsNothing);
-
-    await tester.tap(find.text('Питомцы •'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('path-catBookish')), findsOneWidget);
-    await tester.tap(
-      find.descendant(
-        of: find.byKey(const ValueKey('path-catBookish')),
-        matching: find.byType(FilledButton),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Выбрать').last);
-    await _settle(tester, () => _has(find.textContaining('Книжная:')));
-    await tester.tap(find.byKey(const ValueKey('talent-greet')));
-    await _settle(
-      tester,
-      () => !_has(find.byKey(const ValueKey('talent-greet'))),
-    );
+    await tester.tap(find.text('Завести'));
+    await _settle(tester, () => _has(find.text('Лиса теперь живёт дома')));
+    expect(find.byKey(const ValueKey('offer-fox')), findsNothing);
+    // The «second pet» achievement shows up in «Пока вас не было» over the
+    // shop; then the shop closes and the snack bar over the dock goes away.
+    await _takeReward(tester);
     await tester.tapAt(const Offset(10, 10));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+
+    // «Поймай угощение»: a full round, then the reward.
+    await tester.tap(find.byKey(const ValueKey('dock-play')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('game-catchTreats')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const ValueKey('catch-field')), findsOneWidget);
+    // The game clock steps at most 50 ms a frame.
+    for (var i = 0; i < 900; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await tester.tap(find.byKey(const ValueKey('game-finish')));
+    await _settle(tester, () => _has(find.textContaining('доволен!')));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('side-achievements')));
     await tester.pumpAndSettle();
     expect(find.text('Неделя чтения'), findsOneWidget, reason: 'honor chip');
     await tester.scrollUntilVisible(
-      find.text('Свой путь'),
+      find.text('Новый друг'),
       300,
       scrollable: find.byType(Scrollable).last,
     );
-    expect(find.text('Свой путь'), findsOneWidget);
+    expect(find.text('Получено'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 
@@ -368,16 +377,14 @@ void main() {
     final assets = <String>{
       for (final s in PetSpecies.values) ...[
         for (final level in [1, 10, 25, 45, 70, 90, 100])
-          for (final path in [null, ...PetPath.of(s.name).map((p) => p.name)])
-            PetGrowth.modelAsset(s.name, level, path),
-        eggIcon(s.name),
+          PetGrowth.modelAsset(s.name, level),
+        s.icon,
       ],
       for (final i in shopItems) ...[
         i.icon,
         if (i.model != null) i.model!,
         if (i.kind == ShopKind.decor) i.decorModel,
       ],
-      'assets/pets/fx_rank.glb',
       'assets/pets/rooms/rooms.json',
       'assets/pets/rooms/shadow.png',
     };

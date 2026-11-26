@@ -1,7 +1,7 @@
 part of 'pets_section.dart';
 
 /// Developer panel: coins, reading minutes, experience, the game clock,
-/// needs, eggs and items for checking the section by hand. Shown when the
+/// needs and items for checking the section by hand. Shown when the
 /// panel is enabled in Settings → Diagnostics (always in debug builds).
 /// Everything is ordinary game data; the library and reading statistics are
 /// never touched.
@@ -150,15 +150,11 @@ class _DevPanel extends StatelessWidget {
             () => run('Настроение 100%', () => s.service.devMood(1)),
           ),
         ]),
-        group('Предметы и инкубатор', null, [
+        group('Предметы', null, [
           b(
             'Все предметы',
             () => run('Все предметы открыты', s.service.devUnlockItems),
             key: const ValueKey('dev-items'),
-          ),
-          b(
-            'Яйца готовы',
-            () => run('Яйца готовы к вылуплению', s.service.devHatchReady),
           ),
           b(
             'Показать «Пока вас не было»',

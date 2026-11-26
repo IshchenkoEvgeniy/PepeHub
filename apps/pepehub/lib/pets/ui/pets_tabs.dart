@@ -55,20 +55,22 @@ String _hm(int minutes) =>
 
 // ---------------------------------------------------------------- pets tab
 
-/// The collection and the profile of one pet: path, talents, merging,
-/// colors and accessories.
+/// The pets at home and the profile of one: name, companion, growth, looks.
+/// New species are bought in the shop (tab «Питомцы»).
 class _PetsTab extends StatefulWidget {
   final PetsOverview overview;
   final PetsService service;
   final DateTime now;
   final bool busy;
   final _Act act;
+  final VoidCallback onShop;
   const _PetsTab({
     required this.overview,
     required this.service,
     required this.now,
     required this.busy,
     required this.act,
+    required this.onShop,
   });
 
   @override
@@ -113,19 +115,6 @@ class _PetsTabState extends State<_PetsTab> {
     }
   }
 
-  Future<void> _choosePath(Pet pet, PetPath path) async {
-    if (!await _confirm(
-      context,
-      'Путь: ${path.label}',
-      '${path.description}. Выбор делается один раз: '
-          'с 45-го уровня ${pet.name} вырастет в этом облике.',
-      'Выбрать',
-    )) {
-      return;
-    }
-    await widget.act(() => widget.service.choosePath(pet.id, path));
-  }
-
   @override
   Widget build(BuildContext context) {
     final p = pet;
@@ -148,43 +137,37 @@ class _PetsTabState extends State<_PetsTab> {
         .where((i) => i.kind == ShopKind.accessory && o.owned.contains(i.id))
         .toList();
     final satiety = p.satiety(widget.now);
-    final step = widget.service.nextRank(p);
-    final copies = o.reserve[p.species] ?? 0;
+    final offers = widget.service.petOffers(o.pets);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Collection.
+        // Everyone at home.
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 10,
+          runSpacing: 10,
           children: [
             for (final other in o.pets)
-              ChoiceChip(
+              _PetChip(
                 key: ValueKey('pet-${other.id}'),
-                avatar: Icon(
-                  other.id == o.companion?.id ? Icons.star : Icons.pets,
-                  size: 18,
-                ),
-                label: Text(
-                  '${other.name} · ${other.level}'
-                  '${other.rank > 0 ? ' ${rankStars(other.rank)}' : ''}',
-                ),
+                pet: other,
+                companion: other.id == o.companion?.id,
                 selected: other.id == p.id,
-                onSelected: (_) => setState(() => selected = other.id),
+                onTap: () => setState(() => selected = other.id),
+              ),
+            for (final s in offers)
+              _PetChip.offer(
+                key: ValueKey('pet-offer-${s.name}'),
+                species: s,
+                onTap: widget.onShop,
               ),
           ],
         ),
-        if (o.reserve.isNotEmpty)
-          _hint(
-            context,
-            'Запас копий: ${o.reserve.entries.map((e) => '${PetSpecies.byId(e.key)?.label ?? e.key} ×${e.value}').join(', ')}',
-          ),
         const Divider(height: 28),
         Row(
           children: [
             Expanded(
               child: Text(
-                '${p.name}${p.rank > 0 ? '  ${rankStars(p.rank)}' : ''}',
+                p.name,
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
             ),
@@ -198,7 +181,6 @@ class _PetsTabState extends State<_PetsTab> {
         Text(
           [
             species?.label ?? p.species,
-            if (p.pathInfo != null) p.pathInfo!.label,
             companion
                 ? 'компаньон: получает весь опыт'
                 : 'получает 10% опыта компаньона',
@@ -215,7 +197,7 @@ class _PetsTabState extends State<_PetsTab> {
                 onPressed: busy
                     ? null
                     : () => widget.act(() => widget.service.setCompanion(p.id)),
-                icon: const Icon(Icons.star_outline),
+                icon: const Icon(Icons.home_outlined),
                 label: const Text('Сделать компаньоном'),
               ),
             ),
@@ -227,113 +209,11 @@ class _PetsTabState extends State<_PetsTab> {
           'Сытость',
           satiety <= 0 ? 'голоден' : '${(satiety * 100).round()}%',
         ),
-        // Path.
-        _heading(context, 'Путь развития'),
-        if (p.pathInfo != null)
-          _hint(context, '${p.pathInfo!.label}: ${p.pathInfo!.description}.')
-        else if (!p.pathPending)
-          _hint(
-            context,
-            'Выбор пути откроется на ${PetRules.pathLevel}-м уровне.',
-          )
-        else
-          for (final path in PetPath.of(p.species))
-            Card(
-              child: ListTile(
-                key: ValueKey('path-${path.name}'),
-                title: Text(path.label),
-                subtitle: Text(path.description),
-                trailing: FilledButton.tonal(
-                  onPressed: busy ? null : () => _choosePath(p, path),
-                  child: const Text('Выбрать'),
-                ),
-              ),
-            ),
-        // Talents.
-        _heading(
+        _hint(
           context,
-          'Таланты',
-          trailing: 'Очков: ${p.talentPointsFree} из ${p.talentPoints}',
+          'Растёт от чтения: малыш → детёныш (10-й уровень) → подросток '
+          '(25-й) → взрослый (45-й).',
         ),
-        for (final t in petTalents)
-          ListTile(
-            dense: true,
-            leading: Icon(
-              p.talents.contains(t.id)
-                  ? Icons.check_circle
-                  : Icons.radio_button_unchecked,
-              color: p.talents.contains(t.id) ? palette.accent : palette.muted,
-            ),
-            title: Text(t.title),
-            subtitle: Text(
-              '${t.description} Цена ${t.cost}, с ${t.minLevel}-го уровня.',
-            ),
-            trailing: p.talents.contains(t.id)
-                ? null
-                : TextButton(
-                    key: ValueKey('talent-${t.id}'),
-                    onPressed:
-                        busy ||
-                            p.level < t.minLevel ||
-                            p.talentPointsFree < t.cost
-                        ? null
-                        : () => widget.act(
-                            () => widget.service.learnTalent(p.id, t.id),
-                          ),
-                    child: const Text('Изучить'),
-                  ),
-          ),
-        if (p.talents.isNotEmpty)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: busy || o.balance < talentResetPrice
-                  ? null
-                  : () async {
-                      if (await _confirm(
-                        context,
-                        'Сбросить таланты?',
-                        'Все очки вернутся, сброс стоит $talentResetPrice монет.',
-                        'Сбросить',
-                      )) {
-                        await widget.act(
-                          () => widget.service.resetTalents(p.id),
-                        );
-                      }
-                    },
-              icon: const Icon(Icons.restart_alt),
-              label: Text('Сбросить за $talentResetPrice'),
-            ),
-          ),
-        // Merge.
-        _heading(context, 'Объединение'),
-        if (p.unique)
-          _hint(context, 'Уникальный питомец не объединяется.')
-        else if (step == null)
-          _hint(context, 'Высший ранг ★★★ получен.')
-        else ...[
-          _hint(
-            context,
-            'Следующий ранг ${step.label}: ${step.gives}. Нужно: '
-            '${step.level}-й уровень (сейчас ${p.level}), копий в запасе '
-            '${step.copies} (есть $copies), ${step.fee} монет.',
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.tonal(
-              key: const ValueKey('merge'),
-              onPressed:
-                  busy ||
-                      p.level < step.level ||
-                      copies < step.copies ||
-                      o.balance < step.fee
-                  ? null
-                  : () => widget.act(() => widget.service.merge(p.id)),
-              child: Text('Объединить за ${step.fee}'),
-            ),
-          ),
-          _hint(context, 'Копии вылупляются из яиц копий в инкубаторе.'),
-        ],
         // Looks.
         _heading(context, 'Окрас'),
         Wrap(
@@ -361,11 +241,7 @@ class _PetsTabState extends State<_PetsTab> {
           ],
         ),
         if (colors.isEmpty) _hint(context, 'Новые окрасы — в магазине.'),
-        _heading(
-          context,
-          'Аксессуары',
-          trailing: 'Ячеек: ${p.accessories.length} из ${p.accessorySlots}',
-        ),
+        _heading(context, 'Аксессуары'),
         for (final item in accessories)
           SwitchListTile(
             title: Text(item.title),
@@ -387,164 +263,85 @@ class _PetsTabState extends State<_PetsTab> {
   }
 }
 
-// ---------------------------------------------------------------- incubator
-
-class _IncubatorTab extends StatelessWidget {
-  final PetsOverview overview;
-  final PetsService service;
-  final bool busy;
-  final _Act act;
-  final void Function(String) say;
-  const _IncubatorTab({
-    required this.overview,
-    required this.service,
-    required this.busy,
-    required this.act,
-    required this.say,
-  });
+/// A pet at home (portrait, name, level) or, for a species not bought yet,
+/// a faded portrait with its price.
+class _PetChip extends StatelessWidget {
+  final Pet? pet;
+  final PetSpecies species;
+  final bool companion, selected;
+  final VoidCallback onTap;
+  _PetChip({
+    super.key,
+    required Pet this.pet,
+    required this.companion,
+    required this.selected,
+    required this.onTap,
+  }) : species = PetSpecies.byId(pet.species) ?? PetSpecies.fox;
+  const _PetChip.offer({super.key, required this.species, required this.onTap})
+    : pet = null,
+      companion = false,
+      selected = false;
 
   @override
   Widget build(BuildContext context) {
-    final o = overview;
-    final palette = ShelfPalette.of(context);
-    final offers = service.eggOffers(o.pets, o.eggs);
-    final free = o.incubatorSlots - o.eggs.length;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _hint(
-          context,
-          'Яйцо высиживается чтением: ему идут те же засчитанные минуты, '
-          'что и монеты. Минуты до покупки не считаются.',
+    final p = pet;
+    return Material(
+      color: selected ? PetsLook.lavenderSoft : PetsLook.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(
+          color: selected ? PetsLook.lavender : PetsLook.line,
+          width: 2,
         ),
-        _heading(
-          context,
-          'Слоты',
-          trailing: 'Занято ${o.eggs.length} из ${o.incubatorSlots}',
-        ),
-        for (final egg in o.eggs)
-          Card(
-            child: ListTile(
-              key: ValueKey('egg-${egg.id}'),
-              leading: _EggImage(egg.species),
-              title: Text(
-                '${egg.copy ? 'Копия: ' : ''}'
-                '${PetSpecies.byId(egg.species)?.label ?? egg.species}',
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: LinearProgressIndicator(value: egg.fraction),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: SizedBox(
+          width: 104,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 72,
+                  child: Opacity(
+                    opacity: p == null ? .4 : 1,
+                    child: Image.asset(
+                      species.icon,
+                      errorBuilder: (_, _, _) =>
+                          const Icon(Icons.pets, color: PetsLook.lavender),
+                    ),
                   ),
-                  Text(
-                    egg.ready
-                        ? 'Готово к вылуплению'
-                        : '${_hm(math.min(egg.progress, egg.minutes))} из ${_hm(egg.minutes)}',
+                ),
+                Text(
+                  p == null ? species.label : p.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: PetsLook.ink,
                   ),
-                ],
-              ),
-              trailing: egg.ready
-                  ? FilledButton(
-                      key: ValueKey('hatch-${egg.id}'),
-                      onPressed: busy
-                          ? null
-                          : () async {
-                              final id = await act(() => service.hatch(egg.id));
-                              say(
-                                id == null
-                                    ? 'Копия ушла в запас'
-                                    : 'Новый питомец! Он на вкладке «Питомцы»',
-                              );
-                            },
-                      child: const Text('Вылупить'),
-                    )
-                  : null,
+                ),
+                Text(
+                  p == null
+                      ? 'в магазине · $petPrice'
+                      : '${companion ? 'компаньон · ' : ''}ур. ${p.level}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: PetsLook.muted,
+                  ),
+                ),
+              ],
             ),
           ),
-        for (var i = 0; i < free; i++)
-          Card(
-            child: ListTile(
-              leading: Icon(Icons.egg_outlined, color: palette.muted),
-              title: const Text('Свободный слот'),
-              subtitle: const Text('Купите яйцо ниже'),
-            ),
-          ),
-        if (o.incubatorSlots < 2)
-          _hint(
-            context,
-            'Второй слот продаётся в магазине за $incubatorSlotPrice монет.',
-          ),
-        _heading(context, 'Яйца'),
-        for (final offer in offers)
-          _EggOfferTile(
-            offer: offer,
-            enabled: !busy && free > 0 && o.balance >= offer.price,
-            onBuy: () async {
-              final done = await act(() async {
-                await service.buyEgg(offer.species);
-                return true;
-              });
-              if (done == true) say('Яйцо в инкубаторе');
-            },
-          ),
-        if (free <= 0) _hint(context, 'Все слоты заняты.'),
-      ],
+        ),
+      ),
     );
   }
-}
-
-class _EggOfferTile extends StatelessWidget {
-  final PetEggOffer offer;
-  final bool enabled;
-  final VoidCallback onBuy;
-  const _EggOfferTile({
-    required this.offer,
-    required this.enabled,
-    required this.onBuy,
-  });
-
-  @override
-  Widget build(BuildContext context) => Card(
-    child: ListTile(
-      key: ValueKey('offer-${offer.species.name}'),
-      leading: _EggImage(offer.species.name),
-      title: Text(
-        offer.copy
-            ? 'Яйцо копии: ${offer.species.label.toLowerCase()}'
-            : 'Яйцо: ${offer.species.label.toLowerCase()}',
-      ),
-      subtitle: Text(
-        offer.copy
-            ? 'Копия ждёт в запасе и нужна для объединения. '
-                  '${offer.minutes ~/ 60} ч чтения.'
-            : 'Новый питомец. ${offer.minutes ~/ 60} ч чтения.',
-      ),
-      trailing: FilledButton.tonal(
-        onPressed: enabled ? onBuy : null,
-        child: Text('${offer.price}'),
-      ),
-    ),
-  );
-}
-
-/// The 3D egg of a species (the icons rendered in Blender).
-class _EggImage extends StatelessWidget {
-  final String species;
-  const _EggImage(this.species);
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: 48,
-    height: 48,
-    child: Image.asset(
-      eggIcon(species),
-      errorBuilder: (_, _, _) => CircleAvatar(
-        backgroundColor: eggColors[PetSpecies.byId(species)],
-        child: const Icon(Icons.egg, color: Colors.white),
-      ),
-    ),
-  );
 }
 
 // ---------------------------------------------------------------- journal

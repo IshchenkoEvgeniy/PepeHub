@@ -3,7 +3,7 @@
 // Not part of the app: run it on Windows to look at the layout.
 //   flutter build windows --debug -t tool/pets_screen_preview.dart
 // Environment:
-//   PETS_SCREEN_SPECIES  cat | fox | dragon (default dragon)
+//   PETS_SCREEN_SPECIES  fox | puppy | bunny (default fox)
 //   PETS_SCREEN_LEVEL    pet level (default 6)
 //   PETS_SCREEN_TAP      keys to tap one after another, e.g. dock-food,side-pets
 //   PETS_SCREEN_LIGHT=1  light app theme (default: dark, like the phone)
@@ -31,7 +31,7 @@ Future<void> main() async {
   final repo = Repository(AppDatabase(NativeDatabase.memory()));
   final service = PetsService(repo);
   final species = PetSpecies.values.firstWhere(
-    (s) => s.name == (_env['PETS_SCREEN_SPECIES'] ?? 'dragon'),
+    (s) => s.name == (_env['PETS_SCREEN_SPECIES'] ?? 'fox'),
   );
   await service.enable(species: species);
   await service.devCoins(233);

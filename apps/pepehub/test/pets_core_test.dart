@@ -173,12 +173,12 @@ void main() {
 
     test('other pets get a tenth of the experience', () async {
       await pets.enable();
-      await pets.createPet('fox', 'Лиса');
+      await pets.createPet('puppy', 'Щенок');
       await _read(repo, 'r', 'b1', DateTime(2026, 11, 20, 10), 50);
       now = DateTime(2026, 11, 20, 11);
       await pets.sync();
       final all = {for (final p in await pets.pets()) p.name: p.xp};
-      expect(all, {'Кошка': 50, 'Лиса': closeTo(5, 1e-9)});
+      expect(all, {'Лиса': 50, 'Щенок': closeTo(5, 1e-9)});
     });
 
     group('book of the day', () {
@@ -331,7 +331,7 @@ void main() {
       });
 
       test('colors and accessories need to be owned', () async {
-        await pets.enable(species: PetSpecies.dragon);
+        await pets.enable(species: PetSpecies.puppy);
         final id = (await pets.pets()).single.id;
         await expectLater(
           pets.setColor(id, 'color_mint'),
@@ -391,8 +391,6 @@ void main() {
         'pets_finish_queue_v1',
         'pets_inventory_v1',
         'pets_owned_v1',
-        'pets_eggs_v1',
-        'pets_reserve_v1',
       });
       final meta = await db
           .customSelect("SELECT key FROM metadata WHERE key LIKE 'pets:%'")

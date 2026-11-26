@@ -1,7 +1,7 @@
 part of 'pets_service.dart';
 
 /// Developer tools of the pets section: grant coins, experience and minutes,
-/// shift the game clock, finish eggs, set needs. Everything is written as
+/// shift the game clock, set needs. Everything is written as
 /// ordinary game data (ledger kind `dev`), never into reading statistics or
 /// the library. The panel is enabled in Settings → Diagnostics.
 extension PetsDev on PetsService {
@@ -72,16 +72,11 @@ extension PetsDev on PetsService {
   }
 
   /// Reading minutes for today (test minutes, recounted like real reading:
-  /// coins, experience, egg progress and the streak follow).
+  /// coins, experience and the streak follow).
   Future<void> devMinutes(int minutes) async {
     await addTestMinutes(minutes);
     await sync();
   }
-
-  /// Every egg in the incubator becomes ready to hatch.
-  Future<void> devHatchReady() => _db.customStatement(
-    'UPDATE pets_eggs_v1 SET minutes=0 WHERE hatched_at IS NULL',
-  );
 
   /// Satiety of every pet: 1 full, 0 hungry.
   Future<void> devSatiety(double value) async {

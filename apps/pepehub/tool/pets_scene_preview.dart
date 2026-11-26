@@ -86,7 +86,7 @@ class _PreviewState extends State<_Preview> {
     final env = Platform.environment;
     final pet = Pet(
       id: 'preview',
-      species: env['PETS_PREVIEW_SPECIES'] ?? 'cat',
+      species: env['PETS_PREVIEW_SPECIES'] ?? 'fox',
       name: 'Пушок',
       createdAt: DateTime(2026),
       xp: double.tryParse(env['PETS_PREVIEW_XP'] ?? '') ?? 3000,

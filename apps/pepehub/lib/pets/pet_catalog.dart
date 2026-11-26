@@ -1,19 +1,27 @@
 import 'package:flutter/material.dart' show Color;
 
-/// Starter species of the MVP. Models: `assets/pets/<id>_<stage>.glb`.
+/// The three species of the pets section. Models (blocky pets, design/pets/
+/// scripts/cube_pets.py): `assets/pets/<id>_<stage>.glb`, stage baby, cub,
+/// teen or adult.
 enum PetSpecies {
-  cat('Кошка', 'Спокойная и любопытная'),
   fox('Лиса', 'Быстрая и хитрая'),
-  dragon('Дракончик', 'Маленький, но гордый');
+  puppy('Щенок', 'Верный и весёлый'),
+  bunny('Кролик', 'Мягкий и любопытный');
 
   final String label, motto;
   const PetSpecies(this.label, this.motto);
+
+  /// Portrait rendered in Blender (cube_pets.render_pet_icons).
+  String get icon => 'assets/pets/icons/pet_$name.png';
 
   static PetSpecies? byId(String id) =>
       values.where((s) => s.name == id).firstOrNull;
 }
 
-enum ShopKind { food, color, decor, accessory, freeze, upgrade }
+/// The first pet is free; each other species is bought once, at once.
+const petPrice = 1500;
+
+enum ShopKind { food, color, decor, accessory, freeze }
 
 extension ShopKindLabel on ShopKind {
   String get label => switch (this) {
@@ -22,7 +30,6 @@ extension ShopKindLabel on ShopKind {
     ShopKind.decor => 'Декор комнаты',
     ShopKind.accessory => 'Аксессуары',
     ShopKind.freeze => 'Серия дней',
-    ShopKind.upgrade => 'Инкубатор',
   };
 
   /// Food and freezes are spent; everything else is bought once.
@@ -72,9 +79,6 @@ class ShopItem {
   /// Decor model placed in its room (design/pets/scripts/app_assets.py).
   String get decorModel => 'assets/pets/decor/$id.glb';
 }
-
-/// Icon of an egg of [species] in a nest.
-String eggIcon(String species) => 'assets/pets/icons/egg_$species.png';
 
 /// The permanent shop (no «today only» offers). Prices follow the concept:
 /// food 10–40, colors 500–1500, decor 100–1500, accessories 150–600.
@@ -196,13 +200,6 @@ const shopItems = <ShopItem>[
     price: 400,
     socket: PetSocket.head,
     model: 'assets/pets/acc_beanie.glb',
-  ),
-  ShopItem(
-    id: 'incubator_slot',
-    title: 'Второй слот инкубатора',
-    description: 'Высиживать два яйца одновременно.',
-    kind: ShopKind.upgrade,
-    price: 3000,
   ),
   // Achievement rewards: never sold.
   ShopItem(

@@ -8,6 +8,7 @@ import '../audio/audio_daily_totals.dart';
 import '../data/repository.dart';
 import '../reader/reading_daily_totals.dart';
 import 'pet_catalog.dart';
+import 'pet_games.dart';
 import 'pet_progress.dart';
 import 'pet_rules.dart';
 
@@ -45,17 +46,6 @@ class Pet {
   final Map<PetSocket, String> accessories;
   final DateTime? fedAt;
 
-  /// Adult look chosen at level 25 ([PetPath] name), or null.
-  final String? path;
-
-  /// Learned talent ids.
-  final Set<String> talents;
-
-  /// Merge rank: 0, ★ 1, ★★ 2, ★★★ 3.
-  final int rank;
-
-  /// Granted for an achievement: never merged.
-  final bool unique;
   const Pet({
     required this.id,
     required this.species,
@@ -65,22 +55,9 @@ class Pet {
     this.color,
     this.accessories = const {},
     this.fedAt,
-    this.path,
-    this.talents = const {},
-    this.rank = 0,
-    this.unique = false,
   });
   int get level => PetRules.levelForXp(xp.floor());
   PetStage get stage => PetRules.stageForLevel(level);
-  PetPath? get pathInfo => PetPath.byId(path);
-  int get talentPoints => PetGrowth.talentPoints(level, rank);
-  int get talentPointsFree => talentPoints - PetGrowth.spent(talents);
-  int get accessorySlots => PetGrowth.accessorySlots(level, rank, talents);
-  bool has(TalentEffect effect) =>
-      talents.map(petTalent).nonNulls.any((t) => t.effect == effect);
-
-  /// A path can be chosen now.
-  bool get pathPending => path == null && level >= PetRules.pathLevel;
 
   /// 1 right after a full meal, 0 when hungry (a day without food).
   double satiety(DateTime now) => PetRules.satiety(fedAt, now);
@@ -100,12 +77,8 @@ class PetsOverview {
   final Map<String, int> inventory;
   final Set<String> owned;
 
-  /// Eggs in the incubator (not hatched yet), oldest first.
-  final List<PetEgg> eggs;
-  final int incubatorSlots;
-
-  /// Hatched copies waiting to merge, per species.
-  final Map<String, int> reserve;
+  /// Coins won in mini-games today (of [PetGames.dailyCoins]).
+  final int gameCoinsToday;
   final AchievementProgress progress;
 
   /// Unlocked achievement ids.
@@ -134,9 +107,7 @@ class PetsOverview {
     this.bookOfDay,
     this.inventory = const {},
     this.owned = const {},
-    this.eggs = const [],
-    this.incubatorSlots = 1,
-    this.reserve = const {},
+    this.gameCoinsToday = 0,
     this.progress = const AchievementProgress(),
     this.achievements = const {},
     this.honor,
@@ -347,8 +318,6 @@ class PetsService {
       'pets_v1',
       'pets_days_v1',
       'pets_finish_queue_v1',
-      'pets_eggs_v1',
-      'pets_reserve_v1',
     ]) {
       await _db.customStatement('DELETE FROM $table');
     }
@@ -366,7 +335,7 @@ class PetsService {
 
   /// Starts counting from now with the chosen starter as companion.
   /// Past reading grants nothing (no start capital).
-  Future<void> enable({PetSpecies species = PetSpecies.cat, String? name}) =>
+  Future<void> enable({PetSpecies species = PetSpecies.fox, String? name}) =>
       _db.transaction(() async {
         if (await enabledAt() != null) return;
         await repository.setMeta(
@@ -522,14 +491,8 @@ class PetsService {
         throw const PetsActionError('Аксессуар не куплен');
       }
     }
-    final pet = (await pets()).firstWhere((p) => p.id == petId);
-    if (accessoryId != null &&
-        !pet.accessories.containsKey(socket) &&
-        pet.accessories.length >= pet.accessorySlots) {
-      throw PetsActionError(
-        'Свободных ячеек нет: у питомца их ${pet.accessorySlots}',
-      );
-    }
+    final pet = (await pets()).where((p) => p.id == petId).firstOrNull;
+    if (pet == null) throw const PetsActionError('Питомец не найден');
     final next = {for (final e in pet.accessories.entries) e.key.name: e.value};
     if (accessoryId == null) {
       next.remove(socket.name);
@@ -558,7 +521,6 @@ class PetsService {
     final rows = await _db
         .customSelect(
           'SELECT p.id,p.species,p.name,p.created_at,p.color,p.accessories,p.fed_at,'
-          'p.path,p.talents,p.rank,p.unique_pet,'
           'COALESCE(SUM(x.xp),0) AS xp '
           'FROM pets_v1 p LEFT JOIN pets_xp_v1 x ON x.pet_id=p.id '
           'GROUP BY p.id ORDER BY p.created_at',
@@ -589,10 +551,6 @@ class PetsService {
           accessories: sockets(r.read<String>('accessories')),
           fedAt: DateTime.tryParse(r.readNullable<String>('fed_at') ?? '')
               ?.toLocal(),
-          path: r.readNullable<String>('path'),
-          talents: _talents(r.read<String>('talents')),
-          rank: r.read<int>('rank'),
-          unique: r.read<int>('unique_pet') != 0,
         ),
     ];
   }
@@ -668,9 +626,7 @@ class PetsService {
               .replaceFirst('Книга дня: ', ''),
       inventory: await inventory(),
       owned: await owned(),
-      eggs: await eggs(),
-      incubatorSlots: await incubatorSlots(),
-      reserve: await reserve(),
+      gameCoinsToday: await gameCoinsToday(),
       progress: progress,
       achievements: await unlockedAchievements(),
       honor: await repository.meta(_honorKey),

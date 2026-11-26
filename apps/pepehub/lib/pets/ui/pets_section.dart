@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
+import 'package:flutter/services.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import '../../data/repository.dart';
@@ -11,6 +13,7 @@ import '../../diagnostics/user_message.dart';
 import '../../ui/app_theme.dart';
 import '../../ui/shelf_components.dart';
 import '../pet_catalog.dart';
+import '../pet_games.dart';
 import '../pet_progress.dart';
 import '../pet_rules.dart';
 import '../pets_service.dart';
@@ -19,6 +22,7 @@ import 'pet_scene.dart';
 part 'pets_tabs.dart';
 part 'pets_windows.dart';
 part 'pets_dev_panel.dart';
+part 'pets_games.dart';
 
 /// Builds the 3D room; tests replace it (Flutter GPU is not available there).
 typedef PetSceneBuilder = Widget Function(
@@ -526,8 +530,6 @@ class _HomeState extends State<_Home> {
   );
 
   Widget _sideButtons() {
-    final pending =
-        o.pets.any((p) => p.pathPending) || o.eggs.any((e) => e.ready);
     return Column(
       children: [
         _RoundButton(
@@ -540,8 +542,7 @@ class _HomeState extends State<_Home> {
         _RoundButton(
           key: const ValueKey('side-pets'),
           icon: Icons.pets_rounded,
-          tooltip: 'Питомцы и инкубатор',
-          dot: pending,
+          tooltip: 'Питомцы',
           onTap: () => _showPetsWindow(context, s, _PetsWindowKind.pets),
         ),
         const SizedBox(height: 10),
@@ -700,10 +701,7 @@ class _HomeState extends State<_Home> {
           meterColor: PetsLook.joy,
           onTap: asleep
               ? () => s._say('${pet.name} спит. Поиграем утром')
-              : () {
-                  s.scene.play();
-                  unawaited(s._act(() => s.service.play(pet.id)));
-                },
+              : () => _showGames(context, this),
         ),
         _DockButton(
           key: const ValueKey('dock-food'),
@@ -1158,13 +1156,11 @@ class _RoundButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
   final VoidCallback onTap;
-  final bool dot;
   const _RoundButton({
     super.key,
     required this.icon,
     required this.tooltip,
     required this.onTap,
-    this.dot = false,
   });
   @override
   Widget build(BuildContext context) => Tooltip(
@@ -1189,12 +1185,6 @@ class _RoundButton extends StatelessWidget {
             ),
           ),
         ),
-        if (dot)
-          const Positioned(
-            right: -1,
-            top: -1,
-            child: CircleAvatar(radius: 6, backgroundColor: Color(0xFFE0536E)),
-          ),
       ],
     ),
   );
@@ -1343,8 +1333,8 @@ class _StarterPicker extends StatelessWidget {
           const Text(
             'Чтение и прослушивание в PepeHub приносят монеты и опыт: '
             '1 минута — 1 монета, до 4 часов в день. Счёт начнётся с этого '
-            'момента; прошлое чтение не учитывается. Двое других появятся '
-            'позже — их можно будет вырастить из яиц.',
+            'момента; прошлое чтение не учитывается. Остальных питомцев '
+            'можно будет завести в магазине за $petPrice монет.',
             style: TextStyle(color: PetsLook.muted),
           ),
           const SizedBox(height: 16),
@@ -1365,10 +1355,10 @@ class _StarterPicker extends StatelessWidget {
                         child: Column(
                           children: [
                             Image.asset(
-                              eggIcon(species.name),
+                              species.icon,
                               height: 110,
                               errorBuilder: (_, _, _) => const Icon(
-                                Icons.egg,
+                                Icons.pets,
                                 size: 80,
                                 color: PetsLook.lavender,
                               ),

@@ -1,5 +1,30 @@
 import 'package:drift/drift.dart';
 
+/// Schema version 13: the simpler game — three species (fox, puppy, bunny)
+/// bought at once, no eggs, copies, ranks, paths or talents. The pets
+/// section starts over (the owner's choice): every game table is emptied and
+/// the `pets:` settings are cleared, so the starter is picked again. Library
+/// cards, reading statistics and the `pets-…` app settings stay untouched.
+Future<void> upgradePetsSchemaV13(GeneratedDatabase db) async {
+  await db.customStatement('DROP TABLE IF EXISTS pets_eggs_v1');
+  await db.customStatement('DROP TABLE IF EXISTS pets_reserve_v1');
+  // Children first: pets_xp_v1 references the ledger and the pets.
+  for (final table in [
+    'pets_xp_v1',
+    'pets_ledger_v1',
+    'pets_v1',
+    'pets_inventory_v1',
+    'pets_owned_v1',
+    'pets_days_v1',
+    'pets_finish_queue_v1',
+  ]) {
+    await db.customStatement('DELETE FROM $table');
+  }
+  await db.customStatement(
+    "DELETE FROM metadata WHERE key>='pets:' AND key<'pets;'",
+  );
+}
+
 /// Schema version 12: growth paths, talents, eggs and the reserve of copies.
 Future<void> upgradePetsSchemaV12(GeneratedDatabase db) async {
   final columns = {

@@ -3,55 +3,39 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pepehub/data/database.dart';
 import 'package:pepehub/data/repository.dart';
 import 'package:pepehub/pets/pet_catalog.dart';
+import 'package:pepehub/pets/pet_games.dart';
 import 'package:pepehub/pets/pet_progress.dart';
 import 'package:pepehub/pets/pets_service.dart';
 
 void main() {
   group('rules', () {
-    test('talent points, accessory slots and level rewards', () {
-      expect(PetGrowth.talentPoints(4, 0), 0);
-      expect(PetGrowth.talentPoints(5, 0), 1);
-      expect(PetGrowth.talentPoints(100, 0), 20);
-      expect(PetGrowth.talentPoints(100, 2), 22, reason: '★★ adds two');
-      expect(PetGrowth.accessorySlots(1, 0, const {}), 1);
-      expect(PetGrowth.accessorySlots(25, 0, const {}), 2);
-      expect(PetGrowth.accessorySlots(45, 1, const {}), 4);
-      expect(
-        PetGrowth.accessorySlots(90, 1, const {'slot'}),
-        PetSocket.values.length,
-        reason: 'never more than sockets',
-      );
+    test('level rewards and the model of each stage', () {
       expect(PetGrowth.levelReward(9), 0);
       expect(PetGrowth.levelReward(10), 100);
       expect(PetGrowth.levelReward(100), 1000);
-      // Talents fit into the points of level 100.
+      expect(PetGrowth.modelAsset('fox', 1), 'assets/pets/fox_baby.glb');
+      expect(PetGrowth.modelAsset('puppy', 10), 'assets/pets/puppy_cub.glb');
+      expect(PetGrowth.modelAsset('bunny', 30), 'assets/pets/bunny_teen.glb');
+      expect(PetGrowth.modelAsset('bunny', 95), 'assets/pets/bunny_adult.glb');
       expect(
-        PetGrowth.spent(petTalents.map((t) => t.id)),
-        lessThanOrEqualTo(20),
+        PetGrowth.modelAsset('cat', 5),
+        'assets/pets/fox_baby.glb',
+        reason: 'a removed species falls back to the fox',
       );
+      expect(PetSpecies.values.map((s) => s.name), ['fox', 'puppy', 'bunny']);
     });
 
-    test('model follows stage and path', () {
-      expect(PetGrowth.modelAsset('cat', 1, null), 'assets/pets/cat_baby.glb');
-      expect(PetGrowth.modelAsset('cat', 10, null), 'assets/pets/cat_cub.glb');
-      expect(PetGrowth.modelAsset('fox', 30, null), 'assets/pets/fox_teen.glb');
-      expect(
-        PetGrowth.modelAsset('fox', 50, null),
-        'assets/pets/fox_teen.glb',
-        reason: 'no path yet',
-      );
-      expect(
-        PetGrowth.modelAsset('dragon', 95, 'dragonStone'),
-        'assets/pets/dragon_adult_stone.glb',
-      );
-      expect(
-        PetGrowth.modelAsset('cat', 50, 'foxFire'),
-        'assets/pets/cat_teen.glb',
-        reason: 'a path of another species is ignored',
-      );
-      for (final s in PetSpecies.values) {
-        expect(PetPath.of(s.name), hasLength(2));
-      }
+    test('mini-game coins and the daily limit', () {
+      expect(PetGames.catchCoins(0), 0);
+      expect(PetGames.catchCoins(17), 8);
+      expect(PetGames.catchCoins(200), 30, reason: 'a round pays at most 30');
+      expect(PetGames.memoryCoins(PetGames.memoryPairs, cleared: true), 30);
+      expect(PetGames.memoryCoins(10, cleared: true), 22);
+      expect(PetGames.memoryCoins(40, cleared: true), 5);
+      expect(PetGames.memoryCoins(6, cleared: false), 0);
+      expect(PetGames.payable(30, 0), 30);
+      expect(PetGames.payable(30, 35), 15);
+      expect(PetGames.payable(30, 50), 0);
     });
   });
 
@@ -78,138 +62,62 @@ void main() {
       }
     }
 
-    Future<Pet> pet(String id) async =>
-        (await pets.pets()).firstWhere((p) => p.id == id);
-
-    test('eggs: buy, hatch a new species, then copies', () async {
-      await pets.enable(species: PetSpecies.cat);
-      final offers0 = pets.eggOffers(await pets.pets(), const []);
-      expect(
-        {for (final o in offers0) o.species: o.copy},
-        {PetSpecies.cat: true, PetSpecies.fox: false, PetSpecies.dragon: false},
-      );
+    test('other species are bought at once, one each', () async {
+      await pets.enable(species: PetSpecies.bunny);
+      expect(pets.petOffers(await pets.pets()), [
+        PetSpecies.fox,
+        PetSpecies.puppy,
+      ]);
       await expectLater(
-        pets.buyEgg(PetSpecies.fox),
+        pets.buyPet(PetSpecies.fox),
         throwsA(isA<PetsActionError>()),
-        reason: 'no coins',
+        reason: 'no coins yet',
       );
       await days(7);
       final before = await pets.balance();
-      await pets.buyEgg(PetSpecies.fox);
-      expect(await pets.balance(), before - speciesEggPrice);
+      final id = await pets.buyPet(PetSpecies.fox);
+      final all = await pets.pets();
+      expect(all.firstWhere((p) => p.id == id).species, 'fox');
+      expect(all.firstWhere((p) => p.id == id).satiety(now), 1);
+      // The «second pet» achievement may pay on top of the price.
+      expect(await pets.balance(), greaterThanOrEqualTo(before - petPrice));
+      expect((await pets.unlockedAchievements()), contains('pets_2'));
       await expectLater(
-        pets.buyEgg(PetSpecies.dragon),
+        pets.buyPet(PetSpecies.fox),
         throwsA(isA<PetsActionError>()),
-        reason: 'one slot',
+        reason: 'one pet per species',
       );
-      var egg = (await pets.eggs()).single;
-      expect(egg.progress, 0, reason: 'past minutes do not count');
-      await expectLater(pets.hatch(egg.id), throwsA(isA<PetsActionError>()));
-      await days(3, 240); // 720 ≥ 600 minutes
-      egg = (await pets.eggs()).single;
-      expect(egg.ready, isTrue);
-      final fox = await pets.hatch(egg.id);
-      expect(fox, isNotNull);
-      expect((await pet(fox!)).species, 'fox');
-      expect(await pets.eggs(), isEmpty);
-      expect((await pets.unlockedAchievements()).contains('hatch_1'), isTrue);
-      // A copy egg is half price and goes to the reserve.
-      final b = await pets.balance();
-      await pets.buyEgg(PetSpecies.fox);
-      expect(await pets.balance(), b - copyEggPrice);
-      expect((await pets.eggs()).single.minutes, copyEggMinutes);
-      await days(2);
-      await pets.hatch((await pets.eggs()).single.id);
-      expect(await pets.reserve(), {'fox': 1});
-      expect(
-        (await pets.pets()).where((p) => p.species == 'fox'),
-        hasLength(1),
-      );
+      expect(pets.petOffers(await pets.pets()), [PetSpecies.puppy]);
     });
 
-    test('second incubator slot', () async {
+    test('mini-games pay up to the daily limit and cheer the pet', () async {
       await pets.enable();
-      await days(26);
-      await pets.buy(incubatorSlotId);
-      expect(await pets.incubatorSlots(), 2);
-      await pets.buyEgg(PetSpecies.fox);
-      await pets.buyEgg(PetSpecies.dragon);
-      expect(await pets.eggs(), hasLength(2));
-      await days(3);
+      final id = (await pets.pets()).single.id;
+      await pets.cheer(id, -0.5);
+      final mood = (await pets.moods())[id]!;
+      expect(await pets.finishGame(PetGame.catchTreats, 60, petId: id), 30);
+      expect(await pets.finishGame(PetGame.memory, 6, petId: id), 20);
       expect(
-        (await pets.eggs()).every((e) => e.ready),
+        await pets.finishGame(PetGame.memory, 6, petId: id),
+        0,
+        reason: '50 a day',
+      );
+      expect(await pets.gameCoinsToday(), PetGames.dailyCoins);
+      expect((await pets.overview()).gameCoinsToday, PetGames.dailyCoins);
+      expect((await pets.moods())[id]!, greaterThan(mood));
+      now = now.add(const Duration(days: 1));
+      expect(await pets.finishGame(PetGame.catchTreats, 10, petId: id), 5);
+      final journal = await pets.ledger(limit: 50);
+      expect(journal.where((e) => e.kind == 'game').map((e) => e.coins), [
+        5,
+        20,
+        30,
+      ]);
+      expect(
+        journal.where((e) => e.kind == 'game').every((e) => e.xp == 0),
         isTrue,
-        reason: 'both grow from the same minutes',
+        reason: 'experience comes from reading only',
       );
-    });
-
-    test('path from level 25, once, for its own species', () async {
-      await pets.enable(species: PetSpecies.fox);
-      final id = (await pets.pets()).single.id;
-      await expectLater(
-        pets.choosePath(id, PetPath.foxFire),
-        throwsA(isA<PetsActionError>()),
-        reason: 'level too low',
-      );
-      await days(14);
-      expect((await pet(id)).level, greaterThanOrEqualTo(25));
-      expect((await pet(id)).pathPending, isTrue);
-      await expectLater(
-        pets.choosePath(id, PetPath.catNight),
-        throwsA(isA<PetsActionError>()),
-      );
-      await pets.choosePath(id, PetPath.foxFire);
-      expect((await pet(id)).path, 'foxFire');
-      await expectLater(
-        pets.choosePath(id, PetPath.foxForest),
-        throwsA(isA<PetsActionError>()),
-      );
-    });
-
-    test('talents spend points; a reset costs coins', () async {
-      await pets.enable();
-      final id = (await pets.pets()).single.id;
-      await days(6);
-      final level = (await pet(id)).level;
-      expect(level, inInclusiveRange(15, 24));
-      await pets.learnTalent(id, 'greet');
-      await pets.learnTalent(id, 'spin');
-      expect((await pet(id)).talentPointsFree, level ~/ 5 - 3);
-      await expectLater(
-        pets.learnTalent(id, 'bed'),
-        throwsA(isA<PetsActionError>()),
-        reason: 'level 30 needed',
-      );
-      expect((await pet(id)).has(TalentEffect.spin), isTrue);
-      final b = await pets.balance();
-      await pets.resetTalents(id);
-      expect(await pets.balance(), b - talentResetPrice);
-      expect((await pet(id)).talents, isEmpty);
-    });
-
-    test('merge needs the level, copies and coins', () async {
-      await pets.enable(species: PetSpecies.dragon);
-      final id = (await pets.pets()).single.id;
-      await days(8);
-      await pets.buyEgg(PetSpecies.dragon);
-      await days(2);
-      await pets.hatch((await pets.eggs()).single.id);
-      expect(await pets.reserve(), {'dragon': 1});
-      await expectLater(
-        pets.merge(id),
-        throwsA(isA<PetsActionError>()),
-        reason: 'level 25 needed',
-      );
-      await days(6);
-      expect((await pet(id)).level, greaterThanOrEqualTo(25));
-      final b = await pets.balance();
-      await pets.merge(id);
-      expect((await pet(id)).rank, 1);
-      expect(await pets.reserve(), isEmpty);
-      // Level reward and achievement coins may land in the same call.
-      expect(await pets.balance(), greaterThanOrEqualTo(b - 500));
-      expect((await pets.unlockedAchievements()).contains('rank_1'), isTrue);
-      await expectLater(pets.merge(id), throwsA(isA<PetsActionError>()));
     });
 
     test('achievements and round levels pay once', () async {
@@ -240,20 +148,23 @@ void main() {
       expect((await pets.overview()).honor, isNull);
     });
 
-    test('accessory slots limit what is worn', () async {
+    test('accessories go on any socket together', () async {
       await pets.enable();
       final id = (await pets.pets()).single.id;
       await days(4);
       await pets.buy('acc_scarf');
       await pets.buy('acc_beanie');
       await pets.setAccessory(id, PetSocket.neck, 'acc_scarf');
-      await expectLater(
-        pets.setAccessory(id, PetSocket.head, 'acc_beanie'),
-        throwsA(isA<PetsActionError>()),
-        reason: 'a cub has one slot',
-      );
-      await pets.setAccessory(id, PetSocket.neck, null);
       await pets.setAccessory(id, PetSocket.head, 'acc_beanie');
+      expect((await pets.pets()).single.accessories, {
+        PetSocket.neck: 'acc_scarf',
+        PetSocket.head: 'acc_beanie',
+      });
+      await expectLater(
+        pets.setAccessory(id, PetSocket.face, 'acc_scarf'),
+        throwsA(isA<PetsActionError>()),
+        reason: 'wrong socket',
+      );
       expect(() => pets.buy('acc_glasses'), throwsA(isA<PetsActionError>()));
     });
   });
