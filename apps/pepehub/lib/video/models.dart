@@ -140,6 +140,10 @@ class VideoLesson {
   final int? durationMs;
   final bool available;
   final bool audio;
+
+  /// The file was deleted from the device. Set by the source check and
+  /// cleared when the file is back; such lessons are not shown in lists.
+  final bool missing;
   const VideoLesson({
     required this.id,
     required this.itemId,
@@ -152,6 +156,7 @@ class VideoLesson {
     this.available = true,
     this.audio = false,
     this.music,
+    this.missing = false,
   });
 
   bool get isAudio => audio || isMusicSource(source);
@@ -178,6 +183,7 @@ class VideoLesson {
                 Map<String, dynamic>.from(data['music'] as Map),
               )
             : null,
+        missing: data['missing'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -192,6 +198,7 @@ class VideoLesson {
     'available': available,
     'audio': isAudio,
     if (music != null) 'music': music!.toJson(),
+    if (missing) 'missing': true,
   };
 }
 

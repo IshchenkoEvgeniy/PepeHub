@@ -31,6 +31,9 @@ abstract class VideoDiscoveryScanner {
     required List<({String root, String title})> roots,
     required bool device,
     void Function(int found)? onProgress,
+
+    /// Background search: never asks for access, skips what it cannot read.
+    bool quiet = false,
   });
 
   Future<void> cancel();
@@ -65,6 +68,7 @@ class PlatformVideoDiscoveryScanner implements VideoDiscoveryScanner {
     required List<({String root, String title})> roots,
     required bool device,
     void Function(int found)? onProgress,
+    bool quiet = false,
   }) async {
     _cancelled = false;
     if (Platform.isAndroid) {
@@ -84,6 +88,7 @@ class PlatformVideoDiscoveryScanner implements VideoDiscoveryScanner {
           {
             'roots': [for (final root in roots) root.root],
             'device': device,
+            'quiet': quiet,
           },
         );
         if (result == null) throw VideoDiscoveryCancelled();

@@ -28,6 +28,7 @@ class _FakeScanner implements VideoDiscoveryScanner {
     required List<({String root, String title})> roots,
     required bool device,
     void Function(int found)? onProgress,
+    bool quiet = false,
   }) async {
     scans.add((roots: [for (final root in roots) root.root], device: device));
     onProgress?.call(files.length);

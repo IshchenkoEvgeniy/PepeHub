@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../diagnostics/user_message.dart';
 import '../ui/pepe_widgets.dart';
+import 'video_auto_discovery.dart';
 import 'video_discovery.dart';
 import 'video_discovery_scan.dart';
 import 'video_repository.dart';
@@ -66,7 +67,14 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   @override
   void initState() {
     super.initState();
+    VideoAutoDiscovery.manualStarted();
     _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    VideoAutoDiscovery.manualEnded();
+    super.dispose();
   }
 
   Future<void> _loadSettings() async {
@@ -101,10 +109,12 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     List<({String root, String title})>? roots,
     bool? device,
     Set<String>? ignored,
+    bool? auto,
   }) => VideoDiscoverySettings(
     roots: roots ?? settings.roots,
     device: device ?? settings.device,
     ignored: ignored ?? settings.ignored,
+    auto: auto ?? settings.auto,
   );
 
   Future<void> _addRoot() async {
@@ -135,6 +145,9 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       scanErrors = [];
     });
     try {
+      // A background search started before the page opened finishes first.
+      await VideoAutoDiscovery.idle();
+      if (!mounted) return;
       final result = await widget.scanner.scan(
         roots: settings.roots,
         device: widget.scanner.supportsDevice && settings.device,
@@ -477,6 +490,20 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     ],
   );
 
+  Widget _autoSwitch() => SwitchListTile(
+    key: const ValueKey('discovery-auto'),
+    contentPadding: EdgeInsets.zero,
+    title: const Text('Добавлять новые видео автоматически'),
+    subtitle: const Text(
+      'При открытии «Медиа» ищет здесь сериалы, курсы и фильмы. '
+      'Камеру, мессенджеры, ролики и скрытые группы — только вручную.',
+    ),
+    value: settings.auto,
+    onChanged: scanning || loading
+        ? null
+        : (value) => _saveSettings(_with(auto: value)),
+  );
+
   @override
   Widget build(BuildContext context) {
     final visible = _visible.toList();
@@ -617,6 +644,8 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                         ),
                       ),
                   ],
+                  // Below the results summary: it never pushes them off a phone.
+                  _autoSwitch(),
                 ],
               ),
             ),

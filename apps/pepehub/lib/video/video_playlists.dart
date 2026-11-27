@@ -235,7 +235,9 @@ class _VideoPlaylistPageState extends State<VideoPlaylistPage> {
   }
 
   bool _playable(VideoLesson lesson) =>
-      lesson.available && items[lesson.itemId]?.connected != false;
+      lesson.available &&
+      !lesson.missing &&
+      items[lesson.itemId]?.connected != false;
 
   Future<void> _save(List<VideoLesson> next) async {
     final shown = entries.map((lesson) => lesson.id).toSet();

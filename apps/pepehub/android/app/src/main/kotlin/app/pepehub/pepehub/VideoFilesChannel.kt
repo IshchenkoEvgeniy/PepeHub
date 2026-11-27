@@ -24,6 +24,8 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
     private val worker = Executors.newSingleThreadExecutor()
     // Automatic search can take a while; picking and verifying stay responsive.
     private val discoveryWorker = Executors.newSingleThreadExecutor()
+    // Previews decode frames; two at a time keep the list responsive.
+    private val thumbnailWorker = Executors.newFixedThreadPool(2)
     private val main = Handler(Looper.getMainLooper())
     private var pending: MethodChannel.Result? = null
     private var pendingFrame: ByteArray? = null
@@ -57,7 +59,9 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
                     check(!discovering && pendingDiscovery == null) { "Поиск уже идёт" }
                     val roots = (call.argument<List<String>>("roots") ?: emptyList()).distinct()
                     check(roots.size <= 100) { "Не больше 100 папок для поиска" }
-                    val device = call.argument<Boolean>("device") == true
+                    var device = call.argument<Boolean>("device") == true
+                    // Background search never asks for access: it skips the media index.
+                    if (device && call.argument<Boolean>("quiet") == true && !hasMediaPermission()) device = false
                     check(roots.isNotEmpty() || device) { "Выберите папки или поиск по всему устройству" }
                     if (device && !hasMediaPermission()) {
                         val activity = owner.get() ?: error("Откройте приложение")
@@ -68,6 +72,27 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
                     }
                 } catch (e: Exception) {
                     result.error("video_files", e.message, null)
+                }
+                return@setMethodCallHandler
+            }
+            if (call.method == "thumbnail") {
+                val source = call.argument<String>("uri")
+                val size = (call.argument<Int>("size") ?: 320).coerceIn(64, 640)
+                if (source == null) { result.success(null); return@setMethodCallHandler }
+                thumbnailWorker.execute {
+                    val bytes = runCatching { thumbnail(Uri.parse(source), size) }.getOrNull()
+                    main.post { if (!disposed) result.success(bytes) }
+                }
+                return@setMethodCallHandler
+            }
+            if (call.method == "checkSources") {
+                worker.execute {
+                    try {
+                        val uris = call.argument<List<String>>("uris") ?: emptyList()
+                        check(uris.size <= 20000) { "Слишком много файлов" }
+                        val response = checkSources(uris)
+                        main.post { if (!disposed) result.success(response) }
+                    } catch (e: Exception) { main.post { if (!disposed) result.error("video_files", e.message, null) } }
                 }
                 return@setMethodCallHandler
             }
@@ -436,12 +461,98 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
         } ?: error("Медиатека Android недоступна")
     }
 
+    /** A small JPEG frame: the system thumbnail when there is one, else a decoded frame. */
+    private fun thumbnail(uri: Uri, size: Int): ByteArray? {
+        check(!disposed) { "Приложение закрыто" }
+        var bitmap: android.graphics.Bitmap? = null
+        if (Build.VERSION.SDK_INT >= 29 && uri.authority == MediaStore.AUTHORITY) {
+            bitmap = runCatching { context.contentResolver.loadThumbnail(uri, android.util.Size(size, size), null) }.getOrNull()
+        }
+        if (bitmap == null) {
+            val retriever = android.media.MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, uri)
+                val duration = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                // A tenth in, at most 30 s: past black intros, never past the end.
+                val atUs = minOf(duration / 10, 30_000L).coerceAtLeast(0L) * 1000
+                val option = android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                bitmap = if (Build.VERSION.SDK_INT >= 27) retriever.getScaledFrameAtTime(atUs, option, size, size)
+                    else retriever.getFrameAtTime(atUs, option)
+                if (bitmap == null) bitmap = retriever.frameAtTime
+            } finally {
+                runCatching { retriever.release() }
+            }
+        }
+        val frame = bitmap ?: return null
+        val scale = minOf(1f, size.toFloat() / maxOf(frame.width, frame.height))
+        val scaled = if (scale < 1f) android.graphics.Bitmap.createScaledBitmap(frame, maxOf(1, (frame.width * scale).toInt()), maxOf(1, (frame.height * scale).toInt()), true) else frame
+        val out = java.io.ByteArrayOutputStream()
+        scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
+        if (scaled !== frame) scaled.recycle()
+        frame.recycle()
+        return out.toByteArray()
+    }
+
+    /**
+     * Which sources still exist. Only certain answers are returned: a source
+     * that cannot be checked (no permission, unknown provider) is in neither list.
+     */
+    private fun checkSources(uris: List<String>): Map<String, List<String>> {
+        val missing = ArrayList<String>()
+        val present = ArrayList<String>()
+        val media = LinkedHashMap<Uri, MutableMap<Long, String>>()
+        val canReadMedia = hasMediaPermission()
+        for (source in uris.distinct()) {
+            check(!disposed) { "Приложение закрыто" }
+            val uri = Uri.parse(source)
+            when {
+                uri.scheme == "content" && uri.authority == MediaStore.AUTHORITY -> {
+                    // Without access the index hides other apps' files: unknown, not missing.
+                    if (!canReadMedia) continue
+                    val id = runCatching { ContentUris.parseId(uri) }.getOrNull() ?: continue
+                    if (id < 0) continue
+                    val path = uri.path ?: continue
+                    val collection = uri.buildUpon().path(path.substringBeforeLast('/')).build()
+                    media.getOrPut(collection) { HashMap() }[id] = source
+                }
+                uri.scheme == "content" -> try {
+                    val cursor = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                    val exists = cursor?.use { it.moveToFirst() } ?: false
+                    if (exists) present.add(source) else missing.add(source)
+                } catch (e: SecurityException) {
+                    // The folder lost its permission: the file may well be there.
+                } catch (e: IllegalArgumentException) {
+                    missing.add(source)
+                } catch (e: Exception) {
+                    // Unknown provider failure: no answer.
+                }
+                uri.scheme == "file" || uri.scheme == null -> {
+                    val path = uri.path ?: source
+                    if (java.io.File(path).exists()) present.add(source) else missing.add(source)
+                }
+            }
+        }
+        for ((collection, byId) in media) {
+            for (chunk in byId.keys.toList().chunked(500)) {
+                check(!disposed) { "Приложение закрыто" }
+                val found = HashSet<Long>()
+                val cursor = try {
+                    context.contentResolver.query(collection, arrayOf("_id"), "_id IN (${chunk.joinToString(",") { "?" }})", chunk.map { it.toString() }.toTypedArray(), null)
+                } catch (e: Exception) { null } ?: continue
+                cursor.use { while (it.moveToNext()) found.add(it.getLong(0)) }
+                for (id in chunk) (if (id in found) present else missing).add(byId[id]!!)
+            }
+        }
+        return mapOf("missing" to missing, "present" to present)
+    }
+
     fun dispose() {
         disposed = true
         discoveryCancelled = true
         pendingDiscovery?.first?.error("video_files", "Приложение закрыто", null)
         pendingDiscovery = null
         discoveryWorker.shutdown()
+        thumbnailWorker.shutdown()
         channel.setMethodCallHandler(null)
         pending?.error("video_files", "Приложение закрыто", null)
         pending = null

@@ -20,6 +20,9 @@ import 'video_discovery.dart' show videoFolderSection;
 import 'video_discovery_page.dart';
 import 'video_discovery_scan.dart';
 import 'video_playlists.dart';
+import 'video_thumbnails.dart';
+import 'video_auto_discovery.dart';
+import '../audio/audio_import.dart' show naturalAudioOrder;
 import '../vocabulary/vocabulary_page.dart';
 import '../vocabulary/vocabulary_repository.dart';
 import '../music/music_statistics_page.dart';
@@ -31,6 +34,8 @@ class VideoLibraryPage extends StatefulWidget {
   final AudioController? audio;
   final VideoFilePicker chooseFiles;
   final VideoDiscoveryScanner discoveryScanner;
+  final VideoSourceChecker sourceChecker;
+  final VideoThumbnails? thumbnails;
   const VideoLibraryPage({
     super.key,
     required this.repository,
@@ -38,10 +43,22 @@ class VideoLibraryPage extends StatefulWidget {
     this.audio,
     this.chooseFiles = pickVideoFiles,
     this.discoveryScanner = const PlatformVideoDiscoveryScanner(),
+    this.sourceChecker = const PlatformVideoSourceChecker(),
+    this.thumbnails,
   });
   @override
   State<VideoLibraryPage> createState() => _VideoLibraryPageState();
 }
+
+/// Orders of the media list, saved between launches.
+const videoSortLabels = {
+  'recent': 'Недавно смотрели',
+  'added': 'Недавно добавленные',
+  'added-old': 'Давно добавленные',
+  'title': 'По названию А–Я',
+  'title-desc': 'По названию Я–А',
+  'duration': 'Сначала длинные',
+};
 
 class _VideoLibraryPageState extends State<VideoLibraryPage> {
   List<VideoItem> items = [];
@@ -53,21 +70,66 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
 
   /// `list`, `folders` or `playlists`.
   String groupBy = 'list';
+
+  /// A key of [videoSortLabels].
+  String sortBy = 'recent';
   Map<String, List<VideoLesson>> _byItem = {};
   bool _filterLoaded = false;
   String? error;
   int _request = 0;
+  bool _background = false;
+  late final AppLifecycleListener _lifecycle;
   @override
   void initState() {
     super.initState();
     widget.repository.repository.externalChanges.addListener(_load);
-    _load();
+    _lifecycle = AppLifecycleListener(onResume: _upkeep);
+    _load().then((_) => _upkeep());
   }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     widget.repository.repository.externalChanges.removeListener(_load);
     super.dispose();
+  }
+
+  /// Hides deleted files and, when turned on, adds new videos by itself.
+  /// Runs on opening and on returning to the app; errors stay quiet.
+  Future<void> _upkeep() async {
+    if (_background || !mounted) return;
+    _background = true;
+    try {
+      try {
+        final changed = await VideoAutoDiscovery.checkSources(
+          widget.repository,
+          widget.sourceChecker,
+        );
+        if (changed > 0 && mounted) await _load();
+      } catch (_) {
+        /* The next opening checks again. */
+      }
+      if (!mounted) return;
+      final found = await VideoAutoDiscovery.search(
+        widget.repository,
+        widget.discoveryScanner,
+      );
+      if (found == null || found.files == 0 || !mounted) return;
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Автопоиск добавил видео: ${found.files} '
+            '(${found.groups == 1 ? 'в одну группу' : 'групп: ${found.groups}'})',
+          ),
+        ),
+      );
+    } catch (_) {
+      /* Background search reports nothing; the search page shows errors. */
+    } finally {
+      _background = false;
+    }
   }
 
   Future<void> _load() async {
@@ -84,10 +146,13 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
         if (const ['folders', 'playlists'].contains(savedGroup)) {
           groupBy = savedGroup!;
         }
+        final savedSort = await widget.repository.repository.meta('media-sort');
+        if (videoSortLabels.containsKey(savedSort)) sortBy = savedSort!;
         _filterLoaded = true;
       }
       final nextItems = await widget.repository.items();
-      final nextLessons = await widget.repository.lessons();
+      // Deleted files are not listed; an item without files disappears.
+      final nextLessons = await widget.repository.lessons(hideMissing: true);
       final nextProgress = await widget.repository.allProgress();
       final nextPlaylists = await widget.repository.playlists();
       if (!mounted || request != _request) return;
@@ -229,6 +294,59 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
   Future<void> _setGroupBy(String value) async {
     setState(() => groupBy = value);
     await widget.repository.repository.setMeta('media-grouping', value);
+  }
+
+  Future<void> _setSortBy(String value) async {
+    setState(() => sortBy = value);
+    await widget.repository.repository.setMeta('media-sort', value);
+  }
+
+  /// The order of [items] is the order they were added.
+  int Function(VideoItem, VideoItem) _comparator() {
+    int byTitle(VideoItem a, VideoItem b) =>
+        naturalAudioOrder(a.title.toLowerCase(), b.title.toLowerCase());
+    switch (sortBy) {
+      case 'added' || 'added-old':
+        final added = {for (var i = 0; i < items.length; i++) items[i].id: i};
+        final sign = sortBy == 'added' ? -1 : 1;
+        return (a, b) => sign * added[a.id]!.compareTo(added[b.id]!);
+      case 'title':
+        return byTitle;
+      case 'title-desc':
+        return (a, b) => byTitle(b, a);
+      case 'duration':
+        final total = <String, int>{};
+        int length(VideoItem item) => total.putIfAbsent(
+          item.id,
+          () =>
+              _sectionLessons(item)
+                  .fold(0, (sum, lesson) => sum + (lesson.durationMs ?? 0)),
+        );
+        return (a, b) {
+          final order = length(b).compareTo(length(a));
+          return order != 0 ? order : byTitle(a, b);
+        };
+      default:
+        final recent = <String, DateTime?>{};
+        return (a, b) {
+          final aTime = recent.putIfAbsent(a.id, () => _recent(a)?.updatedAt),
+              bTime = recent.putIfAbsent(b.id, () => _recent(b)?.updatedAt);
+          if (aTime != null && bTime != null) return bTime.compareTo(aTime);
+          if (aTime != null) return -1;
+          if (bTime != null) return 1;
+          return byTitle(a, b);
+        };
+    }
+  }
+
+  /// The lesson whose frame stands for an item in the list.
+  VideoLesson? _cover(VideoItem item) {
+    VideoLesson? first;
+    for (final lesson in _sectionLessons(item)) {
+      if (lesson.available && VideoThumbnails.supports(lesson)) return lesson;
+      first ??= lesson;
+    }
+    return first;
   }
 
   Future<void> _createPlaylist() => _run(() async {
@@ -428,28 +546,19 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
   Widget build(BuildContext context) {
     final palette = ShelfPalette.of(context);
     final needle = query.toLowerCase();
-    final recent = <String, DateTime?>{};
-    final visible =
-        items.where((item) {
-          if (favorites && !item.favorite) return false;
-          final own = _sectionLessons(item);
-          if (own.isEmpty) return false;
-          return query.isEmpty ||
-              item.title.toLowerCase().contains(needle) ||
-              own.any(
-                (lesson) =>
-                    '${lesson.title} ${lesson.music?.artist ?? ''} ${lesson.music?.album ?? ''}'
-                        .toLowerCase()
-                        .contains(needle),
-              );
-        }).toList()..sort((a, b) {
-          final aTime = recent.putIfAbsent(a.id, () => _recent(a)?.updatedAt),
-              bTime = recent.putIfAbsent(b.id, () => _recent(b)?.updatedAt);
-          if (aTime != null && bTime != null) return bTime.compareTo(aTime);
-          if (aTime != null) return -1;
-          if (bTime != null) return 1;
-          return a.title.compareTo(b.title);
-        });
+    final visible = items.where((item) {
+      if (favorites && !item.favorite) return false;
+      final own = _sectionLessons(item);
+      if (own.isEmpty) return false;
+      return query.isEmpty ||
+          item.title.toLowerCase().contains(needle) ||
+          own.any(
+            (lesson) =>
+                '${lesson.title} ${lesson.music?.artist ?? ''} ${lesson.music?.album ?? ''}'
+                    .toLowerCase()
+                    .contains(needle),
+          );
+    }).toList()..sort(_comparator());
     final sectionPlaylists = [
       for (final playlist in playlists)
         if (playlist.section == mediaFilter &&
@@ -580,6 +689,21 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                         ),
                       ),
                     ),
+                    PopupMenuButton<String>(
+                      key: const ValueKey('media-sort'),
+                      tooltip: 'Сортировка: ${videoSortLabels[sortBy]}',
+                      icon: const Icon(Icons.sort),
+                      initialValue: sortBy,
+                      onSelected: _setSortBy,
+                      itemBuilder: (_) => [
+                        for (final entry in videoSortLabels.entries)
+                          CheckedPopupMenuItem(
+                            value: entry.key,
+                            checked: entry.key == sortBy,
+                            child: Text(entry.value),
+                          ),
+                      ],
+                    ),
                     IconButton(
                       tooltip: favorites ? 'Показать все медиа' : 'Избранное',
                       isSelected: favorites,
@@ -613,9 +737,16 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                   onSelectionChanged: (value) => _setGroupBy(value.single),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  '${visible.length} в библиотеке',
-                  style: TextStyle(color: palette.muted, fontSize: 12),
+                ValueListenableBuilder<bool>(
+                  valueListenable: VideoAutoDiscovery.searching,
+                  builder: (_, searching, _) => Text(
+                    [
+                      '${visible.length} в библиотеке',
+                      videoSortLabels[sortBy]!.toLowerCase(),
+                      if (searching) 'ищу новые видео…',
+                    ].join(' · '),
+                    style: TextStyle(color: palette.muted, fontSize: 12),
+                  ),
                 ),
                 if (loading) const LinearProgressIndicator(),
                 if (error != null)
@@ -744,14 +875,27 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                         horizontal: 16,
                         vertical: 10,
                       ),
-                      leading: Icon(
-                        mediaFilter == 'music'
-                            ? Icons.music_note_outlined
-                            : item.kind == VideoItemKind.course
-                            ? Icons.school_outlined
-                            : Icons.ondemand_video,
-                        color: palette.accent,
-                      ),
+                      leading: mediaFilter == 'music'
+                          ? Icon(
+                              Icons.music_note_outlined,
+                              color: palette.accent,
+                            )
+                          : VideoThumbnail(
+                              key: ValueKey('media-thumbnail:${item.id}'),
+                              lesson: _cover(item),
+                              thumbnails: widget.thumbnails,
+                              width: MediaQuery.sizeOf(context).width < 400
+                                  ? 80
+                                  : 112,
+                              icon: item.kind == VideoItemKind.course
+                                  ? Icons.school_outlined
+                                  : Icons.ondemand_video,
+                              label: item.kind == VideoItemKind.course
+                                  ? '${_sectionLessons(item).length} ▶'
+                                  : _cover(item)?.durationMs == null
+                                  ? null
+                                  : pepeTime(_cover(item)!.durationMs!),
+                            ),
                       title: Text(
                         item.title,
                         maxLines: 2,
@@ -839,7 +983,10 @@ class _VideoCoursePage extends StatefulWidget {
 
 class _VideoCoursePageState extends State<_VideoCoursePage> {
   late VideoItem currentItem = widget.item;
-  List<VideoLesson> lessons = [];
+
+  /// Lessons with files on the device; [allLessons] adds deleted ones,
+  /// which the structure editor must keep.
+  List<VideoLesson> lessons = [], allLessons = [];
   Map<String, VideoProgress> progress = {};
   String? error;
   bool loading = true;
@@ -860,9 +1007,13 @@ class _VideoCoursePageState extends State<_VideoCoursePage> {
       currentItem = (await widget.repository.items()).firstWhere(
         (item) => item.id == widget.item.id,
       );
-      final next = (await widget.repository.lessons(itemId: widget.item.id))
+      final all = (await widget.repository.lessons(itemId: widget.item.id))
           .where((lesson) => !lesson.isAudio)
           .toList();
+      final next = [
+        for (final lesson in all)
+          if (!lesson.missing) lesson,
+      ];
       final positions = await widget.repository.allProgress();
       final settings = await widget.repository.preferences();
       final states = await widget.repository.allLearningStates();
@@ -878,6 +1029,7 @@ class _VideoCoursePageState extends State<_VideoCoursePage> {
       if (mounted && request == _request) {
         setState(() {
           lessons = next;
+          allLessons = all;
           progress = positions;
           stats = coverage;
           preferences = settings;
@@ -1052,7 +1204,7 @@ class _VideoCoursePageState extends State<_VideoCoursePage> {
                       builder: (_) => VideoCourseEditor(
                         repository: widget.repository,
                         item: currentItem,
-                        lessons: lessons,
+                        lessons: allLessons,
                       ),
                     ),
                   );
@@ -1117,7 +1269,13 @@ class _VideoCoursePageState extends State<_VideoCoursePage> {
               ),
             ),
           ListTile(
-            leading: Text('${i + 1}'),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+            leading: VideoThumbnail(
+              key: ValueKey('lesson-thumbnail:${lessons[i].id}'),
+              lesson: lessons[i],
+              width: 88,
+              label: '${i + 1}',
+            ),
             title: Text(lessons[i].title),
             subtitle: Text(
               [

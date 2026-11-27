@@ -55,11 +55,24 @@ class VideoDiscoverySettings {
   final List<({String root, String title})> roots;
   final bool device;
   final Set<String> ignored;
+
+  /// Search these places by itself when «Медиа» opens and add new videos.
+  final bool auto;
   const VideoDiscoverySettings({
     this.roots = const [],
     this.device = false,
     this.ignored = const {},
+    this.auto = false,
   });
+
+  bool get hasPlaces => roots.isNotEmpty || device;
+}
+
+/// A local lesson source for the check that hides deleted files.
+class VideoLocalSource {
+  final String lessonId, source;
+  final bool missing;
+  const VideoLocalSource(this.lessonId, this.source, this.missing);
 }
 
 /// Local-only video records.
@@ -82,16 +95,34 @@ class VideoRepository {
     );
   }
 
-  Future<List<VideoItem>> items() async => [
-    for (final row in await repository.records('video_item'))
-      VideoItem.fromJson(row.id, row.payload!),
-  ];
+  /// Media items in the order they were added (an update keeps the rowid).
+  Future<List<VideoItem>> items() async {
+    final rows = await repository.db
+        .customSelect(
+          "SELECT id,payload FROM records WHERE type='video_item' "
+          'AND deleted=0 AND json_valid(payload) ORDER BY rowid',
+        )
+        .get();
+    return [
+      for (final row in rows)
+        VideoItem.fromJson(
+          row.read<String>('id'),
+          jsonDecode(row.read<String>('payload')) as Map<String, dynamic>,
+        ),
+    ];
+  }
 
-  Future<List<VideoLesson>> lessons({String? itemId}) async {
+  /// [hideMissing] leaves out lessons whose files were deleted from the
+  /// device: lists and players use it, folder refresh and statistics do not.
+  Future<List<VideoLesson>> lessons({
+    String? itemId,
+    bool hideMissing = false,
+  }) async {
     final rows = await repository.db
         .customSelect(
           'SELECT * FROM records WHERE ${SchemaSql.videoLessonRows} '
           "${itemId == null ? '' : "AND json_extract(payload,'\$.itemId')=? "}"
+          "${hideMissing ? "AND json_extract(payload,'\$.missing') IS NOT 1 " : ''}"
           "ORDER BY json_extract(payload,'\$.ordinal'),id",
           variables: [if (itemId != null) Variable(itemId)],
         )
@@ -244,7 +275,8 @@ class VideoRepository {
         return ids;
       });
 
-  /// Lesson sources plus `name|size` keys, read with one light query.
+  /// Lesson sources plus `name|size` keys, read with one light query. Files
+  /// deleted from the device do not count: a copy put back is offered again.
   Future<VideoKnownMedia> knownMedia() async {
     final rows = await repository.db
         .customSelect(
@@ -253,7 +285,8 @@ class VideoRepository {
           "json_extract(payload,'\$.title') AS title,"
           "coalesce(json_extract(payload,'\$.fileSize'),"
           "json_extract(payload,'\$.fileIdentity.size')) AS size "
-          'FROM records WHERE ${SchemaSql.videoLessonRows}',
+          'FROM records WHERE ${SchemaSql.videoLessonRows} '
+          "AND json_extract(payload,'\$.missing') IS NOT 1",
         )
         .get();
     final sources = <String>{}, keys = <String>{};
@@ -309,6 +342,7 @@ class VideoRepository {
           for (final key in data['ignored'] as List? ?? const [])
             if (key is String) key,
         },
+        auto: data['auto'] == true,
       );
     } catch (_) {
       return const VideoDiscoverySettings();
@@ -333,8 +367,61 @@ class VideoRepository {
         'ignored': ignored.length > 5000
             ? ignored.sublist(ignored.length - 5000)
             : ignored,
+        'auto': value.auto,
       }),
     );
+  }
+
+  /// Sources of local files, without links, read with one light query.
+  Future<List<VideoLocalSource>> localSources() async {
+    final rows = await repository.db
+        .customSelect(
+          "SELECT id,json_extract(payload,'\$.source') AS source,"
+          "json_extract(payload,'\$.missing') AS missing "
+          'FROM records WHERE ${SchemaSql.videoLessonRows}',
+        )
+        .get();
+    return [
+      for (final row in rows)
+        if (row.readNullable<String>('source') case final source?
+            when !source.startsWith('http://') &&
+                !source.startsWith('https://'))
+          VideoLocalSource(
+            row.read<String>('id'),
+            source,
+            row.data['missing'] == 1,
+          ),
+    ];
+  }
+
+  /// Marks lessons whose files are gone and brings back those whose files
+  /// returned. Progress, notes and playlists keep the lesson either way.
+  /// Returns how many lessons changed.
+  Future<int> applySourceCheck({
+    required Set<String> missing,
+    required Set<String> present,
+  }) async {
+    if (missing.isEmpty && present.isEmpty) return 0;
+    var changed = 0;
+    await repository.db.transaction(() async {
+      for (final local in await localSources()) {
+        final String? update;
+        if (!local.missing && missing.contains(local.source)) {
+          update = "json_set(payload,'\$.missing',json('true'))";
+        } else if (local.missing && present.contains(local.source)) {
+          update = "json_remove(payload,'\$.missing')";
+        } else {
+          continue;
+        }
+        await repository.db.customStatement(
+          'UPDATE records SET payload=$update,revision=revision+1 '
+          "WHERE id=? AND type='video_lesson' AND deleted=0",
+          [local.lessonId],
+        );
+        changed++;
+      }
+    });
+    return changed;
   }
 
   Future<List<VideoPlaylist>> playlists() async => [
@@ -660,7 +747,10 @@ class VideoRepository {
     for (final binding in bindings) {
       final old = (await repository.record(binding.id))!;
       await _put('video_lesson', binding.id, {
-        ...old.payload!,
+        // A file found by the refresh is no longer deleted.
+        for (final entry in old.payload!.entries)
+          if (!(binding.available && entry.key == 'missing'))
+            entry.key: entry.value,
         'source': binding.source,
         'available': binding.available,
         if (binding.identity != null)
