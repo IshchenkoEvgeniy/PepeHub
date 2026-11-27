@@ -33,10 +33,23 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
     private var discovering = false
     @Volatile private var discoveryCancelled = false
     @Volatile private var disposed = false
+    private var pendingDelete: DeleteRequest? = null
+
+    /** Files waiting for Android's delete confirmation. */
+    private class DeleteRequest(
+        val result: MethodChannel.Result,
+        val deleted: MutableList<String>,
+        val failed: MutableList<String>,
+        val media: List<String>,
+    )
     private val extensions = setOf("mp4", "mkv", "webm", "mov", "m4v", "avi", "mpeg", "mpg", "mp3", "m4a", "m4b", "aac", "flac", "wav", "ogg", "opus", "wma", "aiff", "aif")
     private val videoExtensions = setOf("mp4", "mkv", "webm", "mov", "m4v", "avi", "mpeg", "mpg")
 
-    companion object { private const val MEDIA_PERMISSION = 4725 }
+    companion object {
+        private const val MEDIA_PERMISSION = 4725
+        private const val DELETE_REQUEST = 4727
+        private const val TREE_REQUEST = 4728
+    }
 
     fun attach(activity: Activity) { owner = java.lang.ref.WeakReference(activity) }
     fun detach(activity: Activity) {
@@ -85,6 +98,17 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
                 }
                 return@setMethodCallHandler
             }
+            if (call.method == "deleteFiles") {
+                if (pendingDelete != null) { result.error("busy", "Удаление уже идёт", null); return@setMethodCallHandler }
+                val uris = call.argument<List<String>>("uris") ?: emptyList()
+                worker.execute {
+                    try {
+                        check(uris.size <= 10000) { "Слишком много файлов" }
+                        deleteFiles(uris, result)
+                    } catch (e: Exception) { main.post { if (!disposed) result.error("video_files", e.message, null) } }
+                }
+                return@setMethodCallHandler
+            }
             if (call.method == "checkSources") {
                 worker.execute {
                     try {
@@ -129,9 +153,10 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
                 try {
                     pending = result
                     val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+                        // Write access lets PepeHub delete files the user chooses to delete.
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
                     }
-                    (owner.get() ?: error("Откройте приложение")).startActivityForResult(intent, 4724)
+                    (owner.get() ?: error("Откройте приложение")).startActivityForResult(intent, TREE_REQUEST)
                 } catch (e: Exception) {
                     pending = null
                     result.error("video_files", e.message, null)
@@ -155,7 +180,7 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
                     pending = result
                     val intent = Intent(if (saveFrame) Intent.ACTION_CREATE_DOCUMENT else if (folder) Intent.ACTION_OPEN_DOCUMENT_TREE else Intent.ACTION_OPEN_DOCUMENT).apply {
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-                        if (folder) addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION) else {
+                        if (folder) addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) else {
                             addCategory(Intent.CATEGORY_OPENABLE)
                             type = if (saveFrame) (call.argument<String>("mime")?.takeIf { it.startsWith("image/") } ?: "image/png") else "*/*"
                             if (saveFrame) {
@@ -179,7 +204,15 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
     }
 
     fun onActivityResult(request: Int, code: Int, data: Intent?): Boolean {
-        if (request !in 4720..4724) return false
+        if (request == DELETE_REQUEST) {
+            val waiting = pendingDelete ?: return true
+            pendingDelete = null
+            if (code == Activity.RESULT_OK) waiting.deleted.addAll(waiting.media) else waiting.failed.addAll(waiting.media)
+            if (!disposed) waiting.result.success(mapOf("deleted" to waiting.deleted, "failed" to waiting.failed))
+            return true
+        }
+        // 4724 belongs to book picking, which MainActivity asks first.
+        if (request !in 4720..4723 && request != TREE_REQUEST) return false
         val result = pending ?: return true
         if (code != Activity.RESULT_OK || data == null) {
             pending = null
@@ -190,7 +223,7 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
         worker.execute {
             try {
                 val response: Any?
-                if (request == 4724) {
+                if (request == TREE_REQUEST) {
                     val tree = data.data ?: error("Папка не выбрана")
                     persist(tree)
                     response = mapOf("root" to tree.toString(), "title" to name(Docs.buildDocumentUriUsingTree(tree, Docs.getTreeDocumentId(tree))))
@@ -247,7 +280,13 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
     }
 
     private fun persist(uri: Uri) {
-        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // Write is kept when Android granted it; reading alone is enough to play.
+        val both = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        try {
+            context.contentResolver.takePersistableUriPermission(uri, both)
+        } catch (e: SecurityException) {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
     }
 
     private fun name(uri: Uri): String {
@@ -546,11 +585,88 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
         return mapOf("missing" to missing, "present" to present)
     }
 
+    /**
+     * Deletes files from the device. Files of Android's media index are deleted
+     * after the system confirmation; folder documents directly, or through the
+     * media index when the folder was connected read-only.
+     */
+    private fun deleteFiles(uris: List<String>, result: MethodChannel.Result) {
+        val deleted = ArrayList<String>()
+        val failed = ArrayList<String>()
+        val media = LinkedHashMap<Uri, String>()
+        for (source in uris.distinct()) {
+            check(!disposed) { "Приложение закрыто" }
+            val uri = Uri.parse(source)
+            when {
+                uri.scheme == "content" && uri.authority == MediaStore.AUTHORITY -> media[uri] = source
+                uri.scheme == "content" -> {
+                    val removed = runCatching { Docs.deleteDocument(context.contentResolver, uri) }.getOrDefault(false)
+                    if (removed) deleted.add(source)
+                    else mediaFor(uri)?.let { media[it] = source } ?: failed.add(source)
+                }
+                else -> {
+                    val file = java.io.File(uri.path ?: source)
+                    if (file.delete() || !file.exists()) deleted.add(source) else failed.add(source)
+                }
+            }
+        }
+        fun finish() = main.post { if (!disposed) result.success(mapOf("deleted" to deleted, "failed" to failed)) }
+        if (media.isEmpty()) { finish(); return }
+        if (Build.VERSION.SDK_INT >= 30) {
+            val request = MediaStore.createDeleteRequest(context.contentResolver, media.keys.toList())
+            main.post {
+                val activity = owner.get()
+                if (activity == null || disposed) {
+                    failed.addAll(media.values)
+                    if (!disposed) result.success(mapOf("deleted" to deleted, "failed" to failed))
+                    return@post
+                }
+                pendingDelete = DeleteRequest(result, deleted, failed, media.values.toList())
+                try {
+                    activity.startIntentSenderForResult(request.intentSender, DELETE_REQUEST, null, 0, 0, 0)
+                } catch (e: Exception) {
+                    pendingDelete = null
+                    failed.addAll(media.values)
+                    result.success(mapOf("deleted" to deleted, "failed" to failed))
+                }
+            }
+            return
+        }
+        for ((uri, source) in media) {
+            val removed = runCatching { context.contentResolver.delete(uri, null, null) > 0 }.getOrDefault(false)
+            (if (removed) deleted else failed).add(source)
+        }
+        finish()
+    }
+
+    /** The media index entry of a folder document: same name and size. */
+    private fun mediaFor(document: Uri): Uri? = runCatching {
+        if (Build.VERSION.SDK_INT < 30 || !hasMediaPermission()) return@runCatching null
+        var name: String? = null
+        var size = -1L
+        context.contentResolver.query(document, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                name = cursor.getString(0)
+                if (!cursor.isNull(1)) size = cursor.getLong(1)
+            }
+        }
+        if (name == null || size < 0) return@runCatching null
+        for (collection in arrayOf(MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL), MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL))) {
+            context.contentResolver.query(collection, arrayOf("_id"), "_display_name=? AND _size=?", arrayOf(name, size.toString()), null)?.use { cursor ->
+                // Only an unambiguous match: never delete a different copy.
+                if (cursor.count == 1 && cursor.moveToFirst()) return@runCatching ContentUris.withAppendedId(collection, cursor.getLong(0))
+            }
+        }
+        null
+    }.getOrNull()
+
     fun dispose() {
         disposed = true
         discoveryCancelled = true
         pendingDiscovery?.first?.error("video_files", "Приложение закрыто", null)
         pendingDiscovery = null
+        pendingDelete?.result?.error("video_files", "Приложение закрыто", null)
+        pendingDelete = null
         discoveryWorker.shutdown()
         thumbnailWorker.shutdown()
         channel.setMethodCallHandler(null)

@@ -272,10 +272,16 @@ class VideoThumbnails {
 /// A 16:9 preview frame with a fallback icon and an optional corner label.
 class VideoThumbnail extends StatefulWidget {
   final VideoLesson? lesson;
-  final double width;
+
+  /// Null fills the available width (tiles and large cards).
+  final double? width;
   final IconData icon;
   final String? label;
   final VideoThumbnails? thumbnails;
+
+  /// Selection mode: a check mark over the frame.
+  final bool? checked;
+  final double radius;
   const VideoThumbnail({
     super.key,
     required this.lesson,
@@ -283,6 +289,8 @@ class VideoThumbnail extends StatefulWidget {
     this.icon = Icons.ondemand_video,
     this.label,
     this.thumbnails,
+    this.checked,
+    this.radius = 8,
   });
 
   @override
@@ -340,58 +348,77 @@ class _VideoThumbnailState extends State<VideoThumbnail> {
   @override
   Widget build(BuildContext context) {
     final palette = ShelfPalette.of(context);
-    final height = widget.width * 9 / 16;
     final image = bytes;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: SizedBox(
-        width: widget.width,
-        height: height,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            ColoredBox(color: palette.accent.withValues(alpha: 0.12)),
-            if (image == null)
-              Icon(widget.icon, color: palette.accent)
-            else
-              Image.memory(
-                image,
-                fit: BoxFit.cover,
-                gaplessPlayback: true,
-                cacheWidth:
-                    (widget.width * MediaQuery.devicePixelRatioOf(context))
-                        .round(),
-                errorBuilder: (_, _, _) =>
-                    Icon(widget.icon, color: palette.accent),
+    final width = widget.width;
+    Widget frame(double cacheWidth) => Stack(
+      fit: StackFit.expand,
+      children: [
+        ColoredBox(color: palette.accent.withValues(alpha: 0.12)),
+        if (image == null)
+          Icon(widget.icon, color: palette.accent)
+        else
+          Image.memory(
+            image,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            cacheWidth: (cacheWidth * MediaQuery.devicePixelRatioOf(context))
+                .round()
+                .clamp(1, 1280),
+            errorBuilder: (_, _, _) => Icon(widget.icon, color: palette.accent),
+          ),
+        if (widget.label != null)
+          Positioned(
+            right: 4,
+            bottom: 4,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(4),
               ),
-            if (widget.label != null)
-              Positioned(
-                right: 4,
-                bottom: 4,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.7),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 1,
-                    ),
-                    child: Text(
-                      widget.label!,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        height: 1.2,
-                      ),
-                    ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                child: Text(
+                  widget.label!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    height: 1.2,
                   ),
                 ),
               ),
-          ],
-        ),
-      ),
+            ),
+          ),
+        if (widget.checked != null)
+          Positioned(
+            left: 4,
+            top: 4,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: widget.checked! ? palette.accent : Colors.black45,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 1.5),
+              ),
+              child: Icon(
+                Icons.check,
+                size: 16,
+                color: widget.checked! ? palette.onAccent : Colors.transparent,
+              ),
+            ),
+          ),
+      ],
+    );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(widget.radius),
+      child: width != null
+          ? SizedBox(width: width, height: width * 9 / 16, child: frame(width))
+          : AspectRatio(
+              aspectRatio: 16 / 9,
+              child: LayoutBuilder(
+                builder: (_, constraints) => frame(
+                  constraints.maxWidth.isFinite ? constraints.maxWidth : 320,
+                ),
+              ),
+            ),
     );
   }
 }

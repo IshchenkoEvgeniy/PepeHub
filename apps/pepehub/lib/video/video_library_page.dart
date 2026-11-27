@@ -1,18 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 
 import '../media/audio_controller.dart';
 import '../ui/pepe_widgets.dart';
-import '../ui/audio_mini_player.dart';
 import '../ui/shelf_components.dart';
 import 'models.dart';
 import 'video_import.dart';
 import 'video_player_page.dart';
 import 'video_repository.dart';
 import 'video_statistics_page.dart';
-import 'video_activity.dart';
-import 'video_progress_widgets.dart';
-import 'video_course_editor.dart';
 import 'video_folder_sync.dart';
 import 'video_folder_dialog.dart';
 import 'video_session.dart';
@@ -22,6 +17,9 @@ import 'video_discovery_scan.dart';
 import 'video_playlists.dart';
 import 'video_thumbnails.dart';
 import 'video_auto_discovery.dart';
+import 'video_course_page.dart';
+import 'video_media_actions.dart';
+import 'video_media_views.dart';
 import '../audio/audio_import.dart' show naturalAudioOrder;
 import '../vocabulary/vocabulary_page.dart';
 import '../vocabulary/vocabulary_repository.dart';
@@ -36,6 +34,7 @@ class VideoLibraryPage extends StatefulWidget {
   final VideoDiscoveryScanner discoveryScanner;
   final VideoSourceChecker sourceChecker;
   final VideoThumbnails? thumbnails;
+  final VideoFileDeleter deleter;
   const VideoLibraryPage({
     super.key,
     required this.repository,
@@ -45,6 +44,7 @@ class VideoLibraryPage extends StatefulWidget {
     this.discoveryScanner = const PlatformVideoDiscoveryScanner(),
     this.sourceChecker = const PlatformVideoSourceChecker(),
     this.thumbnails,
+    this.deleter = const PlatformVideoFileDeleter(),
   });
   @override
   State<VideoLibraryPage> createState() => _VideoLibraryPageState();
@@ -73,6 +73,14 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
 
   /// A key of [videoSortLabels].
   String sortBy = 'recent';
+
+  /// A key of [videoViewLabels].
+  String view = 'list';
+
+  /// Selected items; selection mode while not empty.
+  final selected = <String>{};
+  Map<String, VideoLearningState> learning = {};
+  bool get selecting => selected.isNotEmpty;
   Map<String, List<VideoLesson>> _byItem = {};
   bool _filterLoaded = false;
   String? error;
@@ -117,14 +125,16 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
       if (found == null || found.files == 0 || !mounted) return;
       await _load();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Автопоиск добавил видео: ${found.files} '
-            '(${found.groups == 1 ? 'в одну группу' : 'групп: ${found.groups}'})',
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              'Автопоиск добавил видео: ${found.files} '
+              '(${found.groups == 1 ? 'в одну группу' : 'групп: ${found.groups}'})',
+            ),
           ),
-        ),
-      );
+        );
     } catch (_) {
       /* Background search reports nothing; the search page shows errors. */
     } finally {
@@ -148,6 +158,8 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
         }
         final savedSort = await widget.repository.repository.meta('media-sort');
         if (videoSortLabels.containsKey(savedSort)) sortBy = savedSort!;
+        final savedView = await widget.repository.repository.meta('media-view');
+        if (videoViewLabels.containsKey(savedView)) view = savedView!;
         _filterLoaded = true;
       }
       final nextItems = await widget.repository.items();
@@ -155,6 +167,7 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
       final nextLessons = await widget.repository.lessons(hideMissing: true);
       final nextProgress = await widget.repository.allProgress();
       final nextPlaylists = await widget.repository.playlists();
+      final nextLearning = await widget.repository.allLearningStates();
       if (!mounted || request != _request) return;
       final byItem = <String, List<VideoLesson>>{};
       for (final lesson in nextLessons) {
@@ -166,6 +179,8 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
         _byItem = byItem;
         playlists = nextPlaylists;
         progress = nextProgress;
+        learning = nextLearning;
+        selected.retainAll({for (final item in nextItems) item.id});
         loading = false;
         error = null;
       });
@@ -374,13 +389,9 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
     if (mounted) await _load();
   }
 
-  Future<void> _addToPlaylist(VideoItem item) async {
-    await addLessonsToPlaylist(
-      context,
-      widget.repository,
-      _sectionLessons(item).toList(),
-    );
-    if (mounted) await _load();
+  Future<void> _setView(String value) async {
+    setState(() => view = value);
+    await widget.repository.repository.setMeta('media-view', value);
   }
 
   /// Rows of the media list: items, playlists and section headers.
@@ -394,12 +405,33 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
         (sections[_folderOf(item)] ??= []).add(item);
       }
       int rank(String name) => name == 'Ссылки' || name == 'Другие' ? 1 : 0;
+      int byName(String a, String b) =>
+          naturalAudioOrder(a.toLowerCase(), b.toLowerCase());
+      // Folders follow the chosen order too: by name, by total length, or
+      // by their first item in that order (the newest, the latest watched).
+      final itemOrder = _comparator();
+      final total = <String, int>{};
+      int length(String name) => total.putIfAbsent(
+        name,
+        () => sections[name]!.fold(
+          0,
+          (sum, item) =>
+              sum +
+              _sectionLessons(item)
+                  .fold(0, (sum, lesson) => sum + (lesson.durationMs ?? 0)),
+        ),
+      );
       final names = sections.keys.toList()
         ..sort((a, b) {
           final order = rank(a).compareTo(rank(b));
-          return order != 0
-              ? order
-              : a.toLowerCase().compareTo(b.toLowerCase());
+          if (order != 0) return order;
+          final chosen = switch (sortBy) {
+            'title' => byName(a, b),
+            'title-desc' => byName(b, a),
+            'duration' => length(b).compareTo(length(a)),
+            _ => itemOrder(sections[a]!.first, sections[b]!.first),
+          };
+          return chosen != 0 ? chosen : byName(a, b);
         });
       return [
         for (final name in names) ...[
@@ -440,53 +472,267 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
     firstSource: _byItem[item.id]?.firstOrNull?.source,
   );
 
-  Future<void> _remove(VideoItem item) async {
-    final what = item.kind == VideoItemKind.course
-        ? (mediaFilter == 'music' ? 'плейлист' : 'курс')
-        : (mediaFilter == 'music' ? 'трек' : 'видео');
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        scrollable: true,
-        title: Text('Удалить «${item.title}» из медиатеки?'),
-        content: Text(
-          'Файлы на диске останутся на месте — PepeHub просто перестанет '
-          'показывать этот $what. Чтобы вернуть его позже, добавьте файлы '
-          'или папку снова.',
+  void _toggle(VideoItem item) => setState(() {
+    if (!selected.remove(item.id)) selected.add(item.id);
+  });
+
+  List<VideoItem> _chosen(List<VideoItem> visible) => [
+    for (final item in visible)
+      if (selected.contains(item.id)) item,
+  ];
+
+  bool _watched(VideoItem item) {
+    final own = _sectionLessons(item).toList();
+    return own.isNotEmpty &&
+        own.every(
+          (lesson) =>
+              learning['${lesson.id}:${lesson.mediaVersion}']
+                  ?.manualCompletedAt !=
+              null,
+        );
+  }
+
+  String _what(List<VideoItem> chosen) {
+    final music = mediaFilter == 'music';
+    if (chosen.length == 1) return '«${chosen.single.title}»';
+    final courses = chosen.where((i) => i.kind == VideoItemKind.course).length;
+    if (courses == chosen.length) {
+      return mediaCount(chosen.length, music: music, courses: true);
+    }
+    return courses == 0
+        ? mediaCount(chosen.length, music: music)
+        : '${chosen.length} медиа';
+  }
+
+  /// One action for one item (its menu) or for the selection.
+  Future<void> _itemAction(String action, List<VideoItem> chosen) async {
+    if (chosen.isEmpty) return;
+    final files = [for (final item in chosen) ..._sectionLessons(item)];
+    final what = _what(chosen);
+    switch (action) {
+      case 'rename':
+        final item = chosen.single;
+        final title = await askMediaTitle(
+          context,
+          title: 'Переименовать',
+          initial: item.title,
+        );
+        if (title == null || !mounted) return;
+        await _run(() async {
+          await widget.repository.renameItem(item.id, title);
+          // A single video's file carries the same name in the player.
+          final own = _sectionLessons(item).toList();
+          if (item.kind == VideoItemKind.video && own.length == 1) {
+            await widget.repository.renameLesson(own.single.id, title);
+          }
+          await _load();
+        });
+      case 'details':
+        await showMediaDetails(
+          context,
+          widget.repository,
+          title: chosen.length == 1 ? chosen.single.title : what,
+          lessons: files,
+          progress: progress,
+        );
+      case 'playlist':
+        await addLessonsToPlaylist(context, widget.repository, files);
+        if (mounted) setState(selected.clear);
+        if (mounted) await _load();
+      case 'favorite' || 'unfavorite':
+        await _run(() async {
+          for (final item in chosen) {
+            await widget.repository.setFavorite(item, action == 'favorite');
+          }
+          selected.clear();
+          await _load();
+        });
+      case 'watched' || 'unwatched':
+        await _run(() async {
+          final changed = await setLessonsWatched(
+            widget.repository,
+            files,
+            action == 'watched',
+          );
+          selected.clear();
+          await _load();
+          if (mounted && changed > 0) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                SnackBar(
+                  content: Text(
+                    action == 'watched'
+                        ? 'Отмечено просмотренным: $what'
+                        : 'Отметка снята: $what',
+                  ),
+                ),
+              );
+          }
+        });
+      case 'merge':
+        final title = await askMediaTitle(
+          context,
+          title: 'Объединить в курс',
+          initial: chosen.first.title,
+        );
+        if (title == null || !mounted) return;
+        await _run(() async {
+          await widget.repository.mergeIntoCourse(
+            title: title,
+            itemIds: [for (final item in chosen) item.id],
+          );
+          selected.clear();
+          await _load();
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                SnackBar(
+                  content: Text('Курс «$title»: файлов ${files.length}'),
+                ),
+              );
+          }
+        });
+      case 'select':
+        setState(() => selected.add(chosen.single.id));
+      case 'remove':
+        if (await removeFromMediaLibrary(
+          context,
+          widget.repository,
+          items: chosen,
+          what: what,
+        )) {
+          selected.clear();
+          if (mounted) await _load();
+        }
+      case 'delete':
+        await deleteMediaFiles(
+          context,
+          widget.repository,
+          files,
+          what: what,
+          deleter: widget.deleter,
+        );
+        selected.clear();
+        if (mounted) await _load();
+    }
+  }
+
+  List<PopupMenuEntry<String>> _itemMenu(List<VideoItem> chosen) {
+    final single = chosen.length == 1;
+    final music = mediaFilter == 'music';
+    final favorite = chosen.every((item) => item.favorite);
+    final watched = chosen.every(_watched);
+    return [
+      if (single)
+        const PopupMenuItem(value: 'rename', child: Text('Переименовать…')),
+      const PopupMenuItem(value: 'details', child: Text('Сведения')),
+      const PopupMenuItem(value: 'playlist', child: Text('В плейлист…')),
+      if (!single)
+        PopupMenuItem(
+          value: favorite ? 'unfavorite' : 'favorite',
+          child: Text(favorite ? 'Убрать из избранного' : 'В избранное'),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
+      if (!music)
+        PopupMenuItem(
+          value: watched ? 'unwatched' : 'watched',
+          child: Text(
+            watched ? 'Снять отметку «Просмотрено»' : 'Отметить просмотренным',
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Удалить из медиатеки'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    List<String>? lessonIds;
-    await _run(() async {
-      lessonIds = await widget.repository.removeItem(item.id);
-      await _load();
-    });
-    final removed = lessonIds;
-    if (removed == null || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        // Flutter keeps snack bars with an action until dismissed.
-        persist: false,
-        content: Text('«${item.title}» удалён из медиатеки'),
-        action: SnackBarAction(
-          label: 'Вернуть',
-          onPressed: () => _run(() async {
-            await widget.repository.restoreItem(item.id, removed);
-            await _load();
-          }),
         ),
+      if (!single && !music)
+        const PopupMenuItem(value: 'merge', child: Text('Объединить в курс…')),
+      if (single && !selecting)
+        const PopupMenuItem(value: 'select', child: Text('Выбрать')),
+      const PopupMenuDivider(),
+      const PopupMenuItem(value: 'remove', child: Text('Убрать из медиатеки…')),
+      const PopupMenuItem(
+        value: 'delete',
+        child: Text('Удалить с устройства…'),
       ),
+    ];
+  }
+
+  Widget _itemTile(BuildContext context, VideoItem item) {
+    final palette = ShelfPalette.of(context);
+    final music = mediaFilter == 'music';
+    final own = _sectionLessons(item).toList();
+    final cover = _cover(item);
+    final recent = _recent(item);
+    final course = item.kind == VideoItemKind.course;
+    final kind = music
+        ? (course ? 'Плейлист · треков: ${own.length}' : 'Музыка')
+        : course
+        ? 'Курс · ${own.length} уроков'
+        : 'Видео';
+    final subtitle = [
+      kind,
+      if (_watched(item)) 'Просмотрено',
+      if (recent != null)
+        view == 'list'
+            ? '\nПоследняя позиция: ${pepeTime(recent.positionMs)}'
+            : 'позиция ${pepeTime(recent.positionMs)}',
+    ].join(' · ').replaceAll(' · \n', '\n');
+    return VideoMediaTile(
+      key: ValueKey('media-item:${item.id}'),
+      view: view,
+      title: item.title,
+      subtitle: subtitle,
+      cover: cover,
+      frame: !music,
+      thumbnails: widget.thumbnails,
+      icon: music
+          ? Icons.music_note_outlined
+          : course
+          ? Icons.school_outlined
+          : Icons.ondemand_video,
+      badge: course
+          ? '${own.length} ▶'
+          : cover?.durationMs == null
+          ? null
+          : pepeTime(cover!.durationMs!),
+      selected: selecting ? selected.contains(item.id) : null,
+      onTap: busy
+          ? null
+          : selecting
+          ? () => _toggle(item)
+          : () => _open(item),
+      onLongPress: busy ? null : () => _toggle(item),
+      trailing: selecting
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (view == 'list' || view == 'cards')
+                  IconButton(
+                    tooltip: item.favorite
+                        ? 'Убрать из избранного'
+                        : 'В избранное',
+                    onPressed: busy
+                        ? null
+                        : () => _run(() async {
+                            await widget.repository.setFavorite(
+                              item,
+                              !item.favorite,
+                            );
+                            await _load();
+                          }),
+                    icon: Icon(item.favorite ? Icons.star : Icons.star_border),
+                  )
+                else if (item.favorite)
+                  Icon(Icons.star, size: 16, color: palette.accent),
+                PopupMenuButton<String>(
+                  key: ValueKey('media-item-menu:${item.id}'),
+                  tooltip: 'Действия',
+                  enabled: !busy,
+                  padding: EdgeInsets.zero,
+                  iconColor: palette.muted,
+                  onSelected: (action) => _itemAction(action, [item]),
+                  itemBuilder: (_) => _itemMenu([item]),
+                ),
+              ],
+            ),
     );
   }
 
@@ -498,10 +744,12 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
       await Navigator.push<void>(
         context,
         MaterialPageRoute(
-          builder: (_) => _VideoCoursePage(
+          builder: (_) => VideoCoursePage(
             repository: widget.repository,
             item: item,
             audio: widget.audio,
+            thumbnails: widget.thumbnails,
+            deleter: widget.deleter,
           ),
         ),
       );
@@ -567,760 +815,372 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
           playlist,
     ];
     final rows = _rows(visible, sectionPlaylists);
-    return ShelfShell(
-      title: 'Медиа',
-      navigation: widget.navigation,
-      actions: [
-        IconButton(
-          tooltip: 'Словарь Anki',
-          icon: const Icon(Icons.style_outlined),
-          onPressed: () => Navigator.push<void>(
-            context,
-            MaterialPageRoute(
-              builder: (_) => VocabularyPage(
-                repository: VocabularyRepository(widget.repository.repository),
+    final chosen = _chosen(visible);
+    return PopScope(
+      canPop: !selecting,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && selecting) setState(selected.clear);
+      },
+      child: ShelfShell(
+        title: 'Медиа',
+        navigation: widget.navigation,
+        actions: [
+          IconButton(
+            tooltip: 'Словарь Anki',
+            icon: const Icon(Icons.style_outlined),
+            onPressed: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => VocabularyPage(
+                  repository: VocabularyRepository(
+                    widget.repository.repository,
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-        IconButton(
-          tooltip: mediaFilter == 'music'
-              ? 'Статистика музыки'
-              : 'Статистика видео и курсов',
-          onPressed: () => Navigator.push<void>(
-            context,
-            MaterialPageRoute(
-              builder: (_) => mediaFilter == 'music'
-                  ? MusicStatisticsPage(repository: widget.repository)
-                  : VideoStatisticsPage(repository: widget.repository),
+          IconButton(
+            tooltip: mediaFilter == 'music'
+                ? 'Статистика музыки'
+                : 'Статистика видео и курсов',
+            onPressed: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => mediaFilter == 'music'
+                    ? MusicStatisticsPage(repository: widget.repository)
+                    : VideoStatisticsPage(repository: widget.repository),
+              ),
             ),
+            icon: const Icon(Icons.bar_chart),
           ),
-          icon: const Icon(Icons.bar_chart),
-        ),
-      ],
-      body: CustomScrollView(
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            sliver: SliverList.list(
-              children: [
-                TextField(
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search),
-                    hintText: 'Поиск в медиа',
-                    suffixIcon: PopupMenuButton<String>(
-                      tooltip: 'Добавить медиа',
-                      enabled: !busy,
-                      icon: const Icon(Icons.add_circle_outline),
-                      onSelected: (action) {
-                        if (action == 'discover') _discover();
-                        if (action == 'files') _pick(false);
-                        if (action == 'folder') _pick(true);
-                        if (action == 'link') _addLink();
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(
-                          value: 'discover',
-                          child: ListTile(
-                            leading: Icon(Icons.manage_search),
-                            title: Text('Найти видео автоматически'),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'files',
-                          child: ListTile(
-                            leading: Icon(Icons.library_music_outlined),
-                            title: Text('Добавить файлы'),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'folder',
-                          child: ListTile(
-                            leading: Icon(Icons.folder_open),
-                            title: Text('Подключить папку'),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'link',
-                          child: ListTile(
-                            leading: Icon(Icons.link),
-                            title: Text('Добавить ссылку'),
-                          ),
-                        ),
-                      ],
-                    ),
+        ],
+        body: Column(
+          children: [
+            if (selecting)
+              VideoSelectionBar(
+                count: chosen.length,
+                total: visible.length,
+                onClose: () => setState(selected.clear),
+                onSelectAll: () => setState(() {
+                  if (chosen.length == visible.length) {
+                    selected.clear();
+                  } else {
+                    selected.addAll(visible.map((item) => item.id));
+                  }
+                }),
+                actions: [
+                  IconButton(
+                    tooltip: 'В плейлист',
+                    onPressed: busy
+                        ? null
+                        : () => _itemAction('playlist', chosen),
+                    icon: const Icon(Icons.playlist_add),
                   ),
-                  onChanged: (value) => setState(() => query = value.trim()),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
+                  PopupMenuButton<String>(
+                    key: const ValueKey('selection-menu'),
+                    tooltip: 'Ещё',
+                    enabled: !busy && chosen.isNotEmpty,
+                    onSelected: (action) => _itemAction(action, chosen),
+                    itemBuilder: (_) => _itemMenu(chosen),
+                  ),
+                ],
+              ),
+            Expanded(
+              child: CustomScrollView(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    sliver: SliverList.list(
+                      children: [
+                        TextField(
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.search),
+                            hintText: 'Поиск в медиа',
+                            suffixIcon: PopupMenuButton<String>(
+                              tooltip: 'Добавить медиа',
+                              enabled: !busy,
+                              icon: const Icon(Icons.add_circle_outline),
+                              onSelected: (action) {
+                                if (action == 'discover') _discover();
+                                if (action == 'files') _pick(false);
+                                if (action == 'folder') _pick(true);
+                                if (action == 'link') _addLink();
+                              },
+                              itemBuilder: (_) => const [
+                                PopupMenuItem(
+                                  value: 'discover',
+                                  child: ListTile(
+                                    leading: Icon(Icons.manage_search),
+                                    title: Text('Найти видео автоматически'),
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'files',
+                                  child: ListTile(
+                                    leading: Icon(Icons.library_music_outlined),
+                                    title: Text('Добавить файлы'),
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'folder',
+                                  child: ListTile(
+                                    leading: Icon(Icons.folder_open),
+                                    title: Text('Подключить папку'),
+                                  ),
+                                ),
+                                PopupMenuItem(
+                                  value: 'link',
+                                  child: ListTile(
+                                    leading: Icon(Icons.link),
+                                    title: Text('Добавить ссылку'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          onChanged: (value) =>
+                              setState(() => query = value.trim()),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
                           children: [
-                            for (final entry in const {
-                              'video': 'Видео и курсы',
-                              'music': 'Музыка',
-                            }.entries)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: ChoiceChip(
-                                  label: Text(entry.value),
-                                  selected: mediaFilter == entry.key,
-                                  onSelected: busy
-                                      ? null
-                                      : (_) => _run(() async {
-                                          await widget.repository.repository
-                                              .setMeta(
-                                                'media-section',
-                                                entry.key,
-                                              );
-                                          if (mounted) {
-                                            setState(
-                                              () => mediaFilter = entry.key,
-                                            );
-                                          }
-                                        }),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    for (final entry in const {
+                                      'video': 'Видео и курсы',
+                                      'music': 'Музыка',
+                                    }.entries)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          right: 8,
+                                        ),
+                                        child: ChoiceChip(
+                                          label: Text(entry.value),
+                                          selected: mediaFilter == entry.key,
+                                          onSelected: busy
+                                              ? null
+                                              : (_) => _run(() async {
+                                                  await widget
+                                                      .repository
+                                                      .repository
+                                                      .setMeta(
+                                                        'media-section',
+                                                        entry.key,
+                                                      );
+                                                  if (mounted) {
+                                                    setState(
+                                                      () => mediaFilter =
+                                                          entry.key,
+                                                    );
+                                                  }
+                                                }),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
+                            ),
+                            PopupMenuButton<String>(
+                              key: const ValueKey('media-sort'),
+                              tooltip: 'Сортировка: ${videoSortLabels[sortBy]}',
+                              icon: const Icon(Icons.sort),
+                              initialValue: sortBy,
+                              onSelected: _setSortBy,
+                              itemBuilder: (_) => [
+                                for (final entry in videoSortLabels.entries)
+                                  CheckedPopupMenuItem(
+                                    value: entry.key,
+                                    checked: entry.key == sortBy,
+                                    child: Text(entry.value),
+                                  ),
+                              ],
+                            ),
+                            VideoViewButton(view: view, onSelected: _setView),
+                            IconButton(
+                              tooltip: favorites
+                                  ? 'Показать все медиа'
+                                  : 'Избранное',
+                              isSelected: favorites,
+                              selectedIcon: const Icon(Icons.star),
+                              icon: const Icon(Icons.star_border),
+                              onPressed: () =>
+                                  setState(() => favorites = !favorites),
+                            ),
                           ],
                         ),
-                      ),
-                    ),
-                    PopupMenuButton<String>(
-                      key: const ValueKey('media-sort'),
-                      tooltip: 'Сортировка: ${videoSortLabels[sortBy]}',
-                      icon: const Icon(Icons.sort),
-                      initialValue: sortBy,
-                      onSelected: _setSortBy,
-                      itemBuilder: (_) => [
-                        for (final entry in videoSortLabels.entries)
-                          CheckedPopupMenuItem(
-                            value: entry.key,
-                            checked: entry.key == sortBy,
-                            child: Text(entry.value),
-                          ),
-                      ],
-                    ),
-                    IconButton(
-                      tooltip: favorites ? 'Показать все медиа' : 'Избранное',
-                      isSelected: favorites,
-                      selectedIcon: const Icon(Icons.star),
-                      icon: const Icon(Icons.star_border),
-                      onPressed: () => setState(() => favorites = !favorites),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                SegmentedButton<String>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(
-                      value: 'list',
-                      icon: Icon(Icons.view_list_outlined),
-                      label: Text('Список'),
-                    ),
-                    ButtonSegment(
-                      value: 'folders',
-                      icon: Icon(Icons.folder_outlined),
-                      label: Text('Папки'),
-                    ),
-                    ButtonSegment(
-                      value: 'playlists',
-                      icon: Icon(Icons.playlist_play),
-                      label: Text('Плейлисты'),
-                    ),
-                  ],
-                  selected: {groupBy},
-                  onSelectionChanged: (value) => _setGroupBy(value.single),
-                ),
-                const SizedBox(height: 6),
-                ValueListenableBuilder<bool>(
-                  valueListenable: VideoAutoDiscovery.searching,
-                  builder: (_, searching, _) => Text(
-                    [
-                      '${visible.length} в библиотеке',
-                      videoSortLabels[sortBy]!.toLowerCase(),
-                      if (searching) 'ищу новые видео…',
-                    ].join(' · '),
-                    style: TextStyle(color: palette.muted, fontSize: 12),
-                  ),
-                ),
-                if (loading) const LinearProgressIndicator(),
-                if (error != null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(error!),
-                        TextButton(
-                          onPressed: _load,
-                          child: const Text('Повторить'),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (!loading && items.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 36),
-                    child: ShelfPanel(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.perm_media,
-                            size: 48,
-                            color: palette.accent,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Добавьте видео или музыку',
-                            style: Theme.of(context).textTheme.titleLarge,
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Добавьте файлы, подключите папку с уроками или музыкой либо укажите прямую ссылку. Медиа читаются из исходных файлов.',
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 16),
-                          FilledButton.icon(
-                            onPressed: busy ? null : _discover,
-                            icon: const Icon(Icons.manage_search),
-                            label: const Text('Найти видео автоматически'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (!loading && items.isNotEmpty && rows.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('По выбранным условиям ничего не найдено.'),
-                  ),
-              ],
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            sliver: SliverList.builder(
-              itemCount: rows.length,
-              itemBuilder: (_, index) {
-                final row = rows[index];
-                if (row is _SectionHeader) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 18, bottom: 2),
-                    child: Row(
-                      children: [
-                        Icon(row.icon, size: 18, color: palette.muted),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            row.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                        ),
-                        Text(
-                          '${row.count}',
-                          style: TextStyle(color: palette.muted),
-                        ),
-                        if (row.action != null)
-                          IconButton(
-                            tooltip: 'Создать плейлист',
-                            onPressed: busy ? null : row.action,
-                            icon: const Icon(Icons.playlist_add),
-                          ),
-                      ],
-                    ),
-                  );
-                }
-                if (row is VideoPlaylist) {
-                  final own = row.entries.length;
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: ShelfPanel(
-                      child: ListTile(
-                        key: ValueKey('media-playlist:${row.id}'),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 6,
-                        ),
-                        leading: Icon(
-                          Icons.playlist_play,
-                          color: palette.accent,
-                        ),
-                        title: Text(
-                          row.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text('Плейлист · файлов: $own'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: busy ? null : () => _openPlaylist(row),
-                      ),
-                    ),
-                  );
-                }
-                final item = row as VideoItem;
-                return Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: ShelfPanel(
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      leading: mediaFilter == 'music'
-                          ? Icon(
-                              Icons.music_note_outlined,
-                              color: palette.accent,
-                            )
-                          : VideoThumbnail(
-                              key: ValueKey('media-thumbnail:${item.id}'),
-                              lesson: _cover(item),
-                              thumbnails: widget.thumbnails,
-                              width: MediaQuery.sizeOf(context).width < 400
-                                  ? 80
-                                  : 112,
-                              icon: item.kind == VideoItemKind.course
-                                  ? Icons.school_outlined
-                                  : Icons.ondemand_video,
-                              label: item.kind == VideoItemKind.course
-                                  ? '${_sectionLessons(item).length} ▶'
-                                  : _cover(item)?.durationMs == null
-                                  ? null
-                                  : pepeTime(_cover(item)!.durationMs!),
+                        const SizedBox(height: 4),
+                        SegmentedButton<String>(
+                          showSelectedIcon: false,
+                          segments: const [
+                            ButtonSegment(
+                              value: 'list',
+                              icon: Icon(Icons.view_list_outlined),
+                              label: Text('Список'),
                             ),
-                      title: Text(
-                        item.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        [
-                          mediaFilter == 'music'
-                              ? (item.kind == VideoItemKind.course
-                                    ? 'Плейлист · треков: ${_sectionLessons(item).length}'
-                                    : 'Музыка')
-                              : item.kind == VideoItemKind.course
-                              ? 'Курс · ${_sectionLessons(item).length} уроков'
-                              : 'Видео',
-                          if (_recent(item) != null)
-                            'Последняя позиция: ${pepeTime(_recent(item)!.positionMs)}',
-                        ].join('\n'),
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: item.favorite
-                                ? 'Убрать из избранного'
-                                : 'В избранное',
-                            onPressed: busy
-                                ? null
-                                : () => _run(() async {
-                                    await widget.repository.setFavorite(
-                                      item,
-                                      !item.favorite,
-                                    );
-                                    await _load();
-                                  }),
-                            icon: Icon(
-                              item.favorite ? Icons.star : Icons.star_border,
+                            ButtonSegment(
+                              value: 'folders',
+                              icon: Icon(Icons.folder_outlined),
+                              label: Text('Папки'),
+                            ),
+                            ButtonSegment(
+                              value: 'playlists',
+                              icon: Icon(Icons.playlist_play),
+                              label: Text('Плейлисты'),
+                            ),
+                          ],
+                          selected: {groupBy},
+                          onSelectionChanged: (value) =>
+                              _setGroupBy(value.single),
+                        ),
+                        const SizedBox(height: 6),
+                        ValueListenableBuilder<bool>(
+                          valueListenable: VideoAutoDiscovery.searching,
+                          builder: (_, searching, _) => Text(
+                            [
+                              '${visible.length} в библиотеке',
+                              videoSortLabels[sortBy]!.toLowerCase(),
+                              if (searching) 'ищу новые видео…',
+                            ].join(' · '),
+                            style: TextStyle(
+                              color: palette.muted,
+                              fontSize: 12,
                             ),
                           ),
-                          PopupMenuButton<String>(
-                            key: ValueKey('media-item-menu:${item.id}'),
-                            tooltip: 'Действия',
-                            enabled: !busy,
-                            onSelected: (action) {
-                              if (action == 'playlist') _addToPlaylist(item);
-                              if (action == 'remove') _remove(item);
-                            },
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(
-                                value: 'playlist',
-                                child: Text('Добавить в плейлист…'),
-                              ),
-                              PopupMenuItem(
-                                value: 'remove',
-                                child: Text('Удалить из медиатеки…'),
-                              ),
-                            ],
+                        ),
+                        if (loading) const LinearProgressIndicator(),
+                        if (error != null)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(error!),
+                                TextButton(
+                                  onPressed: _load,
+                                  child: const Text('Повторить'),
+                                ),
+                              ],
+                            ),
                           ),
-                        ],
-                      ),
-                      onTap: busy ? null : () => _open(item),
+                        if (!loading && items.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 36),
+                            child: ShelfPanel(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.perm_media,
+                                    size: 48,
+                                    color: palette.accent,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Добавьте видео или музыку',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Добавьте файлы, подключите папку с уроками или музыкой либо укажите прямую ссылку. Медиа читаются из исходных файлов.',
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  FilledButton.icon(
+                                    onPressed: busy ? null : _discover,
+                                    icon: const Icon(Icons.manage_search),
+                                    label: const Text(
+                                      'Найти видео автоматически',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        if (!loading && items.isNotEmpty && rows.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Text(
+                              'По выбранным условиям ничего не найдено.',
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _VideoCoursePage extends StatefulWidget {
-  final VideoRepository repository;
-  final VideoItem item;
-  final AudioController? audio;
-  const _VideoCoursePage({
-    required this.repository,
-    required this.item,
-    this.audio,
-  });
-  @override
-  State<_VideoCoursePage> createState() => _VideoCoursePageState();
-}
-
-class _VideoCoursePageState extends State<_VideoCoursePage> {
-  late VideoItem currentItem = widget.item;
-
-  /// Lessons with files on the device; [allLessons] adds deleted ones,
-  /// which the structure editor must keep.
-  List<VideoLesson> lessons = [], allLessons = [];
-  Map<String, VideoProgress> progress = {};
-  String? error;
-  bool loading = true;
-  bool opening = false;
-  VideoStats? stats;
-  VideoPreferences preferences = const VideoPreferences();
-  Map<String, VideoLearningState> learning = {};
-  int _request = 0;
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final request = ++_request;
-    try {
-      currentItem = (await widget.repository.items()).firstWhere(
-        (item) => item.id == widget.item.id,
-      );
-      final all = (await widget.repository.lessons(itemId: widget.item.id))
-          .where((lesson) => !lesson.isAudio)
-          .toList();
-      final next = [
-        for (final lesson in all)
-          if (!lesson.missing) lesson,
-      ];
-      final positions = await widget.repository.allProgress();
-      final settings = await widget.repository.preferences();
-      final states = await widget.repository.allLearningStates();
-      final ids = next.map((l) => l.id).toSet();
-      final coverage = await compute(
-        analyzeVideo,
-        VideoAnalysisRequest(
-          await widget.repository.intervals(lessonIds: ids),
-          lessonIds: ids,
-          lessons: next,
-        ),
-      );
-      if (mounted && request == _request) {
-        setState(() {
-          lessons = next;
-          allLessons = all;
-          progress = positions;
-          stats = coverage;
-          preferences = settings;
-          learning = states;
-          loading = false;
-          error = null;
-        });
-      }
-    } catch (e) {
-      if (mounted && request == _request) {
-        setState(() {
-          error = describeError(e);
-          loading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _statistics() async {
-    await Navigator.push<void>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => VideoStatisticsPage(
-          repository: widget.repository,
-          item: currentItem,
-        ),
-      ),
-    );
-    if (mounted) await _load();
-  }
-
-  String? _completionLabel(VideoLesson lesson) {
-    final state = learning['${lesson.id}:${lesson.mediaVersion}'];
-    if (state?.manualCompletedAt != null) return 'Завершён вручную';
-    if (stats != null &&
-        lesson.durationMs != null &&
-        lesson.durationMs! > 0 &&
-        stats!.lessonCoverage(lesson) * 100 >=
-            lesson.durationMs! * preferences.completionPercent) {
-      return 'Покрытие ≥ ${preferences.completionPercent}%';
-    }
-    return null;
-  }
-
-  Future<void> _play(int index) async {
-    if (opening || !currentItem.connected || !lessons[index].available) return;
-    setState(() => opening = true);
-    try {
-      await Navigator.push<void>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => VideoPlayerPage(
-            repository: widget.repository,
-            item: currentItem,
-            lessons: lessons,
-            initialIndex: index,
-            beforePlaying: widget.audio?.pause,
-          ),
-        ),
-      );
-      if (mounted) await _load();
-    } finally {
-      if (mounted) setState(() => opening = false);
-    }
-  }
-
-  int get _recentIndex {
-    var result = 0;
-    DateTime? recent;
-    for (var i = 0; i < lessons.length; i++) {
-      final saved = progress[lessons[i].id];
-      if (saved != null &&
-          saved.mediaVersion == lessons[i].mediaVersion &&
-          (recent == null || saved.updatedAt.isAfter(recent))) {
-        recent = saved.updatedAt;
-        result = i;
-      }
-    }
-    // A finished lesson sends «Continue» on to the next available one.
-    if (recent != null && _finished(lessons[result])) {
-      for (var i = result + 1; i < lessons.length; i++) {
-        if (lessons[i].available) return i;
-      }
-    }
-    return result;
-  }
-
-  bool _finished(VideoLesson lesson) {
-    final state = learning['${lesson.id}:${lesson.mediaVersion}'];
-    if (state?.manualCompletedAt != null) return true;
-    final saved = progress[lesson.id];
-    final duration = lesson.durationMs;
-    return saved != null &&
-        saved.mediaVersion == lesson.mediaVersion &&
-        duration != null &&
-        duration > 20000 &&
-        saved.positionMs >= duration - 10000;
-  }
-
-  Future<void> _folderAction(String action) async {
-    if (opening || currentItem.root == null) return;
-    setState(() {
-      opening = true;
-      error = null;
-    });
-    try {
-      final session = VideoSessionScope.read(context);
-      if (session?.item?.id == currentItem.id) await session!.close();
-      if (action == 'disconnect') {
-        await widget.repository.setRootConnection(currentItem, false);
-      } else {
-        final selection = action == 'reconnect'
-            ? await pickVideoFiles(folder: true)
-            : await scanVideoFolder(currentItem.root!);
-        if (selection == null || !mounted) return;
-        final preview = await previewVideoFolder(
-          widget.repository,
-          currentItem,
-          selection,
-        );
-        if (!mounted) return;
-        await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => VideoFolderRefreshDialog(preview: preview),
-        );
-      }
-      if (mounted) await _load();
-    } catch (e) {
-      if (mounted) setState(() => error = describeError(e));
-    } finally {
-      if (mounted) setState(() => opening = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    bottomNavigationBar: const AudioPlayerFooter(),
-    appBar: AppBar(
-      title: Text(currentItem.title),
-      actions: [
-        if (currentItem.root != null)
-          PopupMenuButton<String>(
-            tooltip: 'Папка курса',
-            enabled: !loading && !opening,
-            onSelected: _folderAction,
-            itemBuilder: (_) => [
-              if (currentItem.connected)
-                const PopupMenuItem(
-                  value: 'refresh',
-                  child: Text('Обновить папку'),
-                ),
-              const PopupMenuItem(
-                value: 'reconnect',
-                child: Text('Переподключить папку'),
+                  ...videoMediaSlivers(
+                    rows: rows,
+                    view: view,
+                    isTile: (row) => row is VideoItem,
+                    build: (context, row) {
+                      return switch (row) {
+                        _SectionHeader() => _header(context, row),
+                        VideoPlaylist() => _playlistTile(context, row),
+                        _ => _itemTile(context, row as VideoItem),
+                      };
+                    },
+                  ),
+                ],
               ),
-              if (currentItem.connected)
-                const PopupMenuItem(
-                  value: 'disconnect',
-                  child: Text('Отключить папку'),
-                ),
-            ],
-          ),
-        IconButton(
-          tooltip: 'Редактировать структуру курса',
-          onPressed: loading || opening
-              ? null
-              : () async {
-                  await Navigator.push<bool>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => VideoCourseEditor(
-                        repository: widget.repository,
-                        item: currentItem,
-                        lessons: allLessons,
-                      ),
-                    ),
-                  );
-                  if (mounted) await _load();
-                },
-          icon: const Icon(Icons.edit_note),
+            ),
+          ],
         ),
-        IconButton(
-          tooltip: 'Статистика курса',
-          onPressed: _statistics,
-          icon: const Icon(Icons.bar_chart),
-        ),
-      ],
-    ),
-    body: ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        if (loading) const LinearProgressIndicator(),
-        if (opening) const LinearProgressIndicator(),
-        if (!currentItem.connected)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
+      ),
+    );
+  }
+
+  Widget _header(BuildContext context, _SectionHeader row) {
+    final palette = ShelfPalette.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 18, bottom: 2),
+      child: Row(
+        children: [
+          Icon(row.icon, size: 18, color: palette.muted),
+          const SizedBox(width: 8),
+          Expanded(
             child: Text(
-              'Папка отключена. Переподключите её через меню, чтобы продолжить курс.',
+              row.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleSmall,
             ),
           ),
-        if (error != null) Text(error!),
-        if (stats != null) ...[
-          VideoCourseProgressPanel(
-            coverage: videoCourseCoverage(
-              lessons,
-              stats!,
-              preferences.completionPercent,
-              learning,
+          Text('${row.count}', style: TextStyle(color: palette.muted)),
+          if (row.action != null)
+            IconButton(
+              tooltip: 'Создать плейлист',
+              onPressed: busy ? null : row.action,
+              icon: const Icon(Icons.playlist_add),
             ),
-          ),
-          const SizedBox(height: 16),
         ],
-        if (lessons.isNotEmpty)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed:
-                  opening ||
-                      !currentItem.connected ||
-                      !lessons[_recentIndex].available
-                  ? null
-                  : () => _play(_recentIndex),
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Продолжить курс'),
-            ),
+      ),
+    );
+  }
+
+  Widget _playlistTile(BuildContext context, VideoPlaylist row) {
+    final palette = ShelfPalette.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: ShelfPanel(
+        child: ListTile(
+          key: ValueKey('media-playlist:${row.id}'),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 6,
           ),
-        const SizedBox(height: 16),
-        for (var i = 0; i < lessons.length; i++) ...[
-          if (lessons[i].module.isNotEmpty &&
-              (i == 0 || lessons[i].module != lessons[i - 1].module))
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                lessons[i].module,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-          ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            leading: VideoThumbnail(
-              key: ValueKey('lesson-thumbnail:${lessons[i].id}'),
-              lesson: lessons[i],
-              width: 88,
-              label: '${i + 1}',
-            ),
-            title: Text(lessons[i].title),
-            subtitle: Text(
-              [
-                if (lessons[i].durationMs != null)
-                  pepeTime(lessons[i].durationMs!),
-                if (stats != null &&
-                    lessons[i].durationMs != null &&
-                    lessons[i].durationMs! > 0)
-                  'Просмотрено: ${(stats!.lessonCoverage(lessons[i]) * 100 / lessons[i].durationMs!).toStringAsFixed(1)}%',
-                if (_completionLabel(lessons[i]) != null)
-                  _completionLabel(lessons[i])!,
-                if (learning['${lessons[i].id}:${lessons[i].mediaVersion}']
-                        ?.understoodAt !=
-                    null)
-                  'Разобрался',
-                if (progress[lessons[i].id]?.mediaVersion ==
-                    lessons[i].mediaVersion)
-                  'Позиция: ${pepeTime(progress[lessons[i].id]!.positionMs)}',
-                lessons[i].isRemote ? 'По ссылке' : 'Локальный файл',
-                if (!lessons[i].available) 'Файл недоступен',
-              ].join(' · '),
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  tooltip: 'Добавить урок в плейлист',
-                  onPressed: () => addLessonsToPlaylist(
-                    context,
-                    widget.repository,
-                    [lessons[i]],
-                  ),
-                  icon: const Icon(Icons.playlist_add),
-                ),
-                const Icon(Icons.play_circle_outline),
-              ],
-            ),
-            onTap: opening || !currentItem.connected || !lessons[i].available
-                ? null
-                : () => _play(i),
-          ),
-        ],
-      ],
-    ),
-  );
+          leading: Icon(Icons.playlist_play, color: palette.accent),
+          title: Text(row.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+          subtitle: Text('Плейлист · файлов: ${row.entries.length}'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: busy || selecting ? null : () => _openPlaylist(row),
+        ),
+      ),
+    );
+  }
 }
 
 class _VideoLinkDialog extends StatefulWidget {

@@ -68,6 +68,13 @@ class VideoDiscoverySettings {
   bool get hasPlaces => roots.isNotEmpty || device;
 }
 
+/// What one removal took out of the media library, for «Вернуть».
+class VideoRemoval {
+  final List<String> lessons, items;
+  const VideoRemoval(this.lessons, this.items);
+  bool get isEmpty => lessons.isEmpty && items.isEmpty;
+}
+
 /// A local lesson source for the check that hides deleted files.
 class VideoLocalSource {
   final String lessonId, source;
@@ -547,6 +554,148 @@ class VideoRepository {
           );
         }
       });
+
+  Future<void> renameItem(String itemId, String title) {
+    final clean = _checkedTitle(title);
+    return repository.db.transaction(() async {
+      final row = await repository.record(itemId);
+      if (row == null || row.deleted || row.type != 'video_item') {
+        throw StateError('Медиа удалено');
+      }
+      await _put('video_item', itemId, {...row.payload!, 'title': clean});
+    });
+  }
+
+  Future<void> renameLesson(String lessonId, String title) {
+    final clean = _checkedTitle(title);
+    return repository.db.transaction(() async {
+      final row = await repository.record(lessonId);
+      if (row == null || row.deleted || row.type != 'video_lesson') {
+        throw StateError('Файл удалён из медиатеки');
+      }
+      await _put('video_lesson', lessonId, {
+        ...row.payload!,
+        'title': clean,
+        // A folder refresh keeps the name chosen by the user.
+        'manualStructure': true,
+      });
+    });
+  }
+
+  static String _checkedTitle(String title) {
+    final clean = title.trim();
+    if (clean.isEmpty || clean.runes.length > 300) {
+      throw ArgumentError('Название: от 1 до 300 символов');
+    }
+    return clean;
+  }
+
+  /// Removes single files from their videos and courses; an item left
+  /// without files is removed too. Files on the device are not touched.
+  Future<VideoRemoval> removeLessons(Iterable<String> lessonIds) {
+    final ids = lessonIds.toSet();
+    return repository.db.transaction(() async {
+      final removed = <String>[], owners = <String>{};
+      for (final id in ids) {
+        final row = await repository.record(id);
+        if (row == null || row.deleted || row.type != 'video_lesson') continue;
+        await repository.db.customStatement(
+          "UPDATE records SET deleted=1,revision=revision+1 "
+          "WHERE id=? AND type='video_lesson' AND deleted=0",
+          [id],
+        );
+        removed.add(id);
+        if (row.payload?['itemId'] case final String owner) owners.add(owner);
+      }
+      final emptied = <String>[];
+      for (final owner in owners) {
+        if ((await lessons(itemId: owner)).isNotEmpty) continue;
+        await repository.db.customStatement(
+          "UPDATE records SET deleted=1,revision=revision+1 "
+          "WHERE id=? AND type='video_item' AND deleted=0",
+          [owner],
+        );
+        emptied.add(owner);
+      }
+      return VideoRemoval(removed, emptied);
+    });
+  }
+
+  /// Undoes [removeLessons] and [removeItem]s collected in one removal.
+  Future<void> restoreRemoval(VideoRemoval removal) =>
+      repository.db.transaction(() async {
+        for (final (id, type) in [
+          for (final item in removal.items) (item, 'video_item'),
+          for (final lesson in removal.lessons) (lesson, 'video_lesson'),
+        ]) {
+          await repository.db.customStatement(
+            "UPDATE records SET deleted=0,revision=revision+1 "
+            "WHERE id=? AND type=? AND deleted=1",
+            [id, type],
+          );
+        }
+      });
+
+  /// Joins videos and courses into one new course in the given order. The
+  /// files keep their progress, notes and playlist places; a course that
+  /// joins keeps its name as the module of its lessons.
+  Future<VideoItem> mergeIntoCourse({
+    required String title,
+    required List<String> itemIds,
+  }) {
+    final clean = _checkedTitle(title);
+    final ids = [
+      ...{...itemIds},
+    ];
+    if (ids.length < 2) throw ArgumentError('Выберите хотя бы два медиа');
+    return repository.db.transaction(() async {
+      final sources = <VideoItem>[];
+      for (final id in ids) {
+        final row = await repository.record(id);
+        if (row == null || row.deleted || row.type != 'video_item') {
+          throw StateError('Медиа удалено. Обновите список');
+        }
+        sources.add(VideoItem.fromJson(id, row.payload!));
+      }
+      final folders = {for (final item in sources) item.folder};
+      final course = VideoItem(
+        id: uuid.v4(),
+        title: clean,
+        kind: VideoItemKind.course,
+        folder: folders.length == 1 ? folders.single : null,
+      );
+      await _put('video_item', course.id, course.toJson());
+      var ordinal = 0;
+      for (final item in sources) {
+        for (final lesson in await lessons(itemId: item.id)) {
+          final row = (await repository.record(lesson.id))!;
+          await _put('video_lesson', lesson.id, {
+            ...row.payload!,
+            'itemId': course.id,
+            'ordinal': ordinal++,
+            'module': lesson.module.isNotEmpty
+                ? lesson.module
+                : item.kind == VideoItemKind.course
+                ? item.title
+                : '',
+          });
+        }
+        await repository.db.customStatement(
+          "UPDATE records SET deleted=1,revision=revision+1 "
+          "WHERE id=? AND type='video_item' AND deleted=0",
+          [item.id],
+        );
+      }
+      return course;
+    });
+  }
+
+  /// File facts for «Сведения»: path, size and identity as stored.
+  Future<Map<String, dynamic>?> lessonDetails(String lessonId) async {
+    final row = await repository.record(lessonId);
+    if (row == null || row.deleted || row.type != 'video_lesson') return null;
+    return row.payload;
+  }
 
   Future<void> setFavorite(VideoItem item, bool favorite) =>
       repository.db.transaction(() async {
