@@ -123,6 +123,62 @@ void main() {
       expect(await videos.autoNext(), isFalse);
     });
 
+    test('opening titles are skipped, closing titles end the lesson', () async {
+      final (videos, lessons) = await _course(2, durationMs: 120000);
+      await videos.saveSkipSettings(
+        lessons.first.itemId,
+        introMs: 15000,
+        outroMs: 20000,
+      );
+      final engine = TestVideoEngine();
+      timers = [];
+      final controller = VideoPlaybackController(
+        repository: videos,
+        engine: engine,
+        lessons: lessons,
+        checkpointPeriod: null,
+        skipFor: (lesson) => videos.skipSettings(lesson.itemId),
+        createSleepTimer: (duration, callback) {
+          final timer = _FakeTimer(duration, callback);
+          timers.add(timer);
+          return timer;
+        },
+      );
+      addTearDown(controller.dispose);
+      await controller.load(0);
+      expect(engine.state.positionMs, 15000, reason: 'opening titles');
+      await controller.play();
+      engine.tick(90000);
+      await controller.flush();
+      expect(controller.upNextIndex, isNull);
+      engine.tick(100500);
+      await controller.flush();
+      await controller.flush();
+      expect(engine.state.playing, isFalse, reason: 'credits are not played');
+      expect(controller.upNextIndex, 1);
+      final state = await videos.learningState(lessons.first);
+      expect(state.manualCompletedAt, isNotNull);
+      // A lesson watched before is not moved past the opening titles.
+      await videos.checkpoint(
+        lesson: lessons[1],
+        progress: VideoProgress(
+          lessonId: lessons[1].id,
+          mediaVersion: lessons[1].mediaVersion,
+          positionMs: 40000,
+          speed: 1,
+          updatedAt: DateTime.utc(2026),
+        ),
+        intervals: const [],
+      );
+      timers.last.fire();
+      await controller.flush();
+      expect(controller.current!.id, lessons[1].id);
+      expect(engine.state.positionMs, 40000);
+      // Left on the closing titles: starts over, after the opening titles.
+      await controller.load(0);
+      expect(engine.state.positionMs, 15000);
+    });
+
     test(
       'the last lesson and the sleep timer end without a countdown',
       () async {

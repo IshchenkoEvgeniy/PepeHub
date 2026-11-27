@@ -152,7 +152,9 @@ void main() {
       );
       final film = await videos.addSources(
         title: 'Фильм',
-        sources: [const VideoSourceDraft('/f.mp4', 'Фильм', durationMs: 600000)],
+        sources: [
+          const VideoSourceDraft('/f.mp4', 'Фильм', durationMs: 600000),
+        ],
       );
       final [one, two] = await videos.lessons(itemId: course.id);
       final movie = (await videos.lessons(itemId: film.id)).single;
@@ -225,10 +227,7 @@ void main() {
       await videos.removeItem(single.id);
       var trash = await videos.trash();
       expect(trash.map((e) => e.title), containsAll(['T1', 'Одно']));
-      expect(
-        trash.firstWhere((e) => e.title == 'T1').parentTitle,
-        'Курс',
-      );
+      expect(trash.firstWhere((e) => e.title == 'T1').parentTitle, 'Курс');
       // Manual search offers removed files again, automatic search does not.
       expect((await videos.knownMedia()).sources, isNot(contains('/one.mp4')));
       expect(
@@ -331,36 +330,82 @@ void main() {
       );
     });
 
-    test('sizes are saved, skip and cover settings belong to the item', () async {
-      final item = await videos.addSources(
-        title: 'Курс',
-        sources: [
-          const VideoSourceDraft('/k1.mp4', 'K1'),
-          const VideoSourceDraft('/k2.mp4', 'K2'),
-        ],
+    test('one file in two places of the library is not a copy', () {
+      VideoFileFact fact(String id, String source) => VideoFileFact(
+        VideoLesson(
+          id: id,
+          itemId: 'i$id',
+          title: id,
+          module: '',
+          source: source,
+          mediaVersion: 'v',
+          ordinal: 0,
+        ),
+        100,
+        'head-tail-v1:f1',
+        'x.mp4',
       );
-      final [k1, _] = await videos.lessons(itemId: item.id);
-      await videos.saveFileSizes({k1.id: 1234});
-      final facts = await videos.fileFacts(audio: false);
-      expect(facts.firstWhere((f) => f.lesson.id == k1.id).size, 1234);
+      // The same path twice, once with other case on Windows, and a folder
+      // link and a picked document of one Android file.
+      final groups = videoDuplicateGroups([
+        fact('a', r'C:\Video\x.mp4'),
+        fact('b', 'c:/video/X.MP4'),
+        fact(
+          'c',
+          'content://com.android.externalstorage.documents/tree/'
+              'primary%3AMovies/document/primary%3AMovies%2Fx.mp4',
+        ),
+        fact(
+          'd',
+          'content://com.android.externalstorage.documents/document/'
+              'primary%3AMovies%2Fx.mp4',
+        ),
+      ]);
+      expect(groups, hasLength(1));
+      expect(groups.single.map((f) => f.lesson.id), ['a', 'c']);
 
-      expect(await videos.skipSettings(item.id), (introMs: 0, outroMs: 0));
-      await videos.saveSkipSettings(item.id, introMs: 85000, outroMs: 30000);
-      expect(
-        await videos.skipSettings(item.id),
-        (introMs: 85000, outroMs: 30000),
+      // A media document may be the very file of a folder document.
+      final media = fact(
+        'm',
+        'content://com.android.providers.media.documents/document/video%3A12',
       );
-      expect(
-        () => videos.saveSkipSettings(item.id, introMs: -1, outroMs: 0),
-        throwsArgumentError,
-      );
-
-      final old = await videos.setCover(item.id, 'x.png');
-      expect(old, isNull);
-      expect((await videos.items()).single.cover, 'x.png');
-      expect(await videos.setCover(item.id, null), 'x.png');
-      expect((await videos.items()).single.cover, isNull);
+      expect(videoMaybeSameFile(media, groups.single[1]), isTrue);
+      expect(videoMaybeSameFile(groups.single[0], groups.single[1]), isFalse);
     });
+
+    test(
+      'sizes are saved, skip and cover settings belong to the item',
+      () async {
+        final item = await videos.addSources(
+          title: 'Курс',
+          sources: [
+            const VideoSourceDraft('/k1.mp4', 'K1'),
+            const VideoSourceDraft('/k2.mp4', 'K2'),
+          ],
+        );
+        final [k1, _] = await videos.lessons(itemId: item.id);
+        await videos.saveFileSizes({k1.id: 1234});
+        final facts = await videos.fileFacts(audio: false);
+        expect(facts.firstWhere((f) => f.lesson.id == k1.id).size, 1234);
+
+        expect(await videos.skipSettings(item.id), (introMs: 0, outroMs: 0));
+        await videos.saveSkipSettings(item.id, introMs: 85000, outroMs: 30000);
+        expect(await videos.skipSettings(item.id), (
+          introMs: 85000,
+          outroMs: 30000,
+        ));
+        expect(
+          () => videos.saveSkipSettings(item.id, introMs: -1, outroMs: 0),
+          throwsArgumentError,
+        );
+
+        final old = await videos.setCover(item.id, 'x.png');
+        expect(old, isNull);
+        expect((await videos.items()).single.cover, 'x.png');
+        expect(await videos.setCover(item.id, null), 'x.png');
+        expect((await videos.items()).single.cover, isNull);
+      },
+    );
   });
 
   test('covers are kept as files with safe names', () async {
@@ -397,7 +442,9 @@ void main() {
       );
       await videos.addSources(
         title: 'Новинка',
-        sources: [const VideoSourceDraft('/n.mp4', 'Новинка', durationMs: 60000)],
+        sources: [
+          const VideoSourceDraft('/n.mp4', 'Новинка', durationMs: 60000),
+        ],
         markNew: true,
       );
       await videos.addSources(
@@ -425,7 +472,9 @@ void main() {
     Future<void> filter(String label) async {
       await tester.tap(find.byKey(const ValueKey('media-filter')));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(CheckedPopupMenuItem<String>, label));
+      await tester.tap(
+        find.widgetWithText(CheckedPopupMenuItem<String>, label),
+      );
       await _settle(tester);
     }
 
@@ -449,7 +498,12 @@ void main() {
     await filter('Любая длина');
 
     // Hiding an entry of the shelf.
-    await tester.longPress(find.byKey(const ValueKey('continue-shelf')).first);
+    await tester.longPress(
+      find.descendant(
+        of: find.byKey(const ValueKey('continue-shelf')),
+        matching: find.text('Начатый'),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Убрать из «Продолжить»'));
     await _settle(tester);
@@ -465,16 +519,17 @@ void main() {
       );
       await videos.removeItem(item.id);
     });
-    await tester.pumpWidget(MaterialApp(home: VideoTrashPage(repository: videos)));
+    await tester.pumpWidget(
+      MaterialApp(home: VideoTrashPage(repository: videos)),
+    );
     await _settle(tester);
     expect(find.text('В корзину'), findsOneWidget);
     await tester.tap(find.text('Вернуть'));
     await _settle(tester);
     expect(find.text('Корзина пуста'), findsOneWidget);
-    expect(
-      (await tester.runAsync(videos.items))!.map((i) => i.title),
-      ['В корзину'],
-    );
+    expect((await tester.runAsync(videos.items))!.map((i) => i.title), [
+      'В корзину',
+    ]);
   });
 
   testWidgets('storage page measures, sorts and deletes watched files', (
@@ -514,9 +569,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('storage-only-done')));
     await tester.pumpAndSettle();
     expect(find.text('Маленький'), findsNothing);
-    final big = (await tester.runAsync(videos.items))!.firstWhere(
-      (i) => i.title == 'Большой',
-    );
+    final big = (await tester.runAsync(videos.items))!
+        .firstWhere((i) => i.title == 'Большой');
     await tester.tap(find.byKey(ValueKey('storage-delete:${big.id}')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Удалить файлы'));

@@ -22,6 +22,8 @@ import 'video_transcript_panel.dart';
 import 'video_session.dart';
 import 'video_compact_controls.dart';
 import 'video_frame_export.dart';
+import 'video_covers.dart';
+import 'video_media_actions.dart' show askSkipSettings;
 import '../music/music_player_view.dart';
 import 'video_seek_previews.dart';
 import 'video_annotation_editor.dart';
@@ -883,6 +885,64 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     }
   }
 
+  /// The current frame becomes the cover of the file's video or course.
+  Future<void> _makeCover() async {
+    final player = controller!;
+    final lesson = player.current!;
+    final done = await _dialog<bool>(() async {
+      final bytes = await player.engine.captureFrame();
+      if (bytes == null) {
+        throw StateError(
+          'Декодер не вернул кадр. Повторите после начала воспроизведения',
+        );
+      }
+      final name = await VideoCovers.instance.save(bytes);
+      final old = await widget.repository.setCover(lesson.itemId, name);
+      if (old != null && old != name) await VideoCovers.instance.discard(old);
+      return true;
+    }, pause: false);
+    if (done == true && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Кадр стал обложкой')));
+    }
+  }
+
+  Future<void> _skipSettings() async {
+    final player = controller!;
+    final lesson = player.current!;
+    final current = await widget.repository.skipSettings(lesson.itemId);
+    if (!mounted) return;
+    final value = await _dialog(
+      () => askSkipSettings(
+        context,
+        introMs: current.introMs,
+        outroMs: current.outroMs,
+        positionMs: player.positionMs,
+        durationMs: player.state.durationMs > 0
+            ? player.state.durationMs
+            : null,
+      ),
+    );
+    if (value == null || !mounted) return;
+    await widget.repository.saveSkipSettings(
+      lesson.itemId,
+      introMs: value.introMs,
+      outroMs: value.outroMs,
+    );
+    player.applySkip(lesson, value);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            value.introMs == 0 && value.outroMs == 0
+                ? 'Заставки не пропускаются'
+                : 'Пропуск заставки сохранён для всего курса',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _tools() async {
     if (_dialogOpen) return;
     setState(() => _dialogOpen = true);
@@ -918,10 +978,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         ),
       if (player.engine.canCaptureFrame && !player.audioOnly)
         ('frame', 'Снимок кадра', Icons.photo_camera_outlined),
+      if (player.engine.canCaptureFrame && !player.audioOnly)
+        ('cover', 'Сделать обложкой', Icons.wallpaper_outlined),
+      if (player.current?.isAudio != true)
+        ('skip', 'Пропуск заставки', Icons.fast_forward_outlined),
       if (!_ownsSession)
         ('mini', 'Мини-плеер', Icons.picture_in_picture_outlined),
       if (_fullscreenHost.supportsPip && !player.audioOnly)
-        ('pip', 'Android PiP', Icons.picture_in_picture_alt),
+        ('pip', 'Картинка в картинке', Icons.picture_in_picture_alt),
       if (_fullscreenHost.supportsMiniWindow)
         (
           'window',
@@ -1047,6 +1111,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         _previews.dismiss();
       case 'frame':
         await _captureFrame();
+      case 'cover':
+        await _makeCover();
+      case 'skip':
+        await _skipSettings();
       case 'mini':
         await _minimize();
       case 'pip':

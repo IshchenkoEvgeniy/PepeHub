@@ -65,6 +65,12 @@ class VideoItem {
 
   /// Group key from automatic search; a later search offers new files here.
   final String? discoveryKey;
+
+  /// Files that automatic search added and the user has not opened yet.
+  final List<String> newLessons;
+
+  /// File name of an own cover in [VideoCovers]; null shows a video frame.
+  final String? cover;
   const VideoItem({
     required this.id,
     required this.title,
@@ -74,6 +80,8 @@ class VideoItem {
     this.connected = true,
     this.folder,
     this.discoveryKey,
+    this.newLessons = const [],
+    this.cover,
   });
 
   factory VideoItem.fromJson(String id, Map<String, dynamic> data) => VideoItem(
@@ -85,6 +93,11 @@ class VideoItem {
     connected: data['connected'] != false,
     folder: data['folder'] as String?,
     discoveryKey: data['discoveryKey'] as String?,
+    newLessons: [
+      for (final id in data['newLessons'] as List? ?? const [])
+        if (id is String) id,
+    ],
+    cover: data['cover'] as String?,
   );
 
   Map<String, dynamic> toJson() => {
@@ -96,6 +109,8 @@ class VideoItem {
     'connected': connected,
     if (folder != null) 'folder': folder,
     if (discoveryKey != null) 'discoveryKey': discoveryKey,
+    if (newLessons.isNotEmpty) 'newLessons': newLessons,
+    if (cover != null) 'cover': cover,
   };
 }
 

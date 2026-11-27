@@ -127,7 +127,12 @@ List<VideoContinueEntry> videoContinueEntries({
     if (state == VideoWatchState.started &&
         lastProgress.positionMs >= 5000 &&
         last.available) {
-      entry = VideoContinueEntry(item, last, lastProgress, lastProgress.updatedAt);
+      entry = VideoContinueEntry(
+        item,
+        last,
+        lastProgress,
+        lastProgress.updatedAt,
+      );
     } else if (state == VideoWatchState.done) {
       final start = own.indexOf(last);
       for (var i = start + 1; i < own.length; i++) {

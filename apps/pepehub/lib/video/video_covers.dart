@@ -28,6 +28,10 @@ class VideoCovers {
   Future<Directory> ready() async {
     final existing = directory;
     if (existing != null) return existing;
+    if (Platform.environment.containsKey('FLUTTER_TEST')) {
+      // Widget tests have no app folder; they pass [directory] when needed.
+      throw StateError('Папка обложек недоступна');
+    }
     final support = await getApplicationSupportDirectory();
     return directory = Directory(p.join(support.path, 'video-covers'));
   }

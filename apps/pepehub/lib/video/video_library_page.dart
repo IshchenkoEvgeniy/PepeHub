@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../media/audio_controller.dart';
@@ -20,6 +22,9 @@ import 'video_auto_discovery.dart';
 import 'video_course_page.dart';
 import 'video_media_actions.dart';
 import 'video_media_views.dart';
+import 'video_covers.dart';
+import 'video_media_status.dart';
+import 'video_media_tools.dart';
 import '../audio/audio_import.dart' show naturalAudioOrder;
 import '../vocabulary/vocabulary_page.dart';
 import '../vocabulary/vocabulary_repository.dart';
@@ -35,6 +40,7 @@ class VideoLibraryPage extends StatefulWidget {
   final VideoSourceChecker sourceChecker;
   final VideoThumbnails? thumbnails;
   final VideoFileDeleter deleter;
+  final VideoCovers? covers;
   const VideoLibraryPage({
     super.key,
     required this.repository,
@@ -45,6 +51,7 @@ class VideoLibraryPage extends StatefulWidget {
     this.sourceChecker = const PlatformVideoSourceChecker(),
     this.thumbnails,
     this.deleter = const PlatformVideoFileDeleter(),
+    this.covers,
   });
   @override
   State<VideoLibraryPage> createState() => _VideoLibraryPageState();
@@ -76,6 +83,13 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
 
   /// A key of [videoViewLabels].
   String view = 'list';
+
+  /// Keys of [videoStatusLabels] and [videoLengthLabels].
+  String statusFilter = 'all', lengthFilter = 'all';
+
+  /// [VideoContinueEntry.hideKey]s the user took off the shelf.
+  Set<String> hiddenContinue = {};
+  VideoCovers get _covers => widget.covers ?? VideoCovers.instance;
 
   /// Selected items; selection mode while not empty.
   final selected = <String>{};
@@ -160,6 +174,29 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
         if (videoSortLabels.containsKey(savedSort)) sortBy = savedSort!;
         final savedView = await widget.repository.repository.meta('media-view');
         if (videoViewLabels.containsKey(savedView)) view = savedView!;
+        final meta = widget.repository.repository;
+        final savedStatus = await meta.meta('media-status-filter');
+        if (videoStatusLabels.containsKey(savedStatus)) {
+          statusFilter = savedStatus!;
+        }
+        final savedLength = await meta.meta('media-length-filter');
+        if (videoLengthLabels.containsKey(savedLength)) {
+          lengthFilter = savedLength!;
+        }
+        try {
+          final hidden = jsonDecode(await meta.meta('continue-hidden') ?? '[]');
+          hiddenContinue = {
+            for (final key in hidden as List)
+              if (key is String) key,
+          };
+        } catch (_) {
+          hiddenContinue = {};
+        }
+        try {
+          await _covers.ready();
+        } catch (_) {
+          // Without the app folder own covers are not shown.
+        }
         _filterLoaded = true;
       }
       final nextItems = await widget.repository.items();
@@ -314,6 +351,196 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
   Future<void> _setSortBy(String value) async {
     setState(() => sortBy = value);
     await widget.repository.repository.setMeta('media-sort', value);
+  }
+
+  Future<void> _setFilter(String value) async {
+    final [kind, key] = value.split(':');
+    setState(() {
+      if (kind == 'status') statusFilter = key;
+      if (kind == 'length') lengthFilter = key;
+    });
+    await widget.repository.repository.setMeta(
+      kind == 'status' ? 'media-status-filter' : 'media-length-filter',
+      key,
+    );
+  }
+
+  int _total(VideoItem item) =>
+      _sectionLessons(item)
+          .fold(0, (sum, lesson) => sum + (lesson.durationMs ?? 0));
+
+  bool _isNew(VideoItem item) {
+    if (item.newLessons.isEmpty) return false;
+    // A big folder found at once marks hundreds of files.
+    final marked = item.newLessons.toSet();
+    return _sectionLessons(item).any((l) => marked.contains(l.id));
+  }
+
+  bool _passes(VideoItem item) {
+    if (!videoLengthMatches(lengthFilter, _total(item))) return false;
+    if (mediaFilter == 'music') return true;
+    return switch (statusFilter) {
+      'new' => _isNew(item),
+      'fresh' || 'started' || 'done' =>
+        videoItemState(_sectionLessons(item), progress, learning).name ==
+            statusFilter,
+      _ => true,
+    };
+  }
+
+  Future<void> _hideContinue(VideoContinueEntry entry) async {
+    final next = [...hiddenContinue, entry.hideKey];
+    setState(() => hiddenContinue = next.toSet());
+    await widget.repository.repository.setMeta(
+      'continue-hidden',
+      jsonEncode(next.length > 200 ? next.sublist(next.length - 200) : next),
+    );
+  }
+
+  Future<void> _continue(VideoContinueEntry entry) => _run(() async {
+    final own = _sectionLessons(entry.item).toList();
+    final index = own.indexWhere((lesson) => lesson.id == entry.lesson.id);
+    if (index < 0) return;
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => VideoPlayerPage(
+          repository: widget.repository,
+          item: entry.item,
+          lessons: own,
+          initialIndex: index,
+          beforePlaying: widget.audio?.pause,
+        ),
+      ),
+    );
+    if (entry.item.newLessons.isNotEmpty) {
+      await widget.repository.clearNew(entry.item.id);
+    }
+    if (mounted) await _load();
+  });
+
+  Widget _continueShelf(
+    BuildContext context,
+    List<VideoContinueEntry> entries,
+  ) {
+    final palette = ShelfPalette.of(context);
+    final text = MediaQuery.textScalerOf(context).scale(1);
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Продолжить просмотр',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 176 * 9 / 16 + 52 * text,
+            child: ListView.separated(
+              key: const ValueKey('continue-shelf'),
+              scrollDirection: Axis.horizontal,
+              itemCount: entries.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (context, i) {
+                final entry = entries[i];
+                final duration = entry.lesson.durationMs;
+                final position = entry.progress?.positionMs;
+                final course = entry.item.kind == VideoItemKind.course;
+                return SizedBox(
+                  width: 176,
+                  child: InkWell(
+                    key: ValueKey('continue:${entry.item.id}'),
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: busy ? null : () => _continue(entry),
+                    onLongPress: () async {
+                      final hide = await showModalBottomSheet<bool>(
+                        context: context,
+                        showDragHandle: true,
+                        builder: (sheet) => SafeArea(
+                          child: ListTile(
+                            leading: const Icon(Icons.visibility_off_outlined),
+                            title: const Text('Убрать из «Продолжить»'),
+                            subtitle: const Text(
+                              'Вернётся, когда посмотрите дальше',
+                            ),
+                            onTap: () => Navigator.pop(sheet, true),
+                          ),
+                        ),
+                      );
+                      if (hide == true) await _hideContinue(entry);
+                    },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        VideoThumbnail(
+                          lesson: entry.lesson,
+                          thumbnails: widget.thumbnails,
+                          width: 176,
+                          image: course ? null : _covers.file(entry.item.cover),
+                          label: position == null
+                              ? 'Дальше'
+                              : duration != null && duration > position
+                              ? 'ещё ${pepeTime(duration - position)}'
+                              : pepeTime(position),
+                        ),
+                        if (position != null &&
+                            duration != null &&
+                            duration > 0)
+                          LinearProgressIndicator(
+                            value: (position / duration).clamp(0, 1),
+                            minHeight: 3,
+                          ),
+                        const SizedBox(height: 4),
+                        Text(
+                          entry.item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        if (course)
+                          Text(
+                            entry.lesson.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: palette.muted,
+                              fontSize: 12,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openTool(String tool) async {
+    final music = mediaFilter == 'music';
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => switch (tool) {
+          'duplicates' => VideoDuplicatesPage(
+            repository: widget.repository,
+            deleter: widget.deleter,
+            music: music,
+          ),
+          'storage' => VideoStoragePage(
+            repository: widget.repository,
+            deleter: widget.deleter,
+            music: music,
+          ),
+          _ => VideoTrashPage(repository: widget.repository),
+        },
+      ),
+    );
+    if (mounted) await _load();
   }
 
   /// The order of [items] is the order they were added.
@@ -596,6 +823,33 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
         });
       case 'select':
         setState(() => selected.add(chosen.single.id));
+      case 'cover':
+        if (await chooseMediaCover(
+              context,
+              widget.repository,
+              chosen.single,
+              covers: _covers,
+            ) &&
+            mounted) {
+          await _load();
+        }
+      case 'skip':
+        final item = chosen.single;
+        final current = await widget.repository.skipSettings(item.id);
+        if (!mounted) return;
+        final value = await askSkipSettings(
+          context,
+          introMs: current.introMs,
+          outroMs: current.outroMs,
+        );
+        if (value == null) return;
+        await _run(
+          () => widget.repository.saveSkipSettings(
+            item.id,
+            introMs: value.introMs,
+            outroMs: value.outroMs,
+          ),
+        );
       case 'remove':
         if (await removeFromMediaLibrary(
           context,
@@ -643,6 +897,10 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
         ),
       if (!single && !music)
         const PopupMenuItem(value: 'merge', child: Text('Объединить в курс…')),
+      if (single && !music)
+        const PopupMenuItem(value: 'cover', child: Text('Обложка…')),
+      if (single && !music && chosen.single.kind == VideoItemKind.course)
+        const PopupMenuItem(value: 'skip', child: Text('Пропуск заставки…')),
       if (single && !selecting)
         const PopupMenuItem(value: 'select', child: Text('Выбрать')),
       const PopupMenuDivider(),
@@ -682,6 +940,8 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
       cover: cover,
       frame: !music,
       thumbnails: widget.thumbnails,
+      image: music ? null : _covers.file(item.cover),
+      tag: _isNew(item) ? 'Новое' : null,
       icon: music
           ? Icons.music_note_outlined
           : course
@@ -750,6 +1010,7 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
             audio: widget.audio,
             thumbnails: widget.thumbnails,
             deleter: widget.deleter,
+            covers: _covers,
           ),
         ),
       );
@@ -787,6 +1048,9 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
         ),
       );
     }
+    if (item.newLessons.isNotEmpty) {
+      await widget.repository.clearNew(item.id);
+    }
     if (mounted) await _load();
   });
 
@@ -798,6 +1062,7 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
       if (favorites && !item.favorite) return false;
       final own = _sectionLessons(item);
       if (own.isEmpty) return false;
+      if (!_passes(item)) return false;
       return query.isEmpty ||
           item.title.toLowerCase().contains(needle) ||
           own.any(
@@ -807,15 +1072,33 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                     .contains(needle),
           );
     }).toList()..sort(_comparator());
+    final filtered =
+        statusFilter != 'all' && mediaFilter != 'music' ||
+        lengthFilter != 'all';
     final sectionPlaylists = [
       for (final playlist in playlists)
         if (playlist.section == mediaFilter &&
             !favorites &&
+            !filtered &&
             (query.isEmpty || playlist.title.toLowerCase().contains(needle)))
           playlist,
     ];
     final rows = _rows(visible, sectionPlaylists);
     final chosen = _chosen(visible);
+    final continueEntries =
+        mediaFilter == 'video' &&
+            query.isEmpty &&
+            !selecting &&
+            !favorites &&
+            !filtered
+        ? videoContinueEntries(
+            items: items,
+            lessonsByItem: _byItem,
+            progress: progress,
+            learning: learning,
+            hidden: hiddenContinue,
+          )
+        : const <VideoContinueEntry>[];
     return PopScope(
       canPop: !selecting,
       onPopInvokedWithResult: (didPop, _) {
@@ -838,6 +1121,35 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                 ),
               ),
             ),
+          ),
+          PopupMenuButton<String>(
+            key: const ValueKey('media-tools'),
+            tooltip: 'Обслуживание медиатеки',
+            icon: const Icon(Icons.cleaning_services_outlined),
+            onSelected: _openTool,
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'duplicates',
+                child: ListTile(
+                  leading: Icon(Icons.file_copy_outlined),
+                  title: Text('Повторяющиеся файлы'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'storage',
+                child: ListTile(
+                  leading: Icon(Icons.sd_storage_outlined),
+                  title: Text('Место на устройстве'),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'trash',
+                child: ListTile(
+                  leading: Icon(Icons.delete_sweep_outlined),
+                  title: Text('Корзина'),
+                ),
+              ),
+            ],
           ),
           IconButton(
             tooltip: mediaFilter == 'music'
@@ -941,6 +1253,8 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                           onChanged: (value) =>
                               setState(() => query = value.trim()),
                         ),
+                        if (continueEntries.isNotEmpty)
+                          _continueShelf(context, continueEntries),
                         const SizedBox(height: 12),
                         Row(
                           children: [
@@ -998,6 +1312,34 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                                   ),
                               ],
                             ),
+                            PopupMenuButton<String>(
+                              key: const ValueKey('media-filter'),
+                              tooltip: 'Фильтр',
+                              icon: Icon(
+                                filtered
+                                    ? Icons.filter_alt
+                                    : Icons.filter_alt_outlined,
+                                color: filtered ? palette.accent : null,
+                              ),
+                              onSelected: _setFilter,
+                              itemBuilder: (_) => [
+                                if (mediaFilter != 'music') ...[
+                                  for (final entry in videoStatusLabels.entries)
+                                    CheckedPopupMenuItem(
+                                      value: 'status:${entry.key}',
+                                      checked: entry.key == statusFilter,
+                                      child: Text(entry.value),
+                                    ),
+                                  const PopupMenuDivider(),
+                                ],
+                                for (final entry in videoLengthLabels.entries)
+                                  CheckedPopupMenuItem(
+                                    value: 'length:${entry.key}',
+                                    checked: entry.key == lengthFilter,
+                                    child: Text(entry.value),
+                                  ),
+                              ],
+                            ),
                             VideoViewButton(view: view, onSelected: _setView),
                             IconButton(
                               tooltip: favorites
@@ -1042,6 +1384,11 @@ class _VideoLibraryPageState extends State<VideoLibraryPage> {
                             [
                               '${visible.length} в библиотеке',
                               videoSortLabels[sortBy]!.toLowerCase(),
+                              if (statusFilter != 'all' &&
+                                  mediaFilter != 'music')
+                                videoStatusLabels[statusFilter]!.toLowerCase(),
+                              if (lengthFilter != 'all')
+                                videoLengthLabels[lengthFilter]!.toLowerCase(),
                               if (searching) 'ищу новые видео…',
                             ].join(' · '),
                             style: TextStyle(

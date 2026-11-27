@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../ui/shelf_components.dart';
@@ -38,6 +40,10 @@ class VideoMediaTile extends StatelessWidget {
   final VoidCallback? onTap, onLongPress;
   final Widget? trailing;
   final VideoThumbnails? thumbnails;
+
+  /// Own cover instead of a frame; [tag] marks the frame («Новое»).
+  final File? image;
+  final String? tag;
   const VideoMediaTile({
     super.key,
     required this.view,
@@ -53,6 +59,8 @@ class VideoMediaTile extends StatelessWidget {
     this.onLongPress,
     this.trailing,
     this.thumbnails,
+    this.image,
+    this.tag,
   });
 
   Widget _thumb(BuildContext context, double? width, {double radius = 8}) {
@@ -73,6 +81,8 @@ class VideoMediaTile extends StatelessWidget {
       label: badge,
       checked: selected,
       radius: radius,
+      image: image,
+      tag: tag,
     );
   }
 

@@ -33,10 +33,16 @@ class PlatformVideoFileSizer implements VideoFileSizer {
       return {};
     }
     if (Platform.isAndroid) {
-      final result = await videoFilesChannel.invokeMapMethod<String, dynamic>(
-        'fileSizes',
-        {'uris': local},
-      );
+      Map<String, dynamic>? result;
+      try {
+        result = await videoFilesChannel.invokeMapMethod<String, dynamic>(
+          'fileSizes',
+          {'uris': local},
+        );
+      } on Exception {
+        // Sizes stay unknown; the page still lists the files.
+        return {};
+      }
       return {
         for (final entry in (result ?? const {}).entries)
           if (entry.value is int && (entry.value as int) > 0)
@@ -245,9 +251,8 @@ class _VideoTrashPageState extends State<VideoTrashPage> {
                             onPressed: busy
                                 ? null
                                 : () => _run(
-                                    () => widget.repository.forgetTrash([
-                                      entry,
-                                    ]),
+                                    () =>
+                                        widget.repository.forgetTrash([entry]),
                                   ),
                             icon: const Icon(Icons.close),
                           ),
@@ -324,8 +329,7 @@ class _VideoDuplicatesPageState extends State<VideoDuplicatesPage> {
     var best = group.first;
     var bestPosition = videoOwnProgress(best.lesson, progress)?.positionMs ?? 0;
     for (final fact in group.skip(1)) {
-      final position =
-          videoOwnProgress(fact.lesson, progress)?.positionMs ?? 0;
+      final position = videoOwnProgress(fact.lesson, progress)?.positionMs ?? 0;
       if (position > bestPosition) {
         best = fact;
         bestPosition = position;
@@ -338,13 +342,29 @@ class _VideoDuplicatesPageState extends State<VideoDuplicatesPage> {
     final keep = _keeper(group);
     final extra = [
       for (final fact in group)
-        if (!identical(fact, keep)) fact.lesson,
+        if (!identical(fact, keep) && !videoMaybeSameFile(fact, keep))
+          fact.lesson,
     ];
+    if (extra.isEmpty) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Похоже, это один и тот же файл, открытый разными способами. '
+              'Удалите лишнюю запись вручную через меню копии',
+            ),
+          ),
+        );
+      return;
+    }
     await deleteMediaFiles(
       context,
       widget.repository,
       extra,
-      what: extra.length == 1 ? 'лишнюю копию' : 'лишние копии (${extra.length})',
+      what: extra.length == 1
+          ? 'лишнюю копию'
+          : 'лишние копии (${extra.length})',
       deleter: widget.deleter,
     );
     if (mounted) await _load();
@@ -510,7 +530,13 @@ class _StorageRow {
   final List<VideoLesson> lessons;
   final int bytes, unknown;
   final bool done;
-  const _StorageRow(this.item, this.lessons, this.bytes, this.unknown, this.done);
+  const _StorageRow(
+    this.item,
+    this.lessons,
+    this.bytes,
+    this.unknown,
+    this.done,
+  );
 }
 
 class _VideoStoragePageState extends State<VideoStoragePage> {
@@ -656,7 +682,9 @@ class _VideoStoragePageState extends State<VideoStoragePage> {
                       ),
                       subtitle: Text(
                         [
-                          row.bytes > 0 ? videoBytes(row.bytes) : 'размер неизвестен',
+                          row.bytes > 0
+                              ? videoBytes(row.bytes)
+                              : 'размер неизвестен',
                           if (course) 'файлов: ${row.lessons.length}',
                           if (row.unknown > 0 && row.bytes > 0)
                             'без размера: ${row.unknown}',

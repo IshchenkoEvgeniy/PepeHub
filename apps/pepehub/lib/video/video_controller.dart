@@ -24,6 +24,9 @@ class VideoPlaybackController extends ChangeNotifier {
   final Future<void> Function()? afterPaused;
   final Future<void> Function(VideoLesson)? configureLesson;
   final Future<void> Function(VideoLesson)? validateSource;
+
+  /// Opening and closing titles to skip in a file, from its course.
+  final Future<({int introMs, int outroMs})?> Function(VideoLesson)? skipFor;
   final int Function() nowMonotonic;
   final DateTime Function() now;
   final Timer Function(Duration, void Function()) createSleepTimer;
@@ -155,6 +158,10 @@ class VideoPlaybackController extends ChangeNotifier {
   List<VideoSeekEntry> get seekHistory => List.unmodifiable(_seekHistory);
   double _unmutedVolume = 100;
   bool audioOnly = false, pipVisible = false;
+
+  /// Skip of the current file; the closing titles end it early once.
+  ({int introMs, int outroMs}) titleSkip = (introMs: 0, outroMs: 0);
+  bool _outroDone = false;
   bool _requestedAudioOnly = false;
   bool get _playAllowed => _foreground || pipVisible || audioOnly;
 
@@ -206,6 +213,7 @@ class VideoPlaybackController extends ChangeNotifier {
     this.afterPaused,
     this.configureLesson,
     this.validateSource,
+    this.skipFor,
     int Function()? nowMonotonic,
     DateTime Function()? now,
     Random? random,
@@ -339,8 +347,37 @@ class VideoPlaybackController extends ChangeNotifier {
             }),
       );
     }
+    final outroAt = state.durationMs - titleSkip.outroMs;
+    if (_outroDone && positionMs < outroAt - 3000) _outroDone = false;
     if (!_transition &&
         !loopRunning &&
+        !_outroDone &&
+        titleSkip.outroMs > 0 &&
+        state.durationMs > titleSkip.outroMs + 10000 &&
+        state.playing &&
+        !state.completed &&
+        current != null &&
+        !current!.isAudio &&
+        positionMs >= outroAt) {
+      // The closing titles count as the end: the file is watched and the
+      // next one counts down as after a real end.
+      _outroDone = true;
+      final lesson = current!,
+          position = positionMs,
+          at = now(),
+          session = sessionId;
+      unawaited(
+        _command(() async {
+          if (current?.id != lesson.id) return;
+          await _pause();
+          await repository.setLearningState(lesson, manualComplete: true);
+          await _finish(lesson, position, at, session);
+        }).catchError((Object _) {}),
+      );
+    }
+    if (!_transition &&
+        !loopRunning &&
+        !_outroDone &&
         state.completed &&
         !_lastCompleted &&
         current != null) {
@@ -351,56 +388,73 @@ class VideoPlaybackController extends ChangeNotifier {
       unawaited(
         _command(() async {
           if (current?.id != lesson.id) return;
-          await _persist();
-          final sleepAtEnd =
-              _sleepEndLesson == '${lesson.id}:${lesson.mediaVersion}';
-          if (sleepAtEnd) {
-            _cancelSleep();
-            await _pause();
-          }
-          await repository.event(
-            lesson,
-            'end',
-            position,
-            at: at,
-            extra: {'sessionId': session},
-          );
-          // Music playlists advance; courses retain their existing lesson behavior.
-          final nextIndex = repeatMode == MusicRepeat.one && lesson.isAudio
-              ? index
-              : _nextIndex;
-          if (!sleepAtEnd &&
-              lesson.isAudio &&
-              _playAllowed &&
-              current?.id == lesson.id &&
-              nextIndex != null &&
-              lessons[nextIndex].isAudio &&
-              lessons[nextIndex].available) {
-            await _load(nextIndex);
-          } else if (!sleepAtEnd &&
-              !lesson.isAudio &&
-              _playAllowed &&
-              current?.id == lesson.id &&
-              nextIndex != null &&
-              !lessons[nextIndex].isAudio &&
-              lessons[nextIndex].available &&
-              await repository.autoNext()) {
-            // Courses, series and playlists count down into the next lesson;
-            // the player shows the countdown with «Cancel».
-            _clearUpNext();
-            upNextIndex = nextIndex;
-            _upNextDeadline = nowMonotonic() + upNextDelay.inMilliseconds;
-            _upNextTimer = createSleepTimer(upNextDelay, () {
-              if (upNextIndex == nextIndex && current?.id == lesson.id) {
-                unawaited(playUpNext().catchError((Object _) {}));
-              }
-            });
-            _notify();
-          }
+          await _finish(lesson, position, at, session);
         }).catchError((Object _) {}),
       );
     }
     _lastCompleted = state.completed;
+    _notify();
+  }
+
+  /// After the end of a file: save, sleep timer, the next file.
+  Future<void> _finish(
+    VideoLesson lesson,
+    int position,
+    DateTime at,
+    String session,
+  ) async {
+    await _persist();
+    final sleepAtEnd = _sleepEndLesson == '${lesson.id}:${lesson.mediaVersion}';
+    if (sleepAtEnd) {
+      _cancelSleep();
+      await _pause();
+    }
+    await repository.event(
+      lesson,
+      'end',
+      position,
+      at: at,
+      extra: {'sessionId': session},
+    );
+    // Music playlists advance; courses retain their existing lesson behavior.
+    final nextIndex = repeatMode == MusicRepeat.one && lesson.isAudio
+        ? index
+        : _nextIndex;
+    if (!sleepAtEnd &&
+        lesson.isAudio &&
+        _playAllowed &&
+        current?.id == lesson.id &&
+        nextIndex != null &&
+        lessons[nextIndex].isAudio &&
+        lessons[nextIndex].available) {
+      await _load(nextIndex);
+    } else if (!sleepAtEnd &&
+        !lesson.isAudio &&
+        _playAllowed &&
+        current?.id == lesson.id &&
+        nextIndex != null &&
+        !lessons[nextIndex].isAudio &&
+        lessons[nextIndex].available &&
+        await repository.autoNext()) {
+      // Courses, series and playlists count down into the next lesson;
+      // the player shows the countdown with «Cancel».
+      _clearUpNext();
+      upNextIndex = nextIndex;
+      _upNextDeadline = nowMonotonic() + upNextDelay.inMilliseconds;
+      _upNextTimer = createSleepTimer(upNextDelay, () {
+        if (upNextIndex == nextIndex && current?.id == lesson.id) {
+          unawaited(playUpNext().catchError((Object _) {}));
+        }
+      });
+      _notify();
+    }
+  }
+
+  /// Applies a changed skip to the file being played.
+  void applySkip(VideoLesson lesson, ({int introMs, int outroMs}) value) {
+    if (current?.id != lesson.id) return;
+    titleSkip = value;
+    _outroDone = false;
     _notify();
   }
 
@@ -599,6 +653,22 @@ class VideoPlaybackController extends ChangeNotifier {
       // A finished lesson starts over instead of opening on its last frame.
       if (duration != null && duration > 20000 && startMs >= duration - 10000) {
         startMs = 0;
+      }
+      final nextSkip = lesson.isAudio
+          ? null
+          : await skipFor?.call(lesson).catchError((Object _) => null);
+      titleSkip = nextSkip ?? (introMs: 0, outroMs: 0);
+      _outroDone = false;
+      // Left on the closing titles: watched, starts over like a finished one.
+      if (duration != null &&
+          titleSkip.outroMs > 0 &&
+          startMs >= duration - titleSkip.outroMs - 10000) {
+        startMs = 0;
+      }
+      if (titleSkip.introMs > 0 &&
+          startMs < titleSkip.introMs &&
+          (duration == null || titleSkip.introMs < duration - 10000)) {
+        startMs = titleSkip.introMs;
       }
       final speed =
           saved?.speed ??

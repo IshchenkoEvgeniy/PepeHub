@@ -165,7 +165,8 @@ abstract final class VideoAutoDiscovery {
       quiet: true,
     );
     if (scan.files.isEmpty) return const VideoAutoDiscoveryResult(0, 0);
-    final library = await repository.knownMedia();
+    // What the user removed stays removed; a manual search offers it.
+    final library = await repository.knownMedia(includeRemoved: true);
     final items = await repository.items();
     final request = VideoDiscoveryRequest(
       scan.files,
@@ -198,6 +199,7 @@ abstract final class VideoAutoDiscovery {
           folder: group.folder.isEmpty ? null : group.folder,
           discoveryKey: group.key,
           single: group.single,
+          markNew: true,
         );
         groups++;
         files += group.files.length;

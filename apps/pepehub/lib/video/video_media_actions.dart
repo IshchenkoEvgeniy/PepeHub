@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import '../diagnostics/user_message.dart';
 import '../ui/pepe_widgets.dart';
 import 'models.dart';
+import 'video_covers.dart';
 import 'video_discovery_page.dart' show videoBytes;
 import 'video_import.dart' show videoFilesChannel;
 import 'video_repository.dart';
@@ -364,7 +365,7 @@ Future<int> deleteMediaFiles(
       for (final lesson in local)
         if (result.deleted.contains(lesson.source)) lesson.id,
     ];
-    if (gone.isNotEmpty) await repository.removeLessons(gone);
+    if (gone.isNotEmpty) await repository.removeLessons(gone, trash: false);
     final failed = local.length - gone.length;
     messenger
       ..hideCurrentSnackBar()
@@ -414,4 +415,235 @@ String mediaCount(int count, {required bool music, bool courses = false}) {
         : '$count ${form('курс', 'курса', 'курсов')}';
   }
   return music ? '$count ${form('трек', 'трека', 'треков')}' : '$count видео';
+}
+
+/// «м:сс» for the skip dialog.
+String skipTimeText(int ms) {
+  final seconds = ms ~/ 1000;
+  return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+}
+
+/// Parses «85», «1:25» or «1:25.5»; null for anything else.
+int? parseSkipTime(String text) {
+  final clean = text.trim().replaceAll(',', '.');
+  if (clean.isEmpty) return 0;
+  final parts = clean.split(':');
+  if (parts.length > 2) return null;
+  final seconds = double.tryParse(parts.last);
+  final minutes = parts.length == 2 ? int.tryParse(parts.first) : 0;
+  if (seconds == null || minutes == null || seconds < 0 || minutes < 0) {
+    return null;
+  }
+  if (parts.length == 2 && seconds >= 60) return null;
+  return ((minutes * 60 + seconds) * 1000).round();
+}
+
+/// Asks how much of the beginning and the end of every file to skip.
+/// [positionMs] and [durationMs] offer «take the current moment».
+Future<({int introMs, int outroMs})?> askSkipSettings(
+  BuildContext context, {
+  required int introMs,
+  required int outroMs,
+  int? positionMs,
+  int? durationMs,
+}) => showDialog<({int introMs, int outroMs})>(
+  context: context,
+  builder: (_) => _SkipDialog(
+    introMs: introMs,
+    outroMs: outroMs,
+    positionMs: positionMs,
+    durationMs: durationMs,
+  ),
+);
+
+class _SkipDialog extends StatefulWidget {
+  final int introMs, outroMs;
+  final int? positionMs, durationMs;
+  const _SkipDialog({
+    required this.introMs,
+    required this.outroMs,
+    this.positionMs,
+    this.durationMs,
+  });
+
+  @override
+  State<_SkipDialog> createState() => _SkipDialogState();
+}
+
+class _SkipDialogState extends State<_SkipDialog> {
+  late final intro = TextEditingController(
+    text: widget.introMs == 0 ? '' : skipTimeText(widget.introMs),
+  );
+  late final outro = TextEditingController(
+    text: widget.outroMs == 0 ? '' : skipTimeText(widget.outroMs),
+  );
+  String? error;
+
+  @override
+  void dispose() {
+    intro.dispose();
+    outro.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final start = parseSkipTime(intro.text), end = parseSkipTime(outro.text);
+    if (start == null || end == null) {
+      setState(() => error = 'Введите время как 85 или 1:25');
+      return;
+    }
+    if (start > 30 * 60000 || end > 30 * 60000) {
+      setState(() => error = 'Не больше 30 минут');
+      return;
+    }
+    Navigator.pop(context, (introMs: start, outroMs: end));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final position = widget.positionMs, duration = widget.durationMs;
+    Widget field(
+      TextEditingController controller,
+      String label,
+      String key,
+      String? nowLabel,
+      int? nowValue,
+    ) => Row(
+      children: [
+        Expanded(
+          child: TextField(
+            key: ValueKey(key),
+            controller: controller,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(labelText: label, hintText: '0:00'),
+            onSubmitted: (_) => _save(),
+          ),
+        ),
+        if (nowLabel != null && nowValue != null) ...[
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: () => setState(() {
+              controller.text = skipTimeText(nowValue);
+              error = null;
+            }),
+            child: Text(nowLabel),
+          ),
+        ],
+      ],
+    );
+    return AlertDialog(
+      scrollable: true,
+      title: const Text('Пропуск заставки'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Действует для всех видео курса. Начало пропускается, если '
+              'видео открыто с начала; на титрах в конце видео отмечается '
+              'просмотренным и начинается следующее.',
+            ),
+            const SizedBox(height: 12),
+            field(
+              intro,
+              'Пропускать в начале',
+              'skip-intro',
+              'Сейчас',
+              position != null && position > 0 ? position : null,
+            ),
+            field(
+              outro,
+              'Пропускать в конце',
+              'skip-outro',
+              'Отсюда',
+              position != null && duration != null && duration > position
+                  ? duration - position
+                  : null,
+            ),
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, (introMs: 0, outroMs: 0)),
+          child: const Text('Не пропускать'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('Сохранить')),
+      ],
+    );
+  }
+}
+
+/// Own cover of a video or course: a picture from files, or back to a
+/// frame of the video. Returns true when the cover changed.
+Future<bool> chooseMediaCover(
+  BuildContext context,
+  VideoRepository repository,
+  VideoItem item, {
+  VideoCovers? covers,
+}) async {
+  final store = covers ?? VideoCovers.instance;
+  final action = await showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheet) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.image_outlined),
+            title: const Text('Выбрать картинку…'),
+            onTap: () => Navigator.pop(sheet, 'pick'),
+          ),
+          if (item.cover != null)
+            ListTile(
+              leading: const Icon(Icons.hide_image_outlined),
+              title: const Text('Вернуть кадр из видео'),
+              onTap: () => Navigator.pop(sheet, 'reset'),
+            ),
+          const ListTile(
+            enabled: false,
+            leading: Icon(Icons.photo_camera_outlined),
+            title: Text('Кадр из видео'),
+            subtitle: Text(
+              'Откройте видео на нужном моменте и выберите в инструментах '
+              'плеера «Сделать обложкой».',
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (action == null || !context.mounted) return false;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    String? name;
+    if (action == 'pick') {
+      final bytes = await VideoCovers.choose();
+      if (bytes == null) return false;
+      name = await store.save(bytes);
+    }
+    final old = await repository.setCover(item.id, name);
+    if (old != null && old != name) await store.discard(old);
+    return true;
+  } catch (e) {
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(describeError(e))));
+    return false;
+  }
 }

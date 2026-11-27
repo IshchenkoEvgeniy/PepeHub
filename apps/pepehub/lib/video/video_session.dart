@@ -130,6 +130,7 @@ class VideoPlaybackSession extends BaseAudioHandler
               await _audioSession!.setActive(false);
             }
           },
+          skipFor: (lesson) => repository.skipSettings(lesson.itemId),
           configureLesson: (lesson) async {
             await text.loadLesson(lesson);
             chapters = await controller!.engine.readChapters();

@@ -68,6 +68,123 @@ class VideoDiscoverySettings {
   bool get hasPlaces => roots.isNotEmpty || device;
 }
 
+/// One line of «Корзина медиатеки»: a removed video or course with its
+/// files, or a single file removed from a course.
+class VideoTrashEntry {
+  final String id, title;
+  final bool isItem, course, audio;
+
+  /// Course of a single removed file.
+  final String? parentTitle;
+
+  /// Files of a removed item that come back with it.
+  final List<String> lessonIds;
+  final DateTime removedAt;
+  const VideoTrashEntry({
+    required this.id,
+    required this.title,
+    required this.isItem,
+    required this.removedAt,
+    this.course = false,
+    this.audio = false,
+    this.parentTitle,
+    this.lessonIds = const [],
+  });
+}
+
+/// A file with what is known about its content, for duplicates and space.
+class VideoFileFact {
+  final VideoLesson lesson;
+  final int? size;
+  final String? fingerprint;
+
+  /// File name without folders, lower case.
+  final String name;
+  const VideoFileFact(this.lesson, this.size, this.fingerprint, this.name);
+}
+
+/// File name of a path, a link or an Android document.
+String videoFileName(String source) {
+  final uri = Uri.tryParse(source);
+  if (uri != null && uri.scheme == 'content') {
+    final last = Uri.decodeComponent(uri.pathSegments.lastOrNull ?? source);
+    return last.split('/').last.split(':').last;
+  }
+  if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+    return uri.pathSegments.lastOrNull ?? source;
+  }
+  return source.split(RegExp(r'[\\/]')).last;
+}
+
+/// Where a file lies, equal for two records of one file: a normalized
+/// path, or the document of an Android provider (a folder link and a
+/// picked file of the same folder share it). Null for a web link.
+String? videoFileLocation(String source) {
+  final uri = Uri.tryParse(source);
+  if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+    return null;
+  }
+  if (uri != null && uri.scheme == 'content') {
+    final segments = uri.pathSegments;
+    final at = segments.lastIndexOf('document');
+    final document = at >= 0 && at + 1 < segments.length
+        ? segments[at + 1]
+        : segments.join('/');
+    return 'content://${uri.authority}/$document';
+  }
+  final path = source.replaceAll(r'\', '/');
+  // Windows paths ignore case; Android and Linux paths do not.
+  return RegExp(r'^[a-zA-Z]:/').hasMatch(path) || path.startsWith('//')
+      ? path.toLowerCase()
+      : path;
+}
+
+/// True when two copies might be one file reached through two Android
+/// providers (a media document and a folder document): such a pair is not
+/// deleted automatically.
+bool videoMaybeSameFile(VideoFileFact a, VideoFileFact b) {
+  final first = videoFileLocation(a.lesson.source);
+  final second = videoFileLocation(b.lesson.source);
+  if (first == null || second == null) return false;
+  if (first == second) return true;
+  if (!first.startsWith('content://') || !second.startsWith('content://')) {
+    return false;
+  }
+  return Uri.parse(first).authority != Uri.parse(second).authority &&
+      a.name == b.name;
+}
+
+/// Groups of two and more copies: the same size and content sample, or,
+/// for files added without a sample, the same name and size. Records of
+/// one and the same file count once. The largest waste first.
+List<List<VideoFileFact>> videoDuplicateGroups(List<VideoFileFact> facts) {
+  final groups = <String, List<VideoFileFact>>{};
+  final places = <String, Set<String>>{};
+  for (final fact in facts) {
+    final size = fact.size;
+    if (size == null || size <= 0) continue;
+    final location = videoFileLocation(fact.lesson.source);
+    if (location == null) continue;
+    final key = fact.fingerprint != null
+        ? 'c:$size:${fact.fingerprint}'
+        : 'n:${fact.name}:$size';
+    // The same file in two courses is not a copy: deleting «the other one»
+    // would delete it for both.
+    if (!(places[key] ??= {}).add(location)) continue;
+    (groups[key] ??= []).add(fact);
+  }
+  final result = [
+    for (final group in groups.values)
+      if (group.length > 1) group,
+  ];
+  result.sort(
+    (a, b) => (b.first.size! * (b.length - 1)).compareTo(
+      a.first.size! * (a.length - 1),
+    ),
+  );
+  return result;
+}
+
 /// What one removal took out of the media library, for «Вернуть».
 class VideoRemoval {
   final List<String> lessons, items;
@@ -151,6 +268,9 @@ class VideoRepository {
     String? folder,
     String? discoveryKey,
     bool single = false,
+
+    /// Automatic search: the files show «Новое» until the item is opened.
+    bool markNew = false,
   }) async {
     final clean = title.trim();
     if (clean.isEmpty || clean.length > 300) {
@@ -218,6 +338,7 @@ class VideoRepository {
           ? 0
           : own.map((l) => l.ordinal).reduce((a, b) => a > b ? a : b) + 1;
       var added = 0;
+      final addedIds = <String>[];
       for (final source in sources) {
         if (!known.add(source.source)) continue;
         added++;
@@ -240,6 +361,21 @@ class VideoRepository {
             'fileIdentity': source.identity!.toJson(),
           if (source.relativeName != null) 'relativeName': source.relativeName,
           if (source.size != null && source.size! > 0) 'fileSize': source.size,
+        });
+        addedIds.add(lesson.id);
+      }
+      if (markNew && addedIds.isNotEmpty) {
+        final row = (await repository.record(item.id))!;
+        final previous = [
+          for (final id in row.payload!['newLessons'] as List? ?? const [])
+            if (id is String) id,
+        ];
+        final all = [...previous, ...addedIds];
+        await _put('video_item', item.id, {
+          ...row.payload!,
+          'newLessons': all.length > 2000
+              ? all.sublist(all.length - 2000)
+              : all,
         });
       }
       if (existing != null &&
@@ -267,24 +403,281 @@ class VideoRepository {
         final ids = [
           for (final lesson in await lessons(itemId: itemId)) lesson.id,
         ];
-        await repository.db.customStatement(
-          "UPDATE records SET deleted=1,revision=revision+1 "
-          "WHERE id=? AND type='video_item' AND deleted=0",
-          [itemId],
-        );
+        final stamp = _stamp();
+        await _trashRecord(itemId, 'video_item', stamp);
         for (final id in ids) {
-          await repository.db.customStatement(
-            "UPDATE records SET deleted=1,revision=revision+1 "
-            "WHERE id=? AND type='video_lesson' AND deleted=0",
-            [id],
-          );
+          await _trashRecord(id, 'video_lesson', stamp);
         }
         return ids;
       });
 
+  static String _stamp() => DateTime.now().toUtc().toIso8601String();
+
+  /// Soft-deletes a record into the trash. `removed` stays after the trash
+  /// forgets it: automatic search must not bring the file back.
+  Future<void> _trashRecord(String id, String type, String? stamp) =>
+      repository.db.customStatement(
+        stamp == null
+            ? "UPDATE records SET deleted=1,revision=revision+1 "
+                  "WHERE id=? AND type=? AND deleted=0"
+            : "UPDATE records SET deleted=1,revision=revision+1,"
+                  "payload=json_set(payload,'\$.removedAt',?,'\$.removed',json('true')) "
+                  "WHERE id=? AND type=? AND deleted=0 AND json_valid(payload)",
+        [?stamp, id, type],
+      );
+
+  Future<void> _untrashRecord(
+    String id,
+    String type,
+  ) => repository.db.customStatement(
+    "UPDATE records SET deleted=0,revision=revision+1,"
+    "payload=CASE WHEN json_valid(payload) "
+    "THEN json_remove(payload,'\$.removedAt','\$.removed') ELSE payload END "
+    "WHERE id=? AND type=? AND deleted=1",
+    [id, type],
+  );
+
+  /// Removed videos, courses and files of the last 30 days, newest first.
+  /// Older ones leave the trash but stay hidden from automatic search.
+  Future<List<VideoTrashEntry>> trash({DateTime? now}) async {
+    final limit = (now ?? DateTime.now()).toUtc().subtract(
+      const Duration(days: 30),
+    );
+    final rows = await repository.db
+        .customSelect(
+          "SELECT id,type,payload FROM records WHERE deleted=1 "
+          "AND type IN ('video_item','video_lesson') AND json_valid(payload) "
+          "AND json_extract(payload,'\$.removedAt') IS NOT NULL",
+        )
+        .get();
+    final items = <String, (Map<String, dynamic>, DateTime)>{};
+    final lessons = <String, (Map<String, dynamic>, DateTime)>{};
+    final expired = <(String, String)>[];
+    for (final row in rows) {
+      final id = row.read<String>('id'), type = row.read<String>('type');
+      final payload =
+          jsonDecode(row.read<String>('payload')) as Map<String, dynamic>;
+      final at = DateTime.tryParse(payload['removedAt'] as String? ?? '');
+      if (at == null || at.isBefore(limit)) {
+        expired.add((id, type));
+        continue;
+      }
+      (type == 'video_item' ? items : lessons)[id] = (payload, at);
+    }
+    if (expired.isNotEmpty) {
+      await repository.db.transaction(() async {
+        for (final (id, type) in expired) {
+          await _forgetRecord(id, type);
+        }
+      });
+    }
+    final attached = <String, List<String>>{};
+    final entries = <VideoTrashEntry>[];
+    for (final MapEntry(key: id, value: (payload, at)) in lessons.entries) {
+      final owner = payload['itemId'] as String?;
+      final parent = owner == null ? null : items[owner];
+      if (parent != null && parent.$1['removedAt'] == payload['removedAt']) {
+        (attached[owner!] ??= []).add(id);
+        continue;
+      }
+      String? parentTitle;
+      if (owner != null) {
+        final record = await repository.record(owner);
+        parentTitle = record?.payload?['title'] as String?;
+      }
+      entries.add(
+        VideoTrashEntry(
+          id: id,
+          title: payload['title'] as String? ?? 'Файл',
+          isItem: false,
+          removedAt: at,
+          audio: payload['audio'] == true,
+          parentTitle: parentTitle,
+        ),
+      );
+    }
+    for (final MapEntry(key: id, value: (payload, at)) in items.entries) {
+      final own = attached[id] ?? const <String>[];
+      entries.add(
+        VideoTrashEntry(
+          id: id,
+          title: payload['title'] as String? ?? 'Медиа',
+          isItem: true,
+          removedAt: at,
+          course: payload['kind'] == VideoItemKind.course.name,
+          audio:
+              own.isNotEmpty &&
+              own.every((lesson) => lessons[lesson]!.$1['audio'] == true),
+          lessonIds: own,
+        ),
+      );
+    }
+    entries.sort((a, b) => b.removedAt.compareTo(a.removedAt));
+    return entries;
+  }
+
+  /// Puts a trash entry back; a single file brings back its course too.
+  Future<void> restoreTrash(VideoTrashEntry entry) =>
+      repository.db.transaction(() async {
+        if (entry.isItem) {
+          await _untrashRecord(entry.id, 'video_item');
+          for (final id in entry.lessonIds) {
+            await _untrashRecord(id, 'video_lesson');
+          }
+          return;
+        }
+        final row = await repository.record(entry.id);
+        await _untrashRecord(entry.id, 'video_lesson');
+        if (row?.payload?['itemId'] case final String owner) {
+          await _untrashRecord(owner, 'video_item');
+        }
+      });
+
+  Future<void> _forgetRecord(String id, String type) =>
+      repository.db.customStatement(
+        "UPDATE records SET revision=revision+1,"
+        "payload=json_remove(payload,'\$.removedAt') "
+        "WHERE id=? AND type=? AND deleted=1 AND json_valid(payload)",
+        [id, type],
+      );
+
+  /// Takes entries out of the trash for good.
+  Future<void> forgetTrash(Iterable<VideoTrashEntry> entries) =>
+      repository.db.transaction(() async {
+        for (final entry in entries) {
+          await _forgetRecord(
+            entry.id,
+            entry.isItem ? 'video_item' : 'video_lesson',
+          );
+          for (final id in entry.lessonIds) {
+            await _forgetRecord(id, 'video_lesson');
+          }
+        }
+      });
+
+  /// Drops the «Новое» marks of an item.
+  Future<void> clearNew(String itemId) => repository.db.customStatement(
+    "UPDATE records SET revision=revision+1,"
+    "payload=json_remove(payload,'\$.newLessons') "
+    "WHERE id=? AND type='video_item' AND deleted=0 AND json_valid(payload) "
+    "AND json_extract(payload,'\$.newLessons') IS NOT NULL",
+    [itemId],
+  );
+
+  /// Files with a known size and content sample, without deleted ones and
+  /// links. [audio] keeps only music or only video.
+  Future<List<VideoFileFact>> fileFacts({bool? audio}) async {
+    final rows = await repository.db
+        .customSelect(
+          "SELECT id,payload FROM records WHERE ${SchemaSql.videoLessonRows} "
+          "AND json_extract(payload,'\$.missing') IS NOT 1 ORDER BY rowid",
+        )
+        .get();
+    final facts = <VideoFileFact>[];
+    for (final row in rows) {
+      final payload =
+          jsonDecode(row.read<String>('payload')) as Map<String, dynamic>;
+      final lesson = VideoLesson.fromJson(row.read<String>('id'), payload);
+      if (lesson.isRemote || audio != null && lesson.isAudio != audio) {
+        continue;
+      }
+      final identity = payload['fileIdentity'] is Map
+          ? Map<String, dynamic>.from(payload['fileIdentity'] as Map)
+          : null;
+      final size =
+          (payload['fileSize'] as num?)?.toInt() ??
+          (identity?['size'] as num?)?.toInt();
+      final fingerprint = identity?['fingerprint'] as String?;
+      final name =
+          (payload['relativeName'] as String?)?.split(RegExp(r'[\\/]')).last ??
+          videoFileName(lesson.source);
+      facts.add(
+        VideoFileFact(
+          lesson,
+          size != null && size > 0 ? size : null,
+          fingerprint == null
+              ? null
+              : '${identity?['sample'] ?? 'head-tail-v1'}:$fingerprint',
+          name.toLowerCase(),
+        ),
+      );
+    }
+    return facts;
+  }
+
+  /// Sizes measured for files added without one.
+  Future<void> saveFileSizes(Map<String, int> sizes) =>
+      repository.db.transaction(() async {
+        for (final MapEntry(key: id, value: size) in sizes.entries) {
+          if (size <= 0) continue;
+          await repository.db.customStatement(
+            "UPDATE records SET revision=revision+1,"
+            "payload=json_set(payload,'\$.fileSize',?) "
+            "WHERE id=? AND type='video_lesson' AND deleted=0 "
+            "AND json_valid(payload)",
+            [size, id],
+          );
+        }
+      });
+
+  /// Opening and closing titles skipped in every file of an item.
+  Future<({int introMs, int outroMs})> skipSettings(String itemId) async {
+    final row = await repository.record(itemId);
+    final skip = row == null || row.deleted || row.type != 'video_item'
+        ? null
+        : row.payload?['skip'];
+    if (skip is! Map) return (introMs: 0, outroMs: 0);
+    int read(String key) =>
+        ((skip[key] as num?)?.toInt() ?? 0).clamp(0, _maxSkipMs);
+    return (introMs: read('introMs'), outroMs: read('outroMs'));
+  }
+
+  static const _maxSkipMs = 30 * 60000;
+
+  Future<void> saveSkipSettings(
+    String itemId, {
+    required int introMs,
+    required int outroMs,
+  }) {
+    if (introMs < 0 ||
+        outroMs < 0 ||
+        introMs > _maxSkipMs ||
+        outroMs > _maxSkipMs) {
+      throw ArgumentError('Пропуск: от 0 до 30 минут');
+    }
+    return repository.db.transaction(() async {
+      final row = await repository.record(itemId);
+      if (row == null || row.deleted || row.type != 'video_item') {
+        throw StateError('Медиа удалено');
+      }
+      final payload = {...row.payload!}..remove('skip');
+      await _put('video_item', itemId, {
+        ...payload,
+        if (introMs > 0 || outroMs > 0)
+          'skip': {'introMs': introMs, 'outroMs': outroMs},
+      });
+    });
+  }
+
+  /// Sets or clears the own cover; returns the previous file name.
+  Future<String?> setCover(String itemId, String? name) =>
+      repository.db.transaction(() async {
+        final row = await repository.record(itemId);
+        if (row == null || row.deleted || row.type != 'video_item') {
+          throw StateError('Медиа удалено');
+        }
+        final previous = row.payload!['cover'] as String?;
+        final payload = {...row.payload!}..remove('cover');
+        await _put('video_item', itemId, {...payload, 'cover': ?name});
+        return previous;
+      });
+
   /// Lesson sources plus `name|size` keys, read with one light query. Files
   /// deleted from the device do not count: a copy put back is offered again.
-  Future<VideoKnownMedia> knownMedia() async {
+  ///
+  /// [includeRemoved] adds files the user removed from the media library:
+  /// automatic search must not bring them back, a manual one offers them.
+  Future<VideoKnownMedia> knownMedia({bool includeRemoved = false}) async {
     final rows = await repository.db
         .customSelect(
           "SELECT json_extract(payload,'\$.source') AS source,"
@@ -292,8 +685,9 @@ class VideoRepository {
           "json_extract(payload,'\$.title') AS title,"
           "coalesce(json_extract(payload,'\$.fileSize'),"
           "json_extract(payload,'\$.fileIdentity.size')) AS size "
-          'FROM records WHERE ${SchemaSql.videoLessonRows} '
-          "AND json_extract(payload,'\$.missing') IS NOT 1",
+          'FROM records WHERE (${SchemaSql.videoLessonRows} '
+          "AND json_extract(payload,'\$.missing') IS NOT 1)"
+          "${includeRemoved ? " OR (type='video_lesson' AND deleted=1 AND json_valid(payload) AND json_extract(payload,'\$.removed')=1)" : ''}",
         )
         .get();
     final sources = <String>{}, keys = <String>{};
@@ -543,15 +937,9 @@ class VideoRepository {
   /// Undoes [removeItem]; progress and notes were kept all along.
   Future<void> restoreItem(String itemId, List<String> lessonIds) =>
       repository.db.transaction(() async {
-        for (final (id, type) in [
-          (itemId, 'video_item'),
-          for (final lesson in lessonIds) (lesson, 'video_lesson'),
-        ]) {
-          await repository.db.customStatement(
-            "UPDATE records SET deleted=0,revision=revision+1 "
-            "WHERE id=? AND type=? AND deleted=1",
-            [id, type],
-          );
+        await _untrashRecord(itemId, 'video_item');
+        for (final lesson in lessonIds) {
+          await _untrashRecord(lesson, 'video_lesson');
         }
       });
 
@@ -592,29 +980,26 @@ class VideoRepository {
 
   /// Removes single files from their videos and courses; an item left
   /// without files is removed too. Files on the device are not touched.
-  Future<VideoRemoval> removeLessons(Iterable<String> lessonIds) {
+  /// [trash] is false for files deleted from the device: nothing to return.
+  Future<VideoRemoval> removeLessons(
+    Iterable<String> lessonIds, {
+    bool trash = true,
+  }) {
     final ids = lessonIds.toSet();
+    final stamp = trash ? _stamp() : null;
     return repository.db.transaction(() async {
       final removed = <String>[], owners = <String>{};
       for (final id in ids) {
         final row = await repository.record(id);
         if (row == null || row.deleted || row.type != 'video_lesson') continue;
-        await repository.db.customStatement(
-          "UPDATE records SET deleted=1,revision=revision+1 "
-          "WHERE id=? AND type='video_lesson' AND deleted=0",
-          [id],
-        );
+        await _trashRecord(id, 'video_lesson', stamp);
         removed.add(id);
         if (row.payload?['itemId'] case final String owner) owners.add(owner);
       }
       final emptied = <String>[];
       for (final owner in owners) {
         if ((await lessons(itemId: owner)).isNotEmpty) continue;
-        await repository.db.customStatement(
-          "UPDATE records SET deleted=1,revision=revision+1 "
-          "WHERE id=? AND type='video_item' AND deleted=0",
-          [owner],
-        );
+        await _trashRecord(owner, 'video_item', stamp);
         emptied.add(owner);
       }
       return VideoRemoval(removed, emptied);
@@ -624,15 +1009,11 @@ class VideoRepository {
   /// Undoes [removeLessons] and [removeItem]s collected in one removal.
   Future<void> restoreRemoval(VideoRemoval removal) =>
       repository.db.transaction(() async {
-        for (final (id, type) in [
-          for (final item in removal.items) (item, 'video_item'),
-          for (final lesson in removal.lessons) (lesson, 'video_lesson'),
-        ]) {
-          await repository.db.customStatement(
-            "UPDATE records SET deleted=0,revision=revision+1 "
-            "WHERE id=? AND type=? AND deleted=1",
-            [id, type],
-          );
+        for (final item in removal.items) {
+          await _untrashRecord(item, 'video_item');
+        }
+        for (final lesson in removal.lessons) {
+          await _untrashRecord(lesson, 'video_lesson');
         }
       });
 

@@ -282,6 +282,12 @@ class VideoThumbnail extends StatefulWidget {
   /// Selection mode: a check mark over the frame.
   final bool? checked;
   final double radius;
+
+  /// Own cover shown instead of a frame of the video.
+  final File? image;
+
+  /// Short mark in the top corner, such as «Новое».
+  final String? tag;
   const VideoThumbnail({
     super.key,
     required this.lesson,
@@ -291,6 +297,8 @@ class VideoThumbnail extends StatefulWidget {
     this.thumbnails,
     this.checked,
     this.radius = 8,
+    this.image,
+    this.tag,
   });
 
   @override
@@ -314,7 +322,8 @@ class _VideoThumbnailState extends State<VideoThumbnail> {
     super.didUpdateWidget(old);
     final next = widget.lesson;
     if (next?.source != _requested?.source ||
-        next?.mediaVersion != _requested?.mediaVersion) {
+        next?.mediaVersion != _requested?.mediaVersion ||
+        widget.image?.path != old.image?.path) {
       _release();
       bytes = null;
       _request();
@@ -324,19 +333,25 @@ class _VideoThumbnailState extends State<VideoThumbnail> {
   void _request() {
     final lesson = widget.lesson;
     _requested = lesson;
-    if (lesson == null) return;
+    if (lesson == null || widget.image != null) return;
     bytes = _service.cached(lesson);
     if (bytes != null) return;
+    _loading = lesson;
     _service.load(lesson).then((value) {
+      if (identical(_loading, lesson)) _loading = null;
       if (mounted && value != null && identical(_requested, lesson)) {
         setState(() => bytes = value);
       }
     });
   }
 
+  /// The frame still being made for this widget; null once it arrived.
+  VideoLesson? _loading;
+
   void _release() {
-    final lesson = _requested;
-    if (lesson != null && bytes == null) _service.cancel(lesson);
+    final lesson = _loading;
+    _loading = null;
+    if (lesson != null) _service.cancel(lesson);
   }
 
   @override
@@ -354,7 +369,17 @@ class _VideoThumbnailState extends State<VideoThumbnail> {
       fit: StackFit.expand,
       children: [
         ColoredBox(color: palette.accent.withValues(alpha: 0.12)),
-        if (image == null)
+        if (widget.image != null)
+          Image.file(
+            widget.image!,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            cacheWidth: (cacheWidth * MediaQuery.devicePixelRatioOf(context))
+                .round()
+                .clamp(1, 1280),
+            errorBuilder: (_, _, _) => Icon(widget.icon, color: palette.accent),
+          )
+        else if (image == null)
           Icon(widget.icon, color: palette.accent)
         else
           Image.memory(
@@ -382,6 +407,29 @@ class _VideoThumbnailState extends State<VideoThumbnail> {
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 11,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        if (widget.tag != null)
+          Positioned(
+            right: 4,
+            top: 4,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: palette.accent,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                child: Text(
+                  widget.tag!,
+                  style: TextStyle(
+                    color: palette.onAccent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
                     height: 1.2,
                   ),
                 ),

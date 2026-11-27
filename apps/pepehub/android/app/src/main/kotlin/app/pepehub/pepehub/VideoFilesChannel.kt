@@ -109,6 +109,17 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
                 }
                 return@setMethodCallHandler
             }
+            if (call.method == "fileSizes") {
+                worker.execute {
+                    try {
+                        val uris = call.argument<List<String>>("uris") ?: emptyList()
+                        check(uris.size <= 20000) { "Слишком много файлов" }
+                        val response = fileSizes(uris)
+                        main.post { if (!disposed) result.success(response) }
+                    } catch (e: Exception) { main.post { if (!disposed) result.error("video_files", e.message, null) } }
+                }
+                return@setMethodCallHandler
+            }
             if (call.method == "checkSources") {
                 worker.execute {
                     try {
@@ -530,6 +541,22 @@ class VideoFilesChannel(activity: Activity, messenger: BinaryMessenger) {
         if (scaled !== frame) scaled.recycle()
         frame.recycle()
         return out.toByteArray()
+    }
+
+    /** Sizes of files added without one; unreadable files are left out. */
+    private fun fileSizes(uris: List<String>): Map<String, Long> {
+        val sizes = HashMap<String, Long>()
+        for (source in uris) {
+            if (disposed) break
+            val size = runCatching {
+                if (source.startsWith("/")) java.io.File(source).takeIf { it.isFile }?.length()
+                else context.contentResolver.query(Uri.parse(source), arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+                }
+            }.getOrNull()
+            if (size != null && size > 0) sizes[source] = size
+        }
+        return sizes
     }
 
     /**

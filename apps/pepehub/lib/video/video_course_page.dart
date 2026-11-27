@@ -10,6 +10,7 @@ import '../ui/shelf_components.dart';
 import 'models.dart';
 import 'video_activity.dart';
 import 'video_course_editor.dart';
+import 'video_covers.dart';
 import 'video_folder_dialog.dart';
 import 'video_folder_sync.dart';
 import 'video_import.dart';
@@ -40,6 +41,7 @@ class VideoCoursePage extends StatefulWidget {
   final AudioController? audio;
   final VideoThumbnails? thumbnails;
   final VideoFileDeleter deleter;
+  final VideoCovers? covers;
   const VideoCoursePage({
     super.key,
     required this.repository,
@@ -47,6 +49,7 @@ class VideoCoursePage extends StatefulWidget {
     this.audio,
     this.thumbnails,
     this.deleter = const PlatformVideoFileDeleter(),
+    this.covers,
   });
   @override
   State<VideoCoursePage> createState() => _VideoCoursePageState();
@@ -58,6 +61,9 @@ class _ModuleHeader {
 }
 
 class _VideoCoursePageState extends State<VideoCoursePage> {
+  /// Marks as they were when the course was opened; the library clears
+  /// them after the course is closed.
+  late final Set<String> _newLessons = widget.item.newLessons.toSet();
   late VideoItem currentItem = widget.item;
 
   /// Lessons with files on the device in course order; [allLessons] adds
@@ -302,6 +308,36 @@ class _VideoCoursePageState extends State<VideoCoursePage> {
   }
 
   Future<void> _folderAction(String action) async {
+    if (action == 'cover') {
+      if (await chooseMediaCover(
+            context,
+            widget.repository,
+            currentItem,
+            covers: widget.covers,
+          ) &&
+          mounted) {
+        await _load();
+      }
+      return;
+    }
+    if (action == 'skip') {
+      final current = await widget.repository.skipSettings(currentItem.id);
+      if (!mounted) return;
+      final value = await askSkipSettings(
+        context,
+        introMs: current.introMs,
+        outroMs: current.outroMs,
+      );
+      if (value == null || !mounted) return;
+      await _guard(
+        () => widget.repository.saveSkipSettings(
+          currentItem.id,
+          introMs: value.introMs,
+          outroMs: value.outroMs,
+        ),
+      );
+      return;
+    }
     if (action == 'rename') {
       final title = await askMediaTitle(
         context,
@@ -490,6 +526,8 @@ class _VideoCoursePageState extends State<VideoCoursePage> {
       cover: lesson,
       icon: Icons.play_circle_outline,
       thumbnails: widget.thumbnails,
+      // Files added by automatic search since the course was last opened.
+      tag: _newLessons.contains(lesson.id) ? 'Новое' : null,
       badge: sortBy == 'course' && view == 'list'
           ? '$number'
           : duration == null
@@ -597,6 +635,11 @@ class _VideoCoursePageState extends State<VideoCoursePage> {
               child: Text('Переименовать курс…'),
             ),
             const PopupMenuItem(value: 'edit', child: Text('Структура курса…')),
+            const PopupMenuItem(value: 'cover', child: Text('Обложка…')),
+            const PopupMenuItem(
+              value: 'skip',
+              child: Text('Пропуск заставки…'),
+            ),
             if (currentItem.root != null) ...[
               const PopupMenuDivider(),
               if (currentItem.connected)
