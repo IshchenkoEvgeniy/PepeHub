@@ -1,7 +1,7 @@
 # Graph Report - PepeHub  (2026-11-27)
 
 ## Corpus Check
-- 742 files · ~695,684 words
+- 742 files · ~695,715 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 204 file(s) not represented in the graph (top: .glb 140, .ttf 24, .xml 11)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `78921400`
+- Built from commit: `e6892005`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1996,7 +1996,7 @@ Cohesion: 0.40
 Nodes (5): Данные и синхронизация, Ещё не поддерживается, Кодировки и пределы, Основания выбора библиотек, Форматы PepeHub 0.12.0
 
 ## Knowledge Gaps
-- **7763 isolated node(s):** `_ModuleHeader`, `courseSortLabels`, `repository`, `item`, `audio` (+7758 more)
+- **7763 isolated node(s):** `AudioBookDraft`, `original`, `relativeFolder`, `title`, `files` (+7758 more)
   These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 9658 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **212 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -2004,16 +2004,16 @@ Nodes (5): Данные и синхронизация, Ещё не поддер�
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `9. Нативная часть Android` connect `ReminderChannel.kt` to `BookFileChannel`, `Архитектура PepeHub`, `VideoWindowChannel`, `.stage`, `UpdateChannel`?**
-  _High betweenness centrality (0.060) - this node is a cross-community bridge._
-- **What connects `_ModuleHeader`, `courseSortLabels`, `repository` to the rest of the system?**
+  _High betweenness centrality (0.077) - this node is a cross-community bridge._
+- **What connects `AudioBookDraft`, `original`, `relativeFolder` to the rest of the system?**
   _7763 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `dart:io` be split into smaller, more focused modules?**
   _Cohesion score 0.018602060707323866 - nodes in this community are weakly interconnected._
 - **Why does `Архитектура PepeHub` connect `Архитектура PepeHub` to `APP_UPDATES.md`, `ReminderChannel.kt`?**
-  _High betweenness centrality (0.060) - this node is a cross-community bridge._
+  _High betweenness centrality (0.077) - this node is a cross-community bridge._
 - **Should `package:flutter/material.dart` be split into smaller, more focused modules?**
   _Cohesion score 0.022857142857142857 - nodes in this community are weakly interconnected._
 - **Why does `BookFileChannel` connect `BookFileChannel` to `ReminderChannel.kt`, `UpdateChannel.kt`, `MainActivity`?**
-  _High betweenness centrality (0.044) - this node is a cross-community bridge._
+  _High betweenness centrality (0.057) - this node is a cross-community bridge._
 - **Should `library_page.dart` be split into smaller, more focused modules?**
   _Cohesion score 0.011764705882352941 - nodes in this community are weakly interconnected._

@@ -184,10 +184,12 @@ Future<int> connectAudioCatalog(
         oldTracks.every((t) => byPath.containsKey(t.path))) {
       final library = AudioLibraryRepository(repository.db);
       final oldProgress = await library.progressForTrack(oldTracks.first.id);
-      final oldPath = oldTracks
-          .firstWhere((t) => t.id == oldProgress.locator.trackId)
-          .path;
-      final target = byPath[oldPath]!;
+      // The saved position may point to a track the folder no longer has:
+      // then the book starts from its first track.
+      final listened = oldTracks
+          .where((t) => t.id == oldProgress.locator.trackId)
+          .firstOrNull;
+      final target = byPath[(listened ?? oldTracks.first).path]!;
       final targetProgress = await library.progressForTrack(target.id);
       final hasProgress = await repository.db
           .customSelect(
@@ -202,7 +204,7 @@ Future<int> connectAudioCatalog(
               bookId: target.bookId,
               editionId: targetProgress.locator.editionId,
               trackId: target.id,
-              positionMs: oldProgress.locator.positionMs,
+              positionMs: listened == null ? 0 : oldProgress.locator.positionMs,
               manifestRevision: targetProgress.locator.manifestRevision,
             ),
             oldProgress.speed,
